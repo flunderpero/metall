@@ -1,0 +1,7 @@
+fun hello() Str {
+    "hello"
+}
+
+fun main() void {
+    print_str(hello())
+}

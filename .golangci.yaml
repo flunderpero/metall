@@ -1,0 +1,98 @@
+version: "2"
+
+run:
+  go: "1.25.5"
+  timeout: 5m
+  tests: true
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 120
+linters:
+  default: "all"
+  disable:
+    - cyclop
+    - embeddedstructfieldcheck
+    - err113
+    - errname
+    - forbidigo
+    - gocognit
+    - goconst
+    - gocyclo
+    - godoclint
+    - gomodguard
+    - inamedparam
+    - interfacebloat
+    - ireturn
+    - lll
+    - makezero
+    - maintidx
+    - nestif
+    - nonamedreturns
+    - noinlineerr
+    - mnd
+    - musttag
+    - nlreturn
+    - perfsprint
+    - testpackage
+    - varnamelen
+    - wsl
+    - wsl_v5
+  exclusions:
+    presets:
+      - common-false-positives
+    rules:
+      - path: _test\.go
+        linters:
+          - funlen
+          - wrapcheck
+      - path: wasm/
+        linters:
+          # No matter what we do, we can't seem to satisfy any of those for wasm files.
+          # And it's not like they are the most important linters anyway.
+          - gci
+          - gofumpt
+          - goimports
+  settings:
+    depguard:
+      rules:
+        lib:
+          files: 
+            - "**/lib/*.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - "golang.org/x/sys/unix"
+            - "golang.org/x/crypto/argon2"
+            - "golang.org/x/crypto/chacha20poly1305"
+    funlen:
+      lines: 60
+      statements: 60
+    godox:
+      keywords:
+        - fixme
+    gomoddirectives:
+      replace-local: true
+    gosec:
+      excludes:
+        - G101
+    govet:
+      disable:
+        - composites
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: exported
+          disabled: true
+    wrapcheck:
+      extra-ignore-sigs:
+        - .WrapErrorf
+    exhaustruct:
+      allow-empty: true
