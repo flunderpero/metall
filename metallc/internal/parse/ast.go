@@ -2,10 +2,10 @@ package parse
 
 import "github.com/flunderpero/metall/metallc/internal/base"
 
-type ASTID int
+type NodeID int
 
 type astBase struct {
-	ID   ASTID
+	ID   NodeID
 	Span base.Span
 }
 
@@ -40,53 +40,53 @@ type Decl struct {
 	Fun  *Fun
 }
 
-type ASTTypeKind int
+type TypeKind int
 
 const (
-	TySimpleType ASTTypeKind = iota + 1
-	TyRefType
+	TypeSimple TypeKind = iota + 1
+	TypeRef
 )
 
-type ASTSimpleType struct {
+type SimpleType struct {
 	Name
 }
 
-type ASTTypeRef struct {
+type RefType struct {
 	astBase
-	Type ASTType
+	Type Type
 }
 
-type ASTType struct {
-	Kind ASTTypeKind
+type Type struct {
+	Kind TypeKind
 
-	SimpleType *ASTSimpleType
-	RefType    *ASTTypeRef
+	SimpleType *SimpleType
+	RefType    *RefType
 }
 
-func NewASTSimpleType(typ *ASTSimpleType) ASTType {
-	return ASTType{Kind: TySimpleType, SimpleType: typ} //nolint:exhaustruct
+func NewSimpleType(typ *SimpleType) Type {
+	return Type{Kind: TypeSimple, SimpleType: typ} //nolint:exhaustruct
 }
 
-func NewASTRefType(typ *ASTTypeRef) ASTType {
-	return ASTType{Kind: TyRefType, RefType: typ} //nolint:exhaustruct
+func NewRefType(typ *RefType) Type {
+	return Type{Kind: TypeRef, RefType: typ} //nolint:exhaustruct
 }
 
-func (t *ASTType) ID() ASTID {
+func (t *Type) ID() NodeID {
 	switch t.Kind {
-	case TySimpleType:
+	case TypeSimple:
 		return t.SimpleType.ID
-	case TyRefType:
+	case TypeRef:
 		return t.RefType.ID
 	default:
 		panic(base.Errorf("unknown type kind: %d", t.Kind))
 	}
 }
 
-func (t *ASTType) Span() base.Span {
+func (t *Type) Span() base.Span {
 	switch t.Kind {
-	case TySimpleType:
+	case TypeSimple:
 		return t.SimpleType.Span
-	case TyRefType:
+	case TypeRef:
 		return t.RefType.Span
 	default:
 		panic(base.Errorf("unknown type kind: %d", t.Kind))
@@ -103,7 +103,7 @@ type If struct {
 type FunParam struct {
 	astBase
 	Name Name
-	Type ASTType
+	Type Type
 	Mut  bool
 }
 
@@ -111,7 +111,7 @@ type Fun struct {
 	astBase
 	Name       Name
 	Params     []FunParam
-	ReturnType ASTType
+	ReturnType Type
 	Block      Block
 }
 
@@ -151,12 +151,12 @@ func (k ExprKind) String() string {
 	return s
 }
 
-type IntExpr struct {
+type Int struct {
 	astBase
 	Value int64
 }
 
-type StringExpr struct {
+type String struct {
 	astBase
 	Value string
 }
@@ -185,12 +185,12 @@ type Call struct {
 	Args   []Expr
 }
 
-type RefExpr struct {
+type Ref struct {
 	astBase
 	Ident Ident
 }
 
-type DerefExpr struct {
+type Deref struct {
 	astBase
 	Expr Expr
 }
@@ -201,12 +201,12 @@ type Expr struct {
 	Assign *Assign
 	Block  *Block
 	Call   *Call
-	Deref  *DerefExpr
+	Deref  *Deref
 	Fun    *Fun
 	Ident  *Ident
-	Int    *IntExpr
-	Ref    *RefExpr
-	String *StringExpr
+	Int    *Int
+	Ref    *Ref
+	String *String
 	Var    *Var
 }
 
@@ -226,11 +226,11 @@ func NewIdent(ident *Ident) Expr {
 	return Expr{Kind: ExprIdent, Ident: ident} //nolint:exhaustruct
 }
 
-func NewInt(intExpr *IntExpr) Expr {
+func NewInt(intExpr *Int) Expr {
 	return Expr{Kind: ExprInt, Int: intExpr} //nolint:exhaustruct
 }
 
-func NewString(stringExpr *StringExpr) Expr {
+func NewString(stringExpr *String) Expr {
 	return Expr{Kind: ExprString, String: stringExpr} //nolint:exhaustruct
 }
 
@@ -242,15 +242,15 @@ func NewCall(call *Call) Expr {
 	return Expr{Kind: ExprCall, Call: call} //nolint:exhaustruct
 }
 
-func NewRef(ref *RefExpr) Expr {
+func NewRef(ref *Ref) Expr {
 	return Expr{Kind: ExprRef, Ref: ref} //nolint:exhaustruct
 }
 
-func NewDeref(deref *DerefExpr) Expr {
+func NewDeref(deref *Deref) Expr {
 	return Expr{Kind: ExprDeref, Deref: deref} //nolint:exhaustruct
 }
 
-func (e *Expr) ID() ASTID {
+func (e *Expr) ID() NodeID {
 	switch e.Kind {
 	case ExprAssign:
 		return e.Assign.ID
@@ -304,32 +304,32 @@ func (e *Expr) Span() base.Span {
 	}
 }
 
-type ASTVisitor interface {
+type Visitor interface {
 	VisitAssign(*Assign)
 	VisitBlock(*Block)
 	VisitCall(*Call)
 	VisitDecl(*Decl)
-	VisitDerefExpr(*DerefExpr)
+	VisitDeref(*Deref)
 	VisitExpr(*Expr)
 	VisitFile(*File)
 	VisitFun(*Fun)
 	VisitFunParam(*FunParam)
 	VisitIdent(*Ident)
-	VisitIntExpr(*IntExpr)
+	VisitInt(*Int)
 	VisitName(*Name)
-	VisitRefExpr(*RefExpr)
-	VisitStringExpr(*StringExpr)
-	VisitType(*ASTType)
+	VisitRef(*Ref)
+	VisitString(*String)
+	VisitType(*Type)
 	VisitVar(*Var)
 }
 
-func WalkFile(file *File, v ASTVisitor) {
+func WalkFile(file *File, v Visitor) {
 	for i := range len(file.Decls) {
 		v.VisitDecl(&file.Decls[i])
 	}
 }
 
-func WalkDecl(decl *Decl, v ASTVisitor) {
+func WalkDecl(decl *Decl, v Visitor) {
 	switch decl.Kind {
 	case DeclFun:
 		v.VisitFun(decl.Fun)
@@ -338,18 +338,18 @@ func WalkDecl(decl *Decl, v ASTVisitor) {
 	}
 }
 
-func WalkASTType(typ *ASTType, v ASTVisitor) {
+func WalkType(typ *Type, v Visitor) {
 	switch typ.Kind {
-	case TySimpleType:
+	case TypeSimple:
 		v.VisitName(&typ.SimpleType.Name)
-	case TyRefType:
+	case TypeRef:
 		v.VisitType(&typ.RefType.Type)
 	default:
 		panic(base.Errorf("unknown type kind: %d", typ.Kind))
 	}
 }
 
-func WalkFun(fun *Fun, v ASTVisitor) {
+func WalkFun(fun *Fun, v Visitor) {
 	v.VisitName(&fun.Name)
 	for i := range len(fun.Params) {
 		v.VisitFunParam(&fun.Params[i])
@@ -358,12 +358,12 @@ func WalkFun(fun *Fun, v ASTVisitor) {
 	v.VisitBlock(&fun.Block)
 }
 
-func WalkFunParam(funParam *FunParam, v ASTVisitor) {
+func WalkFunParam(funParam *FunParam, v Visitor) {
 	v.VisitName(&funParam.Name)
 	v.VisitType(&funParam.Type)
 }
 
-func WalkExpr(expr *Expr, v ASTVisitor) {
+func WalkExpr(expr *Expr, v Visitor) {
 	switch expr.Kind {
 	case ExprAssign:
 		v.VisitAssign(expr.Assign)
@@ -372,17 +372,17 @@ func WalkExpr(expr *Expr, v ASTVisitor) {
 	case ExprCall:
 		v.VisitCall(expr.Call)
 	case ExprDeref:
-		v.VisitDerefExpr(expr.Deref)
+		v.VisitDeref(expr.Deref)
 	case ExprFun:
 		v.VisitFun(expr.Fun)
 	case ExprIdent:
 		v.VisitIdent(expr.Ident)
 	case ExprInt:
-		v.VisitIntExpr(expr.Int)
+		v.VisitInt(expr.Int)
 	case ExprRef:
-		v.VisitRefExpr(expr.Ref)
+		v.VisitRef(expr.Ref)
 	case ExprString:
-		v.VisitStringExpr(expr.String)
+		v.VisitString(expr.String)
 	case ExprVar:
 		v.VisitVar(expr.Var)
 	default:
@@ -390,45 +390,45 @@ func WalkExpr(expr *Expr, v ASTVisitor) {
 	}
 }
 
-func WalkRefExpr(expr *RefExpr, v ASTVisitor) {
+func WalkRef(expr *Ref, v Visitor) {
 	v.VisitIdent(&expr.Ident)
 }
 
-func WalkDerefExpr(expr *DerefExpr, v ASTVisitor) {
+func WalkDeref(expr *Deref, v Visitor) {
 	v.VisitExpr(&expr.Expr)
 }
 
-func WalkAssign(assign *Assign, v ASTVisitor) {
+func WalkAssign(assign *Assign, v Visitor) {
 	v.VisitExpr(&assign.LHS)
 	v.VisitExpr(&assign.Value)
 }
 
-func WalkBlock(block *Block, v ASTVisitor) {
+func WalkBlock(block *Block, v Visitor) {
 	for i := range len(block.Exprs) {
 		v.VisitExpr(&block.Exprs[i])
 	}
 }
 
-func WalkCall(call *Call, v ASTVisitor) {
+func WalkCall(call *Call, v Visitor) {
 	v.VisitExpr(&call.Callee)
 	for i := range len(call.Args) {
 		v.VisitExpr(&call.Args[i])
 	}
 }
 
-func WalkIdent(ident *Ident, v ASTVisitor) {
+func WalkIdent(ident *Ident, v Visitor) {
 }
 
-func WalkName(name *Name, v ASTVisitor) {
+func WalkName(name *Name, v Visitor) {
 }
 
-func WalkIntExpr(expr *IntExpr, v ASTVisitor) {
+func WalkInt(expr *Int, v Visitor) {
 }
 
-func WalkStringExpr(expr *StringExpr, v ASTVisitor) {
+func WalkString(expr *String, v Visitor) {
 }
 
-func WalkVar(varExpr *Var, v ASTVisitor) {
+func WalkVar(varExpr *Var, v Visitor) {
 	v.VisitName(&varExpr.Name)
 	WalkExpr(&varExpr.Init, v)
 }

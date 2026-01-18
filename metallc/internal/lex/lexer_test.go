@@ -21,20 +21,20 @@ func TestLexer(t *testing.T) {
 		src  string
 		want []want
 	}{
-		{"parens", "()", []want{{TLParen, "", "1:1"}, {TRParen, "", "1:2"}}},
-		{"curly", "{}", []want{{TLCurly, "", "1:1"}, {TRCurly, "", "1:2"}}},
-		{"eq", "=", []want{{TEq, "", "1:1"}}},
-		{"amp", "&", []want{{TAmp, "", "1:1"}}},
-		{"star", "*", []want{{TStar, "", "1:1"}}},
-		{"number (int)", `123`, []want{{TNumber, "123", "1:1-1:3"}}},
-		{"string", `"ride"`, []want{{TString, "ride", "1:1-1:6"}}},
-		{"ident", `foo`, []want{{TIdent, "foo", "1:1-1:3"}}},
-		{"type ident", `Foo`, []want{{TTypeIdent, "Foo", "1:1-1:3"}}},
-		{"fun", `fun`, []want{{TFun, "", "1:1-1:3"}}},
-		{"void", `void`, []want{{TVoid, "", "1:1-1:4"}}},
-		{"mut", `mut`, []want{{TMut, "", "1:1-1:3"}}},
-		{"let", `let`, []want{{TLet, "", "1:1-1:3"}}},
-		{"whitespace is ignored", " ( \n \t)\r", []want{{TLParen, "", "1:2"}, {TRParen, "", "2:3"}}},
+		{"parens", "()", []want{{LParen, "", "1:1"}, {RParen, "", "1:2"}}},
+		{"curly", "{}", []want{{LCurly, "", "1:1"}, {RCurly, "", "1:2"}}},
+		{"eq", "=", []want{{Eq, "", "1:1"}}},
+		{"amp", "&", []want{{Amp, "", "1:1"}}},
+		{"star", "*", []want{{Star, "", "1:1"}}},
+		{"number (int)", `123`, []want{{Number, "123", "1:1-1:3"}}},
+		{"string", `"ride"`, []want{{String, "ride", "1:1-1:6"}}},
+		{"ident", `foo`, []want{{Ident, "foo", "1:1-1:3"}}},
+		{"type ident", `Foo`, []want{{TypeIdent, "Foo", "1:1-1:3"}}},
+		{"fun", `fun`, []want{{Fun, "", "1:1-1:3"}}},
+		{"void", `void`, []want{{Void, "", "1:1-1:4"}}},
+		{"mut", `mut`, []want{{Mut, "", "1:1-1:3"}}},
+		{"let", `let`, []want{{Let, "", "1:1-1:3"}}},
+		{"whitespace is ignored", " ( \n \t)\r", []want{{LParen, "", "1:2"}, {RParen, "", "2:3"}}},
 	}
 
 	assert := require.New(t)

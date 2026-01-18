@@ -170,16 +170,16 @@ func (v *zeroBaseVisitor) VisitDecl(decl *Decl) {
 	WalkDecl(decl, v)
 }
 
-func (v *zeroBaseVisitor) VisitType(typ *ASTType) {
+func (v *zeroBaseVisitor) VisitType(typ *Type) {
 	switch typ.Kind {
-	case TySimpleType:
+	case TypeSimple:
 		typ.SimpleType.astBase = astBase{}
-	case TyRefType:
+	case TypeRef:
 		typ.RefType.astBase = astBase{}
 	default:
 		panic(base.Errorf("unknown type kind: %d", typ.Kind))
 	}
-	WalkASTType(typ, v)
+	WalkType(typ, v)
 }
 
 func (v *zeroBaseVisitor) VisitFun(fun *Fun) {
@@ -206,14 +206,14 @@ func (v *zeroBaseVisitor) VisitExpr(expr *Expr) {
 	WalkExpr(expr, v)
 }
 
-func (v *zeroBaseVisitor) VisitRefExpr(expr *RefExpr) {
+func (v *zeroBaseVisitor) VisitRef(expr *Ref) {
 	expr.astBase = astBase{}
-	WalkRefExpr(expr, v)
+	WalkRef(expr, v)
 }
 
-func (v *zeroBaseVisitor) VisitDerefExpr(expr *DerefExpr) {
+func (v *zeroBaseVisitor) VisitDeref(expr *Deref) {
 	expr.astBase = astBase{}
-	WalkDerefExpr(expr, v)
+	WalkDeref(expr, v)
 }
 
 func (v *zeroBaseVisitor) VisitAssign(assign *Assign) {
@@ -231,14 +231,14 @@ func (v *zeroBaseVisitor) VisitBlock(block *Block) {
 	WalkBlock(block, v)
 }
 
-func (v *zeroBaseVisitor) VisitIntExpr(expr *IntExpr) {
+func (v *zeroBaseVisitor) VisitInt(expr *Int) {
 	expr.astBase = astBase{}
-	WalkIntExpr(expr, v)
+	WalkInt(expr, v)
 }
 
-func (v *zeroBaseVisitor) VisitStringExpr(expr *StringExpr) {
+func (v *zeroBaseVisitor) VisitString(expr *String) {
 	expr.astBase = astBase{}
-	WalkStringExpr(expr, v)
+	WalkString(expr, v)
 }
 
 func (v *zeroBaseVisitor) VisitVar(varExpr *Var) {
@@ -268,11 +268,11 @@ func file(decls ...Decl) File {
 	return File{Decls: decls}
 }
 
-func mut_fun_param(name string, typ ASTType) FunParam {
+func mut_fun_param(name string, typ Type) FunParam {
 	return FunParam{Name: Name{Name: name}, Type: typ, Mut: true}
 }
 
-func fun_param(name string, typ ASTType) FunParam {
+func fun_param(name string, typ Type) FunParam {
 	return FunParam{Name: Name{Name: name}, Type: typ}
 }
 
@@ -283,30 +283,30 @@ func fun_params(params ...FunParam) []FunParam {
 	return params
 }
 
-func fun_decl(name_ string, params []FunParam, return_type ASTType, block Block) Decl {
+func fun_decl(name_ string, params []FunParam, return_type Type, block Block) Decl {
 	name := Name{Name: name_}
 	return Decl{Kind: DeclFun, Fun: &Fun{Name: name, Params: params, ReturnType: return_type, Block: block}}
 }
 
-func fun(name_ string, params []FunParam, return_type ASTType, block Block) Expr { //nolint:unparam
+func fun(name_ string, params []FunParam, return_type Type, block Block) Expr { //nolint:unparam
 	name := Name{Name: name_}
 	return Expr{Kind: ExprFun, Fun: &Fun{Name: name, Params: params, ReturnType: return_type, Block: block}}
 }
 
 func string_(value string) Expr { //nolint:unparam
-	return Expr{Kind: ExprString, String: &StringExpr{Value: value}}
+	return Expr{Kind: ExprString, String: &String{Value: value}}
 }
 
 func int_(value int64) Expr {
-	return Expr{Kind: ExprInt, Int: &IntExpr{Value: value}}
+	return Expr{Kind: ExprInt, Int: &Int{Value: value}}
 }
 
 func assign(lhs Expr, value Expr) Expr {
 	return Expr{Kind: ExprAssign, Assign: &Assign{LHS: lhs, Value: value}}
 }
 
-func typ(name string) ASTType {
-	return NewASTSimpleType(&ASTSimpleType{Name{Name: name}})
+func typ(name string) Type {
+	return NewSimpleType(&SimpleType{Name{Name: name}})
 }
 
 func fun_block(exprs ...Expr) Block {
@@ -327,15 +327,15 @@ func mut_var(name_ string, init Expr) Expr {
 }
 
 func ref(ident Ident) Expr {
-	return Expr{Kind: ExprRef, Ref: &RefExpr{Ident: ident}}
+	return Expr{Kind: ExprRef, Ref: &Ref{Ident: ident}}
 }
 
 func deref(expr Expr) Expr {
-	return Expr{Kind: ExprDeref, Deref: &DerefExpr{Expr: expr}}
+	return Expr{Kind: ExprDeref, Deref: &Deref{Expr: expr}}
 }
 
-func ref_typ(typ ASTType) ASTType {
-	return NewASTRefType(&ASTTypeRef{Type: typ})
+func ref_typ(typ Type) Type {
+	return NewRefType(&RefType{Type: typ})
 }
 
 func block(exprs ...Expr) Expr {

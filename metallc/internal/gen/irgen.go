@@ -70,7 +70,7 @@ type IRGen struct {
 	regCounter   int
 	constCounter int
 	strConsts    map[string]string
-	astCode      map[parse.ASTID]string
+	astCode      map[parse.NodeID]string
 }
 
 func NewIRGen(env *check.TypeEnv) *IRGen {
@@ -81,7 +81,7 @@ func NewIRGen(env *check.TypeEnv) *IRGen {
 		regCounter:   1,
 		constCounter: 1,
 		strConsts:    map[string]string{},
-		astCode:      map[parse.ASTID]string{},
+		astCode:      map[parse.NodeID]string{},
 	}
 }
 
@@ -102,8 +102,8 @@ func (g *IRGen) VisitDecl(decl *parse.Decl) {
 	parse.WalkDecl(decl, g)
 }
 
-func (g *IRGen) VisitType(typ *parse.ASTType) {
-	parse.WalkASTType(typ, g)
+func (g *IRGen) VisitType(typ *parse.Type) {
+	parse.WalkType(typ, g)
 }
 
 func (g *IRGen) VisitFun(astFun *parse.Fun) {
@@ -241,11 +241,11 @@ func (g *IRGen) VisitName(name *parse.Name) {
 	g.setCode(name.ID, name.Name)
 }
 
-func (g *IRGen) VisitIntExpr(int_ *parse.IntExpr) {
+func (g *IRGen) VisitInt(int_ *parse.Int) {
 	g.setCode(int_.ID, "%d", int_.Value)
 }
 
-func (g *IRGen) VisitStringExpr(str *parse.StringExpr) {
+func (g *IRGen) VisitString(str *parse.String) {
 	creg, ok := g.strConsts[str.Value]
 	if !ok {
 		creg = g.creg()
@@ -256,7 +256,7 @@ func (g *IRGen) VisitStringExpr(str *parse.StringExpr) {
 	g.setCode(str.ID, reg)
 }
 
-func (g *IRGen) VisitRefExpr(expr *parse.RefExpr) {
+func (g *IRGen) VisitRef(expr *parse.Ref) {
 	ident := expr.Ident
 	if symbol, ok := g.scope.Lookup(ident.Name); ok {
 		g.setCode(expr.ID, symbol.Reg)
@@ -265,8 +265,8 @@ func (g *IRGen) VisitRefExpr(expr *parse.RefExpr) {
 	g.setCode(expr.ID, "ptr %s", ident.Name)
 }
 
-func (g *IRGen) VisitDerefExpr(expr *parse.DerefExpr) {
-	parse.WalkDerefExpr(expr, g)
+func (g *IRGen) VisitDeref(expr *parse.Deref) {
+	parse.WalkDeref(expr, g)
 	inner := expr.Expr
 	typ := g.lookupType(inner.ID())
 	if typ.Kind != check.TypeRef {
@@ -329,7 +329,7 @@ func (g *IRGen) irType(typ check.Type) string {
 	}
 }
 
-func (g *IRGen) setCode(astID parse.ASTID, code string, args ...any) {
+func (g *IRGen) setCode(astID parse.NodeID, code string, args ...any) {
 	if _, ok := g.astCode[astID]; ok {
 		panic(base.Errorf("code  already set for AST node %d", astID))
 	}
@@ -339,7 +339,7 @@ func (g *IRGen) setCode(astID parse.ASTID, code string, args ...any) {
 	g.astCode[astID] = code
 }
 
-func (g *IRGen) lookupCode(astID parse.ASTID) string {
+func (g *IRGen) lookupCode(astID parse.NodeID) string {
 	code, ok := g.astCode[astID]
 	if !ok {
 		panic(base.Errorf("no reg for AST node %d", astID))
@@ -347,7 +347,7 @@ func (g *IRGen) lookupCode(astID parse.ASTID) string {
 	return code
 }
 
-func (g *IRGen) lookupBinding(astID parse.ASTID) check.Binding {
+func (g *IRGen) lookupBinding(astID parse.NodeID) check.Binding {
 	b, ok := g.env.Bindings[astID]
 	if !ok {
 		panic(base.Errorf("no binding for AST node %d", astID))
@@ -355,7 +355,7 @@ func (g *IRGen) lookupBinding(astID parse.ASTID) check.Binding {
 	return b
 }
 
-func (g *IRGen) lookupType(astID parse.ASTID) check.Type {
+func (g *IRGen) lookupType(astID parse.NodeID) check.Type {
 	typ, ok := g.env.Types[astID]
 	if !ok {
 		panic(base.Errorf("no type for AST node %d", astID))

@@ -11,63 +11,63 @@ import (
 type TokenKind int
 
 const (
-	TAmp TokenKind = iota + 1
-	TComma
-	TEOF
-	TEq
-	TFun
-	TLet
-	TIdent
-	TLCurly
-	TLParen
-	TMut
-	TNumber
-	TRCurly
-	TRParen
-	TStar
-	TString
-	TUnknown
-	TTypeIdent
-	TVoid
+	Amp TokenKind = iota + 1
+	Comma
+	EOF
+	Eq
+	Fun
+	Let
+	Ident
+	LCurly
+	LParen
+	Mut
+	Number
+	RCurly
+	RParen
+	Star
+	String
+	Unknown
+	TypeIdent
+	Void
 )
 
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
-	TAmp:       "&",
-	TComma:     ",",
-	TEOF:       "<EOF>",
-	TEq:        "=",
-	TFun:       "<fun>",
-	TLet:       "<let>",
-	TIdent:     "<identifier>",
-	TLCurly:    "{",
-	TLParen:    "(",
-	TMut:       "<mut>",
-	TNumber:    "<number>",
-	TRCurly:    "}",
-	TRParen:    ")",
-	TStar:      "*",
-	TString:    "<string>",
-	TTypeIdent: "<type identifier>",
-	TUnknown:   "<unknown>",
-	TVoid:      "<void>",
+	Amp:       "&",
+	Comma:     ",",
+	EOF:       "<EOF>",
+	Eq:        "=",
+	Fun:       "<fun>",
+	Let:       "<let>",
+	Ident:     "<identifier>",
+	LCurly:    "{",
+	LParen:    "(",
+	Mut:       "<mut>",
+	Number:    "<number>",
+	RCurly:    "}",
+	RParen:    ")",
+	Star:      "*",
+	String:    "<string>",
+	TypeIdent: "<type identifier>",
+	Unknown:   "<unknown>",
+	Void:      "<void>",
 }
 
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
-	'&': TAmp,
-	',': TComma,
-	'=': TEq,
-	'{': TLCurly,
-	'(': TLParen,
-	'}': TRCurly,
-	')': TRParen,
-	'*': TStar,
+	'&': Amp,
+	',': Comma,
+	'=': Eq,
+	'{': LCurly,
+	'(': LParen,
+	'}': RCurly,
+	')': RParen,
+	'*': Star,
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
-	"fun":  TFun,
-	"let":  TLet,
-	"mut":  TMut,
-	"void": TVoid,
+	"fun":  Fun,
+	"let":  Let,
+	"mut":  Mut,
+	"void": Void,
 }
 
 func (k TokenKind) String() string {
@@ -121,12 +121,12 @@ func lexToken(source *base.Source, idx int) Token {
 			c := source.Content[idx]
 			if c == '"' {
 				span.End = idx
-				return Token{TString, string(value), span}
+				return Token{String, string(value), span}
 			}
 			idx += 1
 			value = append(value, c)
 		}
-		return Token{TEOF, "", span}
+		return Token{EOF, "", span}
 	case unicode.IsLetter(c):
 		value := []rune{c}
 		for idx < len(source.Content) {
@@ -141,9 +141,9 @@ func lexToken(source *base.Source, idx int) Token {
 		if kind, ok := keywords[string(value)]; ok {
 			return Token{Kind: kind, Value: "", Span: span}
 		}
-		kind := TTypeIdent
+		kind := TypeIdent
 		if unicode.IsLower(c) {
-			kind = TIdent
+			kind = Ident
 		}
 		return Token{kind, string(value), span}
 	case unicode.IsDigit(c):
@@ -157,9 +157,9 @@ func lexToken(source *base.Source, idx int) Token {
 			value = append(value, c)
 		}
 		span.End = idx - 1
-		return Token{TNumber, string(value), span}
+		return Token{Number, string(value), span}
 	default:
-		return Token{TUnknown, string(c), span}
+		return Token{Unknown, string(c), span}
 	}
 }
 
