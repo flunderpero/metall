@@ -1,19 +1,22 @@
-package internal
+package parse
 
 import (
 	"slices"
 	"strconv"
+
+	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/lex"
 )
 
 type Parser struct {
-	Diagnostics Diagnostics
+	Diagnostics base.Diagnostics
 	id_         ASTID
-	tokens      []Token
+	tokens      []lex.Token
 	pos         int
 }
 
-func NewParser(tokens []Token) *Parser {
-	return &Parser{Diagnostics{}, ASTID(1), tokens, 0}
+func NewParser(tokens []lex.Token) *Parser {
+	return &Parser{base.Diagnostics{}, ASTID(1), tokens, 0}
 }
 
 func (p *Parser) ParseFile() (File, bool) {
@@ -31,7 +34,7 @@ func (p *Parser) ParseDecls() ([]Decl, bool) {
 			return decls, result
 		}
 		switch t.Kind { //nolint:exhaustive
-		case TFun:
+		case lex.TFun:
 			if fun, ok := p.ParseFun(); ok {
 				decls = append(decls, Decl{DeclFun, &fun})
 			}
@@ -43,12 +46,12 @@ func (p *Parser) ParseDecls() ([]Decl, bool) {
 }
 
 func (p *Parser) ParseFun() (Fun, bool) {
-	t, ok := p.expect(TFun)
+	t, ok := p.expect(lex.TFun)
 	if !ok {
 		return Fun{}, false
 	}
 	span := t.Span
-	nameToken, ok := p.expect(TIdent)
+	nameToken, ok := p.expect(lex.TIdent)
 	if !ok {
 		return Fun{}, false
 	}
@@ -62,7 +65,7 @@ func (p *Parser) ParseFun() (Fun, bool) {
 		return Fun{}, false
 	}
 	var returnType ASTType
-	if t.Kind == TVoid {
+	if t.Kind == lex.TVoid {
 		returnType = NewASTSimpleType(&ASTSimpleType{Name{p.base(t.Span), "void"}})
 		p.next()
 	} else {
@@ -79,7 +82,7 @@ func (p *Parser) ParseFun() (Fun, bool) {
 }
 
 func (p *Parser) ParseBlock() (Block, bool) {
-	t, ok := p.expect(TLCurly)
+	t, ok := p.expect(lex.TLCurly)
 	if !ok {
 		return Block{}, false
 	}
@@ -90,7 +93,7 @@ func (p *Parser) ParseBlock() (Block, bool) {
 		if !ok {
 			break
 		}
-		if t.Kind == TRCurly {
+		if t.Kind == lex.TRCurly {
 			p.next()
 			break
 		}
@@ -111,7 +114,7 @@ func (p *Parser) ParseExpr() (Expr, bool) {
 	switch t, ok := p.peek(); {
 	case !ok:
 		return lhs, true
-	case t.Kind == TEq:
+	case t.Kind == lex.TEq:
 		p.next()
 		rhs, ok := p.ParseExpr()
 		if !ok {
@@ -130,7 +133,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (Expr, bool) {
 	}
 	var expr Expr
 	switch t.Kind { //nolint:exhaustive
-	case TStar:
+	case lex.TStar:
 		p.next()
 		expr, ok = p.ParseUnaryExpr(minPrecedence)
 		if !ok {
@@ -144,7 +147,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (Expr, bool) {
 		}
 	}
 	for {
-		if t, ok := p.peek(); ok && t.Kind == TLParen {
+		if t, ok := p.peek(); ok && t.Kind == lex.TLParen {
 			callee := expr
 			args, ok := p.ParseCallArgs()
 			if !ok {
@@ -158,42 +161,51 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (Expr, bool) {
 	return expr, true
 }
 
-func (p *Parser) ParsePrimaryExpr(minPrecedence int) (Expr, bool) {
+func (p *Parser) ParsePrimaryExpr(minPrecedence int) (Expr, bool) { //nolint:funlen
 	t, ok := p.peek()
 	if !ok {
 		return Expr{}, false
 	}
-	expectedTokenKinds := []TokenKind{TAmp, TLCurly, TFun, TIdent, TNumber, TString, TLet, TMut}
+	expectedTokenKinds := []lex.TokenKind{
+		lex.TAmp,
+		lex.TLCurly,
+		lex.TFun,
+		lex.TIdent,
+		lex.TNumber,
+		lex.TString,
+		lex.TLet,
+		lex.TMut,
+	}
 	if !slices.Contains(expectedTokenKinds, t.Kind) {
 		p.diagnostic(
 			t.Span,
 			"unexpected token: expected one of %s, got %s",
-			PrettyPrintTokenKinds(expectedTokenKinds),
+			lex.PrettyPrintTokenKinds(expectedTokenKinds),
 			t.Kind,
 		)
 		return Expr{}, false
 	}
 	var expr Expr
 	switch t.Kind { //nolint:exhaustive
-	case TAmp:
+	case lex.TAmp:
 		ref, ok := p.ParseRefExpr()
 		if !ok {
 			return Expr{}, false
 		}
 		expr = NewRef(&ref)
-	case TFun:
+	case lex.TFun:
 		fun, ok := p.ParseFun()
 		if !ok {
 			return Expr{}, false
 		}
 		expr = NewFun(&fun)
-	case TIdent:
+	case lex.TIdent:
 		ident, ok := p.ParseIdent()
 		if !ok {
 			return Expr{}, false
 		}
 		expr = NewIdent(&ident)
-	case TNumber:
+	case lex.TNumber:
 		p.next()
 		number, err := strconv.ParseInt(t.Value, 10, 64)
 		if err != nil {
@@ -201,29 +213,29 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (Expr, bool) {
 			return Expr{}, false
 		}
 		expr = NewInt(&IntExpr{p.base(t.Span), number})
-	case TString:
+	case lex.TString:
 		p.next()
 		expr = NewString(&StringExpr{p.base(t.Span), t.Value})
-	case TLCurly:
+	case lex.TLCurly:
 		block, ok := p.ParseBlock()
 		if !ok {
 			return Expr{}, false
 		}
 		expr = NewBlock(&block)
-	case TLet, TMut:
+	case lex.TLet, lex.TMut:
 		var_, ok := p.ParseVar()
 		if !ok {
 			return Expr{}, false
 		}
 		expr = NewVar(&var_)
 	default:
-		panic(Errorf("this should have been catch earlier: unexpected token: %s", t.Kind))
+		panic(base.Errorf("this should have been catch earlier: unexpected token: %s", t.Kind))
 	}
 	return expr, true
 }
 
 func (p *Parser) ParseRefExpr() (RefExpr, bool) {
-	t, ok := p.expect(TAmp)
+	t, ok := p.expect(lex.TAmp)
 	if !ok {
 		return RefExpr{}, false
 	}
@@ -235,7 +247,7 @@ func (p *Parser) ParseRefExpr() (RefExpr, bool) {
 }
 
 func (p *Parser) ParseCallArgs() ([]Expr, bool) {
-	if _, ok := p.expect(TLParen); !ok {
+	if _, ok := p.expect(lex.TLParen); !ok {
 		return nil, false
 	}
 	args := []Expr{}
@@ -244,7 +256,7 @@ func (p *Parser) ParseCallArgs() ([]Expr, bool) {
 		if !ok {
 			return args, true
 		}
-		if t.Kind == TRParen {
+		if t.Kind == lex.TRParen {
 			p.next()
 			return args, true
 		}
@@ -258,8 +270,8 @@ func (p *Parser) ParseCallArgs() ([]Expr, bool) {
 			return args, true
 		}
 		switch t.Kind { //nolint:exhaustive
-		case TComma:
-		case TRParen:
+		case lex.TComma:
+		case lex.TRParen:
 			return args, true
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
@@ -273,21 +285,21 @@ func (p *Parser) ParseVar() (Var, bool) {
 	if !ok {
 		return Var{}, false
 	}
-	mut := t.Kind == TMut
+	mut := t.Kind == lex.TMut
 	if mut {
 		p.next()
 	} else {
-		if _, ok := p.expect(TLet); !ok {
+		if _, ok := p.expect(lex.TLet); !ok {
 			return Var{}, false
 		}
 	}
 	span := t.Span
-	nameToken, ok := p.expect(TIdent)
+	nameToken, ok := p.expect(lex.TIdent)
 	name := Name{p.base(nameToken.Span), nameToken.Value}
 	if !ok {
 		return Var{}, false
 	}
-	if _, ok := p.expect(TEq); !ok {
+	if _, ok := p.expect(lex.TEq); !ok {
 		return Var{}, false
 	}
 	init, ok := p.ParseExpr()
@@ -298,7 +310,7 @@ func (p *Parser) ParseVar() (Var, bool) {
 }
 
 func (p *Parser) ParseFunParams() ([]FunParam, bool) {
-	if _, ok := p.expect(TLParen); !ok {
+	if _, ok := p.expect(lex.TLParen); !ok {
 		return nil, false
 	}
 	funParams := make([]FunParam, 0)
@@ -308,13 +320,13 @@ func (p *Parser) ParseFunParams() ([]FunParam, bool) {
 			return funParams, true
 		}
 		switch t.Kind { //nolint:exhaustive
-		case TIdent, TMut:
+		case lex.TIdent, lex.TMut:
 			mut := false
-			if t.Kind == TMut {
+			if t.Kind == lex.TMut {
 				mut = true
 				p.next()
 			}
-			nameToken, ok := p.expect(TIdent)
+			nameToken, ok := p.expect(lex.TIdent)
 			name := Name{p.base(nameToken.Span), nameToken.Value}
 			if !ok {
 				return funParams, false
@@ -325,9 +337,9 @@ func (p *Parser) ParseFunParams() ([]FunParam, bool) {
 				return funParams, false
 			}
 			funParams = append(funParams, FunParam{p.base(name.Span), name, type_, mut})
-		case TComma:
+		case lex.TComma:
 			p.next()
-		case TRParen:
+		case lex.TRParen:
 			p.next()
 			return funParams, true
 		default:
@@ -343,9 +355,9 @@ func (p *Parser) ParseType() (ASTType, bool) {
 		return ASTType{}, false
 	}
 	switch t.Kind { //nolint:exhaustive
-	case TTypeIdent:
+	case lex.TTypeIdent:
 		return NewASTSimpleType(&ASTSimpleType{Name{p.base(t.Span), t.Value}}), true
-	case TAmp:
+	case lex.TAmp:
 		inner, ok := p.ParseType()
 		if !ok {
 			return ASTType{}, false
@@ -358,18 +370,18 @@ func (p *Parser) ParseType() (ASTType, bool) {
 }
 
 func (p *Parser) ParseIdent() (Ident, bool) {
-	t, ok := p.expect(TIdent)
+	t, ok := p.expect(lex.TIdent)
 	if !ok {
 		return Ident{}, false
 	}
 	return Ident{p.base(t.Span), t.Value}, true
 }
 
-func (p *Parser) diagnostic(span Span, msg string, msgArgs ...any) {
-	p.Diagnostics = append(p.Diagnostics, *NewDiagnostic(span, msg, msgArgs...))
+func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {
+	p.Diagnostics = append(p.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
 
-func (p *Parser) base(span Span) astBase {
+func (p *Parser) base(span base.Span) astBase {
 	span = span.Combine(p.span())
 	return astBase{p.id(), span}
 }
@@ -380,7 +392,7 @@ func (p *Parser) id() ASTID {
 	return id
 }
 
-func (p *Parser) next() (*Token, bool) {
+func (p *Parser) next() (*lex.Token, bool) {
 	if p.pos >= len(p.tokens) {
 		return nil, false
 	}
@@ -389,14 +401,14 @@ func (p *Parser) next() (*Token, bool) {
 	return token, true
 }
 
-func (p *Parser) peek() (*Token, bool) {
+func (p *Parser) peek() (*lex.Token, bool) {
 	if p.pos >= len(p.tokens) {
 		return nil, false
 	}
 	return &p.tokens[p.pos], true
 }
 
-func (p *Parser) expect(kind TokenKind) (*Token, bool) {
+func (p *Parser) expect(kind lex.TokenKind) (*lex.Token, bool) {
 	t, ok := p.next()
 	if ok && t.Kind == kind {
 		return t, true
@@ -405,7 +417,7 @@ func (p *Parser) expect(kind TokenKind) (*Token, bool) {
 	return nil, false
 }
 
-func (p *Parser) span() Span {
+func (p *Parser) span() base.Span {
 	token := p.tokens[min(max(p.pos-1, 0), len(p.tokens)-1)]
 	return token.Span
 }

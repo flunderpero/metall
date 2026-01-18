@@ -1,9 +1,11 @@
-package internal
+package lex
 
 import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
 type TokenKind int
@@ -71,7 +73,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 func (k TokenKind) String() string {
 	s, ok := tokenKindNames[k]
 	if !ok {
-		panic(Errorf("unknown token kind: %d", k))
+		panic(base.Errorf("unknown token kind: %d", k))
 	}
 	return s
 }
@@ -97,17 +99,17 @@ func PrettyPrintTokenKinds(kinds []TokenKind) string {
 type Token struct {
 	Kind  TokenKind
 	Value string
-	Span  Span
+	Span  base.Span
 }
 
 func (t Token) String() string {
 	return fmt.Sprintf("%s: %s", t.Span, t.Kind)
 }
 
-func lexToken(source *Source, idx int) Token {
+func lexToken(source *base.Source, idx int) Token {
 	start := idx
 	c := source.Content[idx]
-	span := NewSpan(source, start, idx)
+	span := base.NewSpan(source, start, idx)
 	idx += 1
 	if kind, ok := simpleTokens[c]; ok {
 		return Token{Kind: kind, Value: "", Span: span}
@@ -161,7 +163,7 @@ func lexToken(source *Source, idx int) Token {
 	}
 }
 
-func lexSkipWhitespace(source *Source, idx int) int {
+func lexSkipWhitespace(source *base.Source, idx int) int {
 	for idx < len(source.Content) {
 		c := source.Content[idx]
 		if !unicode.IsSpace(c) {
@@ -172,7 +174,7 @@ func lexSkipWhitespace(source *Source, idx int) int {
 	return idx
 }
 
-func Lex(source *Source) []Token {
+func Lex(source *base.Source) []Token {
 	tokens := []Token{}
 	idx := 0
 	for {

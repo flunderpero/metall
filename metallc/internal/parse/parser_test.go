@@ -1,8 +1,11 @@
 //nolint:exhaustruct
-package internal
+package parse
 
 import (
 	"testing"
+
+	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/lex"
 )
 
 func TestParsOK(t *testing.T) {
@@ -68,11 +71,11 @@ func TestParsOK(t *testing.T) {
 		},
 	}
 
-	assert := NewAssert(t)
+	assert := base.NewAssert(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := NewSource("test.met", []rune(tt.src))
-			tokens := Lex(source)
+			source := base.NewSource("test.met", []rune(tt.src))
+			tokens := lex.Lex(source)
 			parser := NewParser(tokens)
 			var got any
 			var ok bool
@@ -130,18 +133,18 @@ func TestParsErr(t *testing.T) {
 		}},
 	}
 
-	assert := NewAssert(t)
+	assert := base.NewAssert(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := NewSource("test.met", []rune(tt.src))
-			tokens := Lex(source)
+			source := base.NewSource("test.met", []rune(tt.src))
+			tokens := lex.Lex(source)
 			parser := NewParser(tokens)
 			expr, parseOK := parser.ParseExpr()
 			if parseOK {
 				zero := &zeroBaseVisitor{}
 				zero.VisitExpr(&expr)
 			}
-			assert.Equal(false, parseOK, "ParseExpr should have failed: %s", Stringify(expr))
+			assert.Equal(false, parseOK, "ParseExpr should have failed: %s", base.Stringify(expr))
 			diagnostics := parser.Diagnostics
 			for i, want := range tt.want {
 				if i >= len(diagnostics) {
@@ -174,7 +177,7 @@ func (v *zeroBaseVisitor) VisitType(typ *ASTType) {
 	case TyRefType:
 		typ.RefType.astBase = astBase{}
 	default:
-		panic(Errorf("unknown type kind: %d", typ.Kind))
+		panic(base.Errorf("unknown type kind: %d", typ.Kind))
 	}
 	WalkASTType(typ, v)
 }

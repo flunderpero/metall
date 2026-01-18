@@ -1,10 +1,12 @@
-package internal
+package parse
+
+import "github.com/flunderpero/metall/metallc/internal/base"
 
 type ASTID int
 
 type astBase struct {
 	ID   ASTID
-	Span Span
+	Span base.Span
 }
 
 type Ident struct {
@@ -76,18 +78,18 @@ func (t *ASTType) ID() ASTID {
 	case TyRefType:
 		return t.RefType.ID
 	default:
-		panic(Errorf("unknown type kind: %d", t.Kind))
+		panic(base.Errorf("unknown type kind: %d", t.Kind))
 	}
 }
 
-func (t *ASTType) Span() Span {
+func (t *ASTType) Span() base.Span {
 	switch t.Kind {
 	case TySimpleType:
 		return t.SimpleType.Span
 	case TyRefType:
 		return t.RefType.Span
 	default:
-		panic(Errorf("unknown type kind: %d", t.Kind))
+		panic(base.Errorf("unknown type kind: %d", t.Kind))
 	}
 }
 
@@ -144,7 +146,7 @@ var exprKindNames = map[ExprKind]string{ //nolint:gochecknoglobals
 func (k ExprKind) String() string {
 	s, ok := exprKindNames[k]
 	if !ok {
-		panic(Errorf("unknown expr kind: %d", k))
+		panic(base.Errorf("unknown expr kind: %d", k))
 	}
 	return s
 }
@@ -271,11 +273,11 @@ func (e *Expr) ID() ASTID {
 	case ExprVar:
 		return e.Var.ID
 	default:
-		panic(Errorf("unknown expr kind: %d", e.Kind))
+		panic(base.Errorf("unknown expr kind: %d", e.Kind))
 	}
 }
 
-func (e *Expr) Span() Span {
+func (e *Expr) Span() base.Span {
 	switch e.Kind {
 	case ExprAssign:
 		return e.Assign.Span
@@ -298,7 +300,7 @@ func (e *Expr) Span() Span {
 	case ExprVar:
 		return e.Var.Span
 	default:
-		panic(Errorf("unknown expr kind: %d", e.Kind))
+		panic(base.Errorf("unknown expr kind: %d", e.Kind))
 	}
 }
 
@@ -332,7 +334,7 @@ func WalkDecl(decl *Decl, v ASTVisitor) {
 	case DeclFun:
 		v.VisitFun(decl.Fun)
 	default:
-		panic(Errorf("unknown decl kind: %d", decl.Kind))
+		panic(base.Errorf("unknown decl kind: %d", decl.Kind))
 	}
 }
 
@@ -343,7 +345,7 @@ func WalkASTType(typ *ASTType, v ASTVisitor) {
 	case TyRefType:
 		v.VisitType(&typ.RefType.Type)
 	default:
-		panic(Errorf("unknown type kind: %d", typ.Kind))
+		panic(base.Errorf("unknown type kind: %d", typ.Kind))
 	}
 }
 
@@ -384,7 +386,7 @@ func WalkExpr(expr *Expr, v ASTVisitor) {
 	case ExprVar:
 		v.VisitVar(expr.Var)
 	default:
-		panic(Errorf("unknown expr kind: %d", expr.Kind))
+		panic(base.Errorf("unknown expr kind: %d", expr.Kind))
 	}
 }
 

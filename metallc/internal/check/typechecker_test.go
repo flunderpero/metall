@@ -1,28 +1,32 @@
 //nolint:exhaustruct
-package internal
+package check
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/lex"
+	"github.com/flunderpero/metall/metallc/internal/parse"
 )
 
 func TestTypeCheckOK(t *testing.T) {
 	Int := builtint("Int")
 	Str := builtint("Str")
 	void := builtint("void")
-	span := NewSpan(NewSource("test.met", []rune{}), 0, 0)
+	span := base.NewSpan(base.NewSource("test.met", []rune{}), 0, 0)
 
 	tests := []struct {
 		name  string
 		src   string
 		want  Type
-		check func(*TypeChecker, *Expr, Assert)
+		check func(*TypeChecker, *parse.Expr, base.Assert)
 	}{
 		{"Int", `123`, Int, nil},
 		{"Str", `"hello"`, Str, nil},
 		{"block", `{ 123 "hello" }`, Str, nil},
 		{"empty block is void", `{ }`, void, nil},
-		{"let", `let foo = 123`, void, func(tc *TypeChecker, e *Expr, assert Assert) {
+		{"let", `let foo = 123`, void, func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
 			v := e.Var
 			typ, err := tc.Env.LookupType(v.ID, span)
 			assert.NoError(err)
@@ -34,7 +38,7 @@ func TestTypeCheckOK(t *testing.T) {
 			assert.Equal(TypeInt, b.Type.Kind)
 			assert.Equal(false, b.Mut)
 		}},
-		{"mut", `mut foo = 123`, void, func(tc *TypeChecker, e *Expr, assert Assert) {
+		{"mut", `mut foo = 123`, void, func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
 			v := e.Var
 			b, err := tc.Env.LookupBinding(v.ID, span)
 			assert.NoError(err)
@@ -42,18 +46,23 @@ func TestTypeCheckOK(t *testing.T) {
 			assert.Equal(TypeInt, b.Type.Kind)
 			assert.Equal(true, b.Mut)
 		}},
-		{"assign is void", `{ mut foo = 321 foo = 123 }`, void, func(tc *TypeChecker, e *Expr, assert Assert) {
-			block := e.Block
-			assign := block.Exprs[1].Assign
-			typ, err := tc.Env.LookupType(assign.ID, span)
-			assert.NoError(err)
-			assert.Equal(TypeVoid, typ.Kind)
-		}},
+		{
+			"assign is void",
+			`{ mut foo = 321 foo = 123 }`,
+			void,
+			func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
+				block := e.Block
+				assign := block.Exprs[1].Assign
+				typ, err := tc.Env.LookupType(assign.ID, span)
+				assert.NoError(err)
+				assert.Equal(TypeVoid, typ.Kind)
+			},
+		},
 		{
 			"fun",
 			`fun foo(a Int, b Str) Int { 123 }`,
 			funt(Int, Str, Int),
-			func(tc *TypeChecker, e *Expr, assert Assert) {
+			func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
 				f := e.Fun
 				typ, err := tc.Env.LookupType(f.ID, span)
 				assert.NoError(err)
@@ -68,13 +77,18 @@ func TestTypeCheckOK(t *testing.T) {
 		},
 		{"fun void return coerces body to void", `fun foo() void { 123 }`, funt(void), nil},
 		{"fun params", `fun foo(a Int) Int { a }`, funt(Int, Int), nil},
-		{"call", `{ fun foo(a Int) Int { 123 } foo(321) }`, Int, func(tc *TypeChecker, e *Expr, assert Assert) {
-			block := e.Block
-			call := block.Exprs[1].Call
-			typ, err := tc.Env.LookupType(call.ID, span)
-			assert.NoError(err)
-			assert.Equal(TypeInt, typ.Kind)
-		}},
+		{
+			"call",
+			`{ fun foo(a Int) Int { 123 } foo(321) }`,
+			Int,
+			func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
+				block := e.Block
+				call := block.Exprs[1].Call
+				typ, err := tc.Env.LookupType(call.ID, span)
+				assert.NoError(err)
+				assert.Equal(TypeInt, typ.Kind)
+			},
+		},
 		{"call void fun", `{ fun foo() void { } foo() }`, void, nil},
 		{"builtin print_str", `print_str("hello")`, void, nil},
 		{"builtin print_int", `print_int(123)`, void, nil},
@@ -89,7 +103,7 @@ func TestTypeCheckOK(t *testing.T) {
 		{"ref return", `{ fun foo(a &Int) &Int { a } let b = 123 foo(&b) }`, ref_t(Int), nil},
 	}
 
-	assert := NewAssert(t)
+	assert := base.NewAssert(t)
 	hasOnly := false
 	for _, tt := range tests {
 		if strings.HasPrefix(tt.name, "!"+"only") {
@@ -102,9 +116,9 @@ func TestTypeCheckOK(t *testing.T) {
 			continue
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			source := NewSource("test.met", []rune(tt.src))
-			tokens := Lex(source)
-			parser := NewParser(tokens)
+			source := base.NewSource("test.met", []rune(tt.src))
+			tokens := lex.Lex(source)
+			parser := parse.NewParser(tokens)
 			tc := NewTypeChecker()
 			expr, parseOK := parser.ParseExpr()
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
@@ -207,7 +221,7 @@ func TestTypeCheckErr(t *testing.T) {
 		}},
 	}
 
-	assert := NewAssert(t)
+	assert := base.NewAssert(t)
 	hasOnly := false
 	for _, tt := range tests {
 		if strings.HasPrefix(tt.name, "!"+"only") {
@@ -220,15 +234,15 @@ func TestTypeCheckErr(t *testing.T) {
 			continue
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			source := NewSource("test.met", []rune(tt.src))
-			tokens := Lex(source)
-			parser := NewParser(tokens)
+			source := base.NewSource("test.met", []rune(tt.src))
+			tokens := lex.Lex(source)
+			parser := parse.NewParser(tokens)
 			tc := NewTypeChecker()
 			expr, parseOK := parser.ParseExpr()
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK)
 			tc.VisitExpr(&expr)
-			diagnostics := Diagnostics{}
+			diagnostics := base.Diagnostics{}
 			for _, diag := range tc.Diagnostics {
 				if !strings.Contains(diag.Message, "no type set for AST node") {
 					diagnostics = append(diagnostics, diag)
@@ -256,7 +270,7 @@ func zeroTypeBase(typ *Type) {
 	case typ.Ref != nil:
 		typ.Ref.typBase = typBase{}
 	default:
-		panic(Errorf("unknown type kind: %d", typ.Kind))
+		panic(base.Errorf("unknown type kind: %d", typ.Kind))
 	}
 	WalkType(typ, zeroTypeBase)
 }
@@ -275,7 +289,7 @@ func ref_mut_t(typ Type) Type {
 }
 
 func builtint(name string) Type {
-	b, err := NewRootScope().Lookup(name, NewSpan(NewSource("builtin", []rune{}), 0, 0))
+	b, err := NewRootScope().Lookup(name, base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0))
 	if err != nil {
 		panic(err)
 	}

@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
 func TestCompile(t *testing.T) {
@@ -56,7 +58,7 @@ func TestCompile(t *testing.T) {
 			`, "123\n321\n"},
 	}
 
-	assert := NewAssert(t)
+	assert := base.NewAssert(t)
 	hasOnly := false
 	for _, tt := range tests {
 		if strings.HasPrefix(tt.name, "!"+"only") {
@@ -74,7 +76,7 @@ func TestCompile(t *testing.T) {
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			source := NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", []rune(tt.src))
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(tt.name, "_")
 			opts := CompileOpts{Listener: nil, Output: outputPath, KeepIR: true}
