@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
-	"github.com/flunderpero/metall/metallc/internal/lex"
-	"github.com/flunderpero/metall/metallc/internal/parse"
+	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
 func TestTypeCheckOK(t *testing.T) {
@@ -20,13 +20,13 @@ func TestTypeCheckOK(t *testing.T) {
 		name  string
 		src   string
 		want  Type
-		check func(*TypeChecker, *parse.Expr, base.Assert)
+		check func(*TypeChecker, *ast.Expr, base.Assert)
 	}{
 		{"Int", `123`, Int, nil},
 		{"Str", `"hello"`, Str, nil},
 		{"block", `{ 123 "hello" }`, Str, nil},
 		{"empty block is void", `{ }`, void, nil},
-		{"let", `let foo = 123`, void, func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
+		{"let", `let foo = 123`, void, func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
 			v := e.Var
 			typ, err := tc.Env.LookupType(v.ID, span)
 			assert.NoError(err)
@@ -38,7 +38,7 @@ func TestTypeCheckOK(t *testing.T) {
 			assert.Equal(TypeInt, b.Type.Kind)
 			assert.Equal(false, b.Mut)
 		}},
-		{"mut", `mut foo = 123`, void, func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
+		{"mut", `mut foo = 123`, void, func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
 			v := e.Var
 			b, err := tc.Env.LookupBinding(v.ID, span)
 			assert.NoError(err)
@@ -50,7 +50,7 @@ func TestTypeCheckOK(t *testing.T) {
 			"assign is void",
 			`{ mut foo = 321 foo = 123 }`,
 			void,
-			func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
+			func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
 				block := e.Block
 				assign := block.Exprs[1].Assign
 				typ, err := tc.Env.LookupType(assign.ID, span)
@@ -62,7 +62,7 @@ func TestTypeCheckOK(t *testing.T) {
 			"fun",
 			`fun foo(a Int, b Str) Int { 123 }`,
 			funt(Int, Str, Int),
-			func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
+			func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
 				f := e.Fun
 				typ, err := tc.Env.LookupType(f.ID, span)
 				assert.NoError(err)
@@ -81,7 +81,7 @@ func TestTypeCheckOK(t *testing.T) {
 			"call",
 			`{ fun foo(a Int) Int { 123 } foo(321) }`,
 			Int,
-			func(tc *TypeChecker, e *parse.Expr, assert base.Assert) {
+			func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
 				block := e.Block
 				call := block.Exprs[1].Call
 				typ, err := tc.Env.LookupType(call.ID, span)
@@ -117,8 +117,8 @@ func TestTypeCheckOK(t *testing.T) {
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
-			tokens := lex.Lex(source)
-			parser := parse.NewParser(tokens)
+			tokens := token.Lex(source)
+			parser := ast.NewParser(tokens)
 			tc := NewTypeChecker()
 			expr, parseOK := parser.ParseExpr()
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
@@ -235,8 +235,8 @@ func TestTypeCheckErr(t *testing.T) {
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
-			tokens := lex.Lex(source)
-			parser := parse.NewParser(tokens)
+			tokens := token.Lex(source)
+			parser := ast.NewParser(tokens)
 			tc := NewTypeChecker()
 			expr, parseOK := parser.ParseExpr()
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)

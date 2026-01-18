@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/check"
 	"github.com/flunderpero/metall/metallc/internal/gen"
-	"github.com/flunderpero/metall/metallc/internal/lex"
-	"github.com/flunderpero/metall/metallc/internal/parse"
+	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
 type CompileListener interface {
-	OnLex(tokens []lex.Token) bool
-	OnParse(file *parse.File, diagnostics base.Diagnostics) bool
+	OnLex(tokens []token.Token) bool
+	OnParse(file *ast.File, diagnostics base.Diagnostics) bool
 	OnTypeCheck(typeEnv *check.TypeEnv, diagnostics base.Diagnostics) bool
 	OnIRGen(ir string) bool
 }
@@ -31,11 +31,11 @@ type CompileOpts struct {
 
 func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error { //nolint:funlen
 	listener := opts.Listener
-	tokens := lex.Lex(source)
+	tokens := token.Lex(source)
 	if listener != nil && !listener.OnLex(tokens) {
 		return ErrAbort
 	}
-	parser := parse.NewParser(tokens)
+	parser := ast.NewParser(tokens)
 	file, _ := parser.ParseFile()
 	if listener != nil && !listener.OnParse(&file, parser.Diagnostics) {
 		return ErrAbort

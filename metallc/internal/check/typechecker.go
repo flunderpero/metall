@@ -3,8 +3,8 @@ package check
 import (
 	"strings"
 
+	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
-	"github.com/flunderpero/metall/metallc/internal/parse"
 )
 
 type (
@@ -135,23 +135,23 @@ type RefTypeCacheKey struct {
 }
 
 type TypeEnv struct {
-	Types    map[parse.NodeID]Type
-	Bindings map[parse.NodeID]Binding
+	Types    map[ast.NodeID]Type
+	Bindings map[ast.NodeID]Binding
 	RefTypes map[RefTypeCacheKey]Type
 }
 
 func NewTypeEnv() TypeEnv {
-	return TypeEnv{map[parse.NodeID]Type{}, map[parse.NodeID]Binding{}, map[RefTypeCacheKey]Type{}}
+	return TypeEnv{map[ast.NodeID]Type{}, map[ast.NodeID]Binding{}, map[RefTypeCacheKey]Type{}}
 }
 
-func (e *TypeEnv) LookupType(id parse.NodeID, span base.Span) (Type, *base.Diagnostic) {
+func (e *TypeEnv) LookupType(id ast.NodeID, span base.Span) (Type, *base.Diagnostic) {
 	if t, ok := e.Types[id]; ok {
 		return t, nil
 	}
 	return Type{}, base.NewDiagnostic(span, "no type set for AST node %d", id)
 }
 
-func (e *TypeEnv) SetType(id parse.NodeID, t Type, span base.Span) *base.Diagnostic {
+func (e *TypeEnv) SetType(id ast.NodeID, t Type, span base.Span) *base.Diagnostic {
 	if _, ok := e.Types[id]; ok {
 		return base.NewDiagnostic(span, "type already set for AST node %d", id)
 	}
@@ -159,14 +159,14 @@ func (e *TypeEnv) SetType(id parse.NodeID, t Type, span base.Span) *base.Diagnos
 	return nil
 }
 
-func (e *TypeEnv) LookupBinding(id parse.NodeID, span base.Span) (Binding, *base.Diagnostic) {
+func (e *TypeEnv) LookupBinding(id ast.NodeID, span base.Span) (Binding, *base.Diagnostic) {
 	if b, ok := e.Bindings[id]; ok {
 		return b, nil
 	}
 	return Binding{}, base.NewDiagnostic(span, "no binding set for AST node %d", id)
 }
 
-func (e *TypeEnv) SetBinding(id parse.NodeID, b Binding, span base.Span) *base.Diagnostic {
+func (e *TypeEnv) SetBinding(id ast.NodeID, b Binding, span base.Span) *base.Diagnostic {
 	if _, ok := e.Bindings[id]; ok {
 		return base.NewDiagnostic(span, "binding already set for AST node %d", id)
 	}
@@ -280,12 +280,12 @@ func NewTypeChecker() *TypeChecker {
 	return &TypeChecker{base.Diagnostics{}, NewTypeEnv(), scope, TypeID(100), voidType.Type, intType.Type, strType.Type}
 }
 
-func (t *TypeChecker) VisitExpr(expr *parse.Expr) {
-	parse.WalkExpr(expr, t)
+func (t *TypeChecker) VisitExpr(expr *ast.Expr) {
+	ast.WalkExpr(expr, t)
 }
 
-func (t *TypeChecker) VisitRef(expr *parse.Ref) {
-	parse.WalkRef(expr, t)
+func (t *TypeChecker) VisitRef(expr *ast.Ref) {
+	ast.WalkRef(expr, t)
 	typ, ok := t.getType(expr.Ident.ID, expr.Ident.Span)
 	if !ok {
 		return
@@ -298,8 +298,8 @@ func (t *TypeChecker) VisitRef(expr *parse.Ref) {
 	t.setType(expr.ID, refTyp, expr.Span)
 }
 
-func (t *TypeChecker) VisitDeref(expr *parse.Deref) {
-	parse.WalkDeref(expr, t)
+func (t *TypeChecker) VisitDeref(expr *ast.Deref) {
+	ast.WalkDeref(expr, t)
 	typ, ok := t.getType(expr.Expr.ID(), expr.Expr.Span())
 	if !ok {
 		return
@@ -311,8 +311,8 @@ func (t *TypeChecker) VisitDeref(expr *parse.Deref) {
 	t.setType(expr.ID, typ.Ref.Type, expr.Span)
 }
 
-func (t *TypeChecker) VisitVar(var_ *parse.Var) {
-	parse.WalkExpr(&var_.Init, t)
+func (t *TypeChecker) VisitVar(var_ *ast.Var) {
+	ast.WalkExpr(&var_.Init, t)
 	initTyp, ok := t.getType(var_.Init.ID(), var_.Name.Span)
 	if !ok {
 		return
@@ -325,8 +325,8 @@ func (t *TypeChecker) VisitVar(var_ *parse.Var) {
 	t.setType(var_.ID, t.voidType, var_.Span)
 }
 
-func (t *TypeChecker) VisitAssign(assign *parse.Assign) {
-	parse.WalkAssign(assign, t)
+func (t *TypeChecker) VisitAssign(assign *ast.Assign) {
+	ast.WalkAssign(assign, t)
 	valueTyp, ok := t.getType(assign.Value.ID(), assign.Value.Span())
 	if !ok {
 		return
@@ -342,9 +342,9 @@ func (t *TypeChecker) VisitAssign(assign *parse.Assign) {
 	t.setType(assign.ID, t.voidType, assign.Span)
 }
 
-func (t *TypeChecker) VisitBlock(block *parse.Block) {
+func (t *TypeChecker) VisitBlock(block *ast.Block) {
 	defer t.enterScope()()
-	parse.WalkBlock(block, t)
+	ast.WalkBlock(block, t)
 	if len(block.Exprs) == 0 {
 		t.setType(block.ID, t.voidType, block.Span)
 		return
@@ -357,8 +357,8 @@ func (t *TypeChecker) VisitBlock(block *parse.Block) {
 	t.setType(block.ID, typ, block.Span)
 }
 
-func (t *TypeChecker) VisitCall(call *parse.Call) {
-	parse.WalkCall(call, t)
+func (t *TypeChecker) VisitCall(call *ast.Call) {
+	ast.WalkCall(call, t)
 	typ, ok := t.getType(call.Callee.ID(), call.Callee.Span())
 	if !ok {
 		return
@@ -385,8 +385,8 @@ func (t *TypeChecker) VisitCall(call *parse.Call) {
 	t.setType(call.ID, fun.Return, call.Span)
 }
 
-func (t *TypeChecker) VisitFunParam(funParam *parse.FunParam) {
-	parse.WalkFunParam(funParam, t)
+func (t *TypeChecker) VisitFunParam(funParam *ast.FunParam) {
+	ast.WalkFunParam(funParam, t)
 	typ, ok := t.getType(funParam.Type.ID(), funParam.Name.Span)
 	if !ok {
 		return
@@ -404,7 +404,7 @@ func (t *TypeChecker) VisitFunParam(funParam *parse.FunParam) {
 	t.bindInScope(funParam.ID, funParam.Name.Name, typ, funParam.Mut, funParam.Name.Span)
 }
 
-func (t *TypeChecker) VisitFun(fun *parse.Fun) {
+func (t *TypeChecker) VisitFun(fun *ast.Fun) {
 	// We need to bind the function before we enter the scope, because
 	// the function may refer to itself and we would bind it in the wrong scope.
 	t.VisitType(&fun.ReturnType)
@@ -446,8 +446,8 @@ func (t *TypeChecker) VisitFun(fun *parse.Fun) {
 	}
 }
 
-func (t *TypeChecker) VisitIdent(ident *parse.Ident) {
-	parse.WalkIdent(ident, t)
+func (t *TypeChecker) VisitIdent(ident *ast.Ident) {
+	ast.WalkIdent(ident, t)
 	b, ok := t.lookupInScope(ident.Name, ident.Span)
 	if !ok {
 		return
@@ -455,40 +455,40 @@ func (t *TypeChecker) VisitIdent(ident *parse.Ident) {
 	t.setType(ident.ID, b.Type, ident.Span)
 }
 
-func (t *TypeChecker) VisitName(name *parse.Name) {
+func (t *TypeChecker) VisitName(name *ast.Name) {
 }
 
-func (t *TypeChecker) VisitInt(expr *parse.Int) {
-	parse.WalkInt(expr, t)
+func (t *TypeChecker) VisitInt(expr *ast.Int) {
+	ast.WalkInt(expr, t)
 	t.setType(expr.ID, t.intType, expr.Span)
 }
 
-func (t *TypeChecker) VisitString(expr *parse.String) {
-	parse.WalkString(expr, t)
+func (t *TypeChecker) VisitString(expr *ast.String) {
+	ast.WalkString(expr, t)
 	t.setType(expr.ID, t.strType, expr.Span)
 }
 
-func (t *TypeChecker) VisitFile(file *parse.File) {
-	parse.WalkFile(file, t)
+func (t *TypeChecker) VisitFile(file *ast.File) {
+	ast.WalkFile(file, t)
 	t.setType(file.ID, t.voidType, file.Span)
 }
 
-func (t *TypeChecker) VisitDecl(decl *parse.Decl) {
-	parse.WalkDecl(decl, t)
+func (t *TypeChecker) VisitDecl(decl *ast.Decl) {
+	ast.WalkDecl(decl, t)
 }
 
-func (t *TypeChecker) VisitType(typ *parse.Type) {
-	parse.WalkType(typ, t)
+func (t *TypeChecker) VisitType(typ *ast.Type) {
+	ast.WalkType(typ, t)
 	var b Binding
 	var ok bool
 	switch typ.Kind {
-	case parse.TypeSimple:
+	case ast.TypeSimple:
 		b, ok = t.lookupInScope(typ.SimpleType.Name.Name, typ.Span())
 		if !ok {
 			return
 		}
 		t.setType(typ.ID(), b.Type, typ.Span())
-	case parse.TypeRef:
+	case ast.TypeRef:
 		inner, err := t.Env.LookupType(typ.RefType.Type.ID(), typ.Span())
 		if err != nil {
 			t.Diagnostics = append(t.Diagnostics, *err)
@@ -531,7 +531,7 @@ func (t *TypeChecker) lookupInScope(name string, span base.Span) (Binding, bool)
 	return b, true
 }
 
-func (t *TypeChecker) bindInScope(id parse.NodeID, name string, typ Type, mut bool, span base.Span) bool {
+func (t *TypeChecker) bindInScope(id ast.NodeID, name string, typ Type, mut bool, span base.Span) bool {
 	if err := t.Scope.Bind(name, typ, mut, span); err != nil {
 		t.Diagnostics = append(t.Diagnostics, *err)
 		return false
@@ -543,7 +543,7 @@ func (t *TypeChecker) bindInScope(id parse.NodeID, name string, typ Type, mut bo
 	return true
 }
 
-func (t *TypeChecker) setType(id parse.NodeID, typ Type, span base.Span) bool {
+func (t *TypeChecker) setType(id ast.NodeID, typ Type, span base.Span) bool {
 	if err := t.Env.SetType(id, typ, span); err != nil {
 		t.Diagnostics = append(t.Diagnostics, *err)
 		return false
@@ -551,7 +551,7 @@ func (t *TypeChecker) setType(id parse.NodeID, typ Type, span base.Span) bool {
 	return true
 }
 
-func (t *TypeChecker) getType(id parse.NodeID, span base.Span) (Type, bool) {
+func (t *TypeChecker) getType(id ast.NodeID, span base.Span) (Type, bool) {
 	typ, ok := t.Env.Types[id]
 	if !ok {
 		t.diag(span, "no type set for AST node %d", id)
@@ -560,9 +560,9 @@ func (t *TypeChecker) getType(id parse.NodeID, span base.Span) (Type, bool) {
 	return typ, true
 }
 
-func (t *TypeChecker) typeOfPlace(e parse.Expr) (Type, bool) {
+func (t *TypeChecker) typeOfPlace(e ast.Expr) (Type, bool) {
 	switch e.Kind { //nolint:exhaustive
-	case parse.ExprIdent:
+	case ast.ExprIdent:
 		b, ok := t.lookupInScope(e.Ident.Name, e.Span())
 		if !ok {
 			return Type{}, false
@@ -572,7 +572,7 @@ func (t *TypeChecker) typeOfPlace(e parse.Expr) (Type, bool) {
 			return Type{}, false
 		}
 		return b.Type, true
-	case parse.ExprDeref:
+	case ast.ExprDeref:
 		innerTyp, ok := t.getType(e.Deref.Expr.ID(), e.Deref.Expr.Span())
 		if !ok {
 			return Type{}, false
@@ -596,13 +596,13 @@ func (t *TypeChecker) diag(span base.Span, msg string, msgArgs ...any) {
 	t.Diagnostics = append(t.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
 
-func (t *TypeChecker) verifyMain(fun *parse.Fun) {
+func (t *TypeChecker) verifyMain(fun *ast.Fun) {
 	if len(fun.Params) != 0 {
 		span := fun.Params[0].Span.Combine(fun.Params[len(fun.Params)-1].Span)
 		t.diag(span, "main function cannot take arguments")
 	}
 	// todo: this check should not be so cumbersome.
-	if fun.ReturnType.Kind == parse.TypeSimple && fun.ReturnType.SimpleType.Name.Name != "void" {
+	if fun.ReturnType.Kind == ast.TypeSimple && fun.ReturnType.SimpleType.Name.Name != "void" {
 		t.diag(fun.ReturnType.Span(), "main function cannot return a value")
 	}
 }

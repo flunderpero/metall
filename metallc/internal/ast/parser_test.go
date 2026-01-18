@@ -1,11 +1,11 @@
 //nolint:exhaustruct
-package parse
+package ast
 
 import (
 	"testing"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
-	"github.com/flunderpero/metall/metallc/internal/lex"
+	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
 func TestParsOK(t *testing.T) {
@@ -75,7 +75,7 @@ func TestParsOK(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
-			tokens := lex.Lex(source)
+			tokens := token.Lex(source)
 			parser := NewParser(tokens)
 			var got any
 			var ok bool
@@ -137,7 +137,7 @@ func TestParsErr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
-			tokens := lex.Lex(source)
+			tokens := token.Lex(source)
 			parser := NewParser(tokens)
 			expr, parseOK := parser.ParseExpr()
 			if parseOK {
