@@ -12,6 +12,7 @@ type (
 const (
 	TypeFun TypeKind = iota + 1
 	TypeInt
+	TypeRef
 	TypeStr
 	TypeVoid
 )
@@ -26,14 +27,19 @@ type Type struct {
 
 	BuiltIn *BuiltInType
 	Fun     *FunType
+	Ref     *RefType
 }
 
 func NewBuiltInType(kind TypeKind, typ *BuiltInType) Type {
-	return Type{kind, typ, nil}
+	return Type{kind, typ, nil, nil}
 }
 
 func NewFunType(typ *FunType) Type {
-	return Type{TypeFun, nil, typ}
+	return Type{TypeFun, nil, typ, nil}
+}
+
+func NewRefType(typ *RefType) Type {
+	return Type{TypeRef, nil, nil, typ}
 }
 
 func (t Type) ID() TypeID {
@@ -42,6 +48,8 @@ func (t Type) ID() TypeID {
 		return t.BuiltIn.ID
 	case TypeFun:
 		return t.Fun.ID
+	case TypeRef:
+		return t.Ref.ID
 	default:
 		panic(Errorf("unknown type kind: %d", t.Kind))
 	}
@@ -53,6 +61,8 @@ func (t Type) Span() Span {
 		return t.BuiltIn.Span
 	case TypeFun:
 		return t.Fun.Span
+	case TypeRef:
+		return t.Ref.Span
 	default:
 		panic(Errorf("unknown type kind: %v", t))
 	}
@@ -68,6 +78,8 @@ func (t Type) String() string {
 		return "void"
 	case TypeFun:
 		return t.Fun.String()
+	case TypeRef:
+		return t.Ref.String()
 	default:
 		panic(Errorf("unknown type kind: %d", t.Kind))
 	}
@@ -79,6 +91,19 @@ func (t Type) IsAssignableTo(other Type) bool {
 
 type BuiltInType struct {
 	typBase
+}
+
+type RefType struct {
+	typBase
+	Type Type
+	Mut  bool
+}
+
+func (t *RefType) String() string {
+	if t.Mut {
+		return "&mut " + t.Type.String()
+	}
+	return "&" + t.Type.String()
 }
 
 type FunType struct {
@@ -101,13 +126,19 @@ func (t *FunType) String() string {
 	return sb.String()
 }
 
+type RefTypeCacheKey struct {
+	TypeID
+	Mut bool
+}
+
 type TypeEnv struct {
 	Types    map[ASTID]Type
 	Bindings map[ASTID]Binding
+	RefTypes map[RefTypeCacheKey]Type
 }
 
 func NewTypeEnv() TypeEnv {
-	return TypeEnv{map[ASTID]Type{}, map[ASTID]Binding{}}
+	return TypeEnv{map[ASTID]Type{}, map[ASTID]Binding{}, map[RefTypeCacheKey]Type{}}
 }
 
 func (e *TypeEnv) LookupType(id ASTID, span Span) (Type, *Diagnostic) {
@@ -138,6 +169,20 @@ func (e *TypeEnv) SetBinding(id ASTID, b Binding, span Span) *Diagnostic {
 	}
 	e.Bindings[id] = b
 	return nil
+}
+
+func (e *TypeEnv) SetRefType(id TypeID, t Type, mut bool) {
+	key := RefTypeCacheKey{id, mut}
+	if _, ok := e.RefTypes[key]; ok {
+		panic(Errorf("ref type already set for type %d and mut %t", id, mut))
+	}
+	e.RefTypes[key] = t
+}
+
+func (e *TypeEnv) LookupRefType(id TypeID, mut bool) (Type, bool) {
+	key := RefTypeCacheKey{id, mut}
+	typ, ok := e.RefTypes[key]
+	return typ, ok
 }
 
 type Binding struct {
@@ -229,11 +274,38 @@ func NewTypeChecker() *TypeChecker {
 	if err != nil {
 		panic(err)
 	}
-	return &TypeChecker{Diagnostics{}, NewTypeEnv(), scope, TypeID(1), voidType.Type, intType.Type, strType.Type}
+	return &TypeChecker{Diagnostics{}, NewTypeEnv(), scope, TypeID(100), voidType.Type, intType.Type, strType.Type}
 }
 
 func (t *TypeChecker) VisitExpr(expr *Expr) {
 	WalkExpr(expr, t)
+}
+
+func (t *TypeChecker) VisitRefExpr(expr *RefExpr) {
+	WalkRefExpr(expr, t)
+	typ, ok := t.getType(expr.Ident.ID, expr.Ident.Span)
+	if !ok {
+		return
+	}
+	b, ok := t.lookupInScope(expr.Ident.Name, expr.Span)
+	if !ok {
+		return
+	}
+	refTyp := t.buildRefType(typ, b.Mut, expr.Span)
+	t.setType(expr.ID, refTyp, expr.Span)
+}
+
+func (t *TypeChecker) VisitDerefExpr(expr *DerefExpr) {
+	WalkDerefExpr(expr, t)
+	typ, ok := t.getType(expr.Expr.ID(), expr.Expr.Span())
+	if !ok {
+		return
+	}
+	if typ.Kind != TypeRef {
+		t.diag(expr.Expr.Span(), "dereference: expected reference, got %s", typ)
+		return
+	}
+	t.setType(expr.ID, typ.Ref.Type, expr.Span)
 }
 
 func (t *TypeChecker) VisitVar(var_ *Var) {
@@ -242,32 +314,26 @@ func (t *TypeChecker) VisitVar(var_ *Var) {
 	if !ok {
 		return
 	}
+	if var_.Mut && initTyp.Kind == TypeRef && !initTyp.Ref.Mut {
+		t.diag(var_.Init.Span(), "cannot take a mutable reference to an immutable value")
+		return
+	}
 	t.bindInScope(var_.ID, var_.Name.Name, initTyp, var_.Mut, var_.Name.Span)
 	t.setType(var_.ID, t.voidType, var_.Span)
 }
 
 func (t *TypeChecker) VisitAssign(assign *Assign) {
-	t.VisitExpr(&assign.Value)
+	WalkAssign(assign, t)
 	valueTyp, ok := t.getType(assign.Value.ID(), assign.Value.Span())
 	if !ok {
 		return
 	}
-	b, ok := t.lookupInScope(assign.Ident.Name, assign.Span)
+	placeType, ok := t.typeOfPlace(assign.LHS)
 	if !ok {
 		return
 	}
-	if !b.Mut {
-		t.Diagnostics = append(
-			t.Diagnostics,
-			*NewDiagnostic(assign.Ident.Span, "cannot assign to immutable variable: %s", b.Name),
-		)
-		return
-	}
-	if !valueTyp.IsAssignableTo(b.Type) {
-		t.Diagnostics = append(
-			t.Diagnostics,
-			*NewDiagnostic(assign.Value.Span(), "type mismatch: expected %s, got %s", b.Type, valueTyp),
-		)
+	if !valueTyp.IsAssignableTo(placeType) {
+		t.diag(assign.Value.Span(), "type mismatch: expected %s, got %s", placeType, valueTyp)
 		return
 	}
 	t.setType(assign.ID, t.voidType, assign.Span)
@@ -295,18 +361,12 @@ func (t *TypeChecker) VisitCall(call *Call) {
 		return
 	}
 	if typ.Kind != TypeFun {
-		t.Diagnostics = append(
-			t.Diagnostics,
-			*NewDiagnostic(call.Callee.Span(), "callee is not a function"),
-		)
+		t.diag(call.Callee.Span(), "callee is not a function")
 		return
 	}
 	fun := typ.Fun
 	if len(call.Args) != len(fun.Params) {
-		t.Diagnostics = append(
-			t.Diagnostics,
-			*NewDiagnostic(call.Span, "argument count mismatch: expected %d, got %d", len(fun.Params), len(call.Args)),
-		)
+		t.diag(call.Span, "argument count mismatch: expected %d, got %d", len(fun.Params), len(call.Args))
 		return
 	}
 	for i, arg := range call.Args {
@@ -315,10 +375,7 @@ func (t *TypeChecker) VisitCall(call *Call) {
 			return
 		}
 		if !argType.IsAssignableTo(fun.Params[i]) {
-			t.Diagnostics = append(
-				t.Diagnostics,
-				*NewDiagnostic(arg.Span(), "type mismatch at argument %d: expected %s, got %s", i+1, fun.Params[i], argType),
-			)
+			t.diag(arg.Span(), "type mismatch at argument %d: expected %s, got %s", i+1, fun.Params[i], argType)
 			return
 		}
 	}
@@ -327,9 +384,16 @@ func (t *TypeChecker) VisitCall(call *Call) {
 
 func (t *TypeChecker) VisitFunParam(funParam *FunParam) {
 	WalkFunParam(funParam, t)
-	typ, ok := t.getType(funParam.Type.ID, funParam.Name.Span)
+	typ, ok := t.getType(funParam.Type.ID(), funParam.Name.Span)
 	if !ok {
 		return
+	}
+	if funParam.Mut && typ.Kind != TypeRef {
+		t.diag(funParam.Span, "only reference types can be mutable parameters")
+		return
+	}
+	if funParam.Mut && typ.Kind == TypeRef {
+		typ = t.buildRefType(typ.Ref.Type, true, funParam.Span)
 	}
 	if !t.setType(funParam.ID, typ, funParam.Span) {
 		return
@@ -341,7 +405,7 @@ func (t *TypeChecker) VisitFun(fun *Fun) {
 	// We need to bind the function before we enter the scope, because
 	// the function may refer to itself and we would bind it in the wrong scope.
 	t.VisitType(&fun.ReturnType)
-	ret, ok := t.getType(fun.ReturnType.ID, fun.ReturnType.Span)
+	ret, ok := t.getType(fun.ReturnType.ID(), fun.ReturnType.Span())
 	if !ok {
 		return
 	}
@@ -353,7 +417,7 @@ func (t *TypeChecker) VisitFun(fun *Fun) {
 	defer t.enterScope()()
 	for i, param := range fun.Params {
 		t.VisitFunParam(&param)
-		typ, ok := t.getType(param.Type.ID, param.Type.Span)
+		typ, ok := t.getType(param.Type.ID(), param.Type.Span())
 		if !ok {
 			return
 		}
@@ -370,10 +434,7 @@ func (t *TypeChecker) VisitFun(fun *Fun) {
 			if len(fun.Block.Exprs) > 0 {
 				span = fun.Block.Exprs[len(fun.Block.Exprs)-1].Span()
 			}
-			t.Diagnostics = append(
-				t.Diagnostics,
-				*NewDiagnostic(span, "return type mismatch: expected %s, got %s", ret, blockTyp),
-			)
+			t.diag(span, "return type mismatch: expected %s, got %s", ret, blockTyp)
 		}
 	}
 	t.setType(fun.ID, funTyp, fun.Span)
@@ -415,11 +476,39 @@ func (t *TypeChecker) VisitDecl(decl *Decl) {
 
 func (t *TypeChecker) VisitType(typ *ASTType) {
 	WalkASTType(typ, t)
-	b, ok := t.lookupInScope(typ.Name, typ.Span)
-	if !ok {
-		return
+	var b Binding
+	var ok bool
+	switch typ.Kind {
+	case TySimpleType:
+		b, ok = t.lookupInScope(typ.SimpleType.Name.Name, typ.Span())
+		if !ok {
+			return
+		}
+		t.setType(typ.ID(), b.Type, typ.Span())
+	case TyRefType:
+		inner, err := t.Env.LookupType(typ.RefType.Type.ID(), typ.Span())
+		if err != nil {
+			t.Diagnostics = append(t.Diagnostics, *err)
+			return
+		}
+		refType := t.buildRefType(inner, false, typ.Span())
+		t.setType(typ.ID(), refType, typ.Span())
+	default:
+		panic(Errorf("unknown type kind: %d", typ.Kind))
 	}
-	t.setType(typ.ID, b.Type, typ.Span)
+}
+
+func (t *TypeChecker) buildRefType(typ Type, mut bool, span Span) Type {
+	refType, ok := t.Env.LookupRefType(typ.ID(), mut)
+	if ok {
+		return refType
+	}
+	if typ.Kind == TypeRef {
+		mut = typ.Ref.Mut
+	}
+	res := NewRefType(&RefType{t.base(span), typ, mut})
+	t.Env.SetRefType(typ.ID(), res, mut)
+	return res
 }
 
 func (t *TypeChecker) enterScope() func() {
@@ -462,25 +551,56 @@ func (t *TypeChecker) setType(id ASTID, typ Type, span Span) bool {
 func (t *TypeChecker) getType(id ASTID, span Span) (Type, bool) {
 	typ, ok := t.Env.Types[id]
 	if !ok {
-		t.Diagnostics = append(t.Diagnostics, *NewDiagnostic(span, "no type set for AST node %d", id))
+		t.diag(span, "no type set for AST node %d", id)
 		return Type{}, false
 	}
 	return typ, true
 }
 
+func (t *TypeChecker) typeOfPlace(e Expr) (Type, bool) {
+	switch e.Kind { //nolint:exhaustive
+	case ExprIdent:
+		b, ok := t.lookupInScope(e.Ident.Name, e.Span())
+		if !ok {
+			return Type{}, false
+		}
+		if !b.Mut {
+			t.diag(e.Span(), "cannot assign to immutable variable: %s", b.Name)
+			return Type{}, false
+		}
+		return b.Type, true
+	case ExprDeref:
+		innerTyp, ok := t.getType(e.Deref.Expr.ID(), e.Deref.Expr.Span())
+		if !ok {
+			return Type{}, false
+		}
+		if innerTyp.Kind != TypeRef {
+			t.diag(e.Span(), "cannot assign through dereference: expected reference, got %s", innerTyp)
+			return Type{}, false
+		}
+		if !innerTyp.Ref.Mut {
+			t.diag(e.Span(), "cannot assign through dereference: expected mutable reference, got %s", innerTyp)
+			return Type{}, false
+		}
+		return innerTyp.Ref.Type, true
+	default:
+		t.diag(e.Span(), "left-hand side is not assignable: %s", e.Kind)
+		return Type{}, false
+	}
+}
+
+func (t *TypeChecker) diag(span Span, msg string, msgArgs ...any) {
+	t.Diagnostics = append(t.Diagnostics, *NewDiagnostic(span, msg, msgArgs...))
+}
+
 func (t *TypeChecker) verifyMain(fun *Fun) {
 	if len(fun.Params) != 0 {
 		span := fun.Params[0].Span.Combine(fun.Params[len(fun.Params)-1].Span)
-		t.Diagnostics = append(
-			t.Diagnostics,
-			*NewDiagnostic(span, "main function cannot take arguments"),
-		)
+		t.diag(span, "main function cannot take arguments")
 	}
-	if fun.ReturnType.Name != "void" {
-		t.Diagnostics = append(
-			t.Diagnostics,
-			*NewDiagnostic(fun.ReturnType.Span, "main function cannot return a value"),
-		)
+	// todo: this check should not be so cumbersome.
+	if fun.ReturnType.Kind == TySimpleType && fun.ReturnType.SimpleType.Name.Name != "void" {
+		t.diag(fun.ReturnType.Span(), "main function cannot return a value")
 	}
 }
 
@@ -495,12 +615,12 @@ func WalkType(typ *Type, visit func(*Type)) {
 	case TypeInt, TypeStr, TypeVoid:
 		return
 	case TypeFun:
-		visit(typ)
 		for i := range typ.Fun.Params {
 			visit(&typ.Fun.Params[i])
-			WalkType(&typ.Fun.Params[i], visit)
 		}
-		WalkType(&typ.Fun.Return, visit)
+		visit(&typ.Fun.Return)
+	case TypeRef:
+		visit(&typ.Ref.Type)
 	default:
 		panic(Errorf("unknown type kind: %d", typ.Kind))
 	}

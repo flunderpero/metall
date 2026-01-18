@@ -7,7 +7,6 @@ import (
 )
 
 func TestTypeCheckOK(t *testing.T) {
-	t.Parallel()
 	Int := builtint("Int")
 	Str := builtint("Str")
 	void := builtint("void")
@@ -80,12 +79,29 @@ func TestTypeCheckOK(t *testing.T) {
 		{"builtin print_str", `print_str("hello")`, void, nil},
 		{"builtin print_int", `print_int(123)`, void, nil},
 		{"shadowing", `{ let foo = { let foo = "hello" print_str(foo) 123 } print_int(foo) }`, void, nil},
+
+		{"ref", `{ let a = 5 let b = &a b }`, ref_t(Int), nil},
+		{"mut ref", `{ mut a = 5 mut b = &a b }`, ref_mut_t(Int), nil},
+		{"deref", `{ let a = 5 let b = &a *b }`, Int, nil},
+		{"deref assign", `{ mut a = 1 mut b = &a *b = 321 }`, void, nil},
+		{"nested deref assign", `{ mut a = 1 mut b = &a mut c = &b *b = 123 **c = 321 }`, void, nil},
+		{"mut ref parameter", `{ fun foo(mut a &Int) void { *a = 321 } let b = 123 foo(&b) }`, void, nil},
+		{"ref return", `{ fun foo(a &Int) &Int { a } let b = 123 foo(&b) }`, ref_t(Int), nil},
 	}
 
 	assert := NewAssert(t)
+	hasOnly := false
 	for _, tt := range tests {
+		if strings.HasPrefix(tt.name, "!"+"only") {
+			hasOnly = true
+			break
+		}
+	}
+	for _, tt := range tests {
+		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			source := NewSource("test.met", []rune(tt.src))
 			tokens := Lex(source)
 			parser := NewParser(tokens)
@@ -99,8 +115,6 @@ func TestTypeCheckOK(t *testing.T) {
 			assert.Equal(true, ok, "Type not found after typechecking")
 			zeroTypeBase(&got)
 			zeroTypeBase(&tt.want)
-			WalkType(&got, zeroTypeBase)
-			WalkType(&tt.want, zeroTypeBase)
 			assert.Equal(tt.want, got)
 			if tt.check != nil {
 				tt.check(tc, &expr, assert)
@@ -110,8 +124,6 @@ func TestTypeCheckOK(t *testing.T) {
 }
 
 func TestTypeCheckErr(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name string
 		src  string
@@ -162,12 +174,52 @@ func TestTypeCheckErr(t *testing.T) {
 				`    fun main(a Int, b Str) void { }` + "\n" +
 				`             ^^^^^^^^^^^^`,
 		}},
+
+		{"deref a non-ref", `{ let foo = 5 *foo }`, []string{
+			"test.met:1:16: dereference: expected reference, got Int\n" +
+				`    { let foo = 5 *foo }` + "\n" +
+				`                   ^^^`,
+		}},
+		{"assign through immutable deref", `{ let a = 5 let b = &a *b = 321 }`, []string{
+			"test.met:1:24: cannot assign through dereference: expected mutable reference, got &Int\n" +
+				`    { let a = 5 let b = &a *b = 321 }` + "\n" +
+				`                           ^^`,
+		}},
+		{"calling ref param with value", `{ fun foo(a &Int) void {} let bar = 123 foo(bar) }`, []string{
+			"test.met:1:45: type mismatch at argument 1: expected &Int, got Int\n" +
+				`    { fun foo(a &Int) void {} let bar = 123 foo(bar) }` + "\n" +
+				`                                                ^^^`,
+		}},
+		{"assign through immutable fun param", `{ fun foo(a &Int) void { *a = 123 }}`, []string{
+			"test.met:1:26: cannot assign through dereference: expected mutable reference, got &Int\n" +
+				`    { fun foo(a &Int) void { *a = 123 }}` + "\n" +
+				`                             ^^`,
+		}},
+		{"take mutable ref to immutable in var", `{ let a = 123 mut b = &a }`, []string{
+			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
+				`    { let a = 123 mut b = &a }` + "\n" +
+				`                          ^^`,
+		}},
+		{"take mutable ref to immutable in assign", `{ mut a = 123 let b = 123 mut c = &a c = &b }`, []string{
+			"test.met:1:42: type mismatch: expected &mut Int, got &Int\n" +
+				`    { mut a = 123 let b = 123 mut c = &a c = &b }` + "\n" +
+				`                                             ^^`,
+		}},
 	}
 
 	assert := NewAssert(t)
+	hasOnly := false
 	for _, tt := range tests {
+		if strings.HasPrefix(tt.name, "!"+"only") {
+			hasOnly = true
+			break
+		}
+	}
+	for _, tt := range tests {
+		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			source := NewSource("test.met", []rune(tt.src))
 			tokens := Lex(source)
 			parser := NewParser(tokens)
@@ -201,14 +253,25 @@ func zeroTypeBase(typ *Type) {
 		typ.BuiltIn.typBase = typBase{}
 	case typ.Fun != nil:
 		typ.Fun.typBase = typBase{}
+	case typ.Ref != nil:
+		typ.Ref.typBase = typBase{}
 	default:
 		panic(Errorf("unknown type kind: %d", typ.Kind))
 	}
+	WalkType(typ, zeroTypeBase)
 }
 
 func funt(paramsAndReturn ...Type) Type {
 	l := len(paramsAndReturn)
 	return Type{Kind: TypeFun, Fun: &FunType{Params: paramsAndReturn[0 : l-1], Return: paramsAndReturn[l-1]}}
+}
+
+func ref_t(typ Type) Type {
+	return NewRefType(&RefType{typBase{}, typ, false})
+}
+
+func ref_mut_t(typ Type) Type {
+	return NewRefType(&RefType{typBase{}, typ, true})
 }
 
 func builtint(name string) Type {

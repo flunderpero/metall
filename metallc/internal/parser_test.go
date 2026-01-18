@@ -6,7 +6,9 @@ import (
 )
 
 func TestParsOK(t *testing.T) {
-	t.Parallel()
+	Str := typ("Str")
+	Int := typ("Int")
+	void := typ("void")
 
 	tests := []struct {
 		name string
@@ -17,37 +19,58 @@ func TestParsOK(t *testing.T) {
 		{
 			"happy path", "file", `fun foo() Str { "hello" 123 } `,
 			file(
-				fundecl("foo", fun_params(), typ("Str"), funblock(string_expr("hello"), int_expr(123))),
+				fun_decl("foo", fun_params(), Str, fun_block(string_("hello"), int_(123))),
 			),
 		},
-		{"assign expr", "expr", `foo = 123`, assign(ident("foo"), int_expr(123))},
-		{"var expr", "expr", `let foo = 123`, var_("foo", int_expr(123))},
-		{"mut expr", "expr", `mut foo = 123`, mut_var("foo", int_expr(123))},
-		{"block expr", "expr", `{ 0 "hello" }`, block(int_expr(0), string_expr("hello"))},
+		{"assign expr", "expr", `foo = 123`, assign(ident_expr("foo"), int_(123))},
+		{"var expr", "expr", `let foo = 123`, var_("foo", int_(123))},
+		{"mut expr", "expr", `mut foo = 123`, mut_var("foo", int_(123))},
+		{"block expr", "expr", `{ 0 "hello" }`, block(int_(0), string_("hello"))},
 		{"empty block", "expr", `{ }`, block()},
 		{
 			"fun with (mut) params", "expr", `fun foo(a Int, mut b Str) Int { 123 }`,
 			fun(
 				"foo",
-				fun_params(fun_param("a", typ("Int")), mut_fun_param("b", typ("Str"))),
-				typ("Int"),
-				funblock(int_expr(123)),
+				fun_params(fun_param("a", Int), mut_fun_param("b", Str)),
+				Int,
+				fun_block(int_(123)),
 			),
 		},
 		{
 			"fun inside block", "expr", `{ fun foo() Str { "hello" 123 } }`,
 			block(
-				fun("foo", fun_params(), typ("Str"), funblock(string_expr("hello"), int_expr(123)))),
+				fun("foo", fun_params(), Str, fun_block(string_("hello"), int_(123)))),
 		},
-		{"void fun", "expr", `fun foo() void {}`, fun("foo", fun_params(), typ("void"), funblock())},
-		{"call", "expr", `foo(123, "hello")`, call(idente("foo"), int_expr(123), string_expr("hello"))},
-		{"call w/o args", "expr", `foo()`, call(idente("foo"))},
+		{"void fun", "expr", `fun foo() void {}`, fun("foo", fun_params(), void, fun_block())},
+		{"call", "expr", `foo(123, "hello")`, call(ident_expr("foo"), int_(123), string_("hello"))},
+		{"call w/o args", "expr", `foo()`, call(ident_expr("foo"))},
+		{"chained calls", "expr", `foo()()`, call(call(ident_expr("foo")))},
+
+		{"ref ident expr", "expr", `&foo`, ref(ident("foo"))},
+		{"deref expr", "expr", `*foo`, deref(ident_expr("foo"))},
+		{"nested deref expr", "expr", `**foo`, deref(deref(ident_expr("foo")))},
+		{"ref type", "expr", `fun foo() &Int {}`, fun("foo", fun_params(), ref_typ(Int), fun_block())},
+		{"nested ref type", "expr", `fun foo() &&Int {}`, fun("foo", fun_params(), ref_typ(ref_typ(Int)), fun_block())},
+		{"deref assign", "expr", `*foo = bar`, assign(deref(ident_expr("foo")), ident_expr("bar"))},
+		{
+			"nested deref assign",
+			"expr",
+			`***foo = bar`,
+			assign(deref(deref(deref(ident_expr("foo")))), ident_expr("bar")),
+		},
+		{
+			"ref param", "expr", `{ fun foo(a &Int) void {} let b = 123 foo(&b) }`,
+			block(
+				fun("foo", fun_params(fun_param("a", ref_typ(Int))), void, fun_block()),
+				var_("b", int_(123)),
+				call(ident_expr("foo"), ref(ident("b"))),
+			),
+		},
 	}
 
 	assert := NewAssert(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			source := NewSource("test.met", []rune(tt.src))
 			tokens := Lex(source)
 			parser := NewParser(tokens)
@@ -62,7 +85,7 @@ func TestParsOK(t *testing.T) {
 				t.Fatalf("unknown kind: %s", tt.kind)
 			}
 			assert.Equal(0, len(parser.Diagnostics), "diagnostics: %s", parser.Diagnostics)
-			assert.Equal(true, ok, "ParseFile returned false")
+			assert.Equal(true, ok, "parse function returned false")
 			zero := &zeroBaseVisitor{}
 			switch g := got.(type) {
 			case Expr:
@@ -80,29 +103,36 @@ func TestParsOK(t *testing.T) {
 }
 
 func TestParsErr(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name string
 		src  string
 		want []string
 	}{
 		{"unexpected token", `=`, []string{
-			"test.met:1:1: unexpected token: =\n" +
+			"test.met:1:1: unexpected token: expected one of '&', '{', <fun>, <identifier>, <number>, <string>, <let>, <mut>, got =\n" +
 				`    =` + "\n" +
 				"    ^",
 		}},
 		{"assign to type", `{ Str = "hello" }`, []string{
-			"test.met:1:3: unexpected token: <type identifier>\n" +
+			"test.met:1:3: unexpected token: expected one of '&', '{', <fun>, <identifier>, <number>, <string>, <let>, <mut>, got <type identifier>\n" +
 				`    { Str = "hello" }` + "\n" +
 				"      ^^^",
+		}},
+		{"nested ref expr", `{ &&foo }`, []string{
+			"test.met:1:4: unexpected token: expected <identifier>, got &\n" +
+				`    { &&foo }` + "\n" +
+				"       ^",
+		}},
+		{"ref to literal", `{ &123 }`, []string{
+			"test.met:1:4: unexpected token: expected <identifier>, got <number>\n" +
+				`    { &123 }` + "\n" +
+				"       ^^^",
 		}},
 	}
 
 	assert := NewAssert(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			source := NewSource("test.met", []rune(tt.src))
 			tokens := Lex(source)
 			parser := NewParser(tokens)
@@ -138,7 +168,14 @@ func (v *zeroBaseVisitor) VisitDecl(decl *Decl) {
 }
 
 func (v *zeroBaseVisitor) VisitType(typ *ASTType) {
-	typ.astBase = astBase{}
+	switch typ.Kind {
+	case TySimpleType:
+		typ.SimpleType.astBase = astBase{}
+	case TyRefType:
+		typ.RefType.astBase = astBase{}
+	default:
+		panic(Errorf("unknown type kind: %d", typ.Kind))
+	}
 	WalkASTType(typ, v)
 }
 
@@ -164,6 +201,16 @@ func (v *zeroBaseVisitor) VisitName(name *Name) {
 
 func (v *zeroBaseVisitor) VisitExpr(expr *Expr) {
 	WalkExpr(expr, v)
+}
+
+func (v *zeroBaseVisitor) VisitRefExpr(expr *RefExpr) {
+	expr.astBase = astBase{}
+	WalkRefExpr(expr, v)
+}
+
+func (v *zeroBaseVisitor) VisitDerefExpr(expr *DerefExpr) {
+	expr.astBase = astBase{}
+	WalkDerefExpr(expr, v)
 }
 
 func (v *zeroBaseVisitor) VisitAssign(assign *Assign) {
@@ -200,7 +247,7 @@ func ident(name string) Ident {
 	return Ident{Name: name}
 }
 
-func idente(name string) Expr {
+func ident_expr(name string) Expr {
 	return Expr{Kind: ExprIdent, Ident: &Ident{Name: name}}
 }
 
@@ -233,33 +280,33 @@ func fun_params(params ...FunParam) []FunParam {
 	return params
 }
 
-func fundecl(name_ string, params []FunParam, return_type ASTType, block Block) Decl {
+func fun_decl(name_ string, params []FunParam, return_type ASTType, block Block) Decl {
 	name := Name{Name: name_}
 	return Decl{Kind: DeclFun, Fun: &Fun{Name: name, Params: params, ReturnType: return_type, Block: block}}
 }
 
-func fun(name_ string, params []FunParam, return_type ASTType, block Block) Expr {
+func fun(name_ string, params []FunParam, return_type ASTType, block Block) Expr { //nolint:unparam
 	name := Name{Name: name_}
 	return Expr{Kind: ExprFun, Fun: &Fun{Name: name, Params: params, ReturnType: return_type, Block: block}}
 }
 
-func string_expr(value string) Expr { //nolint:unparam
+func string_(value string) Expr { //nolint:unparam
 	return Expr{Kind: ExprString, String: &StringExpr{Value: value}}
 }
 
-func int_expr(value int64) Expr {
+func int_(value int64) Expr {
 	return Expr{Kind: ExprInt, Int: &IntExpr{Value: value}}
 }
 
-func assign(ident Ident, value Expr) Expr {
-	return Expr{Kind: ExprAssign, Assign: &Assign{Ident: ident, Value: value}}
+func assign(lhs Expr, value Expr) Expr {
+	return Expr{Kind: ExprAssign, Assign: &Assign{LHS: lhs, Value: value}}
 }
 
 func typ(name string) ASTType {
-	return ASTType{TypeIdent{Name: name}}
+	return NewASTSimpleType(&ASTSimpleType{Name{Name: name}})
 }
 
-func funblock(exprs ...Expr) Block {
+func fun_block(exprs ...Expr) Block {
 	if exprs == nil {
 		exprs = []Expr{}
 	}
@@ -274,6 +321,18 @@ func var_(name_ string, init Expr) Expr {
 func mut_var(name_ string, init Expr) Expr {
 	name := Name{Name: name_}
 	return Expr{Kind: ExprVar, Var: &Var{Name: name, Init: init, Mut: true}}
+}
+
+func ref(ident Ident) Expr {
+	return Expr{Kind: ExprRef, Ref: &RefExpr{Ident: ident}}
+}
+
+func deref(expr Expr) Expr {
+	return Expr{Kind: ExprDeref, Deref: &DerefExpr{Expr: expr}}
+}
+
+func ref_typ(typ ASTType) ASTType {
+	return NewASTRefType(&ASTTypeRef{Type: typ})
 }
 
 func block(exprs ...Expr) Expr {

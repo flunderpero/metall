@@ -119,7 +119,7 @@ func (g *IRGen) VisitFun(astFun *Fun) {
 			params.WriteString(", ")
 		}
 		preg := g.reg()
-		typ := g.irType(g.lookupType(param.Type.ID))
+		typ := g.irType(g.lookupType(param.Type.ID()))
 		params.WriteString(typ)
 		params.WriteString(" ")
 		params.WriteString(preg)
@@ -139,7 +139,12 @@ func (g *IRGen) VisitFun(astFun *Fun) {
 		g.write("ret i32 0")
 	} else {
 		lastCode := g.lookupCode(astFun.Block.ID)
-		g.write("ret %s %s", g.irType(fun.Return), lastCode)
+		typ := g.irType(fun.Return)
+		if typ == "void" {
+			g.write("ret void")
+		} else {
+			g.write("ret %s %s", typ, lastCode)
+		}
 	}
 	g.indent -= 1
 	g.write("}\n")
@@ -167,11 +172,21 @@ func (g *IRGen) VisitExpr(expr *Expr) {
 func (g *IRGen) VisitAssign(assign *Assign) {
 	WalkAssign(assign, g)
 	rhs := g.lookupCode(assign.Value.ID())
-	symbol, ok := g.scope.Lookup(assign.Ident.Name)
-	if !ok {
-		panic(Errorf("assign to unknown variable: %s", assign.Ident.Name))
+	switch assign.LHS.Kind { //nolint:exhaustive
+	case ExprIdent:
+		symbol, ok := g.scope.Lookup(assign.LHS.Ident.Name)
+		if !ok {
+			panic(Errorf("assign to unknown variable: %s", assign.LHS.Ident.Name))
+		}
+		g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
+	case ExprDeref:
+		ptr := g.lookupCode(assign.LHS.Deref.Expr.ID())
+		typ := g.lookupType(assign.LHS.ID())
+		g.write("store %s %s, ptr %s", g.irType(typ), rhs, ptr)
+	default:
+		panic(Errorf("assign to unknown expression: %s", assign.LHS.Kind))
 	}
-	g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
+	g.setCode(assign.ID, "void")
 }
 
 func (g *IRGen) VisitCall(call *Call) {
@@ -237,6 +252,29 @@ func (g *IRGen) VisitStringExpr(str *StringExpr) {
 	g.setCode(str.ID, reg)
 }
 
+func (g *IRGen) VisitRefExpr(expr *RefExpr) {
+	ident := expr.Ident
+	if symbol, ok := g.scope.Lookup(ident.Name); ok {
+		g.setCode(expr.ID, symbol.Reg)
+		return
+	}
+	g.setCode(expr.ID, "ptr %s", ident.Name)
+}
+
+func (g *IRGen) VisitDerefExpr(expr *DerefExpr) {
+	WalkDerefExpr(expr, g)
+	inner := expr.Expr
+	typ := g.lookupType(inner.ID())
+	if typ.Kind != TypeRef {
+		panic(Errorf("dereference: expected reference, got %s", typ))
+	}
+	typ = typ.Ref.Type
+	code := g.lookupCode(inner.ID())
+	reg := g.reg()
+	g.write("%s = load %s, ptr %s", reg, g.irType(typ), code)
+	g.setCode(expr.ID, reg)
+}
+
 func (g *IRGen) VisitVar(var_ *Var) {
 	WalkVar(var_, g)
 	// We are a bit lazy here and just use an `alloca` instruction.
@@ -278,6 +316,8 @@ func (g *IRGen) irType(typ Type) string {
 		return "ptr"
 	case TypeVoid:
 		return "void"
+	case TypeRef:
+		return "ptr"
 	case TypeFun:
 		panic("unexpected fun type")
 	default:

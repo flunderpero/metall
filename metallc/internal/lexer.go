@@ -2,13 +2,15 @@ package internal
 
 import (
 	"fmt"
+	"strings"
 	"unicode"
 )
 
 type TokenKind int
 
 const (
-	TComma TokenKind = iota + 1
+	TAmp TokenKind = iota + 1
+	TComma
 	TEOF
 	TEq
 	TFun
@@ -20,6 +22,7 @@ const (
 	TNumber
 	TRCurly
 	TRParen
+	TStar
 	TString
 	TUnknown
 	TTypeIdent
@@ -27,6 +30,7 @@ const (
 )
 
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
+	TAmp:       "&",
 	TComma:     ",",
 	TEOF:       "<EOF>",
 	TEq:        "=",
@@ -39,6 +43,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	TNumber:    "<number>",
 	TRCurly:    "}",
 	TRParen:    ")",
+	TStar:      "*",
 	TString:    "<string>",
 	TTypeIdent: "<type identifier>",
 	TUnknown:   "<unknown>",
@@ -46,12 +51,14 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 }
 
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
+	'&': TAmp,
 	',': TComma,
 	'=': TEq,
-	'(': TLParen,
-	')': TRParen,
 	'{': TLCurly,
+	'(': TLParen,
 	'}': TRCurly,
+	')': TRParen,
+	'*': TStar,
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
@@ -67,6 +74,24 @@ func (k TokenKind) String() string {
 		panic(Errorf("unknown token kind: %d", k))
 	}
 	return s
+}
+
+func PrettyPrintTokenKinds(kinds []TokenKind) string {
+	var sb strings.Builder
+	for i, kind := range kinds {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		s := kind.String()
+		if s[0] != '<' {
+			sb.WriteString("'")
+			sb.WriteString(s)
+			sb.WriteString("'")
+		} else {
+			sb.WriteString(s)
+		}
+	}
+	return sb.String()
 }
 
 type Token struct {

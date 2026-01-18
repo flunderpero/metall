@@ -23,6 +23,8 @@ func TestLexer(t *testing.T) {
 		{"parens", "()", []want{{TLParen, "", "1:1"}, {TRParen, "", "1:2"}}},
 		{"curly", "{}", []want{{TLCurly, "", "1:1"}, {TRCurly, "", "1:2"}}},
 		{"eq", "=", []want{{TEq, "", "1:1"}}},
+		{"amp", "&", []want{{TAmp, "", "1:1"}}},
+		{"star", "*", []want{{TStar, "", "1:1"}}},
 		{"number (int)", `123`, []want{{TNumber, "123", "1:1-1:3"}}},
 		{"string", `"ride"`, []want{{TString, "ride", "1:1-1:6"}}},
 		{"ident", `foo`, []want{{TIdent, "foo", "1:1-1:3"}}},

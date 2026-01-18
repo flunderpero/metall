@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"slices"
 	"strconv"
 )
 
@@ -62,7 +63,7 @@ func (p *Parser) ParseFun() (Fun, bool) {
 	}
 	var returnType ASTType
 	if t.Kind == TVoid {
-		returnType = ASTType{TypeIdent{p.base(t.Span), "void"}}
+		returnType = NewASTSimpleType(&ASTSimpleType{Name{p.base(t.Span), "void"}})
 		p.next()
 	} else {
 		returnType, ok = p.ParseType()
@@ -103,7 +104,7 @@ func (p *Parser) ParseBlock() (Block, bool) {
 }
 
 func (p *Parser) ParseExpr() (Expr, bool) {
-	lhs, ok := p.ParseSimpleExpr(0)
+	lhs, ok := p.ParseUnaryExpr(0)
 	if !ok {
 		return Expr{}, false
 	}
@@ -112,27 +113,74 @@ func (p *Parser) ParseExpr() (Expr, bool) {
 		return lhs, true
 	case t.Kind == TEq:
 		p.next()
-		if lhs.Kind != ExprIdent {
-			p.diagnostic(lhs.Span(), "lhs of assignment must be an identifier, got %s", lhs.Kind)
-			return Expr{}, false
-		}
-		right, ok := p.ParseSimpleExpr(0)
+		rhs, ok := p.ParseExpr()
 		if !ok {
 			return Expr{}, false
 		}
-		return NewAssign(&Assign{p.base(lhs.Span()), *lhs.Ident, right}), true
+		return NewAssign(&Assign{p.base(lhs.Span()), lhs, rhs}), true
 	default:
 		return lhs, true
 	}
 }
 
-func (p *Parser) ParseSimpleExpr(minPrecedence int) (Expr, bool) {
+func (p *Parser) ParseUnaryExpr(minPrecedence int) (Expr, bool) {
 	t, ok := p.peek()
 	if !ok {
 		return Expr{}, false
 	}
 	var expr Expr
 	switch t.Kind { //nolint:exhaustive
+	case TStar:
+		p.next()
+		expr, ok = p.ParseUnaryExpr(minPrecedence)
+		if !ok {
+			return Expr{}, false
+		}
+		expr = NewDeref(&DerefExpr{p.base(t.Span), expr})
+	default:
+		expr, ok = p.ParsePrimaryExpr(minPrecedence)
+		if !ok {
+			return Expr{}, false
+		}
+	}
+	for {
+		if t, ok := p.peek(); ok && t.Kind == TLParen {
+			callee := expr
+			args, ok := p.ParseCallArgs()
+			if !ok {
+				return Expr{}, false
+			}
+			expr = NewCall(&Call{p.base(callee.Span()), callee, args})
+		} else {
+			break
+		}
+	}
+	return expr, true
+}
+
+func (p *Parser) ParsePrimaryExpr(minPrecedence int) (Expr, bool) {
+	t, ok := p.peek()
+	if !ok {
+		return Expr{}, false
+	}
+	expectedTokenKinds := []TokenKind{TAmp, TLCurly, TFun, TIdent, TNumber, TString, TLet, TMut}
+	if !slices.Contains(expectedTokenKinds, t.Kind) {
+		p.diagnostic(
+			t.Span,
+			"unexpected token: expected one of %s, got %s",
+			PrettyPrintTokenKinds(expectedTokenKinds),
+			t.Kind,
+		)
+		return Expr{}, false
+	}
+	var expr Expr
+	switch t.Kind { //nolint:exhaustive
+	case TAmp:
+		ref, ok := p.ParseRefExpr()
+		if !ok {
+			return Expr{}, false
+		}
+		expr = NewRef(&ref)
 	case TFun:
 		fun, ok := p.ParseFun()
 		if !ok {
@@ -169,18 +217,21 @@ func (p *Parser) ParseSimpleExpr(minPrecedence int) (Expr, bool) {
 		}
 		expr = NewVar(&var_)
 	default:
-		p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
-		return Expr{}, false
-	}
-	if t, ok := p.peek(); ok && t.Kind == TLParen {
-		callee := expr
-		args, ok := p.ParseCallArgs()
-		if !ok {
-			return Expr{}, false
-		}
-		expr = NewCall(&Call{p.base(callee.Span()), callee, args})
+		panic(Errorf("this should have been catch earlier: unexpected token: %s", t.Kind))
 	}
 	return expr, true
+}
+
+func (p *Parser) ParseRefExpr() (RefExpr, bool) {
+	t, ok := p.expect(TAmp)
+	if !ok {
+		return RefExpr{}, false
+	}
+	ident, ok := p.ParseIdent()
+	if !ok {
+		return RefExpr{}, false
+	}
+	return RefExpr{p.base(t.Span), ident}, true
 }
 
 func (p *Parser) ParseCallArgs() ([]Expr, bool) {
@@ -287,11 +338,23 @@ func (p *Parser) ParseFunParams() ([]FunParam, bool) {
 }
 
 func (p *Parser) ParseType() (ASTType, bool) {
-	t, ok := p.expect(TTypeIdent)
+	t, ok := p.next()
 	if !ok {
 		return ASTType{}, false
 	}
-	return ASTType{TypeIdent: TypeIdent{p.base(t.Span), t.Value}}, true
+	switch t.Kind { //nolint:exhaustive
+	case TTypeIdent:
+		return NewASTSimpleType(&ASTSimpleType{Name{p.base(t.Span), t.Value}}), true
+	case TAmp:
+		inner, ok := p.ParseType()
+		if !ok {
+			return ASTType{}, false
+		}
+		return NewASTRefType(&ASTTypeRef{p.base(t.Span), inner}), true
+	default:
+		p.diagnostic(t.Span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
+		return ASTType{}, false
+	}
 }
 
 func (p *Parser) ParseIdent() (Ident, bool) {
@@ -338,7 +401,7 @@ func (p *Parser) expect(kind TokenKind) (*Token, bool) {
 	if ok && t.Kind == kind {
 		return t, true
 	}
-	p.diagnostic(p.span(), "expected token %s, got %s(%s)", kind, t.Kind, t.Value)
+	p.diagnostic(p.span(), "unexpected token: expected %s, got %s", kind, t.Kind)
 	return nil, false
 }
 

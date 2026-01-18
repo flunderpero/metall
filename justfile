@@ -7,11 +7,14 @@ precommit:
 lint:
     go tool golangci-lint run ./metallc/...
     just lint-fixme
+    just lint-no-excluded-tests
 
 # We never want to commit anything with a "fixme" comment.
 lint-fixme:
-    #!/usr/bin/env sh
     ! git --no-pager grep -i -n --untracked "fixme" -- :^.golangci.yaml :^.spell :^justfile
+
+lint-no-excluded-tests:
+    ! git --no-pager grep -i -n --untracked "!only" -- :^justfile
 
 fmt:
     go tool golangci-lint fmt ./metallc/...
