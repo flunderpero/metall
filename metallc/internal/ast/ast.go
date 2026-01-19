@@ -1,434 +1,237 @@
 package ast
 
-import "github.com/flunderpero/metall/metallc/internal/base"
+import (
+	"github.com/flunderpero/metall/metallc/internal/base"
+)
 
 type NodeID int
 
-type astBase struct {
-	ID   NodeID
+type Node struct {
+	Kind Kind
 	Span base.Span
 }
 
+type Kind interface {
+	isKind()
+}
+
 type Ident struct {
-	astBase
 	Name string
 }
 
-type TypeIdent struct {
-	astBase
-	Name string
-}
+func (Ident) isKind() {}
 
 type Name struct {
-	astBase
 	Name string
+	Span base.Span
 }
 
 type File struct {
-	astBase
-	Decls []Decl
+	Decls []NodeID
 }
 
-type DeclKind int
-
-const (
-	DeclFun DeclKind = iota + 1
-)
-
-type Decl struct {
-	Kind DeclKind
-	Fun  *Fun
-}
-
-type TypeKind int
-
-const (
-	TypeSimple TypeKind = iota + 1
-	TypeRef
-)
+func (File) isKind() {}
 
 type SimpleType struct {
-	Name
+	Name Name
 }
+
+func (SimpleType) isKind() {}
 
 type RefType struct {
-	astBase
-	Type Type
+	Type NodeID
 }
 
-type Type struct {
-	Kind TypeKind
-
-	SimpleType *SimpleType
-	RefType    *RefType
-}
-
-func NewSimpleType(typ *SimpleType) Type {
-	return Type{Kind: TypeSimple, SimpleType: typ} //nolint:exhaustruct
-}
-
-func NewRefType(typ *RefType) Type {
-	return Type{Kind: TypeRef, RefType: typ} //nolint:exhaustruct
-}
-
-func (t *Type) ID() NodeID {
-	switch t.Kind {
-	case TypeSimple:
-		return t.SimpleType.ID
-	case TypeRef:
-		return t.RefType.ID
-	default:
-		panic(base.Errorf("unknown type kind: %d", t.Kind))
-	}
-}
-
-func (t *Type) Span() base.Span {
-	switch t.Kind {
-	case TypeSimple:
-		return t.SimpleType.Span
-	case TypeRef:
-		return t.RefType.Span
-	default:
-		panic(base.Errorf("unknown type kind: %d", t.Kind))
-	}
-}
-
-type If struct {
-	astBase
-	Cond Expr
-	Then Block
-	Else *Block
-}
+func (RefType) isKind() {}
 
 type FunParam struct {
-	astBase
 	Name Name
-	Type Type
+	Type NodeID
 	Mut  bool
 }
 
+func (FunParam) isKind() {}
+
 type Fun struct {
-	astBase
 	Name       Name
-	Params     []FunParam
-	ReturnType Type
-	Block      Block
+	Params     []NodeID
+	ReturnType NodeID
+	Block      NodeID
 }
 
-type ExprKind int
-
-const (
-	ExprAssign ExprKind = iota + 1
-	ExprBlock
-	ExprCall
-	ExprDeref
-	ExprFun
-	ExprIdent
-	ExprInt
-	ExprRef
-	ExprString
-	ExprVar
-)
-
-var exprKindNames = map[ExprKind]string{ //nolint:gochecknoglobals
-	ExprAssign: "assign",
-	ExprBlock:  "block",
-	ExprCall:   "call",
-	ExprDeref:  "deref",
-	ExprFun:    "fun",
-	ExprIdent:  "ident",
-	ExprInt:    "int",
-	ExprRef:    "ref",
-	ExprString: "string",
-	ExprVar:    "var",
-}
-
-func (k ExprKind) String() string {
-	s, ok := exprKindNames[k]
-	if !ok {
-		panic(base.Errorf("unknown expr kind: %d", k))
-	}
-	return s
-}
+func (Fun) isKind() {}
 
 type Int struct {
-	astBase
 	Value int64
 }
 
+func (Int) isKind() {}
+
 type String struct {
-	astBase
 	Value string
 }
 
+func (String) isKind() {}
+
 type Assign struct {
-	astBase
-	LHS   Expr
-	Value Expr
+	LHS NodeID
+	RHS NodeID
 }
 
+func (Assign) isKind() {}
+
 type Var struct {
-	astBase
 	Name Name
-	Init Expr
+	Expr NodeID
 	Mut  bool
 }
 
+func (Var) isKind() {}
+
 type Block struct {
-	astBase
-	Exprs []Expr
+	Exprs []NodeID
 }
+
+func (Block) isKind() {}
 
 type Call struct {
-	astBase
-	Callee Expr
-	Args   []Expr
+	Callee NodeID
+	Args   []NodeID
 }
+
+func (Call) isKind() {}
 
 type Ref struct {
-	astBase
-	Ident Ident
+	Name Name
 }
+
+func (Ref) isKind() {}
 
 type Deref struct {
-	astBase
-	Expr Expr
+	Expr NodeID
 }
 
-type Expr struct {
-	Kind ExprKind
+func (Deref) isKind() {}
 
-	Assign *Assign
-	Block  *Block
-	Call   *Call
-	Deref  *Deref
-	Fun    *Fun
-	Ident  *Ident
-	Int    *Int
-	Ref    *Ref
-	String *String
-	Var    *Var
+type AST struct {
+	nodes   map[NodeID]*Node
+	nextID_ NodeID
 }
 
-func NewAssign(assign *Assign) Expr {
-	return Expr{Kind: ExprAssign, Assign: assign} //nolint:exhaustruct
+func NewAST() *AST {
+	return &AST{nextID_: 1, nodes: make(map[NodeID]*Node)}
 }
 
-func NewBlock(block *Block) Expr {
-	return Expr{Kind: ExprBlock, Block: block} //nolint:exhaustruct
+func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
+	return a.node(Assign{LHS: lhs, RHS: value}, span)
 }
 
-func NewFun(fun *Fun) Expr {
-	return Expr{Kind: ExprFun, Fun: fun} //nolint:exhaustruct
+func (a *AST) NewBlock(exprs []NodeID, span base.Span) NodeID {
+	return a.node(Block{Exprs: exprs}, span)
 }
 
-func NewIdent(ident *Ident) Expr {
-	return Expr{Kind: ExprIdent, Ident: ident} //nolint:exhaustruct
+func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
+	return a.node(Call{Callee: callee, Args: args}, span)
 }
 
-func NewInt(intExpr *Int) Expr {
-	return Expr{Kind: ExprInt, Int: intExpr} //nolint:exhaustruct
+func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
+	return a.node(Deref{Expr: expr}, span)
 }
 
-func NewString(stringExpr *String) Expr {
-	return Expr{Kind: ExprString, String: stringExpr} //nolint:exhaustruct
+func (a *AST) NewFile(decls []NodeID, span base.Span) NodeID {
+	return a.node(File{Decls: decls}, span)
 }
 
-func NewVar(varExpr *Var) Expr {
-	return Expr{Kind: ExprVar, Var: varExpr} //nolint:exhaustruct
+func (a *AST) NewFun(name Name, params []NodeID, returnType NodeID, block NodeID, span base.Span) NodeID {
+	return a.node(Fun{Name: name, Params: params, ReturnType: returnType, Block: block}, span)
 }
 
-func NewCall(call *Call) Expr {
-	return Expr{Kind: ExprCall, Call: call} //nolint:exhaustruct
+func (a *AST) NewFunParam(name Name, type_ NodeID, mut bool, span base.Span) NodeID {
+	return a.node(FunParam{Name: name, Type: type_, Mut: mut}, span)
 }
 
-func NewRef(ref *Ref) Expr {
-	return Expr{Kind: ExprRef, Ref: ref} //nolint:exhaustruct
+func (a *AST) NewIdent(name string, span base.Span) NodeID {
+	return a.node(Ident{Name: name}, span)
 }
 
-func NewDeref(deref *Deref) Expr {
-	return Expr{Kind: ExprDeref, Deref: deref} //nolint:exhaustruct
+func (a *AST) NewInt(value int64, span base.Span) NodeID {
+	return a.node(Int{Value: value}, span)
 }
 
-func (e *Expr) ID() NodeID {
-	switch e.Kind {
-	case ExprAssign:
-		return e.Assign.ID
-	case ExprBlock:
-		return e.Block.ID
-	case ExprCall:
-		return e.Call.ID
-	case ExprDeref:
-		return e.Deref.ID
-	case ExprFun:
-		return e.Fun.ID
-	case ExprIdent:
-		return e.Ident.ID
-	case ExprInt:
-		return e.Int.ID
-	case ExprRef:
-		return e.Ref.ID
-	case ExprString:
-		return e.String.ID
-	case ExprVar:
-		return e.Var.ID
+func (a *AST) NewRef(name Name, span base.Span) NodeID {
+	return a.node(Ref{Name: name}, span)
+}
+
+func (a *AST) NewString(value string, span base.Span) NodeID {
+	return a.node(String{Value: value}, span)
+}
+
+func (a *AST) NewSimpleType(name Name, span base.Span) NodeID {
+	return a.node(SimpleType{Name: name}, span)
+}
+
+func (a *AST) NewRefType(type_ NodeID, span base.Span) NodeID {
+	return a.node(RefType{Type: type_}, span)
+}
+
+func (a *AST) NewVar(name Name, expr NodeID, mut bool, span base.Span) NodeID {
+	return a.node(Var{Name: name, Expr: expr, Mut: mut}, span)
+}
+
+func (a *AST) Node(id NodeID) *Node {
+	node, ok := a.nodes[id]
+	if !ok {
+		panic(base.Errorf("unknown node id: %d", id))
+	}
+	return node
+}
+
+func (a *AST) Walk(id NodeID, f func(NodeID)) {
+	node := a.Node(id)
+	switch kind := node.Kind.(type) {
+	case Assign:
+		f(kind.LHS)
+		f(kind.RHS)
+	case Block:
+		for i := range len(kind.Exprs) {
+			f(kind.Exprs[i])
+		}
+	case Call:
+		f(kind.Callee)
+		for i := range len(kind.Args) {
+			f(kind.Args[i])
+		}
+	case Deref:
+		f(kind.Expr)
+	case File:
+		for i := range len(kind.Decls) {
+			f(kind.Decls[i])
+		}
+	case Fun:
+		for i := range len(kind.Params) {
+			f(kind.Params[i])
+		}
+		f(kind.ReturnType)
+		f(kind.Block)
+	case FunParam:
+		f(kind.Type)
+	case Ident:
+	case Int:
+	case String:
+	case Var:
+		f(kind.Expr)
+	case SimpleType:
+	case Ref:
+	case RefType:
+		f(kind.Type)
 	default:
-		panic(base.Errorf("unknown expr kind: %d", e.Kind))
+		panic(base.Errorf("unknown node kind: %T", kind))
 	}
 }
 
-func (e *Expr) Span() base.Span {
-	switch e.Kind {
-	case ExprAssign:
-		return e.Assign.Span
-	case ExprBlock:
-		return e.Block.Span
-	case ExprCall:
-		return e.Call.Span
-	case ExprDeref:
-		return e.Deref.Span
-	case ExprFun:
-		return e.Fun.Span
-	case ExprIdent:
-		return e.Ident.Span
-	case ExprInt:
-		return e.Int.Span
-	case ExprRef:
-		return e.Ref.Span
-	case ExprString:
-		return e.String.Span
-	case ExprVar:
-		return e.Var.Span
-	default:
-		panic(base.Errorf("unknown expr kind: %d", e.Kind))
-	}
-}
-
-type Visitor interface {
-	VisitAssign(*Assign)
-	VisitBlock(*Block)
-	VisitCall(*Call)
-	VisitDecl(*Decl)
-	VisitDeref(*Deref)
-	VisitExpr(*Expr)
-	VisitFile(*File)
-	VisitFun(*Fun)
-	VisitFunParam(*FunParam)
-	VisitIdent(*Ident)
-	VisitInt(*Int)
-	VisitName(*Name)
-	VisitRef(*Ref)
-	VisitString(*String)
-	VisitType(*Type)
-	VisitVar(*Var)
-}
-
-func WalkFile(file *File, v Visitor) {
-	for i := range len(file.Decls) {
-		v.VisitDecl(&file.Decls[i])
-	}
-}
-
-func WalkDecl(decl *Decl, v Visitor) {
-	switch decl.Kind {
-	case DeclFun:
-		v.VisitFun(decl.Fun)
-	default:
-		panic(base.Errorf("unknown decl kind: %d", decl.Kind))
-	}
-}
-
-func WalkType(typ *Type, v Visitor) {
-	switch typ.Kind {
-	case TypeSimple:
-		v.VisitName(&typ.SimpleType.Name)
-	case TypeRef:
-		v.VisitType(&typ.RefType.Type)
-	default:
-		panic(base.Errorf("unknown type kind: %d", typ.Kind))
-	}
-}
-
-func WalkFun(fun *Fun, v Visitor) {
-	v.VisitName(&fun.Name)
-	for i := range len(fun.Params) {
-		v.VisitFunParam(&fun.Params[i])
-	}
-	v.VisitType(&fun.ReturnType)
-	v.VisitBlock(&fun.Block)
-}
-
-func WalkFunParam(funParam *FunParam, v Visitor) {
-	v.VisitName(&funParam.Name)
-	v.VisitType(&funParam.Type)
-}
-
-func WalkExpr(expr *Expr, v Visitor) {
-	switch expr.Kind {
-	case ExprAssign:
-		v.VisitAssign(expr.Assign)
-	case ExprBlock:
-		v.VisitBlock(expr.Block)
-	case ExprCall:
-		v.VisitCall(expr.Call)
-	case ExprDeref:
-		v.VisitDeref(expr.Deref)
-	case ExprFun:
-		v.VisitFun(expr.Fun)
-	case ExprIdent:
-		v.VisitIdent(expr.Ident)
-	case ExprInt:
-		v.VisitInt(expr.Int)
-	case ExprRef:
-		v.VisitRef(expr.Ref)
-	case ExprString:
-		v.VisitString(expr.String)
-	case ExprVar:
-		v.VisitVar(expr.Var)
-	default:
-		panic(base.Errorf("unknown expr kind: %d", expr.Kind))
-	}
-}
-
-func WalkRef(expr *Ref, v Visitor) {
-	v.VisitIdent(&expr.Ident)
-}
-
-func WalkDeref(expr *Deref, v Visitor) {
-	v.VisitExpr(&expr.Expr)
-}
-
-func WalkAssign(assign *Assign, v Visitor) {
-	v.VisitExpr(&assign.LHS)
-	v.VisitExpr(&assign.Value)
-}
-
-func WalkBlock(block *Block, v Visitor) {
-	for i := range len(block.Exprs) {
-		v.VisitExpr(&block.Exprs[i])
-	}
-}
-
-func WalkCall(call *Call, v Visitor) {
-	v.VisitExpr(&call.Callee)
-	for i := range len(call.Args) {
-		v.VisitExpr(&call.Args[i])
-	}
-}
-
-func WalkIdent(ident *Ident, v Visitor) {
-}
-
-func WalkName(name *Name, v Visitor) {
-}
-
-func WalkInt(expr *Int, v Visitor) {
-}
-
-func WalkString(expr *String, v Visitor) {
-}
-
-func WalkVar(varExpr *Var, v Visitor) {
-	v.VisitName(&varExpr.Name)
-	WalkExpr(&varExpr.Init, v)
+func (a *AST) node(kind Kind, span base.Span) NodeID {
+	id := a.nextID_
+	a.nodes[id] = &Node{Span: span, Kind: kind}
+	a.nextID_++
+	return id
 }

@@ -16,7 +16,7 @@ import (
 
 type CompileListener interface {
 	OnLex(tokens []token.Token) bool
-	OnParse(file *ast.File, diagnostics base.Diagnostics) bool
+	OnParse(a *ast.AST, fileID ast.NodeID, diagnostics base.Diagnostics) bool
 	OnTypeCheck(typeEnv *check.TypeEnv, diagnostics base.Diagnostics) bool
 	OnIRGen(ir string) bool
 }
@@ -36,22 +36,22 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		return ErrAbort
 	}
 	parser := ast.NewParser(tokens)
-	file, _ := parser.ParseFile()
-	if listener != nil && !listener.OnParse(&file, parser.Diagnostics) {
+	fileID, _ := parser.ParseFile()
+	if listener != nil && !listener.OnParse(parser.AST, fileID, parser.Diagnostics) {
 		return ErrAbort
 	}
 	if len(parser.Diagnostics) > 0 {
 		return parser.Diagnostics
 	}
-	tc := check.NewTypeChecker()
-	tc.VisitFile(&file)
+	tc := check.NewTypeChecker(parser.AST)
+	tc.Check(fileID)
 	if listener != nil && !listener.OnTypeCheck(&tc.Env, tc.Diagnostics) {
 		return ErrAbort
 	}
 	if len(tc.Diagnostics) > 0 {
 		return tc.Diagnostics
 	}
-	ir, err := gen.GenIR(&file, &tc.Env)
+	ir, err := gen.GenIR(parser.AST, fileID, &tc.Env)
 	if err != nil {
 		return err //nolint:wrapcheck
 	}

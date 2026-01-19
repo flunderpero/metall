@@ -8,7 +8,10 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
+const ParseFailed = NodeID(0)
+
 type Parser struct {
+	*AST
 	Diagnostics base.Diagnostics
 	id_         NodeID
 	tokens      []token.Token
@@ -16,17 +19,20 @@ type Parser struct {
 }
 
 func NewParser(tokens []token.Token) *Parser {
-	return &Parser{base.Diagnostics{}, NodeID(1), tokens, 0}
+	return &Parser{NewAST(), base.Diagnostics{}, NodeID(1), tokens, 0}
 }
 
-func (p *Parser) ParseFile() (File, bool) {
+func (p *Parser) ParseFile() (NodeID, bool) {
 	span := p.span()
 	decls, ok := p.ParseDecls()
-	return File{p.base(span), decls}, ok
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewFile(decls, span.Combine(p.span())), ok
 }
 
-func (p *Parser) ParseDecls() ([]Decl, bool) {
-	decls := make([]Decl, 0)
+func (p *Parser) ParseDecls() ([]NodeID, bool) {
+	decls := make([]NodeID, 0)
 	result := true
 	for {
 		t, ok := p.peek()
@@ -36,7 +42,7 @@ func (p *Parser) ParseDecls() ([]Decl, bool) {
 		switch t.Kind { //nolint:exhaustive
 		case token.Fun:
 			if fun, ok := p.ParseFun(); ok {
-				decls = append(decls, Decl{DeclFun, &fun})
+				decls = append(decls, fun)
 			}
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
@@ -45,49 +51,46 @@ func (p *Parser) ParseDecls() ([]Decl, bool) {
 	}
 }
 
-func (p *Parser) ParseFun() (Fun, bool) {
+func (p *Parser) ParseFun() (NodeID, bool) {
 	t, ok := p.expect(token.Fun)
 	if !ok {
-		return Fun{}, false
+		return ParseFailed, false
 	}
 	span := t.Span
 	nameToken, ok := p.expect(token.Ident)
 	if !ok {
-		return Fun{}, false
+		return ParseFailed, false
 	}
-	name := Name{p.base(nameToken.Span), nameToken.Value}
+	name := Name{nameToken.Value, nameToken.Span}
 	params, ok := p.ParseFunParams()
 	if !ok {
-		return Fun{}, false
+		return ParseFailed, false
 	}
 	t, ok = p.peek()
 	if !ok {
-		return Fun{}, false
+		return ParseFailed, false
 	}
-	var returnType Type
+	var returnType NodeID
 	if t.Kind == token.Void {
-		returnType = NewSimpleType(&SimpleType{Name{p.base(t.Span), "void"}})
+		returnType = p.NewSimpleType(Name{"void", t.Span}, t.Span)
 		p.next()
 	} else {
 		returnType, ok = p.ParseType()
 		if !ok {
-			return Fun{}, false
+			return ParseFailed, false
 		}
 	}
-	block, ok := p.ParseBlock()
-	if !ok {
-		p.diagnostic(name.Span, "failed to parse block")
-	}
-	return Fun{p.base(span), name, params, returnType, block}, ok
+	block, _ := p.ParseBlock()
+	return p.NewFun(name, params, returnType, block, span.Combine(p.span())), ok
 }
 
-func (p *Parser) ParseBlock() (Block, bool) {
+func (p *Parser) ParseBlock() (NodeID, bool) {
 	t, ok := p.expect(token.LCurly)
 	if !ok {
-		return Block{}, false
+		return ParseFailed, false
 	}
 	span := t.Span
-	exprs := []Expr{}
+	exprs := []NodeID{}
 	for {
 		t, ok := p.peek()
 		if !ok {
@@ -99,17 +102,22 @@ func (p *Parser) ParseBlock() (Block, bool) {
 		}
 		expr, ok := p.ParseExpr()
 		if !ok {
-			return Block{p.base(span.Combine(t.Span)), exprs}, false
+			return ParseFailed, false
 		}
 		exprs = append(exprs, expr)
 	}
-	return Block{p.base(span), exprs}, true
+	return p.NewBlock(exprs, span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseExpr() (Expr, bool) {
+func (p *Parser) ParseExpr() (NodeID, bool) {
+	t, ok := p.peek()
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
 	lhs, ok := p.ParseUnaryExpr(0)
 	if !ok {
-		return Expr{}, false
+		return ParseFailed, false
 	}
 	switch t, ok := p.peek(); {
 	case !ok:
@@ -118,32 +126,32 @@ func (p *Parser) ParseExpr() (Expr, bool) {
 		p.next()
 		rhs, ok := p.ParseExpr()
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		return NewAssign(&Assign{p.base(lhs.Span()), lhs, rhs}), true
+		return p.NewAssign(lhs, rhs, span.Combine(p.span())), true
 	default:
 		return lhs, true
 	}
 }
 
-func (p *Parser) ParseUnaryExpr(minPrecedence int) (Expr, bool) {
+func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 	t, ok := p.peek()
 	if !ok {
-		return Expr{}, false
+		return ParseFailed, false
 	}
-	var expr Expr
+	var expr NodeID
 	switch t.Kind { //nolint:exhaustive
 	case token.Star:
 		p.next()
 		expr, ok = p.ParseUnaryExpr(minPrecedence)
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		expr = NewDeref(&Deref{p.base(t.Span), expr})
+		expr = p.NewDeref(expr, t.Span.Combine(p.span()))
 	default:
 		expr, ok = p.ParsePrimaryExpr(minPrecedence)
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
 	}
 	for {
@@ -151,9 +159,9 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (Expr, bool) {
 			callee := expr
 			args, ok := p.ParseCallArgs()
 			if !ok {
-				return Expr{}, false
+				return ParseFailed, false
 			}
-			expr = NewCall(&Call{p.base(callee.Span()), callee, args})
+			expr = p.NewCall(callee, args, t.Span.Combine(p.span()))
 		} else {
 			break
 		}
@@ -161,10 +169,10 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (Expr, bool) {
 	return expr, true
 }
 
-func (p *Parser) ParsePrimaryExpr(minPrecedence int) (Expr, bool) { //nolint:funlen
+func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	t, ok := p.peek()
 	if !ok {
-		return Expr{}, false
+		return ParseFailed, false
 	}
 	expectedTokenKinds := []token.TokenKind{
 		token.Amp,
@@ -183,74 +191,76 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (Expr, bool) { //nolint:fun
 			token.PrettyPrintTokenKinds(expectedTokenKinds),
 			t.Kind,
 		)
-		return Expr{}, false
+		return ParseFailed, false
 	}
-	var expr Expr
+	var expr NodeID
 	switch t.Kind { //nolint:exhaustive
 	case token.Amp:
 		ref, ok := p.ParseRefExpr()
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		expr = NewRef(&ref)
+		expr = ref
 	case token.Fun:
 		fun, ok := p.ParseFun()
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		expr = NewFun(&fun)
+		expr = fun
 	case token.Ident:
 		ident, ok := p.ParseIdent()
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		expr = NewIdent(&ident)
+		expr = ident
 	case token.Number:
 		p.next()
 		number, err := strconv.ParseInt(t.Value, 10, 64)
 		if err != nil {
 			p.diagnostic(t.Span, "invalid number: %s", t.Value)
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		expr = NewInt(&Int{p.base(t.Span), number})
+		expr = p.NewInt(number, t.Span.Combine(p.span()))
 	case token.String:
 		p.next()
-		expr = NewString(&String{p.base(t.Span), t.Value})
+		expr = p.NewString(t.Value, t.Span.Combine(p.span()))
 	case token.LCurly:
 		block, ok := p.ParseBlock()
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		expr = NewBlock(&block)
+		expr = block
 	case token.Let, token.Mut:
 		var_, ok := p.ParseVar()
 		if !ok {
-			return Expr{}, false
+			return ParseFailed, false
 		}
-		expr = NewVar(&var_)
+		expr = var_
 	default:
 		panic(base.Errorf("this should have been catch earlier: unexpected token: %s", t.Kind))
 	}
 	return expr, true
 }
 
-func (p *Parser) ParseRefExpr() (Ref, bool) {
+func (p *Parser) ParseRefExpr() (NodeID, bool) {
 	t, ok := p.expect(token.Amp)
 	if !ok {
-		return Ref{}, false
+		return ParseFailed, false
 	}
-	ident, ok := p.ParseIdent()
+	span := t.Span
+	t, ok = p.expect(token.Ident)
 	if !ok {
-		return Ref{}, false
+		return ParseFailed, false
 	}
-	return Ref{p.base(t.Span), ident}, true
+	name := Name{t.Value, t.Span}
+	return p.NewRef(name, span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseCallArgs() ([]Expr, bool) {
+func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
 	if _, ok := p.expect(token.LParen); !ok {
 		return nil, false
 	}
-	args := []Expr{}
+	args := []NodeID{}
 	for {
 		t, ok := p.peek()
 		if !ok {
@@ -280,40 +290,40 @@ func (p *Parser) ParseCallArgs() ([]Expr, bool) {
 	}
 }
 
-func (p *Parser) ParseVar() (Var, bool) {
+func (p *Parser) ParseVar() (NodeID, bool) {
 	t, ok := p.peek()
 	if !ok {
-		return Var{}, false
+		return ParseFailed, false
 	}
 	mut := t.Kind == token.Mut
 	if mut {
 		p.next()
 	} else {
 		if _, ok := p.expect(token.Let); !ok {
-			return Var{}, false
+			return ParseFailed, false
 		}
 	}
 	span := t.Span
 	nameToken, ok := p.expect(token.Ident)
-	name := Name{p.base(nameToken.Span), nameToken.Value}
+	name := Name{nameToken.Value, nameToken.Span}
 	if !ok {
-		return Var{}, false
+		return ParseFailed, false
 	}
 	if _, ok := p.expect(token.Eq); !ok {
-		return Var{}, false
+		return ParseFailed, false
 	}
 	init, ok := p.ParseExpr()
 	if !ok {
-		return Var{}, false
+		return ParseFailed, false
 	}
-	return Var{p.base(span), name, init, mut}, true
+	return p.NewVar(name, init, mut, span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseFunParams() ([]FunParam, bool) {
+func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 	if _, ok := p.expect(token.LParen); !ok {
 		return nil, false
 	}
-	funParams := make([]FunParam, 0)
+	funParams := []NodeID{}
 	for {
 		t, ok := p.peek()
 		if !ok {
@@ -327,7 +337,7 @@ func (p *Parser) ParseFunParams() ([]FunParam, bool) {
 				p.next()
 			}
 			nameToken, ok := p.expect(token.Ident)
-			name := Name{p.base(nameToken.Span), nameToken.Value}
+			name := Name{nameToken.Value, nameToken.Span}
 			if !ok {
 				return funParams, false
 			}
@@ -336,7 +346,8 @@ func (p *Parser) ParseFunParams() ([]FunParam, bool) {
 				p.diagnostic(t.Span, "expected type, got %s", t.Kind)
 				return funParams, false
 			}
-			funParams = append(funParams, FunParam{p.base(name.Span), name, type_, mut})
+			param := p.NewFunParam(name, type_, mut, name.Span.Combine(p.span()))
+			funParams = append(funParams, param)
 		case token.Comma:
 			p.next()
 		case token.RParen:
@@ -349,47 +360,36 @@ func (p *Parser) ParseFunParams() ([]FunParam, bool) {
 	}
 }
 
-func (p *Parser) ParseType() (Type, bool) {
+func (p *Parser) ParseType() (NodeID, bool) {
 	t, ok := p.next()
 	if !ok {
-		return Type{}, false
+		return ParseFailed, false
 	}
 	switch t.Kind { //nolint:exhaustive
 	case token.TypeIdent:
-		return NewSimpleType(&SimpleType{Name{p.base(t.Span), t.Value}}), true
+		return p.NewSimpleType(Name{t.Value, t.Span}, t.Span.Combine(p.span())), true
 	case token.Amp:
 		inner, ok := p.ParseType()
 		if !ok {
-			return Type{}, false
+			return ParseFailed, false
 		}
-		return NewRefType(&RefType{p.base(t.Span), inner}), true
+		return p.NewRefType(inner, t.Span.Combine(p.span())), true
 	default:
 		p.diagnostic(t.Span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
-		return Type{}, false
+		return ParseFailed, false
 	}
 }
 
-func (p *Parser) ParseIdent() (Ident, bool) {
+func (p *Parser) ParseIdent() (NodeID, bool) {
 	t, ok := p.expect(token.Ident)
 	if !ok {
-		return Ident{}, false
+		return ParseFailed, false
 	}
-	return Ident{p.base(t.Span), t.Value}, true
+	return p.NewIdent(t.Value, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {
 	p.Diagnostics = append(p.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
-}
-
-func (p *Parser) base(span base.Span) astBase {
-	span = span.Combine(p.span())
-	return astBase{p.id(), span}
-}
-
-func (p *Parser) id() NodeID {
-	id := p.id_
-	p.id_++
-	return id
 }
 
 func (p *Parser) next() (*token.Token, bool) {

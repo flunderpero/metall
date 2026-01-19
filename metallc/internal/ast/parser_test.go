@@ -1,4 +1,4 @@
-//nolint:exhaustruct
+//nolint:unparam
 package ast
 
 import (
@@ -8,66 +8,145 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
-func TestParsOK(t *testing.T) {
-	Str := typ("Str")
-	Int := typ("Int")
-	void := typ("void")
-
+func TestParseOK(t *testing.T) {
 	tests := []struct {
 		name string
 		kind string
 		src  string
-		want any
+		want func(*TestAST) NodeID
 	}{
 		{
 			"happy path", "file", `fun foo() Str { "hello" 123 } `,
-			file(
-				fun_decl("foo", fun_params(), Str, fun_block(string_("hello"), int_(123))),
-			),
+			func(a *TestAST) NodeID {
+				return a.file(
+					a.fun("foo", nil, a.str_typ(), a.block(a.string_("hello"), a.int_(123))),
+				)
+			},
 		},
-		{"assign expr", "expr", `foo = 123`, assign(ident_expr("foo"), int_(123))},
-		{"var expr", "expr", `let foo = 123`, var_("foo", int_(123))},
-		{"mut expr", "expr", `mut foo = 123`, mut_var("foo", int_(123))},
-		{"block expr", "expr", `{ 0 "hello" }`, block(int_(0), string_("hello"))},
-		{"empty block", "expr", `{ }`, block()},
+		{
+			"assign expr", "expr", `foo = 123`,
+			func(a *TestAST) NodeID {
+				return a.assign(a.ident("foo"), a.int_(123))
+			},
+		},
+		{
+			"var expr", "expr", `let foo = 123`,
+			func(a *TestAST) NodeID {
+				return a.var_("foo", a.int_(123))
+			},
+		},
+		{
+			"mut expr", "expr", `mut foo = 123`,
+			func(a *TestAST) NodeID {
+				return a.mut_var("foo", a.int_(123))
+			},
+		},
+		{
+			"block expr", "expr", `{ 0 "hello" }`,
+			func(a *TestAST) NodeID {
+				return a.block(a.int_(0), a.string_("hello"))
+			},
+		},
+		{
+			"empty block", "expr", `{ }`,
+			func(a *TestAST) NodeID {
+				return a.block()
+			},
+		},
 		{
 			"fun with (mut) params", "expr", `fun foo(a Int, mut b Str) Int { 123 }`,
-			fun(
-				"foo",
-				fun_params(fun_param("a", Int), mut_fun_param("b", Str)),
-				Int,
-				fun_block(int_(123)),
-			),
+			func(a *TestAST) NodeID {
+				return a.fun("foo",
+					[]NodeID{a.fun_param("a", a.int_typ()), a.mut_fun_param("b", a.str_typ())},
+					a.int_typ(),
+					a.block(a.int_(123)),
+				)
+			},
 		},
 		{
 			"fun inside block", "expr", `{ fun foo() Str { "hello" 123 } }`,
-			block(
-				fun("foo", fun_params(), Str, fun_block(string_("hello"), int_(123)))),
+			func(a *TestAST) NodeID {
+				return a.block(
+					a.fun("foo", nil, a.str_typ(), a.block(a.string_("hello"), a.int_(123))),
+				)
+			},
 		},
-		{"void fun", "expr", `fun foo() void {}`, fun("foo", fun_params(), void, fun_block())},
-		{"call", "expr", `foo(123, "hello")`, call(ident_expr("foo"), int_(123), string_("hello"))},
-		{"call w/o args", "expr", `foo()`, call(ident_expr("foo"))},
-		{"chained calls", "expr", `foo()()`, call(call(ident_expr("foo")))},
-
-		{"ref ident expr", "expr", `&foo`, ref(ident("foo"))},
-		{"deref expr", "expr", `*foo`, deref(ident_expr("foo"))},
-		{"nested deref expr", "expr", `**foo`, deref(deref(ident_expr("foo")))},
-		{"ref type", "expr", `fun foo() &Int {}`, fun("foo", fun_params(), ref_typ(Int), fun_block())},
-		{"nested ref type", "expr", `fun foo() &&Int {}`, fun("foo", fun_params(), ref_typ(ref_typ(Int)), fun_block())},
-		{"deref assign", "expr", `*foo = bar`, assign(deref(ident_expr("foo")), ident_expr("bar"))},
 		{
-			"nested deref assign",
-			"expr",
-			`***foo = bar`,
-			assign(deref(deref(deref(ident_expr("foo")))), ident_expr("bar")),
+			"void fun", "expr", `fun foo() void {}`,
+			func(a *TestAST) NodeID {
+				return a.fun("foo", nil, a.void_typ(), a.block())
+			},
+		},
+		{
+			"call", "expr", `foo(123, "hello")`,
+			func(a *TestAST) NodeID {
+				return a.call(a.ident("foo"), a.int_(123), a.string_("hello"))
+			},
+		},
+		{
+			"call w/o args", "expr", `foo()`,
+			func(a *TestAST) NodeID {
+				return a.call(a.ident("foo"))
+			},
+		},
+		{
+			"chained calls", "expr", `foo()()`,
+			func(a *TestAST) NodeID {
+				return a.call(a.call(a.ident("foo")))
+			},
+		},
+
+		{
+			"ref ident expr", "expr", `&foo`,
+			func(a *TestAST) NodeID {
+				return a.ref("foo")
+			},
+		},
+		{
+			"deref expr", "expr", `*foo`,
+			func(a *TestAST) NodeID {
+				return a.deref(a.ident("foo"))
+			},
+		},
+		{
+			"nested deref expr", "expr", `**foo`,
+			func(a *TestAST) NodeID {
+				return a.deref(a.deref(a.ident("foo")))
+			},
+		},
+		{
+			"ref type", "expr", `fun foo() &Int {}`,
+			func(a *TestAST) NodeID {
+				return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.block())
+			},
+		},
+		{
+			"nested ref type", "expr", `fun foo() &&Int {}`,
+			func(a *TestAST) NodeID {
+				return a.fun("foo", nil, a.ref_typ(a.ref_typ(a.int_typ())), a.block())
+			},
+		},
+		{
+			"deref assign", "expr", `*foo = bar`,
+			func(a *TestAST) NodeID {
+				return a.assign(a.deref(a.ident("foo")), a.ident("bar"))
+			},
+		},
+		{
+			"nested deref assign", "expr", `***foo = bar`,
+			func(a *TestAST) NodeID {
+				return a.assign(a.deref(a.deref(a.deref(a.ident("foo")))), a.ident("bar"))
+			},
 		},
 		{
 			"ref param", "expr", `{ fun foo(a &Int) void {} let b = 123 foo(&b) }`,
-			block(
-				fun("foo", fun_params(fun_param("a", ref_typ(Int))), void, fun_block()),
-				var_("b", int_(123)),
-				call(ident_expr("foo"), ref(ident("b"))),
-			),
+			func(a *TestAST) NodeID {
+				return a.block(
+					a.fun("foo", []NodeID{a.fun_param("a", a.ref_typ(a.int_typ()))}, a.void_typ(), a.block()),
+					a.var_("b", a.int_(123)),
+					a.call(a.ident("foo"), a.ref("b")),
+				)
+			},
 		},
 	}
 
@@ -77,35 +156,28 @@ func TestParsOK(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := NewParser(tokens)
-			var got any
+			var gotRoot NodeID
 			var ok bool
 			switch tt.kind {
 			case "expr":
-				got, ok = parser.ParseExpr()
+				gotRoot, ok = parser.ParseExpr()
 			case "file":
-				got, ok = parser.ParseFile()
+				gotRoot, ok = parser.ParseFile()
 			default:
 				t.Fatalf("unknown kind: %s", tt.kind)
 			}
 			assert.Equal(0, len(parser.Diagnostics), "diagnostics: %s", parser.Diagnostics)
 			assert.Equal(true, ok, "parse function returned false")
-			zero := &zeroBaseVisitor{}
-			switch g := got.(type) {
-			case Expr:
-				zero.VisitExpr(&g)
-				got = g
-			case File:
-				zero.VisitFile(&g)
-				got = g
-			default:
-				t.Fatalf("unknown type: %T", got)
-			}
-			assert.Equal(tt.want, got)
+			wantAST := NewTestAST()
+			wantRoot := tt.want(wantAST)
+			want := ast_to_list(wantAST.AST, wantRoot)
+			got := ast_to_list(parser.AST, gotRoot)
+			assert.Equal(want, got)
 		})
 	}
 }
 
-func TestParsErr(t *testing.T) {
+func TestParseErr(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
@@ -139,12 +211,8 @@ func TestParsErr(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := NewParser(tokens)
-			expr, parseOK := parser.ParseExpr()
-			if parseOK {
-				zero := &zeroBaseVisitor{}
-				zero.VisitExpr(&expr)
-			}
-			assert.Equal(false, parseOK, "ParseExpr should have failed: %s", base.Stringify(expr))
+			_, parseOK := parser.ParseExpr()
+			assert.Equal(false, parseOK, "ParseExpr should have failed")
 			diagnostics := parser.Diagnostics
 			for i, want := range tt.want {
 				if i >= len(diagnostics) {
@@ -159,188 +227,122 @@ func TestParsErr(t *testing.T) {
 	}
 }
 
-type zeroBaseVisitor struct{}
-
-func (v *zeroBaseVisitor) VisitFile(file *File) {
-	file.astBase = astBase{}
-	WalkFile(file, v)
+type TestAST struct {
+	*AST
+	span base.Span
 }
 
-func (v *zeroBaseVisitor) VisitDecl(decl *Decl) {
-	WalkDecl(decl, v)
+func NewTestAST() *TestAST {
+	return &TestAST{AST: NewAST(), span: base.Span{}}
 }
 
-func (v *zeroBaseVisitor) VisitType(typ *Type) {
-	switch typ.Kind {
-	case TypeSimple:
-		typ.SimpleType.astBase = astBase{}
-	case TypeRef:
-		typ.RefType.astBase = astBase{}
-	default:
-		panic(base.Errorf("unknown type kind: %d", typ.Kind))
+func (a *TestAST) file(decls ...NodeID) NodeID {
+	return a.NewFile(decls, a.span)
+}
+
+func (a *TestAST) fun_param(name string, typ NodeID) NodeID {
+	return a.NewFunParam(Name{name, a.span}, typ, false, a.span)
+}
+
+func (a *TestAST) mut_fun_param(name string, typ NodeID) NodeID {
+	return a.NewFunParam(Name{name, a.span}, typ, true, a.span)
+}
+
+func (a *TestAST) fun(name string, params []NodeID, return_type NodeID, block NodeID) NodeID {
+	if params == nil {
+		params = []NodeID{}
 	}
-	WalkType(typ, v)
+	return a.NewFun(Name{name, a.span}, params, return_type, block, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitFun(fun *Fun) {
-	fun.astBase = astBase{}
-	WalkFun(fun, v)
+func (a *TestAST) string_(value string) NodeID {
+	return a.NewString(value, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitFunParam(funParam *FunParam) {
-	funParam.astBase = astBase{}
-	WalkFunParam(funParam, v)
+func (a *TestAST) int_(value int64) NodeID {
+	return a.NewInt(value, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitIdent(ident *Ident) {
-	ident.astBase = astBase{}
-	WalkIdent(ident, v)
+func (a *TestAST) block(exprs ...NodeID) NodeID {
+	if exprs == nil {
+		exprs = []NodeID{}
+	}
+	return a.NewBlock(exprs, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitName(name *Name) {
-	name.astBase = astBase{}
-	WalkName(name, v)
+func (a *TestAST) str_typ() NodeID {
+	return a.NewSimpleType(Name{"Str", a.span}, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitExpr(expr *Expr) {
-	WalkExpr(expr, v)
+func (a *TestAST) int_typ() NodeID {
+	return a.NewSimpleType(Name{"Int", a.span}, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitRef(expr *Ref) {
-	expr.astBase = astBase{}
-	WalkRef(expr, v)
+func (a *TestAST) void_typ() NodeID {
+	return a.NewSimpleType(Name{"void", a.span}, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitDeref(expr *Deref) {
-	expr.astBase = astBase{}
-	WalkDeref(expr, v)
+func (a *TestAST) ident(name string) NodeID {
+	return a.NewIdent(name, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitAssign(assign *Assign) {
-	assign.astBase = astBase{}
-	WalkAssign(assign, v)
+func (a *TestAST) assign(lhs NodeID, rhs NodeID) NodeID {
+	return a.NewAssign(lhs, rhs, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitCall(call *Call) {
-	call.astBase = astBase{}
-	WalkCall(call, v)
+func (a *TestAST) var_(name string, expr NodeID) NodeID {
+	return a.NewVar(Name{name, a.span}, expr, false, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitBlock(block *Block) {
-	block.astBase = astBase{}
-	WalkBlock(block, v)
+func (a *TestAST) mut_var(name string, expr NodeID) NodeID {
+	return a.NewVar(Name{name, a.span}, expr, true, a.span)
 }
 
-func (v *zeroBaseVisitor) VisitInt(expr *Int) {
-	expr.astBase = astBase{}
-	WalkInt(expr, v)
-}
-
-func (v *zeroBaseVisitor) VisitString(expr *String) {
-	expr.astBase = astBase{}
-	WalkString(expr, v)
-}
-
-func (v *zeroBaseVisitor) VisitVar(varExpr *Var) {
-	varExpr.astBase = astBase{}
-	WalkVar(varExpr, v)
-}
-
-func ident(name string) Ident {
-	return Ident{Name: name}
-}
-
-func ident_expr(name string) Expr {
-	return Expr{Kind: ExprIdent, Ident: &Ident{Name: name}}
-}
-
-func call(callee Expr, args ...Expr) Expr {
+func (a *TestAST) call(callee NodeID, args ...NodeID) NodeID {
 	if args == nil {
-		args = []Expr{}
+		args = []NodeID{}
 	}
-	return Expr{Kind: ExprCall, Call: &Call{Callee: callee, Args: args}}
+	return a.NewCall(callee, args, a.span)
 }
 
-func file(decls ...Decl) File {
-	if len(decls) == 0 {
-		decls = []Decl{}
+func (a *TestAST) ref(name string) NodeID {
+	return a.NewRef(Name{name, a.span}, a.span)
+}
+
+func (a *TestAST) deref(expr NodeID) NodeID {
+	return a.NewDeref(expr, a.span)
+}
+
+func (a *TestAST) ref_typ(typ NodeID) NodeID {
+	return a.NewRefType(typ, a.span)
+}
+
+func ast_to_list(ast *AST, nodeID NodeID) []*Node {
+	var nodes []*Node
+	var f func(NodeID)
+	f = func(nodeID NodeID) {
+		node := ast.Node(nodeID)
+		node.Span = base.Span{}
+		switch kind := node.Kind.(type) {
+		case FunParam:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case SimpleType:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case Fun:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case Var:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case Ref:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		}
+		nodes = append(nodes, node)
+		ast.Walk(nodeID, f)
 	}
-	return File{Decls: decls}
-}
-
-func mut_fun_param(name string, typ Type) FunParam {
-	return FunParam{Name: Name{Name: name}, Type: typ, Mut: true}
-}
-
-func fun_param(name string, typ Type) FunParam {
-	return FunParam{Name: Name{Name: name}, Type: typ}
-}
-
-func fun_params(params ...FunParam) []FunParam {
-	if len(params) == 0 {
-		return []FunParam{}
-	}
-	return params
-}
-
-func fun_decl(name_ string, params []FunParam, return_type Type, block Block) Decl {
-	name := Name{Name: name_}
-	return Decl{Kind: DeclFun, Fun: &Fun{Name: name, Params: params, ReturnType: return_type, Block: block}}
-}
-
-func fun(name_ string, params []FunParam, return_type Type, block Block) Expr { //nolint:unparam
-	name := Name{Name: name_}
-	return Expr{Kind: ExprFun, Fun: &Fun{Name: name, Params: params, ReturnType: return_type, Block: block}}
-}
-
-func string_(value string) Expr { //nolint:unparam
-	return Expr{Kind: ExprString, String: &String{Value: value}}
-}
-
-func int_(value int64) Expr {
-	return Expr{Kind: ExprInt, Int: &Int{Value: value}}
-}
-
-func assign(lhs Expr, value Expr) Expr {
-	return Expr{Kind: ExprAssign, Assign: &Assign{LHS: lhs, Value: value}}
-}
-
-func typ(name string) Type {
-	return NewSimpleType(&SimpleType{Name{Name: name}})
-}
-
-func fun_block(exprs ...Expr) Block {
-	if exprs == nil {
-		exprs = []Expr{}
-	}
-	return Block{Exprs: exprs}
-}
-
-func var_(name_ string, init Expr) Expr {
-	name := Name{Name: name_}
-	return Expr{Kind: ExprVar, Var: &Var{Name: name, Init: init}}
-}
-
-func mut_var(name_ string, init Expr) Expr {
-	name := Name{Name: name_}
-	return Expr{Kind: ExprVar, Var: &Var{Name: name, Init: init, Mut: true}}
-}
-
-func ref(ident Ident) Expr {
-	return Expr{Kind: ExprRef, Ref: &Ref{Ident: ident}}
-}
-
-func deref(expr Expr) Expr {
-	return Expr{Kind: ExprDeref, Deref: &Deref{Expr: expr}}
-}
-
-func ref_typ(typ Type) Type {
-	return NewRefType(&RefType{Type: typ})
-}
-
-func block(exprs ...Expr) Expr {
-	if exprs == nil {
-		exprs = []Expr{}
-	}
-	return Expr{Kind: ExprBlock, Block: &Block{Exprs: exprs}}
+	f(nodeID)
+	return nodes
 }

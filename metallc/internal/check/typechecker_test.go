@@ -20,27 +20,25 @@ func TestTypeCheckOK(t *testing.T) {
 		name  string
 		src   string
 		want  Type
-		check func(*TypeChecker, *ast.Expr, base.Assert)
+		check func(*TypeChecker, *ast.AST, ast.NodeID, base.Assert)
 	}{
 		{"Int", `123`, Int, nil},
 		{"Str", `"hello"`, Str, nil},
 		{"block", `{ 123 "hello" }`, Str, nil},
 		{"empty block is void", `{ }`, void, nil},
-		{"let", `let foo = 123`, void, func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
-			v := e.Var
-			typ, err := tc.Env.LookupType(v.ID, span)
+		{"let", `let foo = 123`, void, func(tc *TypeChecker, a *ast.AST, id ast.NodeID, assert base.Assert) {
+			typ, err := tc.Env.LookupType(id, span)
 			assert.NoError(err)
 			assert.Equal(TypeVoid, typ.Kind)
 			// Make sure the binding is set correctly.
-			b, err := tc.Env.LookupBinding(v.ID, span)
+			b, err := tc.Env.LookupBinding(id, span)
 			assert.NoError(err)
 			assert.Equal("foo", b.Name)
 			assert.Equal(TypeInt, b.Type.Kind)
 			assert.Equal(false, b.Mut)
 		}},
-		{"mut", `mut foo = 123`, void, func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
-			v := e.Var
-			b, err := tc.Env.LookupBinding(v.ID, span)
+		{"mut", `mut foo = 123`, void, func(tc *TypeChecker, a *ast.AST, id ast.NodeID, assert base.Assert) {
+			b, err := tc.Env.LookupBinding(id, span)
 			assert.NoError(err)
 			assert.Equal("foo", b.Name)
 			assert.Equal(TypeInt, b.Type.Kind)
@@ -50,10 +48,11 @@ func TestTypeCheckOK(t *testing.T) {
 			"assign is void",
 			`{ mut foo = 321 foo = 123 }`,
 			void,
-			func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
-				block := e.Block
-				assign := block.Exprs[1].Assign
-				typ, err := tc.Env.LookupType(assign.ID, span)
+			func(tc *TypeChecker, a *ast.AST, id ast.NodeID, assert base.Assert) {
+				block, ok := a.Node(id).Kind.(ast.Block)
+				assert.Equal(true, ok)
+				assignID := block.Exprs[1]
+				typ, err := tc.Env.LookupType(assignID, span)
 				assert.NoError(err)
 				assert.Equal(TypeVoid, typ.Kind)
 			},
@@ -62,14 +61,13 @@ func TestTypeCheckOK(t *testing.T) {
 			"fun",
 			`fun foo(a Int, b Str) Int { 123 }`,
 			funt(Int, Str, Int),
-			func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
-				f := e.Fun
-				typ, err := tc.Env.LookupType(f.ID, span)
+			func(tc *TypeChecker, a *ast.AST, id ast.NodeID, assert base.Assert) {
+				typ, err := tc.Env.LookupType(id, span)
 				assert.NoError(err)
 				assert.Equal(TypeFun, typ.Kind)
 				assert.Equal(funt(Int, Str, Int).Fun, typ.Fun)
 				// Make sure the binding is set correctly.
-				b, err := tc.Env.LookupBinding(f.ID, span)
+				b, err := tc.Env.LookupBinding(id, span)
 				assert.NoError(err)
 				assert.Equal("foo", b.Name)
 				assert.Equal(funt(Int, Str, Int).Fun, b.Type.Fun)
@@ -81,10 +79,11 @@ func TestTypeCheckOK(t *testing.T) {
 			"call",
 			`{ fun foo(a Int) Int { 123 } foo(321) }`,
 			Int,
-			func(tc *TypeChecker, e *ast.Expr, assert base.Assert) {
-				block := e.Block
-				call := block.Exprs[1].Call
-				typ, err := tc.Env.LookupType(call.ID, span)
+			func(tc *TypeChecker, a *ast.AST, id ast.NodeID, assert base.Assert) {
+				block, ok := a.Node(id).Kind.(ast.Block)
+				assert.Equal(true, ok)
+				callID := block.Exprs[1]
+				typ, err := tc.Env.LookupType(callID, span)
 				assert.NoError(err)
 				assert.Equal(TypeInt, typ.Kind)
 			},
@@ -119,19 +118,19 @@ func TestTypeCheckOK(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
-			tc := NewTypeChecker()
-			expr, parseOK := parser.ParseExpr()
+			exprID, parseOK := parser.ParseExpr()
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK, "ParseExpr returned false")
-			tc.VisitExpr(&expr)
-			got, ok := tc.Env.Types[expr.ID()]
+			tc := NewTypeChecker(parser.AST)
+			tc.Check(exprID)
+			got, ok := tc.Env.Types[exprID]
 			assert.Equal(0, len(tc.Diagnostics), "diagnostics:\n%s", tc.Diagnostics)
 			assert.Equal(true, ok, "Type not found after typechecking")
 			zeroTypeBase(&got)
 			zeroTypeBase(&tt.want)
 			assert.Equal(tt.want, got)
 			if tt.check != nil {
-				tt.check(tc, &expr, assert)
+				tt.check(tc, parser.AST, exprID, assert)
 			}
 		})
 	}
@@ -169,9 +168,9 @@ func TestTypeCheckErr(t *testing.T) {
 				"                    ^^^",
 		}},
 		{"call argument count mismatch", `{ fun foo(a Int) Int { 123 } foo(1, 2, "hello") }`, []string{
-			"test.met:1:30: argument count mismatch: expected 1, got 3\n" +
+			"test.met:1:33: argument count mismatch: expected 1, got 3\n" +
 				`    { fun foo(a Int) Int { 123 } foo(1, 2, "hello") }` + "\n" +
-				"                                 ^^^^^^^^^^^^^^^^^^",
+				"                                    ^^^^^^^^^^^^^^^",
 		}},
 		{"call argument type mismatch", `{ fun foo(a Int, b Int) Int { 123 } foo("hello", 2) }`, []string{
 			"test.met:1:41: type mismatch at argument 1: expected Int, got Str\n" +
@@ -237,11 +236,11 @@ func TestTypeCheckErr(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
-			tc := NewTypeChecker()
-			expr, parseOK := parser.ParseExpr()
+			exprID, parseOK := parser.ParseExpr()
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK)
-			tc.VisitExpr(&expr)
+			tc := NewTypeChecker(parser.AST)
+			tc.Check(exprID)
 			diagnostics := base.Diagnostics{}
 			for _, diag := range tc.Diagnostics {
 				if !strings.Contains(diag.Message, "no type set for AST node") {
