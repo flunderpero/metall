@@ -13,22 +13,29 @@ const ParseFailed = NodeID(0)
 type Parser struct {
 	*AST
 	Diagnostics base.Diagnostics
-	id_         NodeID
+	ScopeGraph  *ScopeGraph
+	scope       *Scope
+	nextScopeID ScopeID
 	tokens      []token.Token
 	pos         int
 }
 
 func NewParser(tokens []token.Token) *Parser {
-	return &Parser{NewAST(), base.Diagnostics{}, NodeID(1), tokens, 0}
+	scope := NewScope(0, nil)
+	p := &Parser{NewAST(), base.Diagnostics{}, NewScopeGraph(), scope, 2, tokens, 0}
+	p.AST.onNewNode = p.onNewNode
+	return p
 }
 
 func (p *Parser) ParseFile() (NodeID, bool) {
-	span := p.span()
-	decls, ok := p.ParseDecls()
-	if !ok {
-		return ParseFailed, false
-	}
-	return p.NewFile(decls, span.Combine(p.span())), ok
+	return p.withScope(func() (NodeID, bool) {
+		span := p.span()
+		decls, ok := p.ParseDecls()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewFile(decls, span.Combine(p.span())), ok
+	})
 }
 
 func (p *Parser) ParseDecls() ([]NodeID, bool) {
@@ -62,51 +69,68 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
-	params, ok := p.ParseFunParams()
-	if !ok {
-		return ParseFailed, false
-	}
-	t, ok = p.peek()
-	if !ok {
-		return ParseFailed, false
-	}
-	var returnType NodeID
-	if t.Kind == token.Void {
-		returnType = p.NewSimpleType(Name{"void", t.Span}, t.Span)
-		p.next()
-	} else {
-		returnType, ok = p.ParseType()
+	node, ok := p.withScope(func() (NodeID, bool) {
+		params, ok := p.ParseFunParams()
 		if !ok {
 			return ParseFailed, false
 		}
+		t, ok = p.peek()
+		if !ok {
+			return ParseFailed, false
+		}
+		var returnType NodeID
+		if t.Kind == token.Void {
+			returnType = p.NewSimpleType(Name{"void", t.Span}, t.Span)
+			p.next()
+		} else {
+			returnType, ok = p.ParseType()
+			if !ok {
+				return ParseFailed, false
+			}
+		}
+		block, ok := p.ParseBlock(false)
+		node := p.NewFun(name, params, returnType, block, span.Combine(p.span()))
+		return node, ok
+	})
+	if !ok {
+		return ParseFailed, false
 	}
-	block, _ := p.ParseBlock()
-	return p.NewFun(name, params, returnType, block, span.Combine(p.span())), ok
+	if !p.scope.Bind(name.Name, false, node) {
+		p.diagnostic(name.Span, "symbol already defined: %s", name.Name)
+		return ParseFailed, false
+	}
+	return node, ok
 }
 
-func (p *Parser) ParseBlock() (NodeID, bool) {
-	t, ok := p.expect(token.LCurly)
-	if !ok {
-		return ParseFailed, false
-	}
-	span := t.Span
-	exprs := []NodeID{}
-	for {
-		t, ok := p.peek()
-		if !ok {
-			break
-		}
-		if t.Kind == token.RCurly {
-			p.next()
-			break
-		}
-		expr, ok := p.ParseExpr()
+func (p *Parser) ParseBlock(withScope bool) (NodeID, bool) {
+	parse := func() (NodeID, bool) {
+		t, ok := p.expect(token.LCurly)
 		if !ok {
 			return ParseFailed, false
 		}
-		exprs = append(exprs, expr)
+		span := t.Span
+		exprs := []NodeID{}
+		for {
+			t, ok := p.peek()
+			if !ok {
+				break
+			}
+			if t.Kind == token.RCurly {
+				p.next()
+				break
+			}
+			expr, ok := p.ParseExpr()
+			if !ok {
+				return ParseFailed, false
+			}
+			exprs = append(exprs, expr)
+		}
+		return p.NewBlock(exprs, span.Combine(p.span())), true
 	}
-	return p.NewBlock(exprs, span.Combine(p.span())), true
+	if withScope {
+		return p.withScope(parse)
+	}
+	return parse()
 }
 
 func (p *Parser) ParseExpr() (NodeID, bool) {
@@ -225,7 +249,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		p.next()
 		expr = p.NewString(t.Value, t.Span.Combine(p.span()))
 	case token.LCurly:
-		block, ok := p.ParseBlock()
+		block, ok := p.ParseBlock(true)
 		if !ok {
 			return ParseFailed, false
 		}
@@ -316,7 +340,12 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewVar(name, init, mut, span.Combine(p.span())), true
+	node := p.NewVar(name, init, mut, span.Combine(p.span()))
+	if !p.scope.Bind(name.Name, mut, node) {
+		p.diagnostic(name.Span, "symbol already defined: %s", name.Name)
+		return ParseFailed, false
+	}
+	return node, true
 }
 
 func (p *Parser) ParseFunParams() ([]NodeID, bool) {
@@ -347,6 +376,10 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 				return funParams, false
 			}
 			param := p.NewFunParam(name, type_, mut, name.Span.Combine(p.span()))
+			if !p.scope.Bind(name.Name, mut, param) {
+				p.diagnostic(name.Span, "symbol already defined: %s", name.Name)
+				return funParams, false
+			}
 			funParams = append(funParams, param)
 		case token.Comma:
 			p.next()
@@ -420,4 +453,21 @@ func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {
 func (p *Parser) span() base.Span {
 	token := p.tokens[min(max(p.pos-1, 0), len(p.tokens)-1)]
 	return token.Span
+}
+
+func (p *Parser) onNewNode(node *Node) {
+	p.ScopeGraph.SetNodeScope(node.ID, p.scope)
+}
+
+func (p *Parser) withScope(f func() (NodeID, bool)) (NodeID, bool) {
+	p.scope = NewScope(p.nextScopeID, p.scope)
+	defer func() {
+		p.scope = p.scope.parent
+	}()
+	p.nextScopeID++
+	nodeID, ok := f()
+	if ok {
+		p.scope.root = nodeID
+	}
+	return nodeID, ok
 }

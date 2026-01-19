@@ -2,6 +2,7 @@
 package ast
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -150,8 +151,18 @@ func TestParseOK(t *testing.T) {
 		},
 	}
 
+	hasOnly := false
+	for _, tt := range tests {
+		if strings.HasPrefix(tt.name, "!"+"only") {
+			hasOnly = true
+			break
+		}
+	}
 	assert := base.NewAssert(t)
 	for _, tt := range tests {
+		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
@@ -173,6 +184,11 @@ func TestParseOK(t *testing.T) {
 			want := ast_to_list(wantAST.AST, wantRoot)
 			got := ast_to_list(parser.AST, gotRoot)
 			assert.Equal(want, got)
+			// Make sure every node has a scope.
+			for _, node := range got {
+				scope := parser.ScopeGraph.NodeScope(node.ID)
+				assert.NotNil(scope, "no scope for node %d", node.ID)
+			}
 		})
 	}
 }
@@ -183,6 +199,21 @@ func TestParseErr(t *testing.T) {
 		src  string
 		want []string
 	}{
+		{"rebind var", `{ let foo = 123 let foo = 321 }`, []string{
+			"test.met:1:21: symbol already defined: foo\n" +
+				`    { let foo = 123 let foo = 321 }` + "\n" +
+				"                        ^^^",
+		}},
+		{"rebind fun", `{ let foo = 123 fun foo() void {} }`, []string{
+			"test.met:1:21: symbol already defined: foo\n" +
+				`    { let foo = 123 fun foo() void {} }` + "\n" +
+				"                        ^^^",
+		}},
+		{"rebind fun param", `fun foo(bar Int) void { let bar = 123 }`, []string{
+			"test.met:1:29: symbol already defined: bar\n" +
+				`    fun foo(bar Int) void { let bar = 123 }` + "\n" +
+				"                                ^^^",
+		}},
 		{"unexpected token", `=`, []string{
 			"test.met:1:1: unexpected token: expected one of '&', '{', <fun>, <identifier>, <number>, <string>, <let>, <mut>, got =\n" +
 				`    =` + "\n" +
@@ -205,14 +236,24 @@ func TestParseErr(t *testing.T) {
 		}},
 	}
 
+	hasOnly := false
+	for _, tt := range tests {
+		if strings.HasPrefix(tt.name, "!"+"only") {
+			hasOnly = true
+			break
+		}
+	}
+
 	assert := base.NewAssert(t)
 	for _, tt := range tests {
+		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := NewParser(tokens)
 			_, parseOK := parser.ParseExpr()
-			assert.Equal(false, parseOK, "ParseExpr should have failed")
 			diagnostics := parser.Diagnostics
 			for i, want := range tt.want {
 				if i >= len(diagnostics) {
@@ -223,6 +264,7 @@ func TestParseErr(t *testing.T) {
 			if len(diagnostics) > len(tt.want) {
 				t.Fatalf("there are more diagnostics than expected: %s", diagnostics[len(tt.want):])
 			}
+			assert.Equal(false, parseOK, "ParseExpr should have failed")
 		})
 	}
 }

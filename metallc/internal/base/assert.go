@@ -403,6 +403,14 @@ func (a Assert) Nil(v any, msg ...any) {
 	a.tb.Fatalf("%sexpected nil, got %v (%T)", details(msg), v, v)
 }
 
+func (a Assert) NotNil(v any, msg ...any) {
+	a.tb.Helper()
+	if v != nil && !reflect.ValueOf(v).IsNil() {
+		return
+	}
+	a.tb.Fatalf("%sexpected non-nil, got %v (%T)", details(msg), v, v)
+}
+
 func (a Assert) NoError(err error, msg ...any) {
 	a.tb.Helper()
 	if err == nil {

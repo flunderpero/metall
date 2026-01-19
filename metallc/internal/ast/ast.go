@@ -1,12 +1,19 @@
 package ast
 
 import (
+	"fmt"
+
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
 type NodeID int
 
+func (id NodeID) String() string {
+	return fmt.Sprintf("node_%d", id)
+}
+
 type Node struct {
+	ID   NodeID
 	Kind Kind
 	Span base.Span
 }
@@ -114,12 +121,13 @@ type Deref struct {
 func (Deref) isKind() {}
 
 type AST struct {
-	nodes   map[NodeID]*Node
-	nextID_ NodeID
+	nodes     map[NodeID]*Node
+	nextID_   NodeID
+	onNewNode func(*Node)
 }
 
 func NewAST() *AST {
-	return &AST{nextID_: 1, nodes: make(map[NodeID]*Node)}
+	return &AST{nextID_: 1, nodes: make(map[NodeID]*Node), onNewNode: nil}
 }
 
 func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
@@ -231,7 +239,11 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) {
 
 func (a *AST) node(kind Kind, span base.Span) NodeID {
 	id := a.nextID_
-	a.nodes[id] = &Node{Span: span, Kind: kind}
+	node := &Node{ID: id, Span: span, Kind: kind}
+	a.nodes[id] = &Node{ID: id, Span: span, Kind: kind}
 	a.nextID_++
+	if a.onNewNode != nil {
+		a.onNewNode(node)
+	}
 	return id
 }

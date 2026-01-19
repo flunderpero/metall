@@ -147,11 +147,6 @@ func TestTypeCheckErr(t *testing.T) {
 				"    let bar = foo\n" +
 				"              ^^^",
 		}},
-		{"already defined", `{ let foo = 1 let foo = 1 }`, []string{
-			"test.met:1:19: symbol already defined: foo\n" +
-				`    { let foo = 1 let foo = 1 }` + "\n" +
-				"                      ^^^",
-		}},
 		{"fun return type mismatch", `fun foo() Str { 123 }`, []string{
 			"test.met:1:17: return type mismatch: expected Str, got Int\n" +
 				"    fun foo() Str { 123 }\n" +
