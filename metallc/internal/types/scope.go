@@ -10,7 +10,7 @@ import (
 type ScopeID int
 
 func (id ScopeID) String() string {
-	return fmt.Sprintf("scope_%d", id)
+	return fmt.Sprintf("s%d", id)
 }
 
 type Scope struct {
@@ -30,11 +30,11 @@ func NewScope(id ScopeID, parent *Scope) *Scope {
 	return &Scope{id, parent, map[string]*Binding{}}
 }
 
-func (s *Scope) Bind(name string, mut bool, decl ast.NodeID) bool {
+func (s *Scope) Bind(name string, mut bool, decl ast.NodeID, typeID TypeID) bool {
 	if _, ok := s.bindings[name]; ok {
 		return false
 	}
-	s.bindings[name] = &Binding{name, decl, mut, InvalidTypeID}
+	s.bindings[name] = &Binding{name, decl, mut, typeID}
 	return true
 }
 
@@ -66,8 +66,18 @@ func (g *ScopeGraph) NodeScope(nodeID ast.NodeID) *Scope {
 }
 
 func (g *ScopeGraph) SetNodeScope(nodeID ast.NodeID, scope *Scope) {
-	if _, ok := g.scopeByNodeID[nodeID]; ok {
-		panic(base.Errorf("scope already set for node %d", nodeID))
+	if existing, ok := g.scopeByNodeID[nodeID]; ok {
+		if scope.ID != existing.ID {
+			panic(
+				base.Errorf(
+					"cannot set scope %s for node %d: scope already set for node %d",
+					scope.ID,
+					nodeID,
+					existing.ID,
+				),
+			)
+		}
+		return
 	}
 	g.scopeByNodeID[nodeID] = scope
 }

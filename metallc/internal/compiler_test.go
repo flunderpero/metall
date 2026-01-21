@@ -56,6 +56,17 @@ func TestCompile(t *testing.T) {
 				print_int(a)
 			}
 			`, "123\n321\n"},
+
+		{"forward declare", `
+			fun main() void {
+				print_int(foo())
+			}
+
+			fun foo() Int {
+				123
+			}
+
+			`, "123\n"},
 	}
 
 	assert := base.NewAssert(t)

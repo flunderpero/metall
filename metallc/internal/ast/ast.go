@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
@@ -9,7 +10,7 @@ import (
 type NodeID int
 
 func (id NodeID) String() string {
-	return fmt.Sprintf("node_%d", id)
+	return fmt.Sprintf("n%d", id)
 }
 
 type Node struct {
@@ -244,6 +245,147 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) {
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
+}
+
+func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funlen
+	node := a.Node(id)
+	prefix := strings.Repeat(" ", indent)
+	kindName := strings.TrimPrefix(fmt.Sprintf("%T", node.Kind), "ast.")
+	attrs := []string{}
+	type childAttr struct {
+		name string
+		ids  []NodeID
+	}
+	childAttrs := []childAttr{}
+	addAttr := func(name, value string) {
+		attrs = append(attrs, fmt.Sprintf("%s=%s", name, value))
+	}
+	addChild := func(name string, ids ...NodeID) {
+		childAttrs = append(childAttrs, childAttr{name: name, ids: ids})
+	}
+	nodeIDKind := func(id NodeID) string {
+		kindName := strings.TrimPrefix(fmt.Sprintf("%T", a.Node(id).Kind), "ast.")
+		return fmt.Sprintf("%s:%s", id, kindName)
+	}
+	nodeIDList := func(ids []NodeID) string {
+		parts := make([]string, 0, len(ids))
+		for _, id := range ids {
+			parts = append(parts, nodeIDKind(id))
+		}
+		return fmt.Sprintf("[%s]", strings.Join(parts, ","))
+	}
+	blockExprList := func(ids []NodeID) string {
+		if len(ids) <= 10 {
+			return nodeIDList(ids)
+		}
+		parts := make([]string, 0, 10)
+		for i := range 8 {
+			parts = append(parts, nodeIDKind(ids[i]))
+		}
+		parts = append(parts, fmt.Sprintf("... %d more ...", len(ids)-9))
+		parts = append(parts, nodeIDKind(ids[len(ids)-1]))
+		return fmt.Sprintf("[%s]", strings.Join(parts, ","))
+	}
+	switch kind := node.Kind.(type) {
+	case Assign:
+		if !children {
+			addAttr("lhs", nodeIDKind(kind.LHS))
+			addAttr("rhs", nodeIDKind(kind.RHS))
+		} else {
+			addChild("lhs", kind.LHS)
+			addChild("rhs", kind.RHS)
+		}
+	case Block:
+		addAttr("createScope", fmt.Sprintf("%t", kind.CreateScope))
+		if !children {
+			addAttr("exprs", blockExprList(kind.Exprs))
+		} else {
+			addChild("exprs", kind.Exprs...)
+		}
+	case Call:
+		if !children {
+			addAttr("callee", nodeIDKind(kind.Callee))
+			addAttr("args", nodeIDList(kind.Args))
+		} else {
+			addChild("callee", kind.Callee)
+			addChild("args", kind.Args...)
+		}
+	case Deref:
+		if !children {
+			addAttr("expr", nodeIDKind(kind.Expr))
+		} else {
+			addChild("expr", kind.Expr)
+		}
+	case File:
+		if !children {
+			addAttr("decls", nodeIDList(kind.Decls))
+		} else {
+			addChild("decls", kind.Decls...)
+		}
+	case Fun:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if !children {
+			addAttr("params", nodeIDList(kind.Params))
+			addAttr("returnType", nodeIDKind(kind.ReturnType))
+			addAttr("block", nodeIDKind(kind.Block))
+		} else {
+			addChild("params", kind.Params...)
+			addChild("returnType", kind.ReturnType)
+			addChild("block", kind.Block)
+		}
+	case FunParam:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if !children {
+			addAttr("type", nodeIDKind(kind.Type))
+		} else {
+			addChild("type", kind.Type)
+		}
+	case Ident:
+		addAttr("name", fmt.Sprintf("%q", kind.Name))
+	case Int:
+		addAttr("value", fmt.Sprintf("%d", kind.Value))
+	case String:
+		addAttr("value", fmt.Sprintf("%q", kind.Value))
+	case Var:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if !children {
+			addAttr("expr", nodeIDKind(kind.Expr))
+		} else {
+			addChild("expr", kind.Expr)
+		}
+	case SimpleType:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+	case Ref:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+	case RefType:
+		if !children {
+			addAttr("type", nodeIDKind(kind.Type))
+		} else {
+			addChild("type", kind.Type)
+		}
+	default:
+		panic(base.Errorf("unknown node kind: %T", kind))
+	}
+	line := fmt.Sprintf("%s%s:%s(%s)", prefix, id, kindName, strings.Join(attrs, ","))
+	if !children || len(childAttrs) == 0 {
+		return line
+	}
+	lines := []string{line}
+	childPrefix := strings.Repeat(" ", indent+2)
+	for _, child := range childAttrs {
+		for i, childID := range child.ids {
+			name := child.name
+			if len(child.ids) > 1 {
+				name = fmt.Sprintf("%s[%d]", name, i)
+			}
+			childDebug := a.Debug(childID, children, indent+2)
+			childDebug = strings.TrimPrefix(childDebug, childPrefix)
+			lines = append(lines, fmt.Sprintf("%s%s=%s", childPrefix, name, childDebug))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (a *AST) node(kind Kind, span base.Span) NodeID {

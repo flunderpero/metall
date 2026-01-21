@@ -59,12 +59,7 @@ func TestTypeCheckOK(t *testing.T) {
 		{"fun", `fun foo(a Int, b Str) Int { 123 }`, fun_t(Int, Str, Int), nil},
 		{"fun void return coerces body to void", `fun foo() void { 123 }`, fun_t(void), nil},
 		{"fun params", `fun foo(a Int) Int { a }`, fun_t(Int, Int), nil},
-		{
-			"call",
-			`{ fun foo(a Int) Int { 123 } foo(321) }`,
-			Int,
-			nil,
-		},
+		{"call", `{ fun foo(a Int) Int { 123 } foo(321) }`, Int, nil},
 		{"call void fun", `{ fun foo() void { } foo() }`, void, nil},
 		{"builtin print_str", `print_str("hello")`, void, nil},
 		{"builtin print_int", `print_int(123)`, void, nil},
@@ -77,6 +72,10 @@ func TestTypeCheckOK(t *testing.T) {
 		{"nested deref assign", `{ mut a = 1 mut b = &a mut c = &b *b = 123 **c = 321 }`, void, nil},
 		{"mut ref parameter", `{ fun foo(mut a &Int) void { *a = 321 } mut b = 123 foo(&b) }`, void, nil},
 		{"ref return", `{ fun foo(a &Int) &Int { a } let b = 123 foo(&b) }`, ref_t(Int), nil},
+
+		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t(void), nil},
+		{"self recursion", `{ fun foo(a Int) Int { foo(a) } foo(1) }`, Int, nil},
+		{"mutual recursion", `{ fun foo(a Int) Int { bar(a) } fun bar(a Int) Int { foo(a) } foo(10) }`, Int, nil},
 	}
 
 	assert := base.NewAssert(t)
@@ -109,8 +108,8 @@ func TestTypeCheckOK(t *testing.T) {
 			}
 			// Make sure every node has a scope.
 			parser.Iter(func(nodeID ast.NodeID) bool {
-				scope := e.ScopeGraph.NodeScope(nodeID)
-				assert.NotNil(scope, "no scope for node %d", nodeID)
+				_, ok := e.ScopeGraph.scopeByNodeID[nodeID]
+				assert.Equal(true, ok, "no scope for %s", e.AST.Debug(nodeID, false, 0))
 				return true
 			})
 		})
@@ -138,10 +137,10 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { let foo = 123 let foo = 321 }` + "\n" +
 				"                        ^^^",
 		}},
-		{"rebind fun", `{ let foo = 123 fun foo() void {} }`, []string{
-			"test.met:1:21: symbol already defined: foo\n" +
-				`    { let foo = 123 fun foo() void {} }` + "\n" +
-				"                        ^^^",
+		{"rebind fun", `{ fun foo() void {} fun foo() void {} }`, []string{
+			"test.met:1:25: symbol already defined: foo\n" +
+				`    { fun foo() void {} fun foo() void {} }` + "\n" +
+				"                            ^^^",
 		}},
 		{"rebind fun param", `fun foo(bar Int) void { let bar = 123 }`, []string{
 			"test.met:1:29: symbol already defined: bar\n" +
@@ -260,7 +259,7 @@ func TestScopes(t *testing.T) {
 		name   string
 		src    string
 		scopes string // "scopeID:parentID" pairs, one per line
-		nodes  string // "nodeID:kindName:scopeID" triples, one per line
+		nodes  string // "nodeDebug:scopeID" pairs, one per line
 	}{
 		{
 			name: "simple var",
@@ -269,8 +268,8 @@ func TestScopes(t *testing.T) {
 				a:-
 			`,
 			nodes: `
-				1:Int:a
-				2:Var:a
+				n1:Int(value=1):a
+				n2:Var(name="a",mut=false,expr=n1:Int):a
 			`,
 		},
 		{
@@ -281,9 +280,9 @@ func TestScopes(t *testing.T) {
 				b:a
 			`,
 			nodes: `
-				1:Int:b
-				2:Var:b
-				3:Block:a
+				n1:Int(value=1):b
+				n2:Var(name="a",mut=false,expr=n1:Int):b
+				n3:Block(createScope=true,exprs=[n2:Var]):a
 			`,
 		},
 		{
@@ -295,12 +294,12 @@ func TestScopes(t *testing.T) {
 				c:b
 			`,
 			nodes: `
-				1:Int:b
-				2:Var:b
-				3:Int:c
-				4:Var:c
-				5:Block:b
-				6:Block:a
+				n1:Int(value=1):b
+				n2:Var(name="a",mut=false,expr=n1:Int):b
+				n3:Int(value=2):c
+				n4:Var(name="b",mut=false,expr=n3:Int):c
+				n5:Block(createScope=true,exprs=[n4:Var]):b
+				n6:Block(createScope=true,exprs=[n2:Var,n5:Block]):a
 			`,
 		},
 		{
@@ -310,13 +309,17 @@ func TestScopes(t *testing.T) {
 				a:-
 				b:a
 			`,
+			// The function parameter type `Int` (of `a Int`) is bound to the
+			// outer scope and not the function scope, because we first forward
+			// declare the parameter types before creating the function scope.
+			// This is technically not the cleanest way, but it works for now.
 			nodes: `
-				1:SimpleType:b
-				2:FunParam:b
-				3:SimpleType:a
-				4:Ident:b
-				5:Block:b
-				6:Fun:a
+				n1:SimpleType(name="Int"):a
+				n2:FunParam(name="a",mut=false,type=n1:SimpleType):a
+				n3:SimpleType(name="Int"):a
+				n4:Ident(name="a"):b
+				n5:Block(createScope=false,exprs=[n4:Ident]):b
+				n6:Fun(name="foo",params=[n2:FunParam],returnType=n3:SimpleType,block=n5:Block):a
 			`,
 		},
 		{
@@ -328,11 +331,11 @@ func TestScopes(t *testing.T) {
 				c:b
 			`,
 			nodes: `
-				1:SimpleType:a
-				2:Int:c
-				3:Block:b
-				4:Block:b
-				5:Fun:a
+				n1:SimpleType(name="void"):a
+				n2:Int(value=1):c
+				n3:Block(createScope=true,exprs=[n2:Int]):b
+				n4:Block(createScope=false,exprs=[n3:Block]):b
+				n5:Fun(name="foo",params=[],returnType=n1:SimpleType,block=n4:Block):a
 			`,
 		},
 	}
@@ -410,12 +413,8 @@ func collectNodes(e *Engine, a *ast.AST) string {
 	}
 	lines := make([]string, 0, len(nodeIDs))
 	for _, nodeID := range nodeIDs {
-		node := a.Node(nodeID)
 		scope := e.ScopeGraph.NodeScope(nodeID)
-		kindName := fmt.Sprintf("%T", node.Kind)
-		// Remove "ast." prefix.
-		kindName = strings.TrimPrefix(kindName, "ast.")
-		lines = append(lines, fmt.Sprintf("%d:%s:%s", nodeID, kindName, scopeLetter(scope.ID)))
+		lines = append(lines, fmt.Sprintf("%s:%s", a.Debug(nodeID, false, 0), scopeLetter(scope.ID)))
 	}
 	return strings.Join(lines, "\n")
 }

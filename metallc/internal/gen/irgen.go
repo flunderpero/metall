@@ -335,7 +335,7 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 
 func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {
 	if _, ok := g.astCode[astID]; ok {
-		panic(base.Errorf("code already set for AST node %d", astID))
+		panic(base.Errorf("code already set for %s", g.engine.AST.Debug(astID, false, 0)))
 	}
 	if len(args) > 0 {
 		code = fmt.Sprintf(code, args...)
@@ -346,7 +346,7 @@ func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {
 func (g *IRGen) lookupCode(astID ast.NodeID) string {
 	code, ok := g.astCode[astID]
 	if !ok {
-		panic(base.Errorf("no reg for AST node %d", astID))
+		panic(base.Errorf("no reg for %s", g.engine.AST.Debug(astID, false, 0)))
 	}
 	return code
 }

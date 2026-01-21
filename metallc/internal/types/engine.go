@@ -13,7 +13,7 @@ const InvalidTypeID = TypeID(0)
 type TypeID int
 
 func (id TypeID) String() string {
-	return fmt.Sprintf("type_%d", id)
+	return fmt.Sprintf("t%d", id)
 }
 
 type Type struct {
@@ -86,6 +86,7 @@ type cachedType struct {
 
 type Engine struct {
 	*ast.AST
+	Debug       base.Debug
 	Diagnostics base.Diagnostics
 	ScopeGraph  *ScopeGraph
 	nodes       map[ast.NodeID]*cachedType
@@ -102,6 +103,7 @@ func NewEngine(a *ast.AST) *Engine {
 	rootScope := NewScope(0, nil)
 	e := &Engine{ //nolint:exhaustruct
 		AST:         a,
+		Debug:       base.NilDebug{},
 		ScopeGraph:  NewScopeGraph(),
 		nodes:       map[ast.NodeID]*cachedType{},
 		types:       map[TypeID]*cachedType{},
@@ -129,6 +131,9 @@ func NewEngine(a *ast.AST) *Engine {
 }
 
 func (e *Engine) TypeDisplay(typeID TypeID) string {
+	if typeID == InvalidTypeID {
+		return "<invalid>"
+	}
 	cached, ok := e.types[typeID]
 	if !ok {
 		panic(base.Errorf("type %s not found", typeID))
@@ -161,13 +166,16 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 	}
 }
 
-func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
+func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) {
 	if cached, ok := e.nodes[nodeID]; ok {
 		if cached.Status.Failed() {
 			return InvalidTypeID, cached.Status
 		}
 		return cached.Type.ID, cached.Status
 	}
+	nodeDebug := e.AST.Debug(nodeID, false, 0)
+	debugDedent := e.Debug.Print(1, "query start %s", nodeDebug).Indent()
+	defer debugDedent()
 	// Associate this node with the current scope.
 	e.ScopeGraph.SetNodeScope(nodeID, e.scope)
 	node := e.Node(nodeID)
@@ -185,7 +193,12 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.File:
 		typeID, status = e.checkFile(nodeKind)
 	case ast.Fun:
-		typeID, status = e.checkFun(nodeID, nodeKind)
+		e.forwardDeclare([]ast.NodeID{nodeID})
+		cachedType, ok := e.types[typeID]
+		if !ok {
+			return InvalidTypeID, TypeFailed
+		}
+		return typeID, cachedType.Status
 	case ast.FunParam:
 		typeID, status = e.checkFunParam(nodeID, nodeKind, node.Span)
 	case ast.Ident:
@@ -205,26 +218,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	default:
 		panic(base.Errorf("unknown node kind: %T", nodeKind))
 	}
-	// Update cache.
-	if typeID == InvalidTypeID {
-		if !status.Failed() {
-			panic(base.Errorf("InvalidTypeID requires a failed status at node %s: %#v", nodeID, node))
-		}
-		e.nodes[nodeID] = &cachedType{Type: nil, Status: status}
-		return InvalidTypeID, status
-	}
-	cached, ok := e.types[typeID]
-	if !ok {
-		panic(base.Errorf("type %s not found for node %s: %#v", typeID, nodeID, node))
-	}
-	if cached.Status != status && cached.Status != TypeInProgress {
-		panic(base.Errorf("invalid status transition for type %s: %s -> %s", typeID, cached.Status, status))
-	}
-	cached.Status = status
-	e.nodes[nodeID] = cached
-	if status.Failed() {
-		return InvalidTypeID, status
-	}
+	typeID, status = e.updateCachedType(node, typeID, status)
+	debugDedent()
+	e.Debug.Print(0, "query end   %s -> %s", nodeDebug, e.TypeDisplay(typeID))
 	return typeID, status
 }
 
@@ -239,7 +235,7 @@ func (e *Engine) Type(typeID TypeID) *Type {
 func (e *Engine) TypeOfNode(nodeID ast.NodeID) *Type {
 	cached, ok := e.nodes[nodeID]
 	if !ok {
-		panic(base.Errorf("type not found for AST node %s", nodeID))
+		panic(base.Errorf("type not found for %s", e.AST.Debug(nodeID, false, 0)))
 	}
 	return cached.Type
 }
@@ -275,6 +271,43 @@ func (e *Engine) Scope() *Scope {
 	return e.scope
 }
 
+func (e *Engine) updateCachedType(node *ast.Node, typeID TypeID, status TypeStatus) (TypeID, TypeStatus) {
+	if typeID == InvalidTypeID {
+		if !status.Failed() {
+			panic(
+				base.Errorf(
+					"InvalidTypeID requires a failed status but got %s at %s",
+					status,
+					e.AST.Debug(node.ID, false, 0),
+				),
+			)
+		}
+		e.nodes[node.ID] = &cachedType{Type: nil, Status: status}
+		return InvalidTypeID, status
+	}
+	cached, ok := e.types[typeID]
+	if !ok {
+		panic(base.Errorf("type %s not found for %s", typeID, e.AST.Debug(node.ID, false, 0)))
+	}
+	if cached.Status != status && cached.Status != TypeInProgress {
+		panic(
+			base.Errorf(
+				"invalid status transition for type %s of %s: %s -> %s",
+				typeID,
+				e.AST.Debug(node.ID, false, 0),
+				cached.Status,
+				status,
+			),
+		)
+	}
+	cached.Status = status
+	e.nodes[node.ID] = cached
+	if status.Failed() {
+		return InvalidTypeID, status
+	}
+	return typeID, status
+}
+
 func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	lhsTypeID, status := e.typeOfPlace(assign.LHS)
 	if status.Failed() {
@@ -300,6 +333,7 @@ func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {
 	if len(block.Exprs) == 0 {
 		return e.voidType, TypeOK
 	}
+	e.forwardDeclare(block.Exprs)
 	depFailed := false
 	var lastExprTypeID TypeID
 	var status TypeStatus
@@ -369,6 +403,8 @@ func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
 func (e *Engine) checkFile(file ast.File) (TypeID, TypeStatus) {
 	e.enterScope()
 	defer e.leaveScope()
+	e.forwardDeclare(file.Decls)
+	// Everything should have been forward declared, but for good measure we query again.
 	depFailed := false
 	for _, declNodeID := range file.Decls {
 		_, status := e.Query(declNodeID)
@@ -382,41 +418,125 @@ func (e *Engine) checkFile(file ast.File) (TypeID, TypeStatus) {
 	return e.voidType, TypeOK
 }
 
-func (e *Engine) checkFun(nodeID ast.NodeID, fun ast.Fun) (TypeID, TypeStatus) {
-	node := e.Node(nodeID)
+func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
+	type decl struct {
+		node       *ast.Node
+		typeID     TypeID
+		status     TypeStatus
+		cachedType *cachedType
+	}
+	decls := []*decl{}
+
+	// Find declaration nodes.
+	for _, nodeID := range nodeIDs {
+		node := e.Node(nodeID)
+		if _, ok := node.Kind.(ast.Fun); ok {
+			// Associate this node with the current scope.
+			e.ScopeGraph.SetNodeScope(nodeID, e.scope)
+			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil})
+		}
+	}
+
+	// Create the types and bind names.
+	for _, decl := range decls {
+		var typeID TypeID
+		var status TypeStatus
+		switch nodeKind := decl.node.Kind.(type) {
+		case ast.Fun:
+			typeID, status = e.checkFunCreateAndBind(decl.node, nodeKind)
+		default:
+			panic(base.Errorf("node kind not supported: %T", nodeKind))
+		}
+		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
+		if typeID != InvalidTypeID {
+			cachedType, ok := e.types[typeID]
+			if !ok {
+				panic(base.Errorf("type %s not found", typeID))
+			}
+			decl.cachedType = cachedType
+		}
+	}
+
+	// Complete the type kinds.
+	for _, decl := range decls {
+		if decl.status.Failed() {
+			continue
+		}
+		typeKind := decl.cachedType.Type.Kind
+		switch nodeKind := decl.node.Kind.(type) {
+		case ast.Fun:
+			funType := base.Cast[FunType](typeKind)
+			decl.status, decl.cachedType.Type.Kind = e.checkFunCompleteType(decl.node, nodeKind, decl.typeID, funType)
+		default:
+			panic(base.Errorf("node kind not supported: %T", nodeKind))
+		}
+		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
+	}
+
+	// Check the bodies.
+	for _, decl := range decls {
+		if decl.status.Failed() {
+			continue
+		}
+		typeKind := decl.cachedType.Type.Kind
+		switch nodeKind := decl.node.Kind.(type) {
+		case ast.Fun:
+			funType := base.Cast[FunType](typeKind)
+			decl.status = e.checkFunBody(decl.node, nodeKind, decl.typeID, funType)
+		default:
+			panic(base.Errorf("node kind not supported: %T", nodeKind))
+		}
+		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
+	}
+}
+
+func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, TypeStatus) {
 	retTypeID, status := e.Query(fun.ReturnType)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	// Enter scope for parameters and body.
-	e.enterScope()
-	defer e.leaveScope()
-	paramTypeIDs := make([]TypeID, len(fun.Params))
-	for i, paramNodeID := range fun.Params {
+	funTypeID := e.newType(FunType{[]TypeID{}, retTypeID}, node.ID, node.Span, TypeInProgress)
+	if !e.bind(fun.Name.Name, false, node.ID, funTypeID, fun.Name.Span) {
+		return funTypeID, TypeFailed
+	}
+	return funTypeID, TypeInProgress
+}
+
+func (e *Engine) checkFunCompleteType(_ *ast.Node, funNode ast.Fun, _ TypeID, funType FunType) (TypeStatus, FunType) {
+	paramTypeIDs := make([]TypeID, len(funNode.Params))
+	for i, paramNodeID := range funNode.Params {
 		paramTypeID, status := e.Query(paramNodeID)
 		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
+			return TypeDepFailed, funType
 		}
 		paramTypeIDs[i] = paramTypeID
 	}
-	// We need to create the new type before we check the block because
-	// the block might refer to it (recursion).
-	funTypeID := e.newType(FunType{paramTypeIDs, retTypeID}, nodeID, node.Span, TypeInProgress)
-	// Bind the function in the parent scope.
-	if !e.bind(fun.Name.Name, false, nodeID, funTypeID, fun.Name.Span) {
-		return funTypeID, TypeFailed
+	funType.Params = paramTypeIDs
+	return TypeInProgress, funType
+}
+
+func (e *Engine) checkFunBody(_ *ast.Node, funNode ast.Fun, _ TypeID, funType FunType) TypeStatus {
+	e.enterScope()
+	defer e.leaveScope()
+	// Bind parameters.
+	for i, paramNodeID := range funNode.Params {
+		paramNode := base.Cast[ast.FunParam](e.Node(paramNodeID).Kind)
+		paramTypeID := funType.Params[i]
+		if !e.bind(paramNode.Name.Name, paramNode.Mut, paramNodeID, paramTypeID, paramNode.Name.Span) {
+			return TypeFailed
+		}
 	}
-	blockTypeID, status := e.Query(fun.Block)
+	blockTypeID, status := e.Query(funNode.Block)
 	if status.Failed() {
-		return funTypeID, TypeDepFailed
+		return TypeDepFailed
 	}
-	blockNode := e.Node(fun.Block)
+	blockNode := e.Node(funNode.Block)
 	block, ok := blockNode.Kind.(ast.Block)
 	if !ok {
 		panic(base.Errorf("expected block, got %T", blockNode.Kind))
 	}
 	// If the function returns void, we coerce the body to void.
-	if retTypeID != e.voidType && blockTypeID != retTypeID {
+	if funType.Return != e.voidType && blockTypeID != funType.Return {
 		// We want the span of the last expression for better diagnostics.
 		diagSpan := blockNode.Span
 		if len(block.Exprs) > 0 {
@@ -426,20 +546,18 @@ func (e *Engine) checkFun(nodeID ast.NodeID, fun ast.Fun) (TypeID, TypeStatus) {
 		e.diag(
 			diagSpan,
 			"return type mismatch: expected %s, got %s",
-			e.TypeDisplay(retTypeID),
+			e.TypeDisplay(funType.Return),
 			e.TypeDisplay(blockTypeID),
 		)
-		return funTypeID, TypeFailed
+		return TypeFailed
 	}
-	if fun.Name.Name == "main" {
-		e.verifyMain(fun)
+	if funNode.Name.Name == "main" {
+		e.verifyMain(funNode)
 	}
-	return funTypeID, TypeOK
+	return TypeOK
 }
 
-func (e *Engine) checkFunParam(
-	nodeID ast.NodeID, funParam ast.FunParam, span base.Span,
-) (TypeID, TypeStatus) {
+func (e *Engine) checkFunParam(nodeID ast.NodeID, funParam ast.FunParam, span base.Span) (TypeID, TypeStatus) {
 	typeID, status := e.Query(funParam.Type)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -452,9 +570,6 @@ func (e *Engine) checkFunParam(
 	}
 	if isRef {
 		typeID = e.buildRefType(nodeID, ref.Type, funParam.Mut, span)
-	}
-	if !e.bind(funParam.Name.Name, funParam.Mut, nodeID, typeID, funParam.Name.Span) {
-		return InvalidTypeID, TypeFailed
 	}
 	return typeID, TypeOK
 }
@@ -635,21 +750,12 @@ func (e *Engine) leaveScope() {
 	e.scope = e.scope.Parent
 }
 
-func (e *Engine) bind(
-	name string, mut bool, nodeID ast.NodeID, typeID TypeID, span base.Span,
-) bool {
-	// For functions, we need to bind in the parent scope.
+func (e *Engine) bind(name string, mut bool, nodeID ast.NodeID, typeID TypeID, span base.Span) bool {
 	scope := e.scope
-	node := e.Node(nodeID)
-	if _, ok := node.Kind.(ast.Fun); ok {
-		scope = e.scope.Parent
-	}
-	if !scope.Bind(name, mut, nodeID) {
+	if !scope.Bind(name, mut, nodeID, typeID) {
 		e.diag(span, "symbol already defined: %s", name)
 		return false
 	}
-	binding, _ := scope.Lookup(name)
-	binding.TypeID = typeID
 	return true
 }
 
@@ -662,7 +768,7 @@ func (e *Engine) newType(
 ) TypeID {
 	// todo: `nodeID != 0` is a workaround for the current special nature of builtin types.
 	if cached, ok := e.nodes[nodeID]; nodeID != 0 && ok {
-		panic(base.Errorf("type already set for AST node %s: %s", nodeID, cached.Type.ID))
+		panic(base.Errorf("type already set for %s: %s", e.AST.Debug(nodeID, false, 0), cached.Type.ID))
 	}
 	newTypeID := e.nextID
 	e.nextID++
