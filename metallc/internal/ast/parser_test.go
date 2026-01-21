@@ -20,7 +20,7 @@ func TestParseOK(t *testing.T) {
 			"happy path", "file", `fun foo() Str { "hello" 123 } `,
 			func(a *TestAST) NodeID {
 				return a.file(
-					a.fun("foo", nil, a.str_typ(), a.block(a.string_("hello"), a.int_(123))),
+					a.fun("foo", nil, a.str_typ(), a.fun_block(a.string_("hello"), a.int_(123))),
 				)
 			},
 		},
@@ -60,7 +60,7 @@ func TestParseOK(t *testing.T) {
 				return a.fun("foo",
 					[]NodeID{a.fun_param("a", a.int_typ()), a.mut_fun_param("b", a.str_typ())},
 					a.int_typ(),
-					a.block(a.int_(123)),
+					a.fun_block(a.int_(123)),
 				)
 			},
 		},
@@ -68,14 +68,14 @@ func TestParseOK(t *testing.T) {
 			"fun inside block", "expr", `{ fun foo() Str { "hello" 123 } }`,
 			func(a *TestAST) NodeID {
 				return a.block(
-					a.fun("foo", nil, a.str_typ(), a.block(a.string_("hello"), a.int_(123))),
+					a.fun("foo", nil, a.str_typ(), a.fun_block(a.string_("hello"), a.int_(123))),
 				)
 			},
 		},
 		{
 			"void fun", "expr", `fun foo() void {}`,
 			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.void_typ(), a.block())
+				return a.fun("foo", nil, a.void_typ(), a.fun_block())
 			},
 		},
 		{
@@ -118,13 +118,13 @@ func TestParseOK(t *testing.T) {
 		{
 			"ref type", "expr", `fun foo() &Int {}`,
 			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.block())
+				return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.fun_block())
 			},
 		},
 		{
 			"nested ref type", "expr", `fun foo() &&Int {}`,
 			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.ref_typ(a.ref_typ(a.int_typ())), a.block())
+				return a.fun("foo", nil, a.ref_typ(a.ref_typ(a.int_typ())), a.fun_block())
 			},
 		},
 		{
@@ -143,7 +143,7 @@ func TestParseOK(t *testing.T) {
 			"ref param", "expr", `{ fun foo(a &Int) void {} let b = 123 foo(&b) }`,
 			func(a *TestAST) NodeID {
 				return a.block(
-					a.fun("foo", []NodeID{a.fun_param("a", a.ref_typ(a.int_typ()))}, a.void_typ(), a.block()),
+					a.fun("foo", []NodeID{a.fun_param("a", a.ref_typ(a.int_typ()))}, a.void_typ(), a.fun_block()),
 					a.var_("b", a.int_(123)),
 					a.call(a.ident("foo"), a.ref("b")),
 				)
@@ -184,11 +184,6 @@ func TestParseOK(t *testing.T) {
 			want := ast_to_list(wantAST.AST, wantRoot)
 			got := ast_to_list(parser.AST, gotRoot)
 			assert.Equal(want, got)
-			// Make sure every node has a scope.
-			for _, node := range got {
-				scope := parser.ScopeGraph.NodeScope(node.ID)
-				assert.NotNil(scope, "no scope for node %d", node.ID)
-			}
 		})
 	}
 }
@@ -199,21 +194,6 @@ func TestParseErr(t *testing.T) {
 		src  string
 		want []string
 	}{
-		{"rebind var", `{ let foo = 123 let foo = 321 }`, []string{
-			"test.met:1:21: symbol already defined: foo\n" +
-				`    { let foo = 123 let foo = 321 }` + "\n" +
-				"                        ^^^",
-		}},
-		{"rebind fun", `{ let foo = 123 fun foo() void {} }`, []string{
-			"test.met:1:21: symbol already defined: foo\n" +
-				`    { let foo = 123 fun foo() void {} }` + "\n" +
-				"                        ^^^",
-		}},
-		{"rebind fun param", `fun foo(bar Int) void { let bar = 123 }`, []string{
-			"test.met:1:29: symbol already defined: bar\n" +
-				`    fun foo(bar Int) void { let bar = 123 }` + "\n" +
-				"                                ^^^",
-		}},
 		{"unexpected token", `=`, []string{
 			"test.met:1:1: unexpected token: expected one of '&', '{', <fun>, <identifier>, <number>, <string>, <let>, <mut>, got =\n" +
 				`    =` + "\n" +
@@ -309,7 +289,14 @@ func (a *TestAST) block(exprs ...NodeID) NodeID {
 	if exprs == nil {
 		exprs = []NodeID{}
 	}
-	return a.NewBlock(exprs, a.span)
+	return a.NewBlock(exprs, true, a.span)
+}
+
+func (a *TestAST) fun_block(exprs ...NodeID) NodeID {
+	if exprs == nil {
+		exprs = []NodeID{}
+	}
+	return a.NewBlock(exprs, false, a.span)
 }
 
 func (a *TestAST) str_typ() NodeID {

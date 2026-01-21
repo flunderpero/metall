@@ -242,7 +242,7 @@ func stringifyValue(v reflect.Value, indent int) string { //nolint:funlen
 		if v.IsNil() {
 			return "nil"
 		}
-		return stringifyValue(v.Elem(), indent)
+		return "&" + stringifyValue(v.Elem(), indent)
 	}
 
 	switch kind { //nolint:exhaustive

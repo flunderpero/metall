@@ -37,14 +37,8 @@ func (s Span) Combine(other Span) Span {
 	if s.Source != other.Source {
 		panic(Errorf("cannot combine spans from different sources: %s vs %s", s.Source.Name, other.Source.Name))
 	}
-	start := s.Start
-	end := other.End
-	if s.Start > other.Start {
-		start = other.Start
-	}
-	if s.End < other.End {
-		end = other.End
-	}
+	start := min(s.Start, other.Start)
+	end := max(s.End, other.End)
 	return Span{Source: s.Source, Start: start, End: end}
 }
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
-	"github.com/flunderpero/metall/metallc/internal/check"
+	"github.com/flunderpero/metall/metallc/internal/types"
 )
 
 type CodeWriter struct {
@@ -37,49 +37,22 @@ type Symbol struct {
 	Reg  string
 	Type string
 }
-type IRScope struct {
-	Parent  *IRScope
-	Symbols map[string]Symbol
-}
-
-func NewIRScope(parent *IRScope) *IRScope {
-	return &IRScope{Parent: parent, Symbols: map[string]Symbol{}}
-}
-
-func (s *IRScope) Lookup(name string) (Symbol, bool) {
-	if s, ok := s.Symbols[name]; ok {
-		return s, true
-	}
-	if s.Parent != nil {
-		return s.Parent.Lookup(name)
-	}
-	return Symbol{}, false
-}
-
-func (s *IRScope) Set(name string, value string, typ string) {
-	if _, ok := s.Symbols[name]; ok {
-		panic(base.Errorf("symbol %s already defined", name))
-	}
-	s.Symbols[name] = Symbol{Name: name, Reg: value, Type: typ}
-}
 
 type IRGen struct {
 	CodeWriter
-	AST          *ast.AST
-	env          *check.TypeEnv
-	scope        *IRScope
+	engine       *types.Engine
+	symbols      map[types.ScopeID]map[string]Symbol
 	regCounter   int
 	constCounter int
 	strConsts    map[string]string
 	astCode      map[ast.NodeID]string
 }
 
-func NewIRGen(a *ast.AST, env *check.TypeEnv) *IRGen {
+func NewIRGen(engine *types.Engine) *IRGen {
 	return &IRGen{
 		CodeWriter:   *NewCodeWriter(),
-		AST:          a,
-		scope:        NewIRScope(nil),
-		env:          env,
+		engine:       engine,
+		symbols:      map[types.ScopeID]map[string]Symbol{},
 		regCounter:   1,
 		constCounter: 1,
 		strConsts:    map[string]string{},
@@ -88,7 +61,7 @@ func NewIRGen(a *ast.AST, env *check.TypeEnv) *IRGen {
 }
 
 func (g *IRGen) Gen(id ast.NodeID) {
-	node := g.AST.Node(id)
+	node := g.engine.Node(id)
 	switch kind := node.Kind.(type) {
 	case ast.Assign:
 		g.genAssign(id, kind)
@@ -139,19 +112,21 @@ func (g *IRGen) genFile(file ast.File, span base.Span) {
 }
 
 func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
-	typ := g.lookupType(id)
-	fun := typ.Fun
-	binding := g.lookupBinding(id)
-	isMain := binding.Name == "main"
+	typ := g.engine.TypeOfNode(id)
+	fun, ok := typ.Kind.(types.FunType)
+	if !ok {
+		panic(base.Errorf("expected fun type, got %T", typ.Kind))
+	}
+	name := astFun.Name.Name
+	isMain := name == "main"
 	ret := g.irType(fun.Return)
 	if isMain {
 		ret = "i32"
 	}
-	g.enterScope()
 	params := strings.Builder{}
 	paramAllocas := strings.Builder{}
 	for i, paramID := range astFun.Params {
-		paramNode := g.AST.Node(paramID)
+		paramNode := g.engine.Node(paramID)
 		param, ok := paramNode.Kind.(ast.FunParam)
 		if !ok {
 			panic(base.Errorf("expected fun param, got %T", paramNode.Kind))
@@ -161,31 +136,30 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
 		}
 		g.Gen(paramID)
 		preg := g.reg()
-		typ := g.irType(g.lookupType(paramID))
+		typ := g.irTypeOfNode(paramID)
 		params.WriteString(typ)
 		params.WriteString(" ")
 		params.WriteString(preg)
 		areg := g.reg()
 		fmt.Fprintf(&paramAllocas, "    %s = alloca %s\n", areg, typ)
 		fmt.Fprintf(&paramAllocas, "    store %s %s, ptr %s", typ, preg, areg)
-		g.scope.Set(param.Name.Name, areg, typ)
+		g.setSymbol(paramID, param.Name.Name, areg, typ)
 	}
-	g.write("define %s @%s(%s) {", ret, binding.Name, params.String())
+	g.write("define %s @%s(%s) {", ret, name, params.String())
 	if len(astFun.Params) > 0 {
 		g.write(paramAllocas.String())
 	}
 	g.indent++
 	g.Gen(astFun.Block)
-	g.leaveScope()
 	if isMain {
 		g.write("ret i32 0")
 	} else {
 		lastCode := g.lookupCode(astFun.Block)
-		typ := g.irType(fun.Return)
-		if typ == "void" {
+		retType := g.irType(fun.Return)
+		if retType == "void" {
 			g.write("ret void")
 		} else {
-			g.write("ret %s %s", typ, lastCode)
+			g.write("ret %s %s", retType, lastCode)
 		}
 	}
 	g.indent--
@@ -193,11 +167,9 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
 }
 
 func (g *IRGen) genBlock(id ast.NodeID, block ast.Block) {
-	g.enterScope()
 	for _, expr := range block.Exprs {
 		g.Gen(expr)
 	}
-	g.leaveScope()
 	code := "void"
 	if len(block.Exprs) > 0 {
 		code = g.lookupCode(block.Exprs[len(block.Exprs)-1])
@@ -209,18 +181,17 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.Gen(assign.LHS)
 	g.Gen(assign.RHS)
 	rhs := g.lookupCode(assign.RHS)
-	lhsNode := g.AST.Node(assign.LHS)
+	lhsNode := g.engine.Node(assign.LHS)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
-		symbol, ok := g.scope.Lookup(lhsKind.Name)
+		symbol, ok := g.lookupSymbol(assign.LHS, lhsKind.Name)
 		if !ok {
 			panic(base.Errorf("assign to unknown variable: %s", lhsKind.Name))
 		}
 		g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
 	case ast.Deref:
 		ptr := g.lookupCode(lhsKind.Expr)
-		typ := g.lookupType(assign.LHS)
-		g.write("store %s %s, ptr %s", g.irType(typ), rhs, ptr)
+		g.write("store %s %s, ptr %s", g.irTypeOfNode(assign.LHS), rhs, ptr)
 	default:
 		panic(base.Errorf("assign to unknown expression: %T", lhsKind))
 	}
@@ -232,13 +203,14 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	for _, arg := range call.Args {
 		g.Gen(arg)
 	}
-	typ := g.lookupType(call.Callee)
-	if typ.Kind != check.TypeFun {
+	calleeType := g.engine.TypeOfNode(call.Callee)
+	fun, ok := calleeType.Kind.(types.FunType)
+	if !ok {
 		panic(base.Errorf("callee is not a function"))
 	}
-	fun := typ.Fun
 	sb := strings.Builder{}
-	if fun.Return.Kind == check.TypeVoid {
+	retType := g.engine.Type(fun.Return)
+	if builtin, ok := retType.Kind.(types.BuiltInType); ok && builtin.Name == "void" {
 		g.setCode(id, "void")
 	} else {
 		reg := g.reg()
@@ -254,18 +226,16 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		argType := g.lookupType(arg)
-		sb.WriteString(g.irType(argType))
+		sb.WriteString(g.irTypeOfNode(arg))
 		sb.WriteString(" ")
-		argCode := g.lookupCode(arg)
-		sb.WriteString(argCode)
+		sb.WriteString(g.lookupCode(arg))
 	}
 	sb.WriteString(")")
 	g.write(sb.String())
 }
 
 func (g *IRGen) genIdent(id ast.NodeID, ident ast.Ident) {
-	if symbol, ok := g.scope.Lookup(ident.Name); ok {
+	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
 		ptrreg := g.reg()
 		g.write("%s = load %s, ptr %s", ptrreg, symbol.Type, symbol.Reg)
 		g.setCode(id, ptrreg)
@@ -290,7 +260,7 @@ func (g *IRGen) genString(id ast.NodeID, str ast.String) {
 }
 
 func (g *IRGen) genRef(id ast.NodeID, ref ast.Ref) {
-	if symbol, ok := g.scope.Lookup(ref.Name.Name); ok {
+	if symbol, ok := g.lookupSymbol(id, ref.Name.Name); ok {
 		g.setCode(id, symbol.Reg)
 		return
 	}
@@ -299,14 +269,14 @@ func (g *IRGen) genRef(id ast.NodeID, ref ast.Ref) {
 
 func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 	g.Gen(deref.Expr)
-	typ := g.lookupType(deref.Expr)
-	if typ.Kind != check.TypeRef {
-		panic(base.Errorf("dereference: expected reference, got %s", typ))
+	exprType := g.engine.TypeOfNode(deref.Expr)
+	ref, ok := exprType.Kind.(types.RefType)
+	if !ok {
+		panic(base.Errorf("dereference: expected reference, got %T", exprType.Kind))
 	}
-	typ = typ.Ref.Type
 	code := g.lookupCode(deref.Expr)
 	reg := g.reg()
-	g.write("%s = load %s, ptr %s", reg, g.irType(typ), code)
+	g.write("%s = load %s, ptr %s", reg, g.irType(ref.Type), code)
 	g.setCode(id, reg)
 }
 
@@ -315,20 +285,12 @@ func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	// We are a bit lazy here and just use an `alloca` instruction.
 	// LLVM will optimize this.
 	reg := g.reg()
-	typ := g.irType(g.lookupType(v.Expr))
+	typ := g.irTypeOfNode(v.Expr)
 	expr := g.lookupCode(v.Expr)
 	g.write("%s = alloca %s", reg, typ)
 	g.write("store %s %s, ptr %s", typ, expr, reg)
 	g.setCode(id, reg)
-	g.scope.Set(v.Name.Name, reg, typ)
-}
-
-func (g *IRGen) enterScope() {
-	g.scope = NewIRScope(g.scope)
-}
-
-func (g *IRGen) leaveScope() {
-	g.scope = g.scope.Parent
+	g.setSymbol(id, v.Name.Name, reg, typ)
 }
 
 func (g *IRGen) reg() string {
@@ -343,26 +305,37 @@ func (g *IRGen) creg() string {
 	return fmt.Sprintf("@%d", id)
 }
 
-func (g *IRGen) irType(typ check.Type) string {
-	switch typ.Kind {
-	case check.TypeInt:
-		return "i64"
-	case check.TypeStr:
+func (g *IRGen) irTypeOfNode(nodeID ast.NodeID) string {
+	typ := g.engine.TypeOfNode(nodeID)
+	return g.irType(typ.ID)
+}
+
+func (g *IRGen) irType(typeID types.TypeID) string {
+	typ := g.engine.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case types.BuiltInType:
+		switch kind.Name {
+		case "Int":
+			return "i64"
+		case "Str":
+			return "ptr"
+		case "void":
+			return "void"
+		default:
+			panic(base.Errorf("unknown builtin type: %s", kind.Name))
+		}
+	case types.RefType:
 		return "ptr"
-	case check.TypeVoid:
-		return "void"
-	case check.TypeRef:
-		return "ptr"
-	case check.TypeFun:
+	case types.FunType:
 		panic("unexpected fun type")
 	default:
-		panic(base.Errorf("unknown type kind: %d", typ.Kind))
+		panic(base.Errorf("unknown type kind: %T", typ.Kind))
 	}
 }
 
 func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {
 	if _, ok := g.astCode[astID]; ok {
-		panic(base.Errorf("code  already set for AST node %d", astID))
+		panic(base.Errorf("code already set for AST node %d", astID))
 	}
 	if len(args) > 0 {
 		code = fmt.Sprintf(code, args...)
@@ -378,24 +351,32 @@ func (g *IRGen) lookupCode(astID ast.NodeID) string {
 	return code
 }
 
-func (g *IRGen) lookupBinding(astID ast.NodeID) check.Binding {
-	b, ok := g.env.Bindings[astID]
-	if !ok {
-		panic(base.Errorf("no binding for AST node %d", astID))
+func (g *IRGen) setSymbol(nodeID ast.NodeID, name string, reg string, typ string) {
+	scope := g.engine.ScopeGraph.NodeScope(nodeID)
+	if g.symbols[scope.ID] == nil {
+		g.symbols[scope.ID] = map[string]Symbol{}
 	}
-	return b
+	if _, ok := g.symbols[scope.ID][name]; ok {
+		panic(base.Errorf("symbol %s already defined in scope %d", name, scope.ID))
+	}
+	g.symbols[scope.ID][name] = Symbol{Name: name, Reg: reg, Type: typ}
 }
 
-func (g *IRGen) lookupType(astID ast.NodeID) check.Type {
-	typ, ok := g.env.Types[astID]
-	if !ok {
-		panic(base.Errorf("no type for AST node %d", astID))
+func (g *IRGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
+	scope := g.engine.ScopeGraph.NodeScope(nodeID)
+	for scope != nil {
+		if symbols, ok := g.symbols[scope.ID]; ok {
+			if symbol, ok := symbols[name]; ok {
+				return symbol, true
+			}
+		}
+		scope = scope.Parent
 	}
-	return typ
+	return Symbol{}, false
 }
 
-func GenIR(a *ast.AST, fileID ast.NodeID, typeEnv *check.TypeEnv) (string, error) {
-	g := NewIRGen(a, typeEnv)
+func GenIR(fileID ast.NodeID, engine *types.Engine) (string, error) {
+	g := NewIRGen(engine)
 	g.Gen(fileID)
 	g.write(builtins)
 	return g.sb.String(), nil

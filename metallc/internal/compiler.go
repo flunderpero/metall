@@ -9,15 +9,15 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
-	"github.com/flunderpero/metall/metallc/internal/check"
 	"github.com/flunderpero/metall/metallc/internal/gen"
 	"github.com/flunderpero/metall/metallc/internal/token"
+	"github.com/flunderpero/metall/metallc/internal/types"
 )
 
 type CompileListener interface {
 	OnLex(tokens []token.Token) bool
 	OnParse(a *ast.AST, fileID ast.NodeID, diagnostics base.Diagnostics) bool
-	OnTypeCheck(typeEnv *check.TypeEnv, diagnostics base.Diagnostics) bool
+	OnTypeCheck(engine *types.Engine, diagnostics base.Diagnostics) bool
 	OnIRGen(ir string) bool
 }
 
@@ -43,15 +43,15 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(parser.Diagnostics) > 0 {
 		return parser.Diagnostics
 	}
-	tc := check.NewTypeChecker(parser.AST)
-	tc.Check(fileID)
-	if listener != nil && !listener.OnTypeCheck(&tc.Env, tc.Diagnostics) {
+	engine := types.NewEngine(parser.AST)
+	engine.Query(fileID)
+	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics) {
 		return ErrAbort
 	}
-	if len(tc.Diagnostics) > 0 {
-		return tc.Diagnostics
+	if len(engine.Diagnostics) > 0 {
+		return engine.Diagnostics
 	}
-	ir, err := gen.GenIR(parser.AST, fileID, &tc.Env)
+	ir, err := gen.GenIR(fileID, engine)
 	if err != nil {
 		return err //nolint:wrapcheck
 	}

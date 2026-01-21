@@ -51,7 +51,7 @@ func TestCompile(t *testing.T) {
 				*a = 321 
 			}
 			fun main() void { 
-				let a = 123 
+				mut a = 123 
 				foo(&a)
 				print_int(a)
 			}

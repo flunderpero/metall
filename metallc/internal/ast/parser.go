@@ -13,29 +13,21 @@ const ParseFailed = NodeID(0)
 type Parser struct {
 	*AST
 	Diagnostics base.Diagnostics
-	ScopeGraph  *ScopeGraph
-	scope       *Scope
-	nextScopeID ScopeID
 	tokens      []token.Token
 	pos         int
 }
 
 func NewParser(tokens []token.Token) *Parser {
-	scope := NewScope(0, nil)
-	p := &Parser{NewAST(), base.Diagnostics{}, NewScopeGraph(), scope, 2, tokens, 0}
-	p.AST.onNewNode = p.onNewNode
-	return p
+	return &Parser{NewAST(), base.Diagnostics{}, tokens, 0}
 }
 
 func (p *Parser) ParseFile() (NodeID, bool) {
-	return p.withScope(func() (NodeID, bool) {
-		span := p.span()
-		decls, ok := p.ParseDecls()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewFile(decls, span.Combine(p.span())), ok
-	})
+	span := p.span()
+	decls, ok := p.ParseDecls()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewFile(decls, span.Combine(p.span())), ok
 }
 
 func (p *Parser) ParseDecls() ([]NodeID, bool) {
@@ -69,68 +61,33 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
-	node, ok := p.withScope(func() (NodeID, bool) {
-		params, ok := p.ParseFunParams()
-		if !ok {
-			return ParseFailed, false
-		}
-		t, ok = p.peek()
-		if !ok {
-			return ParseFailed, false
-		}
-		var returnType NodeID
-		if t.Kind == token.Void {
-			returnType = p.NewSimpleType(Name{"void", t.Span}, t.Span)
-			p.next()
-		} else {
-			returnType, ok = p.ParseType()
-			if !ok {
-				return ParseFailed, false
-			}
-		}
-		block, ok := p.ParseBlock(false)
-		node := p.NewFun(name, params, returnType, block, span.Combine(p.span()))
-		return node, ok
-	})
+	params, ok := p.ParseFunParams()
 	if !ok {
 		return ParseFailed, false
 	}
-	if !p.scope.Bind(name.Name, false, node) {
-		p.diagnostic(name.Span, "symbol already defined: %s", name.Name)
+	t, ok = p.peek()
+	if !ok {
 		return ParseFailed, false
 	}
-	return node, ok
-}
-
-func (p *Parser) ParseBlock(withScope bool) (NodeID, bool) {
-	parse := func() (NodeID, bool) {
-		t, ok := p.expect(token.LCurly)
+	var returnType NodeID
+	if t.Kind == token.Void {
+		returnType = p.NewSimpleType(Name{"void", t.Span}, t.Span)
+		p.next()
+	} else {
+		returnType, ok = p.ParseType()
 		if !ok {
 			return ParseFailed, false
 		}
-		span := t.Span
-		exprs := []NodeID{}
-		for {
-			t, ok := p.peek()
-			if !ok {
-				break
-			}
-			if t.Kind == token.RCurly {
-				p.next()
-				break
-			}
-			expr, ok := p.ParseExpr()
-			if !ok {
-				return ParseFailed, false
-			}
-			exprs = append(exprs, expr)
-		}
-		return p.NewBlock(exprs, span.Combine(p.span())), true
 	}
-	if withScope {
-		return p.withScope(parse)
+	block, ok := p.parseBlock(false) // Function creates its own scope for params and body.
+	if !ok {
+		return ParseFailed, false
 	}
-	return parse()
+	return p.NewFun(name, params, returnType, block, span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseBlock() (NodeID, bool) {
+	return p.parseBlock(true)
 }
 
 func (p *Parser) ParseExpr() (NodeID, bool) {
@@ -163,6 +120,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	span := t.Span
 	var expr NodeID
 	switch t.Kind { //nolint:exhaustive
 	case token.Star:
@@ -171,7 +129,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
-		expr = p.NewDeref(expr, t.Span.Combine(p.span()))
+		expr = p.NewDeref(expr, span.Combine(p.span()))
 	default:
 		expr, ok = p.ParsePrimaryExpr(minPrecedence)
 		if !ok {
@@ -185,7 +143,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 			if !ok {
 				return ParseFailed, false
 			}
-			expr = p.NewCall(callee, args, t.Span.Combine(p.span()))
+			expr = p.NewCall(callee, args, span.Combine(p.span()))
 		} else {
 			break
 		}
@@ -249,7 +207,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		p.next()
 		expr = p.NewString(t.Value, t.Span.Combine(p.span()))
 	case token.LCurly:
-		block, ok := p.ParseBlock(true)
+		block, ok := p.ParseBlock()
 		if !ok {
 			return ParseFailed, false
 		}
@@ -340,12 +298,7 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	node := p.NewVar(name, init, mut, span.Combine(p.span()))
-	if !p.scope.Bind(name.Name, mut, node) {
-		p.diagnostic(name.Span, "symbol already defined: %s", name.Name)
-		return ParseFailed, false
-	}
-	return node, true
+	return p.NewVar(name, init, mut, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFunParams() ([]NodeID, bool) {
@@ -376,10 +329,6 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 				return funParams, false
 			}
 			param := p.NewFunParam(name, type_, mut, name.Span.Combine(p.span()))
-			if !p.scope.Bind(name.Name, mut, param) {
-				p.diagnostic(name.Span, "symbol already defined: %s", name.Name)
-				return funParams, false
-			}
 			funParams = append(funParams, param)
 		case token.Comma:
 			p.next()
@@ -421,6 +370,31 @@ func (p *Parser) ParseIdent() (NodeID, bool) {
 	return p.NewIdent(t.Value, t.Span.Combine(p.span())), true
 }
 
+func (p *Parser) parseBlock(createScope bool) (NodeID, bool) {
+	t, ok := p.expect(token.LCurly)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	exprs := []NodeID{}
+	for {
+		t, ok := p.peek()
+		if !ok {
+			break
+		}
+		if t.Kind == token.RCurly {
+			p.next()
+			break
+		}
+		expr, ok := p.ParseExpr()
+		if !ok {
+			return ParseFailed, false
+		}
+		exprs = append(exprs, expr)
+	}
+	return p.NewBlock(exprs, createScope, span.Combine(p.span())), true
+}
+
 func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {
 	p.Diagnostics = append(p.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
@@ -453,21 +427,4 @@ func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {
 func (p *Parser) span() base.Span {
 	token := p.tokens[min(max(p.pos-1, 0), len(p.tokens)-1)]
 	return token.Span
-}
-
-func (p *Parser) onNewNode(node *Node) {
-	p.ScopeGraph.SetNodeScope(node.ID, p.scope)
-}
-
-func (p *Parser) withScope(f func() (NodeID, bool)) (NodeID, bool) {
-	p.scope = NewScope(p.nextScopeID, p.scope)
-	defer func() {
-		p.scope = p.scope.parent
-	}()
-	p.nextScopeID++
-	nodeID, ok := f()
-	if ok {
-		p.scope.root = nodeID
-	}
-	return nodeID, ok
 }

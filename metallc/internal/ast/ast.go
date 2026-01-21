@@ -96,7 +96,8 @@ type Var struct {
 func (Var) isKind() {}
 
 type Block struct {
-	Exprs []NodeID
+	Exprs       []NodeID
+	CreateScope bool
 }
 
 func (Block) isKind() {}
@@ -134,8 +135,8 @@ func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
 	return a.node(Assign{LHS: lhs, RHS: value}, span)
 }
 
-func (a *AST) NewBlock(exprs []NodeID, span base.Span) NodeID {
-	return a.node(Block{Exprs: exprs}, span)
+func (a *AST) NewBlock(exprs []NodeID, createScope bool, span base.Span) NodeID {
+	return a.node(Block{Exprs: exprs, CreateScope: createScope}, span)
 }
 
 func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
@@ -192,6 +193,14 @@ func (a *AST) Node(id NodeID) *Node {
 		panic(base.Errorf("unknown node id: %d", id))
 	}
 	return node
+}
+
+func (a *AST) Iter(f func(NodeID) bool) {
+	for id := range a.nodes {
+		if !f(id) {
+			return
+		}
+	}
 }
 
 func (a *AST) Walk(id NodeID, f func(NodeID)) {
