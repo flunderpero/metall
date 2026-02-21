@@ -3,6 +3,7 @@ precommit:
     just fmt
     just lint
     just test
+    just examples
 
 lint:
     go tool golangci-lint run ./metallc/...
@@ -21,6 +22,15 @@ fmt:
 
 test:
     go test ./metallc/...
+
+examples:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    for file in examples/*.met; do
+        echo ">>> $file"
+        go run ./metallc/... run "$file"
+    done
 
 go-mod:
     cd metallc && go mod tidy

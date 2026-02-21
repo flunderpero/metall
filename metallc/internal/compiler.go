@@ -122,7 +122,7 @@ func CompileAndRun(
 	opts CompileOpts,
 ) (exitCode int, output string, err error) {
 	runOpts := opts
-	if opts.Output == "" {
+	if runOpts.Output == "" {
 		runOpts.Output = "/tmp/metallc"
 	}
 	defer func() {
@@ -130,7 +130,7 @@ func CompileAndRun(
 			os.Remove(runOpts.Output) //nolint:errcheck,gosec
 		}
 	}()
-	err = Compile(ctx, source, opts)
+	err = Compile(ctx, source, runOpts)
 	if err != nil {
 		return 0, "", err
 	}
