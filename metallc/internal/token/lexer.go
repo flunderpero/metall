@@ -13,12 +13,15 @@ type TokenKind int
 const (
 	Amp TokenKind = iota + 1
 	Comma
+	Else
 	EOF
 	Eq
+	False
 	Fun
-	Let
 	Ident
+	If
 	LCurly
+	Let
 	LParen
 	Mut
 	Number
@@ -26,20 +29,24 @@ const (
 	RParen
 	Star
 	String
-	Unknown
+	True
 	TypeIdent
+	Unknown
 	Void
 )
 
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Amp:       "&",
 	Comma:     ",",
+	Else:      "<else>",
 	EOF:       "<EOF>",
 	Eq:        "=",
+	False:     "false",
 	Fun:       "<fun>",
-	Let:       "<let>",
 	Ident:     "<identifier>",
+	If:        "<if>",
 	LCurly:    "{",
+	Let:       "<let>",
 	LParen:    "(",
 	Mut:       "<mut>",
 	Number:    "<number>",
@@ -47,6 +54,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	RParen:    ")",
 	Star:      "*",
 	String:    "<string>",
+	True:      "true",
 	TypeIdent: "<type identifier>",
 	Unknown:   "<unknown>",
 	Void:      "<void>",
@@ -64,10 +72,14 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
-	"fun":  Fun,
-	"let":  Let,
-	"mut":  Mut,
-	"void": Void,
+	"else":  Else,
+	"false": False,
+	"fun":   Fun,
+	"if":    If,
+	"let":   Let,
+	"mut":   Mut,
+	"true":  True,
+	"void":  Void,
 }
 
 func (k TokenKind) String() string {

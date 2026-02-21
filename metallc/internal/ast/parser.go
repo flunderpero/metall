@@ -159,6 +159,9 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	expectedTokenKinds := []token.TokenKind{
 		token.Amp,
 		token.LCurly,
+		token.True,
+		token.False,
+		token.If,
 		token.Fun,
 		token.Ident,
 		token.Number,
@@ -189,6 +192,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = fun
+	case token.If:
+		if_, ok := p.ParseIf()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = if_
 	case token.Ident:
 		ident, ok := p.ParseIdent()
 		if !ok {
@@ -203,6 +212,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = p.NewInt(number, t.Span.Combine(p.span()))
+	case token.True:
+		p.next()
+		expr = p.NewBool(true, t.Span)
+	case token.False:
+		p.next()
+		expr = p.NewBool(false, t.Span)
 	case token.String:
 		p.next()
 		expr = p.NewString(t.Value, t.Span.Combine(p.span()))
@@ -360,6 +375,34 @@ func (p *Parser) ParseType() (NodeID, bool) {
 		p.diagnostic(t.Span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
 		return ParseFailed, false
 	}
+}
+
+func (p *Parser) ParseIf() (NodeID, bool) {
+	t, ok := p.expect(token.If)
+	if !ok {
+		return ParseFailed, false
+	}
+	cond, ok := p.ParseExpr()
+	if !ok {
+		return ParseFailed, false
+	}
+	then, ok := p.ParseBlock()
+	if !ok {
+		return ParseFailed, false
+	}
+	et, ok := p.peek()
+	if !ok {
+		return ParseFailed, false
+	}
+	if et.Kind != token.Else {
+		return p.NewIf(cond, then, nil, t.Span.Combine(p.span())), true
+	}
+	p.next()
+	else_, ok := p.ParseBlock()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewIf(cond, then, &else_, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseIdent() (NodeID, bool) {

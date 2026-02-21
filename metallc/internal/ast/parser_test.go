@@ -97,6 +97,18 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 
+		{"true", "expr", "true", func(a *TestAST) NodeID { return a.bool_(true) }},
+		{"false", "expr", "false", func(a *TestAST) NodeID { return a.bool_(false) }},
+		{
+			"if then else", "expr", `if a { 42 } else { 123 }`,
+			func(a *TestAST) NodeID {
+				cond := a.ident("a")
+				then := a.block(a.int_(42))
+				else_ := a.block(a.int_(123))
+				return a.if_(cond, then, &else_)
+			},
+		},
+
 		{
 			"ref ident expr", "expr", `&foo`,
 			func(a *TestAST) NodeID {
@@ -195,12 +207,12 @@ func TestParseErr(t *testing.T) {
 		want []string
 	}{
 		{"unexpected token", `=`, []string{
-			"test.met:1:1: unexpected token: expected one of '&', '{', <fun>, <identifier>, <number>, <string>, <let>, <mut>, got =\n" +
+			"test.met:1:1: unexpected token: expected one of '&', '{', 'true', 'false', <if>, <fun>, <identifier>, <number>, <string>, <let>, <mut>, got =\n" +
 				`    =` + "\n" +
 				"    ^",
 		}},
 		{"assign to type", `{ Str = "hello" }`, []string{
-			"test.met:1:3: unexpected token: expected one of '&', '{', <fun>, <identifier>, <number>, <string>, <let>, <mut>, got <type identifier>\n" +
+			"test.met:1:3: unexpected token: expected one of '&', '{', 'true', 'false', <if>, <fun>, <identifier>, <number>, <string>, <let>, <mut>, got <type identifier>\n" +
 				`    { Str = "hello" }` + "\n" +
 				"      ^^^",
 		}},
@@ -275,6 +287,14 @@ func (a *TestAST) fun(name string, params []NodeID, return_type NodeID, block No
 		params = []NodeID{}
 	}
 	return a.NewFun(Name{name, a.span}, params, return_type, block, a.span)
+}
+
+func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {
+	return a.NewIf(cond, then, else_, a.span)
+}
+
+func (a *TestAST) bool_(value bool) NodeID {
+	return a.NewBool(value, a.span)
 }
 
 func (a *TestAST) string_(value string) NodeID {

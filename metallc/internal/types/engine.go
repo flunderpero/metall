@@ -97,6 +97,7 @@ type Engine struct {
 	scope       *Scope
 	builtins    map[string]TypeID
 	voidType    TypeID
+	boolType    TypeID
 }
 
 func NewEngine(a *ast.AST) *Engine {
@@ -116,16 +117,21 @@ func NewEngine(a *ast.AST) *Engine {
 	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
 	intType := e.newType(BuiltInType{"Int"}, 0, span, TypeOK)
 	strType := e.newType(BuiltInType{"Str"}, 0, span, TypeOK)
+	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
 	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
 	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
+	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
 
 	e.voidType = voidType
+	e.boolType = boolType
 	e.builtins = map[string]TypeID{
-		"Int":       intType,
-		"Str":       strType,
-		"void":      e.voidType,
-		"print_str": printStrFun,
-		"print_int": printIntFun,
+		"Int":        intType,
+		"Str":        strType,
+		"Bool":       boolType,
+		"void":       e.voidType,
+		"print_str":  printStrFun,
+		"print_int":  printIntFun,
+		"print_bool": printBoolFun,
 	}
 	return e
 }
@@ -192,6 +198,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) {
 		typeID, status = e.checkDeref(nodeKind)
 	case ast.File:
 		typeID, status = e.checkFile(nodeKind)
+	case ast.If:
+		typeID, status = e.checkIf(nodeKind)
 	case ast.Fun:
 		e.forwardDeclare([]ast.NodeID{nodeID})
 		cachedType, ok := e.types[typeID]
@@ -203,6 +211,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) {
 		typeID, status = e.checkFunParam(nodeID, nodeKind, node.Span)
 	case ast.Ident:
 		typeID, status = e.checkIdent(nodeKind, node.Span)
+	case ast.Bool:
+		typeID, status = e.checkBool()
 	case ast.Int:
 		typeID, status = e.checkInt()
 	case ast.Ref:
@@ -347,6 +357,40 @@ func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {
 		return InvalidTypeID, TypeDepFailed
 	}
 	return lastExprTypeID, TypeOK
+}
+
+func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
+	condType, status := e.Query(if_.Cond)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if condType != e.boolType {
+		condSpan := e.Node(if_.Cond).Span
+		e.diag(condSpan, "if condition must evaluate to a boolean value, got %s", e.TypeDisplay(condType))
+		return InvalidTypeID, TypeFailed
+	}
+	thenType, status := e.Query(if_.Then)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if if_.Else == nil {
+		// Without an "else" branch, "if" always evaluates to "void".
+		return e.voidType, TypeOK
+	}
+	elseType, status := e.Query(*if_.Else)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if thenType != elseType {
+		e.diag(
+			e.Node(*if_.Else).Span,
+			"if branch type mismatch: expected %s, got %s",
+			e.TypeDisplay(thenType),
+			e.TypeDisplay(elseType),
+		)
+		return InvalidTypeID, TypeFailed
+	}
+	return thenType, TypeOK
 }
 
 func (e *Engine) checkCall(call ast.Call, span base.Span) (TypeID, TypeStatus) {
@@ -584,6 +628,14 @@ func (e *Engine) checkIdent(ident ast.Ident, span base.Span) (TypeID, TypeStatus
 		return InvalidTypeID, TypeFailed
 	}
 	return binding.TypeID, TypeOK
+}
+
+func (e *Engine) checkBool() (TypeID, TypeStatus) {
+	typeID, ok := e.builtins["Bool"]
+	if !ok {
+		panic(base.Errorf("builtin type Bool not found"))
+	}
+	return typeID, TypeOK
 }
 
 func (e *Engine) checkInt() (TypeID, TypeStatus) {

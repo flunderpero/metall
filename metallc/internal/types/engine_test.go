@@ -18,6 +18,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	void := &Type{1, span, BuiltInType{"void"}}
 	Int := &Type{2, span, BuiltInType{"Int"}}
 	Str := &Type{3, span, BuiltInType{"Str"}}
+	Bool := &Type{4, span, BuiltInType{"Bool"}}
 
 	tests := []struct {
 		name  string
@@ -64,7 +65,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"call void fun", `{ fun foo() void { } foo() }`, void, nil},
 		{"builtin print_str", `print_str("hello")`, void, nil},
 		{"builtin print_int", `print_int(123)`, void, nil},
+		{"builtin print_bool", `print_bool(true)`, void, nil},
 		{"shadowing", `{ let foo = { let foo = "hello" print_str(foo) 123 } print_int(foo) }`, void, nil},
+
+		{"bool true", "{ true }", Bool, nil},
+		{"bool false", "{ false }", Bool, nil},
+		{"if then else", `{ let a = true if a { 42 } else { 123 }}`, Int, nil},
+		{"if w/o else", `{ let a = true if a { 42 } }`, void, nil},
 
 		{"ref", `{ let a = 5 let b = &a b }`, ref_t(Int), nil},
 		{"mut ref", `{ mut a = 5 mut b = &a b }`, ref_mut_t(Int), nil},
@@ -197,6 +204,17 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:10: main function cannot take arguments\n" +
 				`    fun main(a Int, b Str) void { }` + "\n" +
 				`             ^^^^^^^^^^^^`,
+		}},
+
+		{"if cond must be bool", `{ if 123 { } }`, []string{
+			"test.met:1:6: if condition must evaluate to a boolean value, got Int\n" +
+				`    { if 123 { } }` + "\n" +
+				`         ^^^`,
+		}},
+		{"if then/else must match", `{ if true { 123 } else { "hello" } }`, []string{
+			"test.met:1:24: if branch type mismatch: expected Int, got Str\n" +
+				`    { if true { 123 } else { "hello" } }` + "\n" +
+				"                           ^^^^^^^^^^^",
 		}},
 
 		{"deref a non-ref", `{ let foo = 5 *foo }`, []string{

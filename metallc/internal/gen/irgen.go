@@ -32,6 +32,8 @@ func (g *CodeWriter) write(args ...any) {
 	g.sb.WriteString("\n")
 }
 
+type Label string
+
 type Symbol struct {
 	Name string
 	Reg  string
@@ -46,6 +48,7 @@ type IRGen struct {
 	constCounter int
 	strConsts    map[string]string
 	astCode      map[ast.NodeID]string
+	lastLabel    Label
 }
 
 func NewIRGen(engine *types.Engine) *IRGen {
@@ -57,6 +60,7 @@ func NewIRGen(engine *types.Engine) *IRGen {
 		constCounter: 1,
 		strConsts:    map[string]string{},
 		astCode:      map[ast.NodeID]string{},
+		lastLabel:    "",
 	}
 }
 
@@ -71,6 +75,8 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genCall(id, kind)
 	case ast.Deref:
 		g.genDeref(id, kind)
+	case ast.If:
+		g.genIf(id, kind)
 	case ast.File:
 		g.genFile(kind, node.Span)
 	case ast.Fun:
@@ -81,6 +87,8 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genIdent(id, kind)
 	case ast.Int:
 		g.genInt(id, kind)
+	case ast.Bool:
+		g.genBool(id, kind)
 	case ast.String:
 		g.genString(id, kind)
 	case ast.Var:
@@ -177,6 +185,58 @@ func (g *IRGen) genBlock(id ast.NodeID, block ast.Block) {
 	g.setCode(id, code)
 }
 
+func (g *IRGen) genIf(id ast.NodeID, ifNode ast.If) {
+	g.Gen(ifNode.Cond)
+	cond := g.lookupCode(ifNode.Cond)
+	thenLabel := g.label("then", id)
+	contLabel := g.label("endif", id)
+	elseLabel := contLabel
+	if ifNode.Else != nil {
+		elseLabel = g.label("else", id)
+	}
+	g.write("br i1 %s, label %%%s, label %%%s", cond, thenLabel, elseLabel)
+	g.writeLabel(thenLabel)
+	g.Gen(ifNode.Then)
+	phiThenLabel := g.lastLabel
+	g.write("br label %%%s", contLabel)
+	if ifNode.Else != nil {
+		g.writeLabel(elseLabel)
+		g.Gen(*ifNode.Else)
+		g.write("br label %%%s", contLabel)
+	}
+	phiElseLabel := g.lastLabel
+	g.writeLabel(contLabel)
+	code := "void"
+	if ifNode.Else != nil {
+		phi := g.reg()
+		thenCode := g.lookupCode(ifNode.Then)
+		elseCode := g.lookupCode(*ifNode.Else)
+		typ := g.irTypeOfNode(ifNode.Then)
+		if typ != "void" {
+			g.write(
+				"%s = phi %s [%s, %%%s], [%s, %%%s]",
+				phi,
+				typ,
+				thenCode,
+				phiThenLabel,
+				elseCode,
+				phiElseLabel,
+			)
+			code = phi
+		}
+	}
+	g.setCode(id, code)
+}
+
+func (g *IRGen) label(name string, id ast.NodeID) Label {
+	return Label(fmt.Sprintf("%s_%s", name, id))
+}
+
+func (g *IRGen) writeLabel(label Label) {
+	g.lastLabel = label
+	g.write("%s:", label)
+}
+
 func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.Gen(assign.LHS)
 	g.Gen(assign.RHS)
@@ -248,6 +308,14 @@ func (g *IRGen) genInt(id ast.NodeID, int_ ast.Int) {
 	g.setCode(id, "%d", int_.Value)
 }
 
+func (g *IRGen) genBool(id ast.NodeID, bool_ ast.Bool) {
+	v := 0
+	if bool_.Value {
+		v = 1
+	}
+	g.setCode(id, "%d", v)
+}
+
 func (g *IRGen) genString(id ast.NodeID, str ast.String) {
 	creg, ok := g.strConsts[str.Value]
 	if !ok {
@@ -315,6 +383,8 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 	switch kind := typ.Kind.(type) {
 	case types.BuiltInType:
 		switch kind.Name {
+		case "Bool":
+			return "i1"
 		case "Int":
 			return "i64"
 		case "Str":
@@ -399,5 +469,17 @@ define void @print_str(ptr %s) {
 define void @print_int(i64 %n) {
     call i32 (ptr, ...) @printf(ptr @fmt_int, i64 %n)
     ret void
+}
+
+@str_true = private constant [5 x i8] c"true\00"
+@str_false = private constant [6 x i8] c"false\00"
+define void @print_bool(i1 %n) {
+	br i1 %n, label %true, label %false
+	true:
+	    call i32 @puts(ptr @str_true)
+	    ret void
+	false:
+		call i32 @puts(ptr @str_false)
+		ret void
 }
 `

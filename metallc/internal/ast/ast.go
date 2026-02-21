@@ -75,6 +75,12 @@ type Int struct {
 
 func (Int) isKind() {}
 
+type Bool struct {
+	Value bool
+}
+
+func (Bool) isKind() {}
+
 type String struct {
 	Value string
 }
@@ -100,6 +106,14 @@ type Block struct {
 	Exprs       []NodeID
 	CreateScope bool
 }
+
+type If struct {
+	Cond NodeID
+	Then NodeID
+	Else *NodeID
+}
+
+func (If) isKind() {}
 
 func (Block) isKind() {}
 
@@ -134,6 +148,14 @@ func NewAST() *AST {
 
 func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
 	return a.node(Assign{LHS: lhs, RHS: value}, span)
+}
+
+func (a *AST) NewIf(cond NodeID, then NodeID, else_ *NodeID, span base.Span) NodeID {
+	return a.node(If{Cond: cond, Then: then, Else: else_}, span)
+}
+
+func (a *AST) NewBool(value bool, span base.Span) NodeID {
+	return a.node(Bool{Value: value}, span)
 }
 
 func (a *AST) NewBlock(exprs []NodeID, createScope bool, span base.Span) NodeID {
@@ -225,6 +247,12 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) {
 		for i := range len(kind.Decls) {
 			f(kind.Decls[i])
 		}
+	case If:
+		f(kind.Cond)
+		f(kind.Then)
+		if kind.Else != nil {
+			f(*kind.Else)
+		}
 	case Fun:
 		for i := range len(kind.Params) {
 			f(kind.Params[i])
@@ -235,6 +263,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) {
 		f(kind.Type)
 	case Ident:
 	case Int:
+	case Bool:
 	case String:
 	case Var:
 		f(kind.Expr)
@@ -316,6 +345,20 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		} else {
 			addChild("expr", kind.Expr)
 		}
+	case If:
+		if !children {
+			addAttr("cond", nodeIDKind(kind.Cond))
+			addAttr("then", nodeIDKind(kind.Then))
+			if kind.Else != nil {
+				addAttr("else", nodeIDKind(*kind.Else))
+			}
+		} else {
+			addChild("cond", kind.Cond)
+			addChild("then", kind.Then)
+			if kind.Else != nil {
+				addChild("else", *kind.Else)
+			}
+		}
 	case File:
 		if !children {
 			addAttr("decls", nodeIDList(kind.Decls))
@@ -345,6 +388,8 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		addAttr("name", fmt.Sprintf("%q", kind.Name))
 	case Int:
 		addAttr("value", fmt.Sprintf("%d", kind.Value))
+	case Bool:
+		addAttr("value", fmt.Sprintf("%t", kind.Value))
 	case String:
 		addAttr("value", fmt.Sprintf("%q", kind.Value))
 	case Var:
