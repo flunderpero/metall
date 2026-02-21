@@ -18,6 +18,7 @@ type CompileListener interface {
 	OnLex(tokens []token.Token) bool
 	OnParse(a *ast.AST, fileID ast.NodeID, diagnostics base.Diagnostics) bool
 	OnTypeCheck(engine *types.Engine, diagnostics base.Diagnostics) bool
+	OnLifetimeCheck(lifetime *types.LifetimeCheck, diagnostics base.Diagnostics) bool
 	OnIRGen(ir string) bool
 }
 
@@ -50,6 +51,14 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	if len(engine.Diagnostics) > 0 {
 		return engine.Diagnostics
+	}
+	lifetime := types.NewLifetimeAnalyzer(engine)
+	lifetime.Check(fileID)
+	if listener != nil && !listener.OnLifetimeCheck(lifetime, lifetime.Diagnostics) {
+		return ErrAbort
+	}
+	if len(lifetime.Diagnostics) > 0 {
+		return lifetime.Diagnostics
 	}
 	ir, err := gen.GenIR(fileID, engine)
 	if err != nil {

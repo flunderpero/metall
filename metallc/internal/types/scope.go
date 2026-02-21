@@ -38,14 +38,14 @@ func (s *Scope) Bind(name string, mut bool, decl ast.NodeID, typeID TypeID) bool
 	return true
 }
 
-func (s *Scope) Lookup(name string) (*Binding, bool) {
+func (s *Scope) Lookup(name string) (*Binding, *Scope, bool) {
 	if b, ok := s.bindings[name]; ok {
-		return b, true
+		return b, s, true
 	}
 	if s.Parent != nil {
 		return s.Parent.Lookup(name)
 	}
-	return nil, false
+	return nil, nil, false
 }
 
 type ScopeGraph struct {

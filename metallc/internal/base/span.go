@@ -72,8 +72,11 @@ func (s Span) StringWithSource(surroundingLines int) string {
 				for j := scol - 1; j < ecol; j++ {
 					sb.WriteString("^")
 				}
+				if erow < rowTo {
+					sb.WriteString("\n")
+				}
 			} else {
-				sb.WriteString("^\n")
+				sb.WriteString("^n")
 			}
 		}
 		if i == erow-1 && erow != srow {

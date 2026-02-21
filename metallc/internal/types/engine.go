@@ -578,7 +578,7 @@ func (e *Engine) checkIdent(ident ast.Ident, span base.Span) (TypeID, TypeStatus
 	if typeID, ok := e.builtins[ident.Name]; ok {
 		return typeID, TypeOK
 	}
-	binding, ok := e.scope.Lookup(ident.Name)
+	binding, _, ok := e.scope.Lookup(ident.Name)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
@@ -597,7 +597,7 @@ func (e *Engine) checkInt() (TypeID, TypeStatus) {
 func (e *Engine) checkRef(
 	nodeID ast.NodeID, ref ast.Ref, span base.Span,
 ) (TypeID, TypeStatus) {
-	binding, ok := e.scope.Lookup(ref.Name.Name)
+	binding, _, ok := e.scope.Lookup(ref.Name.Name)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", ref.Name.Name)
 		return InvalidTypeID, TypeFailed
@@ -623,7 +623,7 @@ func (e *Engine) checkSimpleType(
 	if ok {
 		return builtinTypeID, TypeOK
 	}
-	binding, ok := e.scope.Lookup(simpleType.Name.Name)
+	binding, _, ok := e.scope.Lookup(simpleType.Name.Name)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", simpleType.Name.Name)
 		return InvalidTypeID, TypeFailed
@@ -697,7 +697,7 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 	node := e.Node(nodeID)
 	switch kind := node.Kind.(type) {
 	case ast.Ident:
-		binding, ok := e.scope.Lookup(kind.Name)
+		binding, _, ok := e.scope.Lookup(kind.Name)
 		if !ok {
 			// This shouldn't happen since Query succeeded.
 			panic(base.Errorf("binding not found after successful Query: %s", kind.Name))

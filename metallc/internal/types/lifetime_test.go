@@ -1,0 +1,193 @@
+package types
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/flunderpero/metall/metallc/internal/ast"
+	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/token"
+)
+
+func TestLifetimeAnalyzer(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{"stack alloc escapes block", `let foo = { let bar = 123 &bar }`, []string{
+			"test.met:1:27: reference escaping its allocation scope\n" +
+				`    let foo = { let bar = 123 &bar }` + "\n" +
+				"                              ^^^^",
+		}},
+		{"assign ref to outer", `{ mut a = 123 mut b = &a { mut c = 123 b = &c } }`, []string{
+			"test.met:1:40: reference escaping its allocation scope\n" +
+				`    { mut a = 123 mut b = &a { mut c = 123 b = &c } }` + "\n" +
+				"                                           ^^^^^^",
+		}},
+		{"nested", `
+			{
+				mut a = 123
+				mut b = &a
+				{
+					mut c = 123
+					{
+						b = &c
+					}
+			    }
+			}
+			`, []string{
+			"test.met:8:25: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    {
+						    b = &c
+						    ^^^^^^
+					    }
+					`, "\n"),
+		}},
+		{"deref assign", `
+			{
+				mut a = 123
+				mut y = &a
+				mut z = &y
+				{
+				  mut c = 456
+				  *z = &c
+				}
+			}
+			`, []string{
+			"test.met:8:19: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				      mut c = 456
+				      *z = &c
+				      ^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Deref assign through multiple nested scopes - z is in outermost,
+		// y is in middle, c is in innermost. *y = &c should error.
+		{"deref assign multi-level", `
+			{
+				mut a = 123
+				mut z = &a
+				{
+					mut b = 456
+					mut y = &z
+					{
+						mut c = 789
+						*y = &c
+					}
+				}
+			}
+			`, []string{
+			"test.met:10:25: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					        mut c = 789
+					        *y = &c
+					        ^^^^^^^
+					    }
+					`, "\n"),
+		}},
+		// Valid: ref doesn't escape - assigning ref from same or outer scope
+		{"valid same scope ref", `
+			{
+				mut a = 123
+				mut b = &a
+				mut c = 456
+				b = &c
+			}
+			`, []string{}},
+		// Valid: ref from outer scope assigned to inner variable
+		{"valid outer ref to inner var", `
+			{
+				mut a = 123
+				{
+					mut b = &a
+					b
+				}
+			}
+			`, []string{}},
+		// Chain of refs: x -> y (ref to x) -> z (ref to y)
+		// Assigning through *z should affect x, and if we assign &c where c is local, it should error
+		{"ref chain deref", `
+			{
+				mut a = 123
+				mut x = &a
+				mut y = &x
+				{
+					mut c = 456
+					*y = &c
+				}
+			}
+			`, []string{
+			"test.met:8:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    mut c = 456
+					    *y = &c
+					    ^^^^^^^
+					}
+					`, "\n"),
+		}},
+		// Deref on RHS: b = *x where x points to a ref to local c
+		// The ref that *x evaluates to should not escape
+		{"deref rhs escapes", `
+			{
+				mut b = 0
+				mut bRef = &b
+				{
+					mut c = 456
+					mut cRef = &c
+					mut x = &cRef
+					bRef = *x
+				}
+			}
+			`, []string{
+			"test.met:9:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    mut x = &cRef
+					    bRef = *x
+					    ^^^^^^^^^
+					}
+					`, "\n"),
+		}},
+	}
+
+	assert := base.NewAssert(t)
+	hasOnly := false
+	for _, tt := range tests {
+		if strings.HasPrefix(tt.name, "!"+"only") {
+			hasOnly = true
+			break
+		}
+	}
+	for _, tt := range tests {
+		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
+			continue
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			source := base.NewSource("test.met", []rune(strings.ReplaceAll(tt.src, "\t", "    ")))
+			tokens := token.Lex(source)
+			parser := ast.NewParser(tokens)
+			exprID, parseOK := parser.ParseExpr()
+			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
+			assert.Equal(true, parseOK)
+			e := NewEngine(parser.AST)
+			e.Query(exprID)
+			assert.Equal(0, len(e.Diagnostics), "type check failed: %s", e.Diagnostics)
+			a := NewLifetimeAnalyzer(e)
+			a.Debug = base.NewStdoutDebug("lifetime")
+			a.Check(exprID)
+			for i, want := range tt.want {
+				if i >= len(a.Diagnostics) {
+					t.Fatalf("no more diagnostics, but wanted: %s", want)
+				}
+				want = strings.Trim(strings.ReplaceAll(want, "\t", "    "), "\n")
+				want = strings.TrimRight(want, " ")
+				assert.Equal(want, a.Diagnostics[i].Display())
+			}
+			if len(e.Diagnostics) > len(tt.want) {
+				t.Fatalf("there are more diagnostics than expected: %s", a.Diagnostics[len(tt.want):])
+			}
+		})
+	}
+}

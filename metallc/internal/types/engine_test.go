@@ -3,6 +3,7 @@ package types
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
-func TestTypeCheckOK(t *testing.T) {
+func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	// TypeIDs for builtin types are stable, so we can do this.
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	void := &Type{1, span, BuiltInType{"void"}}
@@ -30,7 +31,7 @@ func TestTypeCheckOK(t *testing.T) {
 		{"empty block is void", `{ }`, void, nil},
 		{"let", `let foo = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, ok := e.Scope().Lookup("foo")
+			b, _, ok := e.Scope().Lookup("foo")
 			assert.Equal(true, ok)
 			bindingType := e.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
@@ -38,7 +39,7 @@ func TestTypeCheckOK(t *testing.T) {
 		}},
 		{"mut", `mut foo = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, ok := e.Scope().Lookup("foo")
+			b, _, ok := e.Scope().Lookup("foo")
 			assert.Equal(true, ok)
 			bindingType := e.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
@@ -78,6 +79,10 @@ func TestTypeCheckOK(t *testing.T) {
 		{"mutual recursion", `{ fun foo(a Int) Int { bar(a) } fun bar(a Int) Int { foo(a) } foo(10) }`, Int, nil},
 	}
 
+	// We need a little hack here, because the "ref" and "mut ref" tests
+	// violate the lifetime rules, but we still wan to test them in isolation.
+	skipLifetimeCheck := []string{"ref", "mut ref"}
+
 	assert := base.NewAssert(t)
 	hasOnly := false
 	for _, tt := range tests {
@@ -105,6 +110,12 @@ func TestTypeCheckOK(t *testing.T) {
 			assert.Equal(tt.want, got)
 			if tt.check != nil {
 				tt.check(e, exprID, assert)
+			}
+			if !slices.Contains(skipLifetimeCheck, tt.name) {
+				a := NewLifetimeAnalyzer(e)
+				a.Debug = base.NewStdoutDebug("lifetime")
+				a.Check(exprID)
+				assert.Equal(0, len(a.Diagnostics), "lifetime check failed: %s", a.Diagnostics)
 			}
 			// Make sure every node has a scope.
 			parser.Iter(func(nodeID ast.NodeID) bool {

@@ -62,5 +62,5 @@ func (d Diagnostic) Display() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s: %s\n", d.Span.String(), d.Message)
 	sb.WriteString("    " + strings.ReplaceAll(d.Span.StringWithSource(1), "\n", "\n    "))
-	return sb.String()
+	return strings.TrimRight(sb.String(), " ")
 }
