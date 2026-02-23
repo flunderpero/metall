@@ -13,6 +13,7 @@ type TokenKind int
 const (
 	Amp TokenKind = iota + 1
 	Comma
+	Dot
 	Else
 	EOF
 	Eq
@@ -29,6 +30,7 @@ const (
 	RParen
 	Star
 	String
+	Struct
 	True
 	TypeIdent
 	Unknown
@@ -38,6 +40,7 @@ const (
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Amp:       "&",
 	Comma:     ",",
+	Dot:       ".",
 	Else:      "<else>",
 	EOF:       "<EOF>",
 	Eq:        "=",
@@ -54,6 +57,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	RParen:    ")",
 	Star:      "*",
 	String:    "<string>",
+	Struct:    "<struct>",
 	True:      "true",
 	TypeIdent: "<type identifier>",
 	Unknown:   "<unknown>",
@@ -63,6 +67,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'&': Amp,
 	',': Comma,
+	'.': Dot,
 	'=': Eq,
 	'{': LCurly,
 	'(': LParen,
@@ -72,14 +77,15 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
-	"else":  Else,
-	"false": False,
-	"fun":   Fun,
-	"if":    If,
-	"let":   Let,
-	"mut":   Mut,
-	"true":  True,
-	"void":  Void,
+	"else":   Else,
+	"false":  False,
+	"fun":    Fun,
+	"if":     If,
+	"let":    Let,
+	"mut":    Mut,
+	"struct": Struct,
+	"true":   True,
+	"void":   Void,
 }
 
 func (k TokenKind) String() string {

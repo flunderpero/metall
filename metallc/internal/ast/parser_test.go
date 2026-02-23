@@ -109,6 +109,22 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 
+		{"struct", "expr", "struct Planet { name Str mut diameter Int }", func(a *TestAST) NodeID {
+			return a.struct_("Planet", a.struct_field("name", a.str_typ()), a.mut_struct_field("diameter", a.int_typ()))
+		}},
+		{"struct literal", "expr", "Planet(\"Earth\", 12500)", func(a *TestAST) NodeID {
+			return a.struct_lit(a.ident("Planet"), a.string_("Earth"), a.int_(12500))
+		}},
+		{"field access", "expr", "earth.name", func(a *TestAST) NodeID {
+			return a.field_access(a.ident("earth"), "name")
+		}},
+		{"chained field access", "expr", "earth.info.name", func(a *TestAST) NodeID {
+			return a.field_access(a.field_access(a.ident("earth"), "info"), "name")
+		}},
+		{"field access call", "expr", "earth.info.name()", func(a *TestAST) NodeID {
+			return a.call(a.field_access(a.field_access(a.ident("earth"), "info"), "name"))
+		}},
+
 		{
 			"ref ident expr", "expr", `&foo`,
 			func(a *TestAST) NodeID {
@@ -207,14 +223,14 @@ func TestParseErr(t *testing.T) {
 		want []string
 	}{
 		{"unexpected token", `=`, []string{
-			"test.met:1:1: unexpected token: expected one of '&', '{', 'true', 'false', <if>, <fun>, <identifier>, <number>, <string>, <let>, <mut>, got =\n" +
+			"test.met:1:1: unexpected token: expected one of '&', '{', 'true', 'false', <if>, <fun>, <struct>, <identifier>, <type identifier>, <number>, <string>, <let>, <mut>, got =\n" +
 				`    =` + "\n" +
 				"    ^",
 		}},
 		{"assign to type", `{ Str = "hello" }`, []string{
-			"test.met:1:3: unexpected token: expected one of '&', '{', 'true', 'false', <if>, <fun>, <identifier>, <number>, <string>, <let>, <mut>, got <type identifier>\n" +
+			"test.met:1:7: unexpected token: expected (, got =\n" +
 				`    { Str = "hello" }` + "\n" +
-				"      ^^^",
+				"          ^",
 		}},
 		{"nested ref expr", `{ &&foo }`, []string{
 			"test.met:1:4: unexpected token: expected <identifier>, got &\n" +
@@ -287,6 +303,32 @@ func (a *TestAST) fun(name string, params []NodeID, return_type NodeID, block No
 		params = []NodeID{}
 	}
 	return a.NewFun(Name{name, a.span}, params, return_type, block, a.span)
+}
+
+func (a *TestAST) struct_field(name string, typ NodeID) NodeID {
+	return a.NewStructField(Name{name, a.span}, typ, false, a.span)
+}
+
+func (a *TestAST) mut_struct_field(name string, typ NodeID) NodeID {
+	return a.NewStructField(Name{name, a.span}, typ, true, a.span)
+}
+
+func (a *TestAST) struct_(name string, fields ...NodeID) NodeID {
+	if fields == nil {
+		fields = []NodeID{}
+	}
+	return a.NewStruct(Name{name, a.span}, fields, a.span)
+}
+
+func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
+	if args == nil {
+		args = []NodeID{}
+	}
+	return a.NewStructLiteral(struct_, args, a.span)
+}
+
+func (a *TestAST) field_access(base NodeID, field string) NodeID {
+	return a.NewFieldAccess(base, Name{field, a.span}, a.span)
 }
 
 func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {
@@ -373,14 +415,23 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 		node := ast.Node(nodeID)
 		node.Span = base.Span{}
 		switch kind := node.Kind.(type) {
-		case FunParam:
+		case SimpleType:
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
-		case SimpleType:
+		case FunParam:
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case Fun:
 			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case StructField:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case Struct:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case FieldAccess:
+			kind.Field.Span = base.Span{}
 			node.Kind = kind
 		case Var:
 			kind.Name.Span = base.Span{}

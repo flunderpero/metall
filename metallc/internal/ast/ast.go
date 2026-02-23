@@ -69,6 +69,28 @@ type Fun struct {
 
 func (Fun) isKind() {}
 
+type StructField struct {
+	Name Name
+	Type NodeID
+	Mut  bool
+}
+
+func (StructField) isKind() {}
+
+type Struct struct {
+	Name   Name
+	Fields []NodeID
+}
+
+func (Struct) isKind() {}
+
+type FieldAccess struct {
+	Target NodeID
+	Field  Name
+}
+
+func (FieldAccess) isKind() {}
+
 type Int struct {
 	Value int64
 }
@@ -124,6 +146,13 @@ type Call struct {
 
 func (Call) isKind() {}
 
+type StructLiteral struct {
+	Target NodeID
+	Args   []NodeID
+}
+
+func (StructLiteral) isKind() {}
+
 type Ref struct {
 	Name Name
 }
@@ -166,6 +195,10 @@ func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
 	return a.node(Call{Callee: callee, Args: args}, span)
 }
 
+func (a *AST) NewStructLiteral(target NodeID, args []NodeID, span base.Span) NodeID {
+	return a.node(StructLiteral{Target: target, Args: args}, span)
+}
+
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
 	return a.node(Deref{Expr: expr}, span)
 }
@@ -180,6 +213,18 @@ func (a *AST) NewFun(name Name, params []NodeID, returnType NodeID, block NodeID
 
 func (a *AST) NewFunParam(name Name, type_ NodeID, mut bool, span base.Span) NodeID {
 	return a.node(FunParam{Name: name, Type: type_, Mut: mut}, span)
+}
+
+func (a *AST) NewStruct(name Name, fields []NodeID, span base.Span) NodeID {
+	return a.node(Struct{Name: name, Fields: fields}, span)
+}
+
+func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) NodeID {
+	return a.node(StructField{Name: name, Type: type_, Mut: mut}, span)
+}
+
+func (a *AST) NewFieldAccess(target NodeID, field Name, span base.Span) NodeID {
+	return a.node(FieldAccess{Target: target, Field: field}, span)
 }
 
 func (a *AST) NewIdent(name string, span base.Span) NodeID {
@@ -261,6 +306,19 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) {
 		f(kind.Block)
 	case FunParam:
 		f(kind.Type)
+	case Struct:
+		for i := range len(kind.Fields) {
+			f(kind.Fields[i])
+		}
+	case StructField:
+		f(kind.Type)
+	case FieldAccess:
+		f(kind.Target)
+	case StructLiteral:
+		f(kind.Target)
+		for i := range len(kind.Args) {
+			f(kind.Args[i])
+		}
 	case Ident:
 	case Int:
 	case Bool:
@@ -383,6 +441,37 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {
 			addChild("type", kind.Type)
+		}
+	case Struct:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if !children {
+			addAttr("fields", nodeIDList(kind.Fields))
+		} else {
+			addChild("fields", kind.Fields...)
+		}
+	case StructField:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if !children {
+			addAttr("type", nodeIDKind(kind.Type))
+		} else {
+			addChild("type", kind.Type)
+		}
+	case StructLiteral:
+		if !children {
+			addAttr("target", nodeIDKind(kind.Target))
+			addAttr("args", nodeIDList(kind.Args))
+		} else {
+			addChild("target", kind.Target)
+			addChild("args", kind.Args...)
+		}
+	case FieldAccess:
+		if !children {
+			addAttr("target", nodeIDKind(kind.Target))
+			addAttr("field", kind.Field.Name)
+		} else {
+			addChild("target", kind.Target)
+			addAttr("field", kind.Field.Name)
 		}
 	case Ident:
 		addAttr("name", fmt.Sprintf("%q", kind.Name))

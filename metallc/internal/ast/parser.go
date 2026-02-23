@@ -43,6 +43,10 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if fun, ok := p.ParseFun(); ok {
 				decls = append(decls, fun)
 			}
+		case token.Struct:
+			if struct_, ok := p.ParseStruct(); ok {
+				decls = append(decls, struct_)
+			}
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
 			return decls, false
@@ -84,6 +88,78 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewFun(name, params, returnType, block, span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseStructFields() ([]NodeID, bool) {
+	fields := []NodeID{}
+	for {
+		t, ok := p.peek()
+		if !ok {
+			return fields, true
+		}
+		span := t.Span
+		var name Name
+		mut := false
+		switch t.Kind { //nolint:exhaustive
+		case token.Ident:
+			name = Name{t.Value, t.Span}
+			p.next()
+		case token.Mut:
+			mut = true
+			p.next()
+			nt, ok := p.expect(token.Ident)
+			if !ok {
+				return nil, false
+			}
+			name = Name{nt.Value, nt.Span}
+		case token.RCurly:
+			return fields, true
+		default:
+			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
+			return nil, false
+		}
+		type_, ok := p.ParseType()
+		if !ok {
+			return nil, false
+		}
+		fields = append(fields, p.NewStructField(name, type_, mut, span.Combine(p.span())))
+	}
+}
+
+func (p *Parser) ParseStruct() (NodeID, bool) {
+	t, ok := p.expect(token.Struct)
+	if !ok {
+		return ParseFailed, false
+	}
+	nameToken, ok := p.expect(token.TypeIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	name := Name{nameToken.Value, nameToken.Span}
+	if _, ok := p.expect(token.LCurly); !ok {
+		return ParseFailed, false
+	}
+	fields, ok := p.ParseStructFields()
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.RCurly); !ok {
+		return ParseFailed, false
+	}
+	return p.NewStruct(name, fields, t.Span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseStructLiteral() (NodeID, bool) {
+	struct_, ok := p.expect(token.TypeIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	ident := p.NewIdent(struct_.Value, struct_.Span)
+	args, ok := p.ParseCallArgs()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseBlock() (NodeID, bool) {
@@ -137,16 +213,29 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 		}
 	}
 	for {
-		if t, ok := p.peek(); ok && t.Kind == token.LParen {
+		t, ok := p.peek()
+		if !ok {
+			break
+		}
+		switch t.Kind { //nolint:exhaustive
+		case token.LParen:
 			callee := expr
 			args, ok := p.ParseCallArgs()
 			if !ok {
 				return ParseFailed, false
 			}
 			expr = p.NewCall(callee, args, span.Combine(p.span()))
-		} else {
-			break
+			continue
+		case token.Dot:
+			p.next()
+			name, ok := p.expect(token.Ident)
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = p.NewFieldAccess(expr, Name{name.Value, name.Span}, span.Combine(p.span()))
+			continue
 		}
+		break
 	}
 	return expr, true
 }
@@ -163,7 +252,9 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		token.False,
 		token.If,
 		token.Fun,
+		token.Struct,
 		token.Ident,
+		token.TypeIdent,
 		token.Number,
 		token.String,
 		token.Let,
@@ -192,6 +283,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = fun
+	case token.Struct:
+		struct_, ok := p.ParseStruct()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = struct_
 	case token.If:
 		if_, ok := p.ParseIf()
 		if !ok {
@@ -204,6 +301,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = ident
+	case token.TypeIdent:
+		struct_literal, ok := p.ParseStructLiteral()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = struct_literal
 	case token.Number:
 		p.next()
 		number, err := strconv.ParseInt(t.Value, 10, 64)

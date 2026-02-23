@@ -78,6 +78,19 @@ func TestCompile(t *testing.T) {
 			}
 			`, "123\n321\n"},
 
+		{"struct", `
+			struct Planet {
+				name Str
+				diameter Int
+			}
+
+			fun main() void {
+				let earth = Planet("Earth", 12500)
+				print_str(earth.name)
+				print_int(earth.diameter)
+			}
+			`, "Earth\n12500\n"},
+
 		{"forward declare", `
 			fun main() void {
 				print_int(foo())

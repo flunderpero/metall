@@ -38,6 +38,8 @@ func TestLexer(t *testing.T) {
 		{"void", `void`, []want{{Void, "", "1:1-1:4"}}},
 		{"mut", `mut`, []want{{Mut, "", "1:1-1:3"}}},
 		{"let", `let`, []want{{Let, "", "1:1-1:3"}}},
+		{"struct", `struct`, []want{{Struct, "", "1:1-1:6"}}},
+		{"dot", ".", []want{{Dot, "", "1:1"}}},
 		{"whitespace is ignored", " ( \n \t)\r", []want{{LParen, "", "1:2"}, {RParen, "", "2:3"}}},
 	}
 

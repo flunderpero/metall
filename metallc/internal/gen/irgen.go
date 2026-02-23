@@ -24,10 +24,12 @@ func (g *CodeWriter) write(args ...any) {
 	}
 	indent := strings.Repeat("    ", g.indent)
 	g.sb.WriteString(indent)
+	arg0 := base.Cast[string](args[0])
+	arg0 = strings.ReplaceAll(arg0, "\n", "\n"+indent)
 	if len(args) > 1 {
-		fmt.Fprintf(&g.sb, args[0].(string), args[1:]...) //nolint:forcetypeassert
+		fmt.Fprintf(&g.sb, arg0, args[1:]...)
 	} else {
-		g.sb.WriteString(args[0].(string)) //nolint:forcetypeassert
+		g.sb.WriteString(arg0)
 	}
 	g.sb.WriteString("\n")
 }
@@ -81,6 +83,12 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genFile(kind, node.Span)
 	case ast.Fun:
 		g.genFun(id, kind)
+	case ast.Struct:
+		g.genStruct(id, kind)
+	case ast.StructLiteral:
+		g.genStructLiteral(id, kind)
+	case ast.FieldAccess:
+		g.genFieldAccess(id, kind)
 	case ast.FunParam:
 		// Handled inline in genFun
 	case ast.Ident:
@@ -119,6 +127,71 @@ func (g *IRGen) genFile(file ast.File, span base.Span) {
 	}
 }
 
+func (g *IRGen) genStruct(id ast.NodeID, astStruct ast.Struct) {
+	typ := g.engine.TypeOfNode(id)
+	g.write("%%%s = type { ; %s", typ.ID, astStruct.Name.Name)
+	g.indent++
+
+	for i, astFieldID := range astStruct.Fields {
+		astField := base.Cast[ast.StructField](g.engine.Node(astFieldID).Kind)
+		typ := g.irTypeOfNode(astFieldID)
+		comma := ""
+		if i < len(astStruct.Fields)-1 {
+			comma = ","
+		}
+		g.write("%s%s ; %s", typ, comma, astField.Name.Name)
+	}
+	g.indent--
+	g.write("}")
+}
+
+func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
+	g.Gen(lit.Target)
+	for _, arg := range lit.Args {
+		g.Gen(arg)
+	}
+	structType := g.engine.TypeOfNode(lit.Target)
+	sb := strings.Builder{}
+	reg := g.reg()
+	fmt.Fprintf(&sb, "%s = alloca %%%s\n", reg, structType.ID)
+	for i, arg := range lit.Args {
+		fieldReg := g.reg()
+		fmt.Fprintf(
+			&sb,
+			"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d\n",
+			fieldReg,
+			structType.ID,
+			structType.ID,
+			reg,
+			i,
+		)
+		fieldTyp := g.irTypeOfNode(arg)
+		fmt.Fprintf(&sb, "store %s %s, ptr %s\n", fieldTyp, g.lookupCode(arg), fieldReg)
+	}
+	g.write(sb.String())
+	g.setCode(id, reg)
+}
+
+func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	g.Gen(fieldAccess.Target)
+	targetType := g.engine.TypeOfNode(fieldAccess.Target)
+	structType := base.Cast[types.StructType](targetType.Kind)
+	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
+	fieldType := g.irType(structType.Fields[fieldIndex].Type)
+	ptrReg := g.reg()
+	g.write(
+		"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d",
+		ptrReg,
+		targetType.ID,
+		targetType.ID,
+		g.lookupCode(fieldAccess.Target),
+		fieldIndex,
+	)
+	reg := g.reg()
+	g.write("%s = load %s, ptr %s", reg, fieldType, ptrReg)
+	g.setCode(id, reg)
+}
+
 func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
 	typ := g.engine.TypeOfNode(id)
 	fun, ok := typ.Kind.(types.FunType)
@@ -149,8 +222,8 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
 		params.WriteString(" ")
 		params.WriteString(preg)
 		areg := g.reg()
-		fmt.Fprintf(&paramAllocas, "    %s = alloca %s\n", areg, typ)
-		fmt.Fprintf(&paramAllocas, "    store %s %s, ptr %s", typ, preg, areg)
+		fmt.Fprintf(&paramAllocas, "%s = alloca %s\n", areg, typ)
+		fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s", typ, preg, areg)
 		g.setSymbol(paramID, param.Name.Name, areg, typ)
 	}
 	g.write("define %s @%s(%s) {", ret, name, params.String())
@@ -394,7 +467,7 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		default:
 			panic(base.Errorf("unknown builtin type: %s", kind.Name))
 		}
-	case types.RefType:
+	case types.RefType, types.StructType:
 		return "ptr"
 	case types.FunType:
 		panic("unexpected fun type")
@@ -443,6 +516,15 @@ func (g *IRGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
 		scope = scope.Parent
 	}
 	return Symbol{}, false
+}
+
+func indexOfStructField(s types.StructType, name string) int {
+	for i, field := range s.Fields {
+		if field.Name == name {
+			return i
+		}
+	}
+	panic(base.Errorf("field %q not found in struct %q", name, s.Name))
 }
 
 func GenIR(fileID ast.NodeID, engine *types.Engine) (string, error) {

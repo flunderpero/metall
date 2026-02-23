@@ -68,6 +68,25 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"builtin print_bool", `print_bool(true)`, void, nil},
 		{"shadowing", `{ let foo = { let foo = "hello" print_str(foo) 123 } print_int(foo) }`, void, nil},
 
+		{"struct", `struct Planet { name Str diameter Int }`, struct_t("Planet", "name", Str, "diameter", Int), nil},
+		{
+			"forward declare struct type", `{ fun foo(a Planet) void {} struct Planet { name Str } }`,
+			struct_t("Planet", "name", Str),
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block, ok := e.Node(id).Kind.(ast.Block)
+				assert.Equal(true, ok)
+				funID := block.Exprs[0]
+				typ, ok := e.TypeOfNode(funID).Kind.(FunType)
+				assert.Equal(true, ok, e.TypeOfNode(funID).ID)
+				assert.Equal("struct(Str)", e.TypeDisplay(typ.Params[0]))
+			},
+		},
+		{
+			"struct literal", `{ struct Planet { name Str diameter Int } let earth = Planet("Earth", 12500) earth }`,
+			struct_t("Planet", "name", Str, "diameter", Int), nil,
+		},
+		{"field access", `{ struct Planet { name Str } let earth = Planet("Earth") earth.name }`, Str, nil},
+
 		{"bool true", "{ true }", Bool, nil},
 		{"bool false", "{ false }", Bool, nil},
 		{"if then else", `{ let a = true if a { 42 } else { 123 }}`, Int, nil},
@@ -205,6 +224,21 @@ func TestTypeCheckErr(t *testing.T) {
 				`    fun main(a Int, b Str) void { }` + "\n" +
 				`             ^^^^^^^^^^^^`,
 		}},
+
+		{"field access on non-struct type", `123.name`, []string{
+			"test.met:1:1: cannot access field on a non-struct type: Int\n" +
+				`    123.name` + "\n" +
+				`    ^^^`,
+		}},
+		{
+			"field access of non-existing field",
+			`{ struct Planet{name Str} let earth = Planet("Earth") earth.age }`,
+			[]string{
+				"test.met:1:61: unknown field: Planet.age\n" +
+					`    { struct Planet{name Str} let earth = Planet("Earth") earth.age }` + "\n" +
+					"                                                                ^^^",
+			},
+		},
 
 		{"if cond must be bool", `{ if 123 { } }`, []string{
 			"test.met:1:6: if condition must evaluate to a boolean value, got Int\n" +
@@ -478,6 +512,19 @@ func ref_t(typ *Type) *Type {
 
 func ref_mut_t(typ *Type) *Type {
 	return &Type{Kind: RefType{typ.ID, true}}
+}
+
+func struct_t(name string, fields ...any) *Type {
+	structFields := []Named{}
+	for i, f := range fields {
+		if i%2 == 0 {
+			name := base.Cast[string](f)
+			structFields = append(structFields, Named{name, 0})
+		} else {
+			structFields[len(structFields)-1].Type = base.Cast[*Type](f).ID
+		}
+	}
+	return &Type{Kind: StructType{name, structFields}}
 }
 
 func fun_t(types ...*Type) *Type {

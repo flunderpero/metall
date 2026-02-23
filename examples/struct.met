@@ -1,0 +1,10 @@
+struct Planet {
+    name Str
+    diameter Int
+}
+
+fun main() void {
+    let earth = Planet("Earth", 12500)
+    print_str(earth.name)
+    print_int(earth.diameter)
+}

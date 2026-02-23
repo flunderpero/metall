@@ -46,6 +46,18 @@ type FunType struct {
 
 func (FunType) isTypeKind() {}
 
+type Named struct {
+	Name string
+	Type TypeID
+}
+
+type StructType struct {
+	Name   string
+	Fields []Named
+}
+
+func (StructType) isTypeKind() {}
+
 type refTypeCacheKey struct {
 	TypeID
 	Mut bool
@@ -167,12 +179,23 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 		sb.WriteString(") ")
 		sb.WriteString(e.TypeDisplay(kind.Return))
 		return sb.String()
+	case StructType:
+		var sb strings.Builder
+		sb.WriteString("struct(")
+		for i, field := range kind.Fields {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(e.TypeDisplay(field.Type))
+		}
+		sb.WriteString(")")
+		return sb.String()
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
 	}
 }
 
-func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) {
+func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	if cached, ok := e.nodes[nodeID]; ok {
 		if cached.Status.Failed() {
 			return InvalidTypeID, cached.Status
@@ -200,15 +223,24 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) {
 		typeID, status = e.checkFile(nodeKind)
 	case ast.If:
 		typeID, status = e.checkIf(nodeKind)
-	case ast.Fun:
-		e.forwardDeclare([]ast.NodeID{nodeID})
-		cachedType, ok := e.types[typeID]
+	case ast.Fun, ast.Struct:
+		cachedType, ok := e.nodes[nodeID]
 		if !ok {
-			return InvalidTypeID, TypeFailed
+			e.forwardDeclare([]ast.NodeID{nodeID})
+			cachedType, ok = e.nodes[nodeID]
+			if !ok {
+				return InvalidTypeID, TypeFailed
+			}
 		}
-		return typeID, cachedType.Status
+		return cachedType.Type.ID, cachedType.Status
 	case ast.FunParam:
 		typeID, status = e.checkFunParam(nodeID, nodeKind, node.Span)
+	case ast.StructField:
+		typeID, status = e.checkStructField(nodeID, nodeKind, node.Span)
+	case ast.StructLiteral:
+		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
+	case ast.FieldAccess:
+		typeID, status = e.checkFieldAccess(nodeKind)
 	case ast.Ident:
 		typeID, status = e.checkIdent(nodeKind, node.Span)
 	case ast.Bool:
@@ -264,6 +296,11 @@ func (e *Engine) WalkType(typeID TypeID, f func(typ *Type, e *Engine)) {
 		}
 		retTyp := e.Type(kind.Return)
 		f(retTyp, e)
+	case StructType:
+		for _, field := range kind.Fields {
+			fieldTyp := e.Type(field.Type)
+			f(fieldTyp, e)
+		}
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
 	}
@@ -393,6 +430,68 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	return thenType, TypeOK
 }
 
+func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
+	structTypeID, status := e.Query(lit.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	structTyp := e.Type(structTypeID)
+	struct_, ok := structTyp.Kind.(StructType)
+	if !ok {
+		calleeSpan := e.Node(lit.Target).Span
+		e.diag(calleeSpan, "cannot call non-function: %s", e.TypeDisplay(structTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	if len(lit.Args) != len(struct_.Fields) {
+		e.diag(span, "argument count mismatch: expected %d, got %d", len(struct_.Fields), len(lit.Args))
+		return InvalidTypeID, TypeFailed
+	}
+	for i, argNodeID := range lit.Args {
+		argNode := e.Node(argNodeID)
+		argTypeID, status := e.Query(argNodeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if argTypeID != struct_.Fields[i].Type {
+			e.diag(
+				argNode.Span,
+				"type mismatch at argument %d: expected %s, got %s",
+				i+1,
+				e.TypeDisplay(struct_.Fields[i].Type),
+				e.TypeDisplay(argTypeID),
+			)
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	return structTypeID, TypeOK
+}
+
+func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
+	targetTypeID, status := e.Query(fieldAccess.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	structTyp := e.Type(targetTypeID)
+	struct_, ok := structTyp.Kind.(StructType)
+	if !ok {
+		targetSpan := e.Node(fieldAccess.Target).Span
+		e.diag(targetSpan, "cannot access field on a non-struct type: %s", e.TypeDisplay(targetTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	var targetFieldTypeID TypeID
+	for _, field := range struct_.Fields {
+		if field.Name == fieldAccess.Field.Name {
+			targetFieldTypeID = field.Type
+			break
+		}
+	}
+	if targetFieldTypeID == 0 {
+		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", struct_.Name, fieldAccess.Field.Name)
+		return InvalidTypeID, TypeFailed
+	}
+	return targetFieldTypeID, TypeOK
+}
+
 func (e *Engine) checkCall(call ast.Call, span base.Span) (TypeID, TypeStatus) {
 	calleeTypeID, status := e.Query(call.Callee)
 	if status.Failed() {
@@ -474,7 +573,8 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 	// Find declaration nodes.
 	for _, nodeID := range nodeIDs {
 		node := e.Node(nodeID)
-		if _, ok := node.Kind.(ast.Fun); ok {
+		switch node.Kind.(type) {
+		case ast.Fun, ast.Struct:
 			// Associate this node with the current scope.
 			e.ScopeGraph.SetNodeScope(nodeID, e.scope)
 			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil})
@@ -488,6 +588,8 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
 			typeID, status = e.checkFunCreateAndBind(decl.node, nodeKind)
+		case ast.Struct:
+			typeID, status = e.checkStructCreateAndBind(decl.node, nodeKind)
 		default:
 			panic(base.Errorf("node kind not supported: %T", nodeKind))
 		}
@@ -510,7 +612,10 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
 			funType := base.Cast[FunType](typeKind)
-			decl.status, decl.cachedType.Type.Kind = e.checkFunCompleteType(decl.node, nodeKind, decl.typeID, funType)
+			decl.status, decl.cachedType.Type.Kind = e.checkFunCompleteType(nodeKind, funType)
+		case ast.Struct:
+			structType := base.Cast[StructType](typeKind)
+			decl.status, decl.cachedType.Type.Kind = e.checkStructCompleteType(nodeKind, structType)
 		default:
 			panic(base.Errorf("node kind not supported: %T", nodeKind))
 		}
@@ -526,7 +631,9 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
 			funType := base.Cast[FunType](typeKind)
-			decl.status = e.checkFunBody(decl.node, nodeKind, decl.typeID, funType)
+			decl.status = e.checkFunBody(nodeKind, funType)
+		case ast.Struct:
+		// Structs don't have a body.
 		default:
 			panic(base.Errorf("node kind not supported: %T", nodeKind))
 		}
@@ -546,7 +653,15 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 	return funTypeID, TypeInProgress
 }
 
-func (e *Engine) checkFunCompleteType(_ *ast.Node, funNode ast.Fun, _ TypeID, funType FunType) (TypeStatus, FunType) {
+func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
+	structTypeID := e.newType(StructType{structNode.Name.Name, []Named{}}, node.ID, node.Span, TypeInProgress)
+	if !e.bind(structNode.Name.Name, false, node.ID, structTypeID, structNode.Name.Span) {
+		return structTypeID, TypeFailed
+	}
+	return structTypeID, TypeInProgress
+}
+
+func (e *Engine) checkFunCompleteType(funNode ast.Fun, funType FunType) (TypeStatus, FunType) {
 	paramTypeIDs := make([]TypeID, len(funNode.Params))
 	for i, paramNodeID := range funNode.Params {
 		paramTypeID, status := e.Query(paramNodeID)
@@ -559,7 +674,21 @@ func (e *Engine) checkFunCompleteType(_ *ast.Node, funNode ast.Fun, _ TypeID, fu
 	return TypeInProgress, funType
 }
 
-func (e *Engine) checkFunBody(_ *ast.Node, funNode ast.Fun, _ TypeID, funType FunType) TypeStatus {
+func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType StructType) (TypeStatus, StructType) {
+	fields := make([]Named, len(structNode.Fields))
+	for i, fieldNodeID := range structNode.Fields {
+		fieldTypeID, status := e.Query(fieldNodeID)
+		if status.Failed() {
+			return TypeDepFailed, structType
+		}
+		fieldNode := base.Cast[ast.StructField](e.Node(fieldNodeID).Kind)
+		fields[i] = Named{fieldNode.Name.Name, fieldTypeID}
+	}
+	structType.Fields = fields
+	return TypeOK, structType
+}
+
+func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
 	e.enterScope()
 	defer e.leaveScope()
 	// Bind parameters.
@@ -614,6 +743,23 @@ func (e *Engine) checkFunParam(nodeID ast.NodeID, funParam ast.FunParam, span ba
 	}
 	if isRef {
 		typeID = e.buildRefType(nodeID, ref.Type, funParam.Mut, span)
+	}
+	return typeID, TypeOK
+}
+
+func (e *Engine) checkStructField(nodeID ast.NodeID, structField ast.StructField, span base.Span) (TypeID, TypeStatus) {
+	typeID, status := e.Query(structField.Type)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	typ := e.Type(typeID)
+	ref, isRef := typ.Kind.(RefType)
+	if structField.Mut && !isRef {
+		e.diag(span, "only reference types can be mutable parameters")
+		return InvalidTypeID, TypeFailed
+	}
+	if isRef {
+		typeID = e.buildRefType(nodeID, ref.Type, structField.Mut, span)
 	}
 	return typeID, TypeOK
 }
