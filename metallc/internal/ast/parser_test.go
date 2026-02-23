@@ -115,8 +115,11 @@ func TestParseOK(t *testing.T) {
 		{"struct literal", "expr", "Planet(\"Earth\", 12500)", func(a *TestAST) NodeID {
 			return a.struct_lit(a.ident("Planet"), a.string_("Earth"), a.int_(12500))
 		}},
-		{"field access", "expr", "earth.name", func(a *TestAST) NodeID {
+		{"field read access", "expr", "earth.name", func(a *TestAST) NodeID {
 			return a.field_access(a.ident("earth"), "name")
+		}},
+		{"field write access", "expr", "earth.name = \"Mother\"", func(a *TestAST) NodeID {
+			return a.assign(a.field_access(a.ident("earth"), "name"), a.string_("Mother"))
 		}},
 		{"chained field access", "expr", "earth.info.name", func(a *TestAST) NodeID {
 			return a.field_access(a.field_access(a.ident("earth"), "info"), "name")

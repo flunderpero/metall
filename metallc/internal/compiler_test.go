@@ -88,8 +88,13 @@ func TestCompile(t *testing.T) {
 				let earth = Planet("Earth", 12500)
 				print_str(earth.name)
 				print_int(earth.diameter)
+
+				earth.name = "Mother"
+				earth.diameter = 12742
+				print_str(earth.name)
+				print_int(earth.diameter)
 			}
-			`, "Earth\n12500\n"},
+			`, "Earth\n12500\nMother\n12742\n"},
 
 		{"forward declare", `
 			fun main() void {

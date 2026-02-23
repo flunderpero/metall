@@ -933,8 +933,10 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 			return InvalidTypeID, TypeFailed
 		}
 		return typeID, TypeOK
+	case ast.FieldAccess:
+		return typeID, TypeOK
 	default:
-		e.diag(node.Span, "left-hand side is not assignable: %T", kind)
+		e.diag(node.Span, "cannot assign to left-hand-side expression of type: %T", kind)
 		return InvalidTypeID, TypeFailed
 	}
 }

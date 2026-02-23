@@ -128,6 +128,36 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					}
 					`, "\n"),
 		}},
+		// Field write: assigning a local ref to a struct field that escapes the block.
+		{"field write escapes", `
+			{
+				struct Foo { mut ptr &Int }
+				mut a = 123
+				mut foo = Foo(&a)
+				{
+					mut c = 456
+					foo.ptr = &c
+				}
+			}
+			`, []string{
+			"test.met:8:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    mut c = 456
+					    foo.ptr = &c
+					    ^^^^^^^^^^^^
+					}
+					`, "\n"),
+		}},
+		// Field write: ref stays in same scope, no escape.
+		{"valid field write same scope", `
+			{
+				struct Foo { mut ptr &Int }
+				mut a = 123
+				mut b = 456
+				mut foo = Foo(&a)
+				foo.ptr = &b
+			}
+			`, []string{}},
 		// Deref on RHS: b = *x where x points to a ref to local c
 		// The ref that *x evaluates to should not escape
 		{"deref rhs escapes", `

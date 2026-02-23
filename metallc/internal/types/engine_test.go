@@ -85,7 +85,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			"struct literal", `{ struct Planet { name Str diameter Int } let earth = Planet("Earth", 12500) earth }`,
 			struct_t("Planet", "name", Str, "diameter", Int), nil,
 		},
-		{"field access", `{ struct Planet { name Str } let earth = Planet("Earth") earth.name }`, Str, nil},
+		{"field read access", `{ struct Planet { name Str } let earth = Planet("Earth") earth.name }`, Str, nil},
+		{
+			"field write access",
+			`{ struct Planet { name Str } mut earth = Planet("Earth") earth.name = "Mother" }`,
+			void,
+			nil,
+		},
 
 		{"bool true", "{ true }", Bool, nil},
 		{"bool false", "{ false }", Bool, nil},

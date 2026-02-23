@@ -48,7 +48,7 @@ type IRGen struct {
 	symbols      map[types.ScopeID]map[string]Symbol
 	regCounter   int
 	constCounter int
-	strConsts    map[string]string
+	strConsts    map[string]int
 	astCode      map[ast.NodeID]string
 	lastLabel    Label
 }
@@ -59,8 +59,8 @@ func NewIRGen(engine *types.Engine) *IRGen {
 		engine:       engine,
 		symbols:      map[types.ScopeID]map[string]Symbol{},
 		regCounter:   1,
-		constCounter: 1,
-		strConsts:    map[string]string{},
+		constCounter: 0,
+		strConsts:    map[string]int{},
 		astCode:      map[ast.NodeID]string{},
 		lastLabel:    "",
 	}
@@ -122,8 +122,12 @@ func (g *IRGen) genFile(file ast.File, span base.Span) {
 	}
 	g.write("; Global constants.")
 	g.write("")
-	for value, reg := range g.strConsts {
-		g.write(`%s = private constant [%d x i8] c"%s"`, reg, len(value)+1, value+`\00`)
+	consts := make([]string, len(g.strConsts))
+	for value, id := range g.strConsts {
+		consts[id] = value
+	}
+	for id, value := range consts {
+		g.write(`@%d = private constant [%d x i8] c"%s"`, id, len(value)+1, value+`\00`)
 	}
 }
 
@@ -131,7 +135,6 @@ func (g *IRGen) genStruct(id ast.NodeID, astStruct ast.Struct) {
 	typ := g.engine.TypeOfNode(id)
 	g.write("%%%s = type { ; %s", typ.ID, astStruct.Name.Name)
 	g.indent++
-
 	for i, astFieldID := range astStruct.Fields {
 		astField := base.Cast[ast.StructField](g.engine.Node(astFieldID).Kind)
 		typ := g.irTypeOfNode(astFieldID)
@@ -173,12 +176,19 @@ func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
 }
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	fieldType, ptrReg := g.genFieldAccessPtr(fieldAccess)
+	reg := g.reg()
+	g.write("%s = load %s, ptr %s", reg, fieldType, ptrReg)
+	g.setCode(id, reg)
+}
+
+func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string, ptrReg string) {
 	g.Gen(fieldAccess.Target)
 	targetType := g.engine.TypeOfNode(fieldAccess.Target)
 	structType := base.Cast[types.StructType](targetType.Kind)
 	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
-	fieldType := g.irType(structType.Fields[fieldIndex].Type)
-	ptrReg := g.reg()
+	fieldType = g.irType(structType.Fields[fieldIndex].Type)
+	ptrReg = g.reg()
 	g.write(
 		"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d",
 		ptrReg,
@@ -187,9 +197,7 @@ func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 		g.lookupCode(fieldAccess.Target),
 		fieldIndex,
 	)
-	reg := g.reg()
-	g.write("%s = load %s, ptr %s", reg, fieldType, ptrReg)
-	g.setCode(id, reg)
+	return fieldType, ptrReg
 }
 
 func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
@@ -311,18 +319,22 @@ func (g *IRGen) writeLabel(label Label) {
 }
 
 func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
-	g.Gen(assign.LHS)
 	g.Gen(assign.RHS)
 	rhs := g.lookupCode(assign.RHS)
 	lhsNode := g.engine.Node(assign.LHS)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
+		g.Gen(assign.LHS)
 		symbol, ok := g.lookupSymbol(assign.LHS, lhsKind.Name)
 		if !ok {
 			panic(base.Errorf("assign to unknown variable: %s", lhsKind.Name))
 		}
 		g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
+	case ast.FieldAccess:
+		fieldType, ptrReg := g.genFieldAccessPtr(lhsKind)
+		g.write("store %s %s, ptr %s", fieldType, rhs, ptrReg)
 	case ast.Deref:
+		g.Gen(assign.LHS)
 		ptr := g.lookupCode(lhsKind.Expr)
 		g.write("store %s %s, ptr %s", g.irTypeOfNode(assign.LHS), rhs, ptr)
 	default:
@@ -390,13 +402,14 @@ func (g *IRGen) genBool(id ast.NodeID, bool_ ast.Bool) {
 }
 
 func (g *IRGen) genString(id ast.NodeID, str ast.String) {
-	creg, ok := g.strConsts[str.Value]
+	cid, ok := g.strConsts[str.Value]
 	if !ok {
-		creg = g.creg()
-		g.strConsts[str.Value] = creg
+		cid = g.constCounter
+		g.constCounter++
+		g.strConsts[str.Value] = cid
 	}
 	reg := g.reg()
-	g.write("%s = getelementptr [%d x i8], ptr %s, i32 0, i32 0", reg, len(str.Value)+1, creg)
+	g.write("%s = getelementptr [%d x i8], ptr @%d, i32 0, i32 0", reg, len(str.Value)+1, cid)
 	g.setCode(id, reg)
 }
 
@@ -438,12 +451,6 @@ func (g *IRGen) reg() string {
 	id := g.regCounter
 	g.regCounter++
 	return fmt.Sprintf("%%r%d", id)
-}
-
-func (g *IRGen) creg() string {
-	id := g.constCounter
-	g.constCounter++
-	return fmt.Sprintf("@%d", id)
 }
 
 func (g *IRGen) irTypeOfNode(nodeID ast.NodeID) string {
