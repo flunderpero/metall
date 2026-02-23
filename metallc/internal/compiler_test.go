@@ -96,6 +96,55 @@ func TestCompile(t *testing.T) {
 			}
 			`, "Earth\n12500\nMother\n12742\n"},
 
+		{"struct as value parameter", `
+			struct Planet {
+				name Str
+			}
+
+			fun print_planet(p Planet) void {
+				print_str(p.name)
+			}
+
+			fun main() void {
+				let earth = Planet("Earth")
+				print_planet(earth)
+			}
+			`, "Earth\n"},
+
+		{"struct as value return", `
+			struct Planet {
+				name Str
+			}
+
+			fun make_earth() Planet {
+				Planet("Earth")
+			}
+
+			fun main() void {
+				let earth = make_earth()
+				print_str(earth.name)
+			}
+			`, "Earth\n"},
+
+		{"nested struct", `
+			struct Planet {
+				name Str
+			}
+
+			struct SolarSystem {
+				earth Planet
+				mars Planet
+			}
+
+			fun main() void {
+				mut s = SolarSystem(Planet("Earth"), Planet("Mars"))
+				print_str(s.earth.name)
+				print_str(s.mars.name)
+				s.mars.name = "God of War"
+				print_str(s.mars.name)
+			}
+			`, "Earth\nMars\nGod of War\n"},
+
 		{"forward declare", `
 			fun main() void {
 				print_int(foo())
@@ -129,7 +178,13 @@ func TestCompile(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(tt.name, "_")
-			opts := CompileOpts{Listener: nil, Output: outputPath, KeepIR: true}
+			opts := CompileOpts{
+				Listener:         nil,
+				Output:           outputPath,
+				KeepIR:           true,
+				LLVMPasses:       "verify," + DefaultLLVMPasses,
+				AddressSanitizer: true,
+			}
 			exitCode, output, err := CompileAndRun(t.Context(), source, opts)
 			assert.NoError(err)
 			assert.Equal(0, exitCode)

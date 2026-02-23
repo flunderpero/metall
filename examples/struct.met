@@ -3,13 +3,20 @@ struct Planet {
     diameter Int
 }
 
+fun make_earth() Planet {
+    Planet("Earth", 12500)
+}
+
+fun print_planet(p Planet) void {
+    print_str(p.name)
+    print_int(p.diameter)
+}
+
 fun main() void {
-    mut earth = Planet("Earth", 12500)
-    print_str(earth.name)
-    print_int(earth.diameter)
+    mut earth = make_earth()
+    print_planet(earth)
 
     earth.name = "Mother"
     earth.diameter = 12742
-    print_str(earth.name)
-    print_int(earth.diameter)
+    print_planet(earth)
 }

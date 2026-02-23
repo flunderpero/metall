@@ -51,9 +51,10 @@ type IRGen struct {
 	strConsts    map[string]int
 	astCode      map[ast.NodeID]string
 	lastLabel    Label
+	opts         IROpts
 }
 
-func NewIRGen(engine *types.Engine) *IRGen {
+func NewIRGen(engine *types.Engine, opts IROpts) *IRGen {
 	return &IRGen{
 		CodeWriter:   *NewCodeWriter(),
 		engine:       engine,
@@ -63,6 +64,7 @@ func NewIRGen(engine *types.Engine) *IRGen {
 		strConsts:    map[string]int{},
 		astCode:      map[ast.NodeID]string{},
 		lastLabel:    "",
+		opts:         opts,
 	}
 }
 
@@ -133,19 +135,20 @@ func (g *IRGen) genFile(file ast.File, span base.Span) {
 
 func (g *IRGen) genStruct(id ast.NodeID, astStruct ast.Struct) {
 	typ := g.engine.TypeOfNode(id)
+	structType := base.Cast[types.StructType](typ.Kind)
 	g.write("%%%s = type { ; %s", typ.ID, astStruct.Name.Name)
 	g.indent++
 	for i, astFieldID := range astStruct.Fields {
 		astField := base.Cast[ast.StructField](g.engine.Node(astFieldID).Kind)
-		typ := g.irTypeOfNode(astFieldID)
+		fieldIRType := g.irStructFieldType(structType.Fields[i].Type)
 		comma := ""
 		if i < len(astStruct.Fields)-1 {
 			comma = ","
 		}
-		g.write("%s%s ; %s", typ, comma, astField.Name.Name)
+		g.write("%s%s ; %s", fieldIRType, comma, astField.Name.Name)
 	}
 	g.indent--
-	g.write("}")
+	g.write("}\n")
 }
 
 func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
@@ -153,33 +156,46 @@ func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
 	for _, arg := range lit.Args {
 		g.Gen(arg)
 	}
-	structType := g.engine.TypeOfNode(lit.Target)
-	sb := strings.Builder{}
+	targetTyp := g.engine.TypeOfNode(lit.Target)
+	structTyp := base.Cast[types.StructType](targetTyp.Kind)
 	reg := g.reg()
-	fmt.Fprintf(&sb, "%s = alloca %%%s\n", reg, structType.ID)
+	g.write("%s = alloca %%%s", reg, targetTyp.ID)
 	for i, arg := range lit.Args {
 		fieldReg := g.reg()
-		fmt.Fprintf(
-			&sb,
-			"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d\n",
+		g.write(
+			"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d",
 			fieldReg,
-			structType.ID,
-			structType.ID,
+			targetTyp.ID,
+			targetTyp.ID,
 			reg,
 			i,
 		)
-		fieldTyp := g.irTypeOfNode(arg)
-		fmt.Fprintf(&sb, "store %s %s, ptr %s\n", fieldTyp, g.lookupCode(arg), fieldReg)
+		fieldTypeID := structTyp.Fields[i].Type
+		if _, ok := g.engine.Type(fieldTypeID).Kind.(types.StructType); ok {
+			// Struct field: copy by value (load the whole struct, store into embedded slot).
+			irTyp := "%" + fieldTypeID.String()
+			tmp := g.reg()
+			g.write("%s = load %s, ptr %s", tmp, irTyp, g.lookupCode(arg))
+			g.write("store %s %s, ptr %s", irTyp, tmp, fieldReg)
+		} else {
+			fieldTyp := g.irTypeOfNode(arg)
+			g.write("store %s %s, ptr %s", fieldTyp, g.lookupCode(arg), fieldReg)
+		}
 	}
-	g.write(sb.String())
 	g.setCode(id, reg)
 }
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 	fieldType, ptrReg := g.genFieldAccessPtr(fieldAccess)
-	reg := g.reg()
-	g.write("%s = load %s, ptr %s", reg, fieldType, ptrReg)
-	g.setCode(id, reg)
+	fieldTypeObj := g.engine.TypeOfNode(id)
+	if _, ok := fieldTypeObj.Kind.(types.StructType); ok {
+		// Struct-typed field: the GEP pointer already points to the embedded struct.
+		g.setCode(id, ptrReg)
+	} else {
+		reg := g.reg()
+		g.write("%s = load %s, ptr %s", reg, fieldType, ptrReg)
+		g.setCode(id, reg)
+	}
 }
 
 func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string, ptrReg string) {
@@ -187,7 +203,7 @@ func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string
 	targetType := g.engine.TypeOfNode(fieldAccess.Target)
 	structType := base.Cast[types.StructType](targetType.Kind)
 	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
-	fieldType = g.irType(structType.Fields[fieldIndex].Type)
+	fieldType = g.irStructFieldType(structType.Fields[fieldIndex].Type)
 	ptrReg = g.reg()
 	g.write(
 		"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d",
@@ -200,7 +216,7 @@ func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string
 	return fieldType, ptrReg
 }
 
-func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
+func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 	typ := g.engine.TypeOfNode(id)
 	fun, ok := typ.Kind.(types.FunType)
 	if !ok {
@@ -208,41 +224,65 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) {
 	}
 	name := astFun.Name.Name
 	isMain := name == "main"
+	_, isRetStruct := g.engine.Type(fun.Return).Kind.(types.StructType)
 	ret := g.irType(fun.Return)
+	params := strings.Builder{}
 	if isMain {
 		ret = "i32"
+	} else if isRetStruct {
+		ret = "void"
+		fmt.Fprintf(&params, "ptr sret(%%%s) %%out_ptr", fun.Return)
 	}
-	params := strings.Builder{}
 	paramAllocas := strings.Builder{}
-	for i, paramID := range astFun.Params {
-		paramNode := g.engine.Node(paramID)
+	for _, paramNodeID := range astFun.Params {
+		paramNode := g.engine.Node(paramNodeID)
 		param, ok := paramNode.Kind.(ast.FunParam)
 		if !ok {
 			panic(base.Errorf("expected fun param, got %T", paramNode.Kind))
 		}
-		if i > 0 {
+		if params.Len() > 0 {
 			params.WriteString(", ")
 		}
-		g.Gen(paramID)
+		g.Gen(paramNodeID)
 		preg := g.reg()
-		typ := g.irTypeOfNode(paramID)
-		params.WriteString(typ)
+		paramTyp := g.engine.TypeOfNode(paramNodeID)
+		paramIRTyp := g.irTypeOfNode(paramNodeID)
+		params.WriteString(paramIRTyp)
 		params.WriteString(" ")
+		if _, ok := paramTyp.Kind.(types.StructType); ok {
+			fmt.Fprintf(&params, "byval(%%%s) ", paramTyp.ID)
+		}
 		params.WriteString(preg)
 		areg := g.reg()
-		fmt.Fprintf(&paramAllocas, "%s = alloca %s\n", areg, typ)
-		fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s", typ, preg, areg)
-		g.setSymbol(paramID, param.Name.Name, areg, typ)
+		fmt.Fprintf(&paramAllocas, "%s = alloca %s\n", areg, paramIRTyp)
+		fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s", paramIRTyp, preg, areg)
+		g.setSymbol(paramNodeID, param.Name.Name, areg, paramIRTyp)
 	}
-	g.write("define %s @%s(%s) {", ret, name, params.String())
+	attrs := ""
+	if g.opts.AddressSanitizer {
+		attrs = "sanitize_address "
+	}
+	internal := ""
+	if !isMain {
+		internal = " internal"
+	}
+	g.write("define%s %s @%s(%s) %s{", internal, ret, name, params.String(), attrs)
+	g.indent++
 	if len(astFun.Params) > 0 {
 		g.write(paramAllocas.String())
 	}
-	g.indent++
 	g.Gen(astFun.Block)
-	if isMain {
+	switch {
+	case isMain:
 		g.write("ret i32 0")
-	} else {
+	case isRetStruct:
+		lastCode := g.lookupCode(astFun.Block)
+		retTyp := g.engine.Type(fun.Return)
+		tmp := g.reg()
+		g.write("%s = load %%%s, ptr %s", tmp, retTyp.ID, lastCode)
+		g.write("store %%%s %s, ptr %%out_ptr", retTyp.ID, tmp)
+		g.write("ret void")
+	default:
 		lastCode := g.lookupCode(astFun.Block)
 		retType := g.irType(fun.Return)
 		if retType == "void" {
@@ -355,20 +395,33 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	}
 	sb := strings.Builder{}
 	retType := g.engine.Type(fun.Return)
+	_, isRetStruct := retType.Kind.(types.StructType)
+	var resReg string
 	if builtin, ok := retType.Kind.(types.BuiltInType); ok && builtin.Name == "void" {
 		g.setCode(id, "void")
+	} else if isRetStruct {
+		resReg = g.reg()
+		g.write("%s = alloca %%%s", resReg, fun.Return)
+		g.setCode(id, resReg)
 	} else {
 		reg := g.reg()
 		sb.WriteString(reg + " = ")
 		g.setCode(id, reg)
 	}
 	sb.WriteString("call ")
-	sb.WriteString(g.irType(fun.Return))
+	if isRetStruct {
+		sb.WriteString("void")
+	} else {
+		sb.WriteString(g.irType(fun.Return))
+	}
 	sb.WriteString(" @")
 	sb.WriteString(g.lookupCode(call.Callee))
 	sb.WriteString(" (")
+	if isRetStruct {
+		fmt.Fprintf(&sb, "ptr %s", resReg)
+	}
 	for i, arg := range call.Args {
-		if i > 0 {
+		if i > 0 || isRetStruct {
 			sb.WriteString(", ")
 		}
 		sb.WriteString(g.irTypeOfNode(arg))
@@ -483,6 +536,17 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 	}
 }
 
+// Return the LLVM type for a struct field. For struct-typed fields this returns
+// the named struct type (e.g. %t8) so the inner struct is physically embedded
+// by value, rather than stored as a pointer.
+func (g *IRGen) irStructFieldType(typeID types.TypeID) string {
+	typ := g.engine.Type(typeID)
+	if _, ok := typ.Kind.(types.StructType); ok {
+		return "%" + typeID.String()
+	}
+	return g.irType(typeID)
+}
+
 func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {
 	if _, ok := g.astCode[astID]; ok {
 		panic(base.Errorf("code already set for %s", g.engine.AST.Debug(astID, false, 0)))
@@ -534,8 +598,12 @@ func indexOfStructField(s types.StructType, name string) int {
 	panic(base.Errorf("field %q not found in struct %q", name, s.Name))
 }
 
-func GenIR(fileID ast.NodeID, engine *types.Engine) (string, error) {
-	g := NewIRGen(engine)
+type IROpts struct {
+	AddressSanitizer bool
+}
+
+func GenIR(fileID ast.NodeID, engine *types.Engine, opts IROpts) (string, error) {
+	g := NewIRGen(engine, opts)
 	g.Gen(fileID)
 	g.write(builtins)
 	return g.sb.String(), nil
@@ -549,20 +617,20 @@ declare i32 @puts(ptr)
 declare i32 @printf(ptr, ...)
 
 ;      Builtin functions.
-define void @print_str(ptr %s) {
+define internal void @print_str(ptr %s) {
     call i32 @puts(ptr %s)
     ret void
 }
 
 @fmt_int = private constant [4 x i8] c"%d\0A\00"
-define void @print_int(i64 %n) {
+define internal void @print_int(i64 %n) {
     call i32 (ptr, ...) @printf(ptr @fmt_int, i64 %n)
     ret void
 }
 
 @str_true = private constant [5 x i8] c"true\00"
 @str_false = private constant [6 x i8] c"false\00"
-define void @print_bool(i1 %n) {
+define internal void @print_bool(i1 %n) {
 	br i1 %n, label %true, label %false
 	true:
 	    call i32 @puts(ptr @str_true)

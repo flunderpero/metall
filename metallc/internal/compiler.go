@@ -24,13 +24,22 @@ type CompileListener interface {
 
 var ErrAbort = base.Errorf("aborted by listener")
 
+const DefaultLLVMPasses = "mem2reg,instcombine,simplifycfg"
+
 type CompileOpts struct {
-	Listener CompileListener
-	Output   string
-	KeepIR   bool
+	Listener         CompileListener
+	Output           string
+	KeepIR           bool
+	LLVMPasses       string
+	AddressSanitizer bool
 }
 
 func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error { //nolint:funlen
+	llvmHome := os.Getenv("LLVM_HOME")
+	if llvmHome == "" {
+		return base.Errorf("LLVM_HOME not set")
+	}
+
 	listener := opts.Listener
 	tokens := token.Lex(source)
 	if listener != nil && !listener.OnLex(tokens) {
@@ -60,7 +69,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(lifetime.Diagnostics) > 0 {
 		return lifetime.Diagnostics
 	}
-	ir, err := gen.GenIR(fileID, engine)
+	ir, err := gen.GenIR(fileID, engine, gen.IROpts{AddressSanitizer: opts.AddressSanitizer})
 	if err != nil {
 		return err //nolint:wrapcheck
 	}
@@ -91,27 +100,25 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		return base.WrapErrorf(err, "failed to write IR file")
 	}
 
-	// Default passes.
-	// `mem2reg` is required because we lazily use `alloca` a lot.
-	passes := "mem2reg,instcombine,simplifycfg"
-	// passes := "module(function(mem2reg,instcombine,simplifycfg),cgscc(inline),function(instcombine,simplifycfg))"
-
 	// Produce optimized textual IR (.opt.ll)
-	cmdline := []string{"opt", "-S", "-passes=" + passes, unopt_ll, "-o", opt_ll}
+	cmdline := []string{llvmHome + "/bin/opt", "-S", "-passes=" + opts.LLVMPasses, unopt_ll, "-o", opt_ll}
 	if err := run_cmd(ctx, cmdline); err != nil {
-		return err
+		return base.WrapErrorf(err, "failed to generate optimized IR")
 	}
 
 	// Produce optimized bitcode (.bc)
-	cmdline = []string{"opt", "-passes=" + passes, unopt_ll, "-o", bc}
+	cmdline = []string{llvmHome + "/bin/opt", opt_ll, "-o", bc}
 	if err := run_cmd(ctx, cmdline); err != nil {
-		return err
+		return base.WrapErrorf(err, "failed to generate bitcode")
 	}
 
 	// Compile from optimized bitcode.
-	cmdline = []string{"clang", bc, "-o", output}
+	cmdline = []string{llvmHome + "/bin/clang", bc, "-v", "-o", output}
+	if opts.AddressSanitizer {
+		cmdline = append(cmdline, "-fsanitize=address")
+	}
 	if err := run_cmd(ctx, cmdline); err != nil {
-		return err
+		return base.WrapErrorf(err, "failed to compile with clang")
 	}
 	return nil
 }
@@ -135,6 +142,9 @@ func CompileAndRun(
 		return 0, "", err
 	}
 	cmd := exec.CommandContext(ctx, runOpts.Output) //nolint:gosec
+	if opts.AddressSanitizer {
+		cmd.Env = append(os.Environ(), "ASAN_OPTIONS=detect_stack_use_after_return=1")
+	}
 	cmdOutput, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, "", base.WrapErrorf(err, "run failed\n%s", string(cmdOutput))

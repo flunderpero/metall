@@ -124,12 +124,20 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 		rhsRefTargets := a.refTargets[assign.RHS]
 		taintScope.Bindings[lhsKind.Name] = &BindingTaints{nodeID, 0, rhsRefTaints, rhsRefTargets}
 	case ast.FieldAccess:
-		// A field write (e.g., `earth.name = val`) taints the struct binding itself.
-		// We need to find the struct variable and update its binding taints.
-		targetNode := a.e.Node(lhsKind.Target)
-		targetIdent, ok := targetNode.Kind.(ast.Ident)
+		// A field write (e.g., `foo.bar.baz = val`) taints the root struct binding.
+		// Walk the chain of FieldAccess nodes to find the root Ident.
+		target := lhsKind.Target
+		for {
+			node := a.e.Node(target)
+			if fa, ok := node.Kind.(ast.FieldAccess); ok {
+				target = fa.Target
+				continue
+			}
+			break
+		}
+		targetIdent, ok := a.e.Node(target).Kind.(ast.Ident)
 		if !ok {
-			panic(base.Errorf("field access target is not an ident: %T", targetNode.Kind))
+			panic(base.Errorf("field access root target is not an ident: %T", a.e.Node(target).Kind))
 		}
 		taintScope := a.taintScope(nodeID)
 		rhsRefTargets := a.refTargets[assign.RHS]

@@ -41,7 +41,13 @@ func main() {
 		exitCode, output, err := internal.CompileAndRun(
 			context.Background(),
 			source,
-			internal.CompileOpts{Listener: nil, Output: "", KeepIR: true},
+			internal.CompileOpts{
+				Listener:         nil,
+				Output:           "",
+				KeepIR:           true,
+				AddressSanitizer: true,
+				LLVMPasses:       internal.DefaultLLVMPasses,
+			},
 		)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "failed to run:", err)
