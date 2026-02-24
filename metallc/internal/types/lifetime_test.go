@@ -287,6 +287,25 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// If/else: ref to a local escapes through one branch.
+		{"if ref escape", `
+			{
+				let a = 1
+				let r = {
+					let x = 42
+					if true { &x } else { &a }
+				}
+				r
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        if true { &x } else { &a }
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
 	}
 
 	assert := base.NewAssert(t)

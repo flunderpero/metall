@@ -112,6 +112,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeFun(nodeID, kind)
 	case ast.Call:
 		a.analyzeCall(nodeID, kind)
+	case ast.If:
+		a.analyzeIf(nodeID, kind)
 	case ast.Deref:
 		a.analyzeDeref(nodeID, kind)
 	case ast.FunParam:
@@ -210,77 +212,86 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 	}
 }
 
+func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
+	// Merge taints from both branches onto the if-expression node.
+	taints := a.nodeRefTaints(ifNode.Then)
+	targets := a.refTargets[ifNode.Then]
+	if ifNode.Else != nil {
+		taints = taints.Merge(a.nodeRefTaints(*ifNode.Else))
+		targets = targets.Merge(a.refTargets[*ifNode.Else])
+	}
+	if len(taints) > 0 {
+		a.refTaints[nodeID] = taints
+		a.refTargets[nodeID] = targets
+	}
+}
+
 func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	outerScope := a.e.ScopeGraph.NodeScope(nodeID)
 	defer a.Debug.Print(0, "analyzeBlock: scope=%s node=%s", outerScope.ID, a.e.AST.Debug(nodeID, false, 0)).Indent()()
-	if !block.CreateScope {
-		// This must be handled by the outer scope.
-		return
-	}
 	if len(block.Exprs) == 0 {
 		return
 	}
-	// Build a list of everything that survives the block.
-	toCheck := map[ast.NodeID]TaintIDs{}
-	toBubble := map[string]*BindingTaints{}
 	lastExprNodeID := block.Exprs[len(block.Exprs)-1]
 	lastExprTaints := a.nodeRefTaints(lastExprNodeID)
-	if len(lastExprTaints) > 0 {
-		a.Debug.Print(1, "analyzeBlock: lastExprTaints=%s", lastExprTaints)
-		toCheck[lastExprNodeID] = lastExprTaints
+	lastExprTargets := a.refTargets[lastExprNodeID]
+	if !block.CreateScope {
+		a.refTaints[nodeID] = lastExprTaints
+		a.refTargets[nodeID] = lastExprTargets
+		return
 	}
 	taintScope := a.taintScope(lastExprNodeID)
-	for name, bindingTaints := range taintScope.Bindings {
-		if _, _, ok := outerScope.Lookup(name); ok {
-			a.Debug.Print(2, "binding escapes: %s", name)
-			toCheck[bindingTaints.DiagNodeID] = bindingTaints.Refs
-			toBubble[name] = bindingTaints
-		}
-	}
-	a.Debug.Print(2, "taintScope.Taints=%s", taintScope.Taints)
 
-	// Now make sure no taints escape the block.
-	for nodeID, taints := range toCheck {
-		a.Debug.Print(1, "checking: node=%s taints=%s", a.e.AST.Debug(nodeID, false, 0), taints)
-		if taintScope.HasLocalTaints(taints) {
-			node := a.e.Node(nodeID)
-			a.diag(node.Span, "reference escaping its allocation scope")
-		}
-	}
-
-	// Bubble up the binding taints.
+	// Propagate mutations of outer-scope bindings back to the parent.
 	parentTaintScope := a.taintScopeByScope(outerScope.ID)
-	for name, bindingTaints := range toBubble {
-		b, ok := parentTaintScope.Bindings[name]
-		if !ok {
-			parentTaintScope.Bindings[name] = &BindingTaints{
-				bindingTaints.DiagNodeID,
-				0,
-				bindingTaints.Refs,
-				bindingTaints.RefTargets,
-			}
+	for name, bt := range taintScope.Bindings {
+		if _, _, ok := outerScope.Lookup(name); !ok {
 			continue
 		}
-		b.Refs = bindingTaints.Refs.Merge(b.Refs)
-		b.RefTargets = bindingTaints.RefTargets.Merge(b.RefTargets)
+		if taintScope.HasLocalTaints(bt.Refs) {
+			a.diag(a.e.Node(bt.DiagNodeID).Span, "reference escaping its allocation scope")
+		}
+		pb, ok := parentTaintScope.Bindings[name]
+		if !ok {
+			parentTaintScope.Bindings[name] = &BindingTaints{bt.DiagNodeID, 0, bt.Refs, bt.RefTargets}
+		} else {
+			pb.Refs = pb.Refs.Merge(bt.Refs)
+			pb.RefTargets = pb.RefTargets.Merge(bt.RefTargets)
+		}
+	}
+
+	// Check the block result for escaping local taints, then bubble up survivors.
+	if len(lastExprTaints) > 0 {
+		a.Debug.Print(1, "analyzeBlock: lastExprTaints=%s", lastExprTaints)
+		if taintScope.HasLocalTaints(lastExprTaints) {
+			a.diag(a.e.Node(lastExprNodeID).Span, "reference escaping its allocation scope")
+		}
+		survived := TaintIDs{}
+		for _, t := range lastExprTaints {
+			if !slices.Contains(taintScope.Taints, t) {
+				survived = append(survived, t)
+			}
+		}
+		if len(survived) > 0 {
+			a.refTaints[nodeID] = survived
+			a.refTargets[nodeID] = lastExprTargets
+		}
 	}
 }
 
 func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
-	// The function body block has CreateScope=false, so analyzeBlock skips it.
-	// We handle escape checking and effect derivation here instead.
+	// The function body block has CreateScope=false, so analyzeBlock bubbles
+	// its last expression's taints onto the block node. We read from there.
 	funNodeType := a.e.TypeOfNode(nodeID)
-	block := base.Cast[ast.Block](a.e.Node(fun.Block).Kind)
-	if len(block.Exprs) == 0 {
+	blockTaints := a.nodeRefTaints(fun.Block)
+	if len(blockTaints) == 0 {
 		return
 	}
-	lastExprNodeID := block.Exprs[len(block.Exprs)-1]
-	lastExprTaints := a.nodeRefTaints(lastExprNodeID)
-	if len(lastExprTaints) == 0 {
-		return
-	}
-	taintScope := a.taintScope(lastExprNodeID)
-	if taintScope.HasLocalTaints(lastExprTaints) {
+	taintScope := a.taintScope(fun.Block)
+	if taintScope.HasLocalTaints(blockTaints) {
+		// Find the last expression for the diagnostic span.
+		block := base.Cast[ast.Block](a.e.Node(fun.Block).Kind)
+		lastExprNodeID := block.Exprs[len(block.Exprs)-1]
 		node := a.e.Node(lastExprNodeID)
 		a.diag(node.Span, "reference escaping its allocation scope")
 	}
@@ -300,7 +311,7 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		}
 	}
 	effect := &FunEffect{ReturnParamTaints: map[TaintID]int{}}
-	for _, t := range lastExprTaints {
+	for _, t := range blockTaints {
 		if idx, ok := paramTaintToIndex[t]; ok {
 			effect.ReturnParamTaints[t] = idx
 		}
@@ -430,6 +441,6 @@ func (a *LifetimeCheck) newTaintID() TaintID {
 	return id
 }
 
-func (a *LifetimeCheck) diag(span base.Span, msg string, msgArgs ...any) {
+func (a *LifetimeCheck) diag(span base.Span, msg string, msgArgs ...any) { //nolint:unparam
 	a.Diagnostics = append(a.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
