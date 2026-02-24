@@ -85,7 +85,7 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun main() void {
-				let earth = Planet("Earth", 12500)
+				mut earth = Planet("Earth", 12500)
 				print_str(earth.name)
 				print_int(earth.diameter)
 

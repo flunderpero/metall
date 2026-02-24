@@ -917,57 +917,67 @@ func (e *Engine) verifyMain(fun ast.Fun) {
 }
 
 func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
-	// Always query the node first to ensure it's type-checked and gets a scope.
+	typeID, mut := e.isPlaceMutable(nodeID)
+	if typeID == InvalidTypeID {
+		return InvalidTypeID, TypeFailed
+	}
+	if mut {
+		return typeID, TypeOK
+	}
+	node := e.Node(nodeID)
+	switch kind := node.Kind.(type) {
+	case ast.Ident:
+		e.diag(node.Span, "cannot assign to immutable variable: %s", kind.Name)
+	case ast.Deref:
+		exprTypeID, _ := e.Query(kind.Expr)
+		e.diag(node.Span, "cannot assign through dereference: expected mutable reference, got %s",
+			e.TypeDisplay(exprTypeID))
+	case ast.FieldAccess:
+		e.diag(node.Span, "cannot assign to field of immutable value")
+	default:
+		e.diag(node.Span, "cannot assign to left-hand-side expression of type: %T", kind)
+	}
+	return InvalidTypeID, TypeFailed
+}
+
+// Check whether the given node is a valid mutable assignment target.
+// Return the node's type and whether it is mutable.
+func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) {
 	typeID, status := e.Query(nodeID)
 	if status.Failed() {
-		return InvalidTypeID, status
+		return InvalidTypeID, false
 	}
 	node := e.Node(nodeID)
 	switch kind := node.Kind.(type) {
 	case ast.Ident:
 		binding, _, ok := e.scope.Lookup(kind.Name)
 		if !ok {
-			// This shouldn't happen since Query succeeded.
-			panic(base.Errorf("binding not found after successful Query: %s", kind.Name))
+			return InvalidTypeID, false
 		}
-		if !binding.Mut {
-			e.diag(node.Span, "cannot assign to immutable variable: %s", kind.Name)
-			return InvalidTypeID, TypeFailed
-		}
-		return typeID, TypeOK
+		return typeID, binding.Mut
 	case ast.Deref:
-		// Query returned the dereferenced type. To check mutability,
-		// we need to look at the inner expression's type (the reference).
+		// Mutability comes from the reference being dereferenced.
 		exprTypeID, status := e.Query(kind.Expr)
 		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
+			return InvalidTypeID, false
 		}
-		exprTyp := e.Type(exprTypeID)
-		ref, ok := exprTyp.Kind.(RefType)
-		if !ok {
-			exprSpan := e.Node(kind.Expr).Span
-			e.diag(
-				exprSpan,
-				"cannot assign through dereference: expected reference, got %s",
-				e.TypeDisplay(exprTypeID),
-			)
-			return InvalidTypeID, TypeFailed
-		}
-		if !ref.Mut {
-			exprSpan := e.Node(kind.Expr).Span
-			e.diag(
-				exprSpan,
-				"cannot assign through dereference: expected mutable reference, got %s",
-				e.TypeDisplay(exprTypeID),
-			)
-			return InvalidTypeID, TypeFailed
-		}
-		return typeID, TypeOK
+		ref := base.Cast[RefType](e.Type(exprTypeID).Kind)
+		return typeID, ref.Mut
 	case ast.FieldAccess:
-		return typeID, TypeOK
+		// If the target is a reference (auto-deref), mutability comes from
+		// the reference, not the binding.
+		targetTypeID, status := e.Query(kind.Target)
+		if status.Failed() {
+			return InvalidTypeID, false
+		}
+		if ref, ok := e.Type(targetTypeID).Kind.(RefType); ok {
+			return typeID, ref.Mut
+		}
+		// Value type - recurse to check the root.
+		_, mut := e.isPlaceMutable(kind.Target)
+		return typeID, mut
 	default:
-		e.diag(node.Span, "cannot assign to left-hand-side expression of type: %T", kind)
-		return InvalidTypeID, TypeFailed
+		return typeID, false
 	}
 }
 

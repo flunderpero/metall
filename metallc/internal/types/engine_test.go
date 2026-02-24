@@ -111,6 +111,24 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			void,
 			nil,
 		},
+		{
+			"field write through mut ref param",
+			`{ struct Planet { name Str } fun foo(mut p &Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&p) }`,
+			void,
+			nil,
+		},
+		{
+			"nested field write on mut struct",
+			`{ struct Inner { x Int } struct Outer { inner Inner } mut o = Outer(Inner(1)) o.inner.x = 2 }`,
+			void,
+			nil,
+		},
+		{
+			"field write through let binding of mut ref",
+			`{ struct Planet { name Str } mut earth = Planet("Earth") let p = &earth p.name = "X" }`,
+			void,
+			nil,
+		},
 
 		{"bool true", "{ true }", Bool, nil},
 		{"bool false", "{ false }", Bool, nil},
@@ -296,9 +314,9 @@ func TestTypeCheckErr(t *testing.T) {
 				`                   ^^^`,
 		}},
 		{"assign through immutable deref", `{ let a = 5 let b = &a *b = 321 }`, []string{
-			"test.met:1:25: cannot assign through dereference: expected mutable reference, got &Int\n" +
+			"test.met:1:24: cannot assign through dereference: expected mutable reference, got &Int\n" +
 				`    { let a = 5 let b = &a *b = 321 }` + "\n" +
-				`                            ^`,
+				`                           ^^`,
 		}},
 		{"calling ref param with value", `{ fun foo(a &Int) void {} let bar = 123 foo(bar) }`, []string{
 			"test.met:1:45: type mismatch at argument 1: expected &Int, got Int\n" +
@@ -306,9 +324,9 @@ func TestTypeCheckErr(t *testing.T) {
 				`                                                ^^^`,
 		}},
 		{"assign through immutable fun param", `{ fun foo(a &Int) void { *a = 123 }}`, []string{
-			"test.met:1:27: cannot assign through dereference: expected mutable reference, got &Int\n" +
+			"test.met:1:26: cannot assign through dereference: expected mutable reference, got &Int\n" +
 				`    { fun foo(a &Int) void { *a = 123 }}` + "\n" +
-				`                              ^`,
+				`                             ^^`,
 		}},
 		{"take mutable ref to immutable in var", `{ let a = 123 mut b = &a }`, []string{
 			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
@@ -320,6 +338,42 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { mut a = 123 let b = 123 mut c = &a c = &b }` + "\n" +
 				`                                             ^^`,
 		}},
+		{
+			"assign to field of immutable struct",
+			`{ struct Planet{name Str} let p = Planet("Earth") p.name = "Mother" }`,
+			[]string{
+				"test.met:1:51: cannot assign to field of immutable value\n" +
+					`    { struct Planet{name Str} let p = Planet("Earth") p.name = "Mother" }` + "\n" +
+					"                                                      ^^^^^^",
+			},
+		},
+		{
+			"assign to nested field of immutable struct",
+			`{ struct Inner{x Int} struct Outer{inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }`,
+			[]string{
+				"test.met:1:73: cannot assign to field of immutable value\n" +
+					`    { struct Inner{x Int} struct Outer{inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }` + "\n" +
+					"                                                                            ^^^^^^^^^",
+			},
+		},
+		{
+			"assign to field through immutable ref",
+			`{ struct Planet{name Str} let p = Planet("Earth") let r = &p r.name = "X" }`,
+			[]string{
+				"test.met:1:62: cannot assign to field of immutable value\n" +
+					`    { struct Planet{name Str} let p = Planet("Earth") let r = &p r.name = "X" }` + "\n" +
+					"                                                                 ^^^^^^",
+			},
+		},
+		{
+			"assign to field through immutable ref param",
+			`{ struct Planet{name Str} fun foo(p &Planet) void { p.name = "X" } }`,
+			[]string{
+				"test.met:1:53: cannot assign to field of immutable value\n" +
+					`    { struct Planet{name Str} fun foo(p &Planet) void { p.name = "X" } }` + "\n" +
+					"                                                        ^^^^^^",
+			},
+		},
 		{"coerce an immutable ref to a mutable", `{ let a = 123 mut b = &a }`, []string{
 			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
 				`    { let a = 123 mut b = &a }` + "\n" +
