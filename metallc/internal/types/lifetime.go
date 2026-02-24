@@ -10,67 +10,91 @@ import (
 
 type TaintID int
 
-func (t TaintID) String() string {
-	return fmt.Sprintf("a%d", t)
-}
+func (t TaintID) String() string { return fmt.Sprintf("a%d", t) }
 
-type TaintIDs []TaintID
+type TaintSet []TaintID
 
-func (t TaintIDs) Merge(other TaintIDs) TaintIDs {
-	for _, taint := range other {
-		if slices.Contains(t, taint) {
-			continue
+func (t TaintSet) Merge(other TaintSet) TaintSet {
+	for _, id := range other {
+		if !slices.Contains(t, id) {
+			t = append(t, id)
 		}
-		t = append(t, taint)
 	}
 	return t
 }
 
-type RefTarget struct {
-	ScopeID ScopeID
-	Name    string
-}
-
-type RefTargets []RefTarget
-
-func (r RefTargets) Merge(other RefTargets) RefTargets {
-	for _, target := range other {
-		if slices.Contains(r, target) {
-			continue
-		}
-		r = append(r, target)
-	}
-	return r
-}
-
-type BindingTaints struct {
-	DiagNodeID ast.NodeID
-	Slot       TaintID
-	Refs       TaintIDs
-	RefTargets RefTargets
-}
-
-type TaintScope struct {
-	Bindings   map[string]*BindingTaints
-	Taints     TaintIDs
-	StackTaint TaintID
-}
-
-func NewTaintScope(stackTaint TaintID) *TaintScope {
-	return &TaintScope{map[string]*BindingTaints{}, TaintIDs{stackTaint}, stackTaint}
-}
-
-func (t *TaintScope) HasLocalTaints(taints TaintIDs) bool {
-	for _, taint := range taints {
-		if slices.Contains(t.Taints, taint) {
+func (t TaintSet) ContainsAny(other TaintSet) bool {
+	for _, id := range t {
+		if slices.Contains(other, id) {
 			return true
 		}
 	}
 	return false
 }
 
-// FunEffect records which parameters' taints flow into the return value.
-// ReturnParamTaints maps parameter taint IDs to parameter indices.
+func (t TaintSet) Without(exclude TaintSet) TaintSet {
+	var result TaintSet
+	for _, id := range t {
+		if !slices.Contains(exclude, id) {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
+// PointsTo identifies a binding that a reference points to.
+type PointsTo struct {
+	ScopeID ScopeID
+	Name    string
+}
+
+type PointsToSet []PointsTo
+
+func (r PointsToSet) Merge(other PointsToSet) PointsToSet {
+	for _, target := range other {
+		if !slices.Contains(r, target) {
+			r = append(r, target)
+		}
+	}
+	return r
+}
+
+// Flow is the abstract value propagated through the dataflow analysis.
+// It bundles which taints a node carries and which bindings its references
+// point to.
+type Flow struct {
+	Taints   TaintSet
+	PointsTo PointsToSet
+}
+
+func (f Flow) Merge(o Flow) Flow {
+	return Flow{f.Taints.Merge(o.Taints), f.PointsTo.Merge(o.PointsTo)}
+}
+
+// BindingTaint is the abstract state of a single named binding.
+type BindingTaint struct {
+	DiagNode   ast.NodeID // Node to blame in escape diagnostics.
+	AllocTaint TaintID    // Taint identifying the allocator that owns this binding's storage.
+	Flow       Flow       // Taints and points-to sets carried by references in this binding.
+}
+
+// TaintScope tracks all binding taints and locally-born taints for one
+// lexical scope.
+type TaintScope struct {
+	Bindings    map[string]*BindingTaint
+	LocalTaints TaintSet
+	AllocTaint  TaintID
+}
+
+func newTaintScope(allocTaint TaintID) *TaintScope {
+	return &TaintScope{
+		Bindings:    map[string]*BindingTaint{},
+		LocalTaints: TaintSet{allocTaint},
+		AllocTaint:  allocTaint,
+	}
+}
+
+// FunEffect records which parameter taints flow into the return value.
 type FunEffect struct {
 	ReturnParamTaints map[TaintID]int
 }
@@ -80,25 +104,22 @@ type LifetimeCheck struct {
 	Debug       base.Debug
 	e           *Engine
 	nextTaintID TaintID
-	taintScopes map[ScopeID]*TaintScope
-	refTaints   map[ast.NodeID]TaintIDs
-	refTargets  map[ast.NodeID]RefTargets
+	scopes      map[ScopeID]*TaintScope
+	flows       map[ast.NodeID]Flow
 	funEffects  map[TypeID]*FunEffect
-	// Which node to blame for each taint that escapes.
-	taintDiagNode map[TaintID]ast.NodeID
+	taintOrigin map[TaintID]ast.NodeID // Which &x expression created each taint.
 }
 
 func NewLifetimeAnalyzer(e *Engine) *LifetimeCheck {
 	return &LifetimeCheck{
-		Diagnostics:   nil,
-		Debug:         base.NilDebug{},
-		e:             e,
-		nextTaintID:   1,
-		taintScopes:   map[ScopeID]*TaintScope{},
-		refTaints:     map[ast.NodeID]TaintIDs{},
-		refTargets:    map[ast.NodeID]RefTargets{},
-		funEffects:    map[TypeID]*FunEffect{},
-		taintDiagNode: map[TaintID]ast.NodeID{},
+		Diagnostics: nil,
+		Debug:       base.NilDebug{},
+		e:           e,
+		nextTaintID: 1,
+		scopes:      map[ScopeID]*TaintScope{},
+		flows:       map[ast.NodeID]Flow{},
+		funEffects:  map[TypeID]*FunEffect{},
+		taintOrigin: map[TaintID]ast.NodeID{},
 	}
 }
 
@@ -107,94 +128,79 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	a.e.Walk(nodeID, a.Check)
 	node := a.e.Node(nodeID)
 	switch kind := node.Kind.(type) {
+	case ast.Ref:
+		a.analyzeRef(nodeID, kind)
+	case ast.Ident:
+		a.analyzeIdent(nodeID, kind)
+	case ast.Deref:
+		a.analyzeDeref(nodeID, kind)
+	case ast.FieldAccess:
+		a.analyzeFieldAccess(nodeID, kind)
+	case ast.StructLiteral:
+		a.analyzeStructLiteral(nodeID, kind)
+	case ast.Call:
+		a.analyzeCall(nodeID, kind)
+	case ast.If:
+		a.analyzeIf(nodeID, kind)
+	case ast.Var:
+		a.analyzeVar(nodeID, kind)
+	case ast.FunParam:
+		a.analyzeFunParam(nodeID, kind)
 	case ast.Assign:
 		a.analyzeAssign(nodeID, kind)
 	case ast.Block:
 		a.analyzeBlock(nodeID, kind)
 	case ast.Fun:
 		a.analyzeFun(nodeID, kind)
-	case ast.Call:
-		a.analyzeCall(nodeID, kind)
-	case ast.If:
-		a.analyzeIf(nodeID, kind)
-	case ast.Deref:
-		a.analyzeDeref(nodeID, kind)
-	case ast.FieldAccess:
-		a.analyzeFieldAccess(nodeID, kind)
-	case ast.FunParam:
-		a.analyzeFunParam(nodeID, kind)
-	case ast.Ident:
-		a.analyzeIdent(nodeID, kind)
-	case ast.Ref:
-		a.analyzeRef(nodeID, kind)
-	case ast.StructLiteral:
-		a.analyzeStructLiteral(nodeID, kind)
-	case ast.Var:
-		a.analyzeVar(nodeID, kind)
 	default:
 	}
 }
 
-func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
-	rhsRefTaints := a.nodeRefTaints(assign.RHS)
-	lhsNode := a.e.Node(assign.LHS)
-	switch lhsKind := lhsNode.Kind.(type) {
-	case ast.Ident:
-		// Only the last assignment ever matters at the end of a block.
-		taintScope := a.taintScope(nodeID)
-		rhsRefTargets := a.refTargets[assign.RHS]
-		taintScope.Bindings[lhsKind.Name] = &BindingTaints{nodeID, 0, rhsRefTaints, rhsRefTargets}
-	case ast.FieldAccess:
-		// A field write (e.g., `foo.bar.baz = val`) taints the root struct binding.
-		// Walk the chain of FieldAccess nodes to find the root Ident.
-		target := lhsKind.Target
-		for {
-			node := a.e.Node(target)
-			if fa, ok := node.Kind.(ast.FieldAccess); ok {
-				target = fa.Target
-				continue
-			}
-			break
-		}
-		targetIdent, ok := a.e.Node(target).Kind.(ast.Ident)
-		if !ok {
-			panic(base.Errorf("field access root target is not an ident: %T", a.e.Node(target).Kind))
-		}
-		taintScope := a.taintScope(nodeID)
-		rhsRefTargets := a.refTargets[assign.RHS]
-		b, ok := taintScope.Bindings[targetIdent.Name]
-		if !ok {
-			taintScope.Bindings[targetIdent.Name] = &BindingTaints{nodeID, 0, rhsRefTaints, rhsRefTargets}
-		} else {
-			b.Refs = b.Refs.Merge(rhsRefTaints)
-			b.RefTargets = b.RefTargets.Merge(rhsRefTargets)
-		}
-	case ast.Deref:
-		targets := a.refTargets[lhsKind.Expr]
-		rhsTargets := a.refTargets[assign.RHS]
-		a.Debug.Print(1, "analyzeAssign: rhsTargets=%s, targets=%s", rhsTargets, targets)
-		localTaintScope := a.taintScope(nodeID)
-		for _, target := range targets {
-			taintScope := a.taintScopeByScope(target.ScopeID)
-			// Check if assigning a local ref to an outer scope binding.
-			if taintScope != localTaintScope && localTaintScope.HasLocalTaints(rhsRefTaints) {
-				node := a.e.Node(nodeID)
-				a.diag(node.Span, "reference escaping its allocation scope")
-			}
-			b, ok := taintScope.Bindings[target.Name]
-			if !ok {
-				taintScope.Bindings[target.Name] = &BindingTaints{nodeID, 0, rhsRefTaints, rhsTargets}
-				continue
-			}
-			b.Refs = rhsRefTaints
-		}
-	default:
-		panic(base.Errorf("unknown LHS kind: %T", lhsKind))
+func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
+	bt := a.lookupBinding(nodeID, ref.Name.Name)
+	if bt == nil {
+		return
 	}
+	a.taintOrigin[bt.AllocTaint] = nodeID
+	scope := a.e.ScopeGraph.NodeScope(nodeID)
+	a.flows[nodeID] = Flow{
+		Taints:   TaintSet{bt.AllocTaint},
+		PointsTo: PointsToSet{{scope.ID, ref.Name.Name}},
+	}
+}
+
+func (a *LifetimeCheck) analyzeIdent(nodeID ast.NodeID, ident ast.Ident) {
+	bt := a.lookupBinding(nodeID, ident.Name)
+	if bt == nil {
+		return
+	}
+	a.flows[nodeID] = bt.Flow
+}
+
+func (a *LifetimeCheck) analyzeDeref(nodeID ast.NodeID, deref ast.Deref) {
+	a.flows[nodeID] = a.derefFlow(a.flow(deref.Expr).PointsTo)
+}
+
+func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess) {
+	targetType := a.e.TypeOfNode(fa.Target)
+	if _, ok := targetType.Kind.(RefType); ok {
+		// Auto-deref: follow the ref's points-to set to reach the struct
+		// binding, then propagate its stored refs.
+		a.flows[nodeID] = a.derefFlow(a.flow(fa.Target).PointsTo)
+		return
+	}
+	a.flows[nodeID] = a.flow(fa.Target)
+}
+
+func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral) {
+	merged := Flow{}
+	for _, argNodeID := range lit.Args {
+		merged = merged.Merge(a.flow(argNodeID))
+	}
+	a.flows[nodeID] = merged
 }
 
 func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
-	// Propagate argument taints into the call result based on the function's effect.
 	calleeType := a.e.TypeOfNode(call.Callee)
 	if _, ok := calleeType.Kind.(FunType); !ok {
 		return
@@ -203,31 +209,87 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 	if !ok {
 		return
 	}
-	resultTaints := TaintIDs{}
-	resultTargets := RefTargets{}
+	merged := Flow{}
 	for _, paramIdx := range effect.ReturnParamTaints {
-		argNodeID := call.Args[paramIdx]
-		resultTaints = resultTaints.Merge(a.nodeRefTaints(argNodeID))
-		resultTargets = resultTargets.Merge(a.refTargets[argNodeID])
+		merged = merged.Merge(a.flow(call.Args[paramIdx]))
 	}
-	if len(resultTaints) > 0 {
-		a.refTaints[nodeID] = resultTaints
-		a.refTargets[nodeID] = resultTargets
-		a.Debug.Print(1, "analyzeCall: %s taints=%s", a.e.AST.Debug(call.Callee, false, 0), resultTaints)
-	}
+	a.flows[nodeID] = merged
+	a.Debug.Print(1, "analyzeCall: %s taints=%s", a.e.AST.Debug(call.Callee, false, 0), merged.Taints)
 }
 
 func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
-	// Merge taints from both branches onto the if-expression node.
-	taints := a.nodeRefTaints(ifNode.Then)
-	targets := a.refTargets[ifNode.Then]
+	merged := a.flow(ifNode.Then)
 	if ifNode.Else != nil {
-		taints = taints.Merge(a.nodeRefTaints(*ifNode.Else))
-		targets = targets.Merge(a.refTargets[*ifNode.Else])
+		merged = merged.Merge(a.flow(*ifNode.Else))
 	}
-	if len(taints) > 0 {
-		a.refTaints[nodeID] = taints
-		a.refTargets[nodeID] = targets
+	a.flows[nodeID] = merged
+}
+
+func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
+	ts := a.scope(nodeID)
+	f := a.flow(varNode.Expr)
+	ts.Bindings[varNode.Name.Name] = &BindingTaint{nodeID, ts.AllocTaint, f}
+}
+
+func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, funParam ast.FunParam) {
+	ts := a.scope(nodeID)
+	refs := TaintSet{}
+	// Ref params carry a taint from the caller's allocator, not the callee's.
+	if _, ok := a.e.TypeOfNode(nodeID).Kind.(RefType); ok {
+		refs = TaintSet{a.newTaintID()}
+	}
+	ts.Bindings[funParam.Name.Name] = &BindingTaint{nodeID, ts.AllocTaint, Flow{Taints: refs, PointsTo: nil}}
+}
+
+func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
+	rhs := a.flow(assign.RHS)
+	lhsNode := a.e.Node(assign.LHS)
+	switch lhsKind := lhsNode.Kind.(type) {
+	case ast.Ident:
+		ts := a.scope(nodeID)
+		ts.Bindings[lhsKind.Name] = &BindingTaint{nodeID, 0, rhs}
+	case ast.FieldAccess:
+		a.analyzeAssignToField(nodeID, lhsKind, rhs)
+	case ast.Deref:
+		a.analyzeAssignThroughDeref(nodeID, lhsKind, rhs)
+	default:
+		panic(base.Errorf("unknown LHS kind: %T", lhsKind))
+	}
+}
+
+func (a *LifetimeCheck) analyzeAssignToField(nodeID ast.NodeID, fa ast.FieldAccess, rhs Flow) {
+	// Walk field-access chain to find the root binding.
+	root := fa.Target
+	for {
+		if inner, ok := a.e.Node(root).Kind.(ast.FieldAccess); ok {
+			root = inner.Target
+			continue
+		}
+		break
+	}
+	rootName := base.Cast[ast.Ident](a.e.Node(root).Kind).Name
+	ts := a.scope(nodeID)
+	if bt, ok := ts.Bindings[rootName]; ok {
+		bt.Flow = bt.Flow.Merge(rhs)
+	} else {
+		ts.Bindings[rootName] = &BindingTaint{nodeID, 0, rhs}
+	}
+}
+
+func (a *LifetimeCheck) analyzeAssignThroughDeref(nodeID ast.NodeID, deref ast.Deref, rhs Flow) {
+	targets := a.flow(deref.Expr).PointsTo
+	a.Debug.Print(1, "analyzeAssign: rhsTargets=%s, targets=%s", rhs.PointsTo, targets)
+	localScope := a.scope(nodeID)
+	for _, target := range targets {
+		targetScope := a.scopeByID(target.ScopeID)
+		if targetScope != localScope && rhs.Taints.ContainsAny(localScope.LocalTaints) {
+			a.diag(a.e.Node(nodeID).Span, "reference escaping its allocation scope")
+		}
+		if bt, ok := targetScope.Bindings[target.Name]; ok {
+			bt.Flow = rhs
+		} else {
+			targetScope.Bindings[target.Name] = &BindingTaint{nodeID, 0, rhs}
+		}
 	}
 }
 
@@ -237,229 +299,117 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	if len(block.Exprs) == 0 {
 		return
 	}
-	lastExprNodeID := block.Exprs[len(block.Exprs)-1]
-	lastExprTaints := a.nodeRefTaints(lastExprNodeID)
-	lastExprTargets := a.refTargets[lastExprNodeID]
+	lastExpr := block.Exprs[len(block.Exprs)-1]
+	lastFlow := a.flow(lastExpr)
+
+	// Function bodies (CreateScope=false) just bubble up the last expression's flow.
 	if !block.CreateScope {
-		a.refTaints[nodeID] = lastExprTaints
-		a.refTargets[nodeID] = lastExprTargets
+		a.flows[nodeID] = lastFlow
 		return
 	}
-	taintScope := a.taintScope(lastExprNodeID)
 
-	// Propagate mutations of outer-scope bindings back to the parent.
-	parentTaintScope := a.taintScopeByScope(outerScope.ID)
-	for name, bt := range taintScope.Bindings {
+	ts := a.scope(lastExpr)
+	parentScope := a.scopeByID(outerScope.ID)
+
+	// Propagate mutations of outer-scope bindings back to the parent scope.
+	for name, bt := range ts.Bindings {
 		if _, _, ok := outerScope.Lookup(name); !ok {
 			continue
 		}
-		if taintScope.HasLocalTaints(bt.Refs) {
-			a.diag(a.e.Node(bt.DiagNodeID).Span, "reference escaping its allocation scope")
+		if bt.Flow.Taints.ContainsAny(ts.LocalTaints) {
+			a.diag(a.e.Node(bt.DiagNode).Span, "reference escaping its allocation scope")
 		}
-		pb, ok := parentTaintScope.Bindings[name]
-		if !ok {
-			parentTaintScope.Bindings[name] = &BindingTaints{bt.DiagNodeID, 0, bt.Refs, bt.RefTargets}
+		if pbt, ok := parentScope.Bindings[name]; ok {
+			pbt.Flow = pbt.Flow.Merge(bt.Flow)
 		} else {
-			pb.Refs = pb.Refs.Merge(bt.Refs)
-			pb.RefTargets = pb.RefTargets.Merge(bt.RefTargets)
+			parentScope.Bindings[name] = &BindingTaint{bt.DiagNode, 0, bt.Flow}
 		}
 	}
 
 	// Check the block result for escaping local taints, then bubble up survivors.
-	if len(lastExprTaints) > 0 {
-		a.Debug.Print(1, "analyzeBlock: lastExprTaints=%s", lastExprTaints)
-		if taintScope.HasLocalTaints(lastExprTaints) {
-			a.diagEscape(lastExprNodeID, lastExprTaints, taintScope)
-		}
-		survived := TaintIDs{}
-		for _, t := range lastExprTaints {
-			if !slices.Contains(taintScope.Taints, t) {
-				survived = append(survived, t)
-			}
-		}
-		if len(survived) > 0 {
-			a.refTaints[nodeID] = survived
-			a.refTargets[nodeID] = lastExprTargets
-		}
+	if lastFlow.Taints.ContainsAny(ts.LocalTaints) {
+		a.diagEscape(lastExpr, lastFlow.Taints, ts)
 	}
+	a.flows[nodeID] = Flow{lastFlow.Taints.Without(ts.LocalTaints), lastFlow.PointsTo}
 }
 
 func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
-	// The function body block has CreateScope=false, so analyzeBlock bubbles
-	// its last expression's taints onto the block node. We read from there.
-	funNodeType := a.e.TypeOfNode(nodeID)
-	blockTaints := a.nodeRefTaints(fun.Block)
-	if len(blockTaints) == 0 {
-		return
-	}
-	taintScope := a.taintScope(fun.Block)
-	if taintScope.HasLocalTaints(blockTaints) {
+	blockFlow := a.flow(fun.Block)
+
+	// Check for locals escaping through the return value.
+	ts := a.scope(fun.Block)
+	if blockFlow.Taints.ContainsAny(ts.LocalTaints) {
 		block := base.Cast[ast.Block](a.e.Node(fun.Block).Kind)
-		lastExprNodeID := block.Exprs[len(block.Exprs)-1]
-		a.diagEscape(lastExprNodeID, blockTaints, taintScope)
+		lastExpr := block.Exprs[len(block.Exprs)-1]
+		a.diagEscape(lastExpr, blockFlow.Taints, ts)
 	}
-	// Derive the function effect: check which parameter taints appear in the
-	// return value. At call sites we use this to propagate argument taints.
+
+	// Derive function effect: which param taints appear in the return value.
 	paramTaintToIndex := map[TaintID]int{}
 	for i, paramNodeID := range fun.Params {
-		paramBindings := a.lookupBindingTaints(
-			paramNodeID,
-			base.Cast[ast.FunParam](a.e.Node(paramNodeID).Kind).Name.Name,
-		)
-		if paramBindings == nil {
-			continue
-		}
-		for _, t := range paramBindings.Refs {
-			paramTaintToIndex[t] = i
+		paramName := base.Cast[ast.FunParam](a.e.Node(paramNodeID).Kind).Name.Name
+		if bt := a.lookupBinding(paramNodeID, paramName); bt != nil {
+			for _, t := range bt.Flow.Taints {
+				paramTaintToIndex[t] = i
+			}
 		}
 	}
 	effect := &FunEffect{ReturnParamTaints: map[TaintID]int{}}
-	for _, t := range blockTaints {
+	for _, t := range blockFlow.Taints {
 		if idx, ok := paramTaintToIndex[t]; ok {
 			effect.ReturnParamTaints[t] = idx
 		}
 	}
 	if len(effect.ReturnParamTaints) > 0 {
-		a.funEffects[funNodeType.ID] = effect
+		a.funEffects[a.e.TypeOfNode(nodeID).ID] = effect
 		a.Debug.Print(1, "analyzeFun: effect for %s: %v", fun.Name.Name, effect.ReturnParamTaints)
 	}
 }
 
-func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess) {
-	targetType := a.e.TypeOfNode(fa.Target)
-	if _, ok := targetType.Kind.(RefType); ok {
-		// Field access auto-derefs the ref. The ref's own taints just say "I point
-		// at binding X" — we need X's taints to know what refs are inside the struct.
-		for _, target := range a.refTargets[fa.Target] {
-			taintScope := a.taintScopeByScope(target.ScopeID)
-			if b, ok := taintScope.Bindings[target.Name]; ok {
-				a.refTaints[nodeID] = a.refTaints[nodeID].Merge(b.Refs)
-				a.refTargets[nodeID] = a.refTargets[nodeID].Merge(b.RefTargets)
-			}
-		}
-		return
+func (a *LifetimeCheck) flow(nodeID ast.NodeID) Flow {
+	if f, ok := a.flows[nodeID]; ok {
+		return f
 	}
-	// Struct value: taints represent refs stored in its fields.
-	taints := a.nodeRefTaints(fa.Target)
-	targets := a.refTargets[fa.Target]
-	if len(taints) > 0 {
-		a.refTaints[nodeID] = taints
-		a.refTargets[nodeID] = targets
-	}
+	return Flow{}
 }
 
-func (a *LifetimeCheck) analyzeDeref(nodeID ast.NodeID, deref ast.Deref) {
-	// When we deref a pointer to a ref (e.g., *x where x: &&T), we get a ref.
-	// We need to propagate the taints from what the deref resolves to.
-	exprRefTargets := a.refTargets[deref.Expr]
-	for _, target := range exprRefTargets {
-		taintScope := a.taintScopeByScope(target.ScopeID)
-		if b, ok := taintScope.Bindings[target.Name]; ok {
-			a.refTaints[nodeID] = a.refTaints[nodeID].Merge(b.Refs)
-			a.refTargets[nodeID] = a.refTargets[nodeID].Merge(b.RefTargets)
+// derefFlow follows a points-to set to the bindings they reference,
+// collecting the refs stored in those bindings.
+func (a *LifetimeCheck) derefFlow(targets PointsToSet) Flow {
+	result := Flow{}
+	for _, target := range targets {
+		ts := a.scopeByID(target.ScopeID)
+		if bt, ok := ts.Bindings[target.Name]; ok {
+			result = result.Merge(bt.Flow)
 		}
 	}
+	return result
 }
 
-func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, funParam ast.FunParam) {
-	taintScope := a.taintScope(nodeID)
-	refs := TaintIDs{}
-	// Ref params get a fresh taint not in any scope's local taints.
-	// This lets the return value carry it without triggering a false escape error.
-	paramType := a.e.TypeOfNode(nodeID)
-	if _, ok := paramType.Kind.(RefType); ok {
-		refs = TaintIDs{a.newTaintID()}
+func (a *LifetimeCheck) scope(nodeID ast.NodeID) *TaintScope {
+	return a.scopeByID(a.e.ScopeGraph.NodeScope(nodeID).ID)
+}
+
+func (a *LifetimeCheck) scopeByID(id ScopeID) *TaintScope {
+	if ts, ok := a.scopes[id]; ok {
+		return ts
 	}
-	taintScope.Bindings[funParam.Name.Name] = &BindingTaints{nodeID, taintScope.StackTaint, refs, RefTargets{}}
+	ts := newTaintScope(a.newTaintID())
+	a.scopes[id] = ts
+	return ts
 }
 
-func (a *LifetimeCheck) analyzeIdent(nodeID ast.NodeID, ident ast.Ident) {
-	bindingTaints := a.lookupBindingTaints(nodeID, ident.Name)
-	if bindingTaints == nil {
-		// Not a tracked binding (e.g., function name).
-		return
-	}
-	a.setNodeRefTaints(nodeID, bindingTaints.Refs)
-	a.refTargets[nodeID] = bindingTaints.RefTargets
-}
-
-func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
-	bindingTaints := a.lookupBindingTaints(nodeID, ref.Name.Name)
-	if bindingTaints == nil {
-		// Should not happen for refs, but handle gracefully.
-		return
-	}
-	a.setNodeRefTaints(nodeID, TaintIDs{bindingTaints.Slot})
-	a.taintDiagNode[bindingTaints.Slot] = nodeID
-	scope := a.e.ScopeGraph.NodeScope(nodeID)
-	a.refTargets[nodeID] = append(a.refTargets[nodeID], RefTarget{scope.ID, ref.Name.Name})
-}
-
-func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral) {
-	// Merge all argument taints onto the struct value.
-	taints := TaintIDs{}
-	targets := RefTargets{}
-	for _, argNodeID := range lit.Args {
-		taints = taints.Merge(a.nodeRefTaints(argNodeID))
-		targets = targets.Merge(a.refTargets[argNodeID])
-	}
-	if len(taints) > 0 {
-		a.refTaints[nodeID] = taints
-		a.refTargets[nodeID] = targets
-	}
-}
-
-func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
-	exprRefTaints := a.nodeRefTaints(varNode.Expr)
-	exprRefTargets := a.refTargets[varNode.Expr]
-	taintScope := a.taintScope(nodeID)
-	taintScope.Bindings[varNode.Name.Name] = &BindingTaints{
-		nodeID,
-		taintScope.StackTaint,
-		exprRefTaints,
-		exprRefTargets,
-	}
-}
-
-func (a *LifetimeCheck) taintScope(nodeID ast.NodeID) *TaintScope {
-	scope := a.e.ScopeGraph.NodeScope(nodeID)
-	return a.taintScopeByScope(scope.ID)
-}
-
-func (a *LifetimeCheck) taintScopeByScope(scopeID ScopeID) *TaintScope {
-	taintScope, ok := a.taintScopes[scopeID]
-	if !ok {
-		taintScope = NewTaintScope(a.newTaintID())
-		a.taintScopes[scopeID] = taintScope
-	}
-	return taintScope
-}
-
-func (a *LifetimeCheck) lookupBindingTaints(nodeID ast.NodeID, name string) *BindingTaints {
+func (a *LifetimeCheck) lookupBinding(nodeID ast.NodeID, name string) *BindingTaint {
 	scope := a.e.ScopeGraph.NodeScope(nodeID)
 	for scope != nil {
-		taintScope := a.taintScopeByScope(scope.ID)
-		if bindingTaints, ok := taintScope.Bindings[name]; ok {
-			return bindingTaints
+		if ts, ok := a.scopes[scope.ID]; ok {
+			if bt, ok := ts.Bindings[name]; ok {
+				return bt
+			}
 		}
 		scope = scope.Parent
 	}
-	// Binding not found - could be a function or other non-tracked binding.
 	return nil
-}
-
-func (a *LifetimeCheck) nodeRefTaints(nodeID ast.NodeID) TaintIDs {
-	if taints, ok := a.refTaints[nodeID]; ok {
-		return taints
-	}
-	return TaintIDs{}
-}
-
-func (a *LifetimeCheck) setNodeRefTaints(nodeID ast.NodeID, newTaints TaintIDs) {
-	if _, ok := a.refTaints[nodeID]; ok {
-		panic(base.Errorf("node %s already has ref taints", nodeID))
-	}
-	a.refTaints[nodeID] = newTaints
 }
 
 func (a *LifetimeCheck) newTaintID() TaintID {
@@ -468,15 +418,15 @@ func (a *LifetimeCheck) newTaintID() TaintID {
 	return id
 }
 
-func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintIDs, scope *TaintScope) {
+func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, ts *TaintScope) {
 	reported := map[ast.NodeID]bool{}
 	for _, t := range taints {
-		if !slices.Contains(scope.Taints, t) {
+		if !slices.Contains(ts.LocalTaints, t) {
 			continue
 		}
-		diagNode, ok := a.taintDiagNode[t]
-		if !ok {
-			diagNode = fallbackNodeID
+		diagNode := fallbackNodeID
+		if origin, ok := a.taintOrigin[t]; ok {
+			diagNode = origin
 		}
 		if reported[diagNode] {
 			continue
