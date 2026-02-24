@@ -158,6 +158,23 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				foo.ptr = &b
 			}
 			`, []string{}},
+		// Function returning a ref to a local variable.
+		{"return ref to local from function", `
+			{
+				fun bad() &Int {
+					mut x = 42
+					&x
+				}
+			}
+			`, []string{
+			"test.met:5:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        mut x = 42
+				        &x
+				        ^^
+				    }
+				`, "\n"),
+		}},
 		// Deref on RHS: b = *x where x points to a ref to local c
 		// The ref that *x evaluates to should not escape
 		{"deref rhs escapes", `

@@ -98,8 +98,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeAssign(nodeID, kind)
 	case ast.Block:
 		a.analyzeBlock(nodeID, kind)
-	// case ast.Fun:
-	// 	a.analyzeFun(nodeID, kind)
+	case ast.Fun:
+		a.analyzeFun(nodeID, kind)
 	case ast.Deref:
 		a.analyzeDeref(nodeID, kind)
 	case ast.FunParam:
@@ -225,6 +225,30 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 		}
 		b.Refs = bindingTaints.Refs.Merge(b.Refs)
 		b.RefTargets = bindingTaints.RefTargets.Merge(b.RefTargets)
+	}
+}
+
+func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
+	// Check if the function's return value is a ref that escapes the function scope.
+	// The function body block has CreateScope=false, so analyzeBlock skips it.
+	// We need to check here instead.
+	funType := base.Cast[FunType](a.e.TypeOfNode(nodeID).Kind)
+	retType := a.e.Type(funType.Return)
+	if _, ok := retType.Kind.(RefType); !ok {
+		return
+	}
+	block := base.Cast[ast.Block](a.e.Node(fun.Block).Kind)
+	if len(block.Exprs) == 0 {
+		return
+	}
+	lastExprNodeID := block.Exprs[len(block.Exprs)-1]
+	lastExprTaints := a.nodeRefTaints(lastExprNodeID)
+	// The function's scope contains all local variables. Any ref taint from
+	// this scope escaping as a return value is a dangling reference.
+	taintScope := a.taintScope(lastExprNodeID)
+	if taintScope.HasLocalTaints(lastExprTaints) {
+		node := a.e.Node(lastExprNodeID)
+		a.diag(node.Span, "reference escaping its allocation scope")
 	}
 }
 
