@@ -430,12 +430,7 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 			return funParams, true
 		}
 		switch t.Kind { //nolint:exhaustive
-		case token.Ident, token.Mut:
-			mut := false
-			if t.Kind == token.Mut {
-				mut = true
-				p.next()
-			}
+		case token.Ident:
 			nameToken, ok := p.expect(token.Ident)
 			name := Name{nameToken.Value, nameToken.Span}
 			if !ok {
@@ -446,7 +441,7 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 				p.diagnostic(t.Span, "expected type, got %s", t.Kind)
 				return funParams, false
 			}
-			param := p.NewFunParam(name, type_, mut, name.Span.Combine(p.span()))
+			param := p.NewFunParam(name, type_, name.Span.Combine(p.span()))
 			funParams = append(funParams, param)
 		case token.Comma:
 			p.next()
@@ -469,11 +464,16 @@ func (p *Parser) ParseType() (NodeID, bool) {
 	case token.TypeIdent:
 		return p.NewSimpleType(Name{t.Value, t.Span}, t.Span.Combine(p.span())), true
 	case token.Amp:
+		mut := false
+		if next, ok := p.peek(); ok && next.Kind == token.Mut {
+			mut = true
+			p.next()
+		}
 		inner, ok := p.ParseType()
 		if !ok {
 			return ParseFailed, false
 		}
-		return p.NewRefType(inner, t.Span.Combine(p.span())), true
+		return p.NewRefType(inner, mut, t.Span.Combine(p.span())), true
 	default:
 		p.diagnostic(t.Span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
 		return ParseFailed, false

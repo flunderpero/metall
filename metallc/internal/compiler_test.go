@@ -67,7 +67,7 @@ func TestCompile(t *testing.T) {
 				print_int(a)
 			}`, "123\n321\n111\n"},
 		{"assign through mut ref parameter", `
-			fun foo(mut a &Int) void { 
+			fun foo(a &mut Int) void { 
 				print_int(*a)
 				*a = 321 
 			}
@@ -120,7 +120,7 @@ func TestCompile(t *testing.T) {
 				print_str(p.name)
 			}
 
-			fun update(mut p &Planet, new_name Str) void {
+			fun update(p &mut Planet, new_name Str) void {
 				p.name = new_name
 			}
 

@@ -55,10 +55,10 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
-			"fun with (mut) params", "expr", `fun foo(a Int, mut b Str) Int { 123 }`,
+			"fun with &mut param", "expr", `fun foo(a Int, b &mut Str) Int { 123 }`,
 			func(a *TestAST) NodeID {
 				return a.fun("foo",
-					[]NodeID{a.fun_param("a", a.int_typ()), a.mut_fun_param("b", a.str_typ())},
+					[]NodeID{a.fun_param("a", a.int_typ()), a.fun_param("b", a.mut_ref_typ(a.str_typ()))},
 					a.int_typ(),
 					a.fun_block(a.int_(123)),
 				)
@@ -294,11 +294,7 @@ func (a *TestAST) file(decls ...NodeID) NodeID {
 }
 
 func (a *TestAST) fun_param(name string, typ NodeID) NodeID {
-	return a.NewFunParam(Name{name, a.span}, typ, false, a.span)
-}
-
-func (a *TestAST) mut_fun_param(name string, typ NodeID) NodeID {
-	return a.NewFunParam(Name{name, a.span}, typ, true, a.span)
+	return a.NewFunParam(Name{name, a.span}, typ, a.span)
 }
 
 func (a *TestAST) fun(name string, params []NodeID, return_type NodeID, block NodeID) NodeID {
@@ -408,7 +404,11 @@ func (a *TestAST) deref(expr NodeID) NodeID {
 }
 
 func (a *TestAST) ref_typ(typ NodeID) NodeID {
-	return a.NewRefType(typ, a.span)
+	return a.NewRefType(typ, false, a.span)
+}
+
+func (a *TestAST) mut_ref_typ(typ NodeID) NodeID {
+	return a.NewRefType(typ, true, a.span)
 }
 
 func ast_to_list(ast *AST, nodeID NodeID) []*Node {

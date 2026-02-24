@@ -48,6 +48,7 @@ func (SimpleType) isKind() {}
 
 type RefType struct {
 	Type NodeID
+	Mut  bool
 }
 
 func (RefType) isKind() {}
@@ -55,7 +56,6 @@ func (RefType) isKind() {}
 type FunParam struct {
 	Name Name
 	Type NodeID
-	Mut  bool
 }
 
 func (FunParam) isKind() {}
@@ -211,8 +211,8 @@ func (a *AST) NewFun(name Name, params []NodeID, returnType NodeID, block NodeID
 	return a.node(Fun{Name: name, Params: params, ReturnType: returnType, Block: block}, span)
 }
 
-func (a *AST) NewFunParam(name Name, type_ NodeID, mut bool, span base.Span) NodeID {
-	return a.node(FunParam{Name: name, Type: type_, Mut: mut}, span)
+func (a *AST) NewFunParam(name Name, type_ NodeID, span base.Span) NodeID {
+	return a.node(FunParam{Name: name, Type: type_}, span)
 }
 
 func (a *AST) NewStruct(name Name, fields []NodeID, span base.Span) NodeID {
@@ -247,8 +247,8 @@ func (a *AST) NewSimpleType(name Name, span base.Span) NodeID {
 	return a.node(SimpleType{Name: name}, span)
 }
 
-func (a *AST) NewRefType(type_ NodeID, span base.Span) NodeID {
-	return a.node(RefType{Type: type_}, span)
+func (a *AST) NewRefType(type_ NodeID, mut bool, span base.Span) NodeID {
+	return a.node(RefType{Type: type_, Mut: mut}, span)
 }
 
 func (a *AST) NewVar(name Name, expr NodeID, mut bool, span base.Span) NodeID {
@@ -436,7 +436,6 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		}
 	case FunParam:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
-		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {
@@ -494,6 +493,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	case Ref:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 	case RefType:
+		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {

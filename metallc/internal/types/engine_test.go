@@ -113,7 +113,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"field write through mut ref param",
-			`{ struct Planet { mut name Str } fun foo(mut p &Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&p) }`,
+			`{ struct Planet { mut name Str } fun foo(p &mut Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&p) }`,
 			void,
 			nil,
 		},
@@ -146,9 +146,22 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{"deref assign", `{ mut a = 1 mut b = &a *b = 321 }`, void, nil},
 		{"nested deref assign", `{ mut a = 1 mut b = &a mut c = &b *b = 123 **c = 321 }`, void, nil},
-		{"mut ref parameter", `{ fun foo(mut a &Int) void { *a = 321 } mut b = 123 foo(&b) }`, void, nil},
+		{"mut ref parameter", `{ fun foo(a &mut Int) void { *a = 321 } mut b = 123 foo(&b) }`, void, nil},
 		{"mut ref coercion", `{ fun foo(a &Int) void {} mut b = 123 foo(&b) }`, void, nil},
+		{"mut ref coercion in struct literal", `{ struct Foo { ptr &Int } mut a = 1 let f = Foo(&a) }`, void, nil},
 		{"ref return", `{ fun foo(a &Int) &Int { a } let b = 123 foo(&b) }`, ref_t(Int), nil},
+		{
+			"write through mut ref struct field",
+			`{ struct Foo { ptr &mut Int } mut a = 1 let f = Foo(&a) *f.ptr = 42 }`,
+			void,
+			nil,
+		},
+		{
+			"reassign mut field of mut ref type",
+			`{ struct Foo { mut ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&a) f.ptr = &b *f.ptr = 99 }`,
+			void,
+			nil,
+		},
 
 		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t(void), nil},
 		{"self recursion", `{ fun foo(a Int) Int { foo(a) } foo(1) }`, Int, nil},
@@ -381,12 +394,6 @@ func TestTypeCheckErr(t *testing.T) {
 					"                                                            ^^^^^^",
 			},
 		},
-		{"mut non-ref param", `{ fun foo(mut a Int) void {} foo(123) }`, []string{
-			"test.met:1:15: only reference types can be mutable parameters\n" +
-				`    { fun foo(mut a Int) void {} foo(123) }` + "\n" +
-				"                  ^^^^^",
-		}},
-
 		{
 			"assign to immutable field on mutable struct",
 			`{ struct Foo { name Str } mut f = Foo("hi") f.name = "bye" }`,
@@ -398,11 +405,38 @@ func TestTypeCheckErr(t *testing.T) {
 		},
 		{
 			"pass immutable ref to mut ref struct field",
-			`{ struct Foo { mut ptr &Int } let a = 123 let f = Foo(&a) }`,
+			`{ struct Foo { ptr &mut Int } let a = 123 let f = Foo(&a) }`,
 			[]string{
 				"test.met:1:55: type mismatch at argument 1: expected &mut Int, got &Int\n" +
-					`    { struct Foo { mut ptr &Int } let a = 123 let f = Foo(&a) }` + "\n" +
+					`    { struct Foo { ptr &mut Int } let a = 123 let f = Foo(&a) }` + "\n" +
 					"                                                          ^^",
+			},
+		},
+		{
+			"write through immutable ref struct field",
+			`{ struct Foo { ptr &Int } let a = 123 let f = Foo(&a) *f.ptr = 42 }`,
+			[]string{
+				"test.met:1:55: cannot assign through dereference: expected mutable reference, got &Int\n" +
+					`    { struct Foo { ptr &Int } let a = 123 let f = Foo(&a) *f.ptr = 42 }` + "\n" +
+					"                                                          ^^^^^^",
+			},
+		},
+		{
+			"reassign immutable mut-ref field",
+			`{ struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&a) f.ptr = &b }`,
+			[]string{
+				"test.met:1:67: cannot assign to immutable field: ptr\n" +
+					`    { struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&a) f.ptr = &b }` + "\n" +
+					"                                                                      ^^^^^",
+			},
+		},
+		{
+			"reassign mut ref param",
+			`{ fun foo(p &mut Int) void { mut x = 1 p = &x } }`,
+			[]string{
+				"test.met:1:40: cannot assign to immutable variable: p\n" +
+					`    { fun foo(p &mut Int) void { mut x = 1 p = &x } }` + "\n" +
+					"                                           ^",
 			},
 		},
 		{"coerce an immutable ref to a mutable", `{ let a = 123 mut b = &a }`, []string{
@@ -504,7 +538,7 @@ func TestScopes(t *testing.T) {
 			`,
 			nodes: `
 				n1:SimpleType(name="Int"):b
-				n2:FunParam(name="a",mut=false,type=n1:SimpleType):b
+				n2:FunParam(name="a",type=n1:SimpleType):b
 				n3:SimpleType(name="Int"):a
 				n4:Ident(name="a"):b
 				n5:Block(createScope=false,exprs=[n4:Ident]):b

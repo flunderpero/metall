@@ -709,11 +709,11 @@ func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType Struc
 }
 
 func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
-	// Bind parameters.
 	for i, paramNodeID := range funNode.Params {
 		paramNode := base.Cast[ast.FunParam](e.Node(paramNodeID).Kind)
 		paramTypeID := funType.Params[i]
-		if !e.bind(paramNode.Name.Name, paramNode.Mut, paramNodeID, paramTypeID, paramNode.Name.Span) {
+		// Params are never reassignable - mutability of the *binding* is always false.
+		if !e.bind(paramNode.Name.Name, false, paramNodeID, paramTypeID, paramNode.Name.Span) {
 			return TypeFailed
 		}
 	}
@@ -748,30 +748,18 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
 	return TypeOK
 }
 
-func (e *Engine) checkFunParam(nodeID ast.NodeID, funParam ast.FunParam, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkFunParam(_ ast.NodeID, funParam ast.FunParam, _ base.Span) (TypeID, TypeStatus) {
 	typeID, status := e.Query(funParam.Type)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	typ := e.Type(typeID)
-	ref, isRef := typ.Kind.(RefType)
-	if funParam.Mut && !isRef {
-		e.diag(span, "only reference types can be mutable parameters")
-		return InvalidTypeID, TypeFailed
-	}
-	if isRef {
-		typeID = e.buildRefType(nodeID, ref.Type, funParam.Mut, span)
-	}
 	return typeID, TypeOK
 }
 
-func (e *Engine) checkStructField(nodeID ast.NodeID, structField ast.StructField, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkStructField(_ ast.NodeID, structField ast.StructField, _ base.Span) (TypeID, TypeStatus) {
 	typeID, status := e.Query(structField.Type)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
-	}
-	if ref, ok := e.Type(typeID).Kind.(RefType); ok && structField.Mut {
-		typeID = e.buildRefType(nodeID, ref.Type, true, span)
 	}
 	return typeID, TypeOK
 }
@@ -826,7 +814,7 @@ func (e *Engine) checkRefType(
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	return e.buildRefType(nodeID, innerTypeID, false, span), TypeOK
+	return e.buildRefType(nodeID, innerTypeID, refType.Mut, span), TypeOK
 }
 
 func (e *Engine) checkSimpleType(
