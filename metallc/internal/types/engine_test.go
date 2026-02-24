@@ -366,14 +366,17 @@ func TestTypeCheckErr(t *testing.T) {
 			},
 		},
 		{
-			"assign to field through immutable ref param",
-			`{ struct Planet{name Str} fun foo(p &Planet) void { p.name = "X" } }`,
-			[]string{
+			"assign to field through immutable ref param", `{ struct Planet{name Str} fun foo(p &Planet) void { p.name = "X" } }`, []string{
 				"test.met:1:53: cannot assign to field of immutable value\n" +
 					`    { struct Planet{name Str} fun foo(p &Planet) void { p.name = "X" } }` + "\n" +
 					"                                                        ^^^^^^",
 			},
 		},
+		{"mut non-ref param", `{ fun foo(mut a Int) void {} foo(123) }`, []string{
+			"test.met:1:15: only reference types can be mutable parameters\n" +
+				`    { fun foo(mut a Int) void {} foo(123) }` + "\n" +
+				"                  ^^^^^",
+		}},
 		{"coerce an immutable ref to a mutable", `{ let a = 123 mut b = &a }`, []string{
 			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
 				`    { let a = 123 mut b = &a }` + "\n" +

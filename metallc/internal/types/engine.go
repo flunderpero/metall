@@ -790,6 +790,9 @@ func (e *Engine) checkIdent(ident ast.Ident, span base.Span) (TypeID, TypeStatus
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
 	}
+	if cached, ok := e.types[binding.TypeID]; ok && cached.Status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
 	return binding.TypeID, TypeOK
 }
 
