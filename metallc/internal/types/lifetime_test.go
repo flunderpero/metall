@@ -350,6 +350,28 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				        ro.inner.ptr
 				`, "\n"),
 		}},
+		// Struct reassignment: w is reassigned to carry a local ref, then w.ptr escapes.
+		{"field read after struct reassign escape", `
+			{
+				struct Wrapper { ptr &Int }
+				let a = 1
+				mut w = Wrapper(&a)
+				let r = {
+					let x = 42
+					w = Wrapper(&x)
+					w.ptr
+				}
+				r
+			}
+			`, []string{
+			"test.met:8:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        w = Wrapper(&x)
+				        ^^^^^^^^^^^^^^^
+				        w.ptr
+				`, "\n"),
+		}},
 		// If/else: ref to a local escapes through one branch.
 		{"if ref escape", `
 			{

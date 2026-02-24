@@ -80,8 +80,8 @@ func TestCompile(t *testing.T) {
 
 		{"struct", `
 			struct Planet {
-				name Str
-				diameter Int
+				mut name Str
+				mut diameter Int
 			}
 
 			fun main() void {
@@ -113,7 +113,7 @@ func TestCompile(t *testing.T) {
 
 		{"struct as ref parameter, struct ref auto-derefence, mut ref coercion", `
 			struct Planet {
-				name Str
+				mut name Str
 			}
 
 			fun print_planet(p &Planet) void {
@@ -150,12 +150,12 @@ func TestCompile(t *testing.T) {
 
 		{"nested struct", `
 			struct Planet {
-				name Str
+				mut name Str
 			}
 
 			struct SolarSystem {
 				earth Planet
-				mars Planet
+				mut mars Planet
 			}
 
 			fun main() void {
@@ -169,7 +169,7 @@ func TestCompile(t *testing.T) {
 
 		{"struct copy on assignment", `
 			struct Planet {
-				name Str
+				mut name Str
 			}
 
 			fun main() void {
@@ -183,11 +183,11 @@ func TestCompile(t *testing.T) {
 
 		{"assign struct to nested struct field copies value", `
 			struct Inner {
-				name Str
+				mut name Str
 			}
 
 			struct Outer {
-				inner Inner
+				mut inner Inner
 			}
 
 			fun main() void {
@@ -218,7 +218,7 @@ func TestCompile(t *testing.T) {
 
 		{"struct ref aliases", `
 			struct Planet {
-				name Str
+				mut name Str
 			}
 
 			fun main() void {
@@ -229,6 +229,48 @@ func TestCompile(t *testing.T) {
 				print_str(c.name)
 			}
 			`, "Mars\n"},
+
+		{"struct from if else", `
+			struct Planet {
+				mut name Str
+			}
+
+			fun main() void {
+				let p = if true { Planet("Earth") } else { Planet("Mars") }
+				print_str(p.name)
+				mut q = if false { Planet("Earth") } else { Planet("Mars") }
+				print_str(q.name)
+				q.name = "Venus"
+				print_str(q.name)
+			}
+			`, "Earth\nMars\nVenus\n"},
+
+		{"struct reassign from if else", `
+			struct Planet {
+				name Str
+			}
+
+			fun main() void {
+				mut p = Planet("Earth")
+				print_str(p.name)
+				p = if true { Planet("Mars") } else { Planet("Venus") }
+				print_str(p.name)
+			}
+			`, "Earth\nMars\n"},
+
+		{"struct block expr as arg", `
+			struct Planet {
+				name Str
+			}
+
+			fun print_planet(p Planet) void {
+				print_str(p.name)
+			}
+
+			fun main() void {
+				print_planet({ Planet("Earth") })
+			}
+			`, "Earth\n"},
 
 		{"forward declare", `
 			fun main() void {

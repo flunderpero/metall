@@ -46,14 +46,15 @@ type FunType struct {
 
 func (FunType) isTypeKind() {}
 
-type Named struct {
+type StructField struct {
 	Name string
 	Type TypeID
+	Mut  bool
 }
 
 type StructType struct {
 	Name   string
-	Fields []Named
+	Fields []StructField
 }
 
 func (StructType) isTypeKind() {}
@@ -673,7 +674,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 }
 
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
-	structTypeID := e.newType(StructType{structNode.Name.Name, []Named{}}, node.ID, node.Span, TypeInProgress)
+	structTypeID := e.newType(StructType{structNode.Name.Name, []StructField{}}, node.ID, node.Span, TypeInProgress)
 	if !e.bind(structNode.Name.Name, false, node.ID, structTypeID, structNode.Name.Span) {
 		return structTypeID, TypeFailed
 	}
@@ -694,14 +695,14 @@ func (e *Engine) checkFunCompleteType(funNode ast.Fun, funType FunType) (TypeSta
 }
 
 func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType StructType) (TypeStatus, StructType) {
-	fields := make([]Named, len(structNode.Fields))
+	fields := make([]StructField, len(structNode.Fields))
 	for i, fieldNodeID := range structNode.Fields {
 		fieldTypeID, status := e.Query(fieldNodeID)
 		if status.Failed() {
 			return TypeDepFailed, structType
 		}
 		fieldNode := base.Cast[ast.StructField](e.Node(fieldNodeID).Kind)
-		fields[i] = Named{fieldNode.Name.Name, fieldTypeID}
+		fields[i] = StructField{fieldNode.Name.Name, fieldTypeID, fieldNode.Mut}
 	}
 	structType.Fields = fields
 	return TypeOK, structType
@@ -769,14 +770,8 @@ func (e *Engine) checkStructField(nodeID ast.NodeID, structField ast.StructField
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	typ := e.Type(typeID)
-	ref, isRef := typ.Kind.(RefType)
-	if structField.Mut && !isRef {
-		e.diag(span, "only reference types can be mutable parameters")
-		return InvalidTypeID, TypeFailed
-	}
-	if isRef {
-		typeID = e.buildRefType(nodeID, ref.Type, structField.Mut, span)
+	if ref, ok := e.Type(typeID).Kind.(RefType); ok && structField.Mut {
+		typeID = e.buildRefType(nodeID, ref.Type, true, span)
 	}
 	return typeID, TypeOK
 }
@@ -936,7 +931,18 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 		e.diag(node.Span, "cannot assign through dereference: expected mutable reference, got %s",
 			e.TypeDisplay(exprTypeID))
 	case ast.FieldAccess:
-		e.diag(node.Span, "cannot assign to field of immutable value")
+		targetTypeID, _ := e.Query(kind.Target)
+		var containerMut bool
+		if ref, ok := e.Type(targetTypeID).Kind.(RefType); ok {
+			containerMut = ref.Mut
+		} else {
+			_, containerMut = e.isPlaceMutable(kind.Target)
+		}
+		if containerMut {
+			e.diag(node.Span, "cannot assign to immutable field: %s", kind.Field.Name)
+		} else {
+			e.diag(node.Span, "cannot assign to field of immutable value")
+		}
 	default:
 		e.diag(node.Span, "cannot assign to left-hand-side expression of type: %T", kind)
 	}
@@ -967,18 +973,31 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) {
 		ref := base.Cast[RefType](e.Type(exprTypeID).Kind)
 		return typeID, ref.Mut
 	case ast.FieldAccess:
-		// If the target is a reference (auto-deref), mutability comes from
-		// the reference, not the binding.
 		targetTypeID, status := e.Query(kind.Target)
 		if status.Failed() {
 			return InvalidTypeID, false
 		}
+		// Check if the container is mutable (ref mutability or root binding).
+		var containerMut bool
+		var structTypeID TypeID
 		if ref, ok := e.Type(targetTypeID).Kind.(RefType); ok {
-			return typeID, ref.Mut
+			containerMut = ref.Mut
+			structTypeID = ref.Type
+		} else {
+			_, containerMut = e.isPlaceMutable(kind.Target)
+			structTypeID = targetTypeID
 		}
-		// Value type - recurse to check the root.
-		_, mut := e.isPlaceMutable(kind.Target)
-		return typeID, mut
+		if !containerMut {
+			return typeID, false
+		}
+		// Check if the field itself is declared mut.
+		structType := base.Cast[StructType](e.Type(structTypeID).Kind)
+		for _, field := range structType.Fields {
+			if field.Name == kind.Field.Name {
+				return typeID, field.Mut
+			}
+		}
+		return typeID, false
 	default:
 		return typeID, false
 	}

@@ -107,25 +107,25 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"field read access", `{ struct Planet { name Str } let earth = Planet("Earth") earth.name }`, Str, nil},
 		{
 			"field write access",
-			`{ struct Planet { name Str } mut earth = Planet("Earth") earth.name = "Mother" }`,
+			`{ struct Planet { mut name Str } mut earth = Planet("Earth") earth.name = "Mother" }`,
 			void,
 			nil,
 		},
 		{
 			"field write through mut ref param",
-			`{ struct Planet { name Str } fun foo(mut p &Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&p) }`,
+			`{ struct Planet { mut name Str } fun foo(mut p &Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&p) }`,
 			void,
 			nil,
 		},
 		{
 			"nested field write on mut struct",
-			`{ struct Inner { x Int } struct Outer { inner Inner } mut o = Outer(Inner(1)) o.inner.x = 2 }`,
+			`{ struct Inner { mut x Int } struct Outer { mut inner Inner } mut o = Outer(Inner(1)) o.inner.x = 2 }`,
 			void,
 			nil,
 		},
 		{
 			"field write through let binding of mut ref",
-			`{ struct Planet { name Str } mut earth = Planet("Earth") let p = &earth p.name = "X" }`,
+			`{ struct Planet { mut name Str } mut earth = Planet("Earth") let p = &earth p.name = "X" }`,
 			void,
 			nil,
 		},
@@ -340,36 +340,45 @@ func TestTypeCheckErr(t *testing.T) {
 		}},
 		{
 			"assign to field of immutable struct",
-			`{ struct Planet{name Str} let p = Planet("Earth") p.name = "Mother" }`,
+			`{ struct Planet{mut name Str} let p = Planet("Earth") p.name = "Mother" }`,
 			[]string{
-				"test.met:1:51: cannot assign to field of immutable value\n" +
-					`    { struct Planet{name Str} let p = Planet("Earth") p.name = "Mother" }` + "\n" +
-					"                                                      ^^^^^^",
+				"test.met:1:55: cannot assign to field of immutable value\n" +
+					`    { struct Planet{mut name Str} let p = Planet("Earth") p.name = "Mother" }` + "\n" +
+					"                                                          ^^^^^^",
 			},
 		},
 		{
 			"assign to nested field of immutable struct",
-			`{ struct Inner{x Int} struct Outer{inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }`,
+			`{ struct Inner{mut x Int} struct Outer{mut inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }`,
 			[]string{
-				"test.met:1:73: cannot assign to field of immutable value\n" +
-					`    { struct Inner{x Int} struct Outer{inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }` + "\n" +
-					"                                                                            ^^^^^^^^^",
+				"test.met:1:81: cannot assign to field of immutable value\n" +
+					`    { struct Inner{mut x Int} struct Outer{mut inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }` + "\n" +
+					"                                                                                    ^^^^^^^^^",
+			},
+		},
+		{
+			"assign to nested field through immutable intermediate field",
+			`{ struct Inner{mut x Int} struct Outer{inner Inner} mut o = Outer(Inner(1)) o.inner.x = 2 }`,
+			[]string{
+				"test.met:1:77: cannot assign to field of immutable value\n" +
+					`    { struct Inner{mut x Int} struct Outer{inner Inner} mut o = Outer(Inner(1)) o.inner.x = 2 }` + "\n" +
+					"                                                                                ^^^^^^^^^",
 			},
 		},
 		{
 			"assign to field through immutable ref",
-			`{ struct Planet{name Str} let p = Planet("Earth") let r = &p r.name = "X" }`,
+			`{ struct Planet{mut name Str} let p = Planet("Earth") let r = &p r.name = "X" }`,
 			[]string{
-				"test.met:1:62: cannot assign to field of immutable value\n" +
-					`    { struct Planet{name Str} let p = Planet("Earth") let r = &p r.name = "X" }` + "\n" +
-					"                                                                 ^^^^^^",
+				"test.met:1:66: cannot assign to field of immutable value\n" +
+					`    { struct Planet{mut name Str} let p = Planet("Earth") let r = &p r.name = "X" }` + "\n" +
+					"                                                                     ^^^^^^",
 			},
 		},
 		{
-			"assign to field through immutable ref param", `{ struct Planet{name Str} fun foo(p &Planet) void { p.name = "X" } }`, []string{
-				"test.met:1:53: cannot assign to field of immutable value\n" +
-					`    { struct Planet{name Str} fun foo(p &Planet) void { p.name = "X" } }` + "\n" +
-					"                                                        ^^^^^^",
+			"assign to field through immutable ref param", `{ struct Planet{mut name Str} fun foo(p &Planet) void { p.name = "X" } }`, []string{
+				"test.met:1:57: cannot assign to field of immutable value\n" +
+					`    { struct Planet{mut name Str} fun foo(p &Planet) void { p.name = "X" } }` + "\n" +
+					"                                                            ^^^^^^",
 			},
 		},
 		{"mut non-ref param", `{ fun foo(mut a Int) void {} foo(123) }`, []string{
@@ -377,6 +386,25 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { fun foo(mut a Int) void {} foo(123) }` + "\n" +
 				"                  ^^^^^",
 		}},
+
+		{
+			"assign to immutable field on mutable struct",
+			`{ struct Foo { name Str } mut f = Foo("hi") f.name = "bye" }`,
+			[]string{
+				"test.met:1:45: cannot assign to immutable field: name\n" +
+					`    { struct Foo { name Str } mut f = Foo("hi") f.name = "bye" }` + "\n" +
+					"                                                ^^^^^^",
+			},
+		},
+		{
+			"pass immutable ref to mut ref struct field",
+			`{ struct Foo { mut ptr &Int } let a = 123 let f = Foo(&a) }`,
+			[]string{
+				"test.met:1:55: type mismatch at argument 1: expected &mut Int, got &Int\n" +
+					`    { struct Foo { mut ptr &Int } let a = 123 let f = Foo(&a) }` + "\n" +
+					"                                                          ^^",
+			},
+		},
 		{"coerce an immutable ref to a mutable", `{ let a = 123 mut b = &a }`, []string{
 			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
 				`    { let a = 123 mut b = &a }` + "\n" +
@@ -613,11 +641,11 @@ func ref_mut_t(typ *Type) *Type {
 }
 
 func struct_t(name string, fields ...any) *Type {
-	structFields := []Named{}
+	structFields := []StructField{}
 	for i, f := range fields {
 		if i%2 == 0 {
 			name := base.Cast[string](f)
-			structFields = append(structFields, Named{name, 0})
+			structFields = append(structFields, StructField{name, 0, false})
 		} else {
 			structFields[len(structFields)-1].Type = base.Cast[*Type](f).ID
 		}

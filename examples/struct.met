@@ -1,6 +1,6 @@
 struct Planet {
-    name Str
-    diameter Int
+    mut name Str
+    mut diameter Int
 }
 
 fun make_earth() Planet {
