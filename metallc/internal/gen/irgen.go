@@ -453,7 +453,7 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	sb.WriteString(g.lookupCode(call.Callee))
 	sb.WriteString(" (")
 	if isRetStruct {
-		fmt.Fprintf(&sb, "ptr %s", resReg)
+		fmt.Fprintf(&sb, "ptr sret(%s) %s", g.irType(fun.Return), resReg)
 	}
 	for i, arg := range call.Args {
 		if i > 0 || isRetStruct {
@@ -461,8 +461,7 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 		}
 		argType := g.engine.TypeOfNode(arg)
 		if _, ok := argType.Kind.(types.StructType); ok {
-			// Struct type flow as ptr in calls.
-			sb.WriteString("ptr ")
+			fmt.Fprintf(&sb, "ptr byval(%s) ", g.irType(argType.ID))
 		} else {
 			sb.WriteString(g.irType(argType.ID))
 			sb.WriteString(" ")
