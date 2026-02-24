@@ -377,7 +377,18 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 		if !ok {
 			panic(base.Errorf("assign to unknown variable: %s", lhsKind.Name))
 		}
-		g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
+		rhsType := g.engine.TypeOfNode(assign.RHS)
+		if _, ok := rhsType.Kind.(types.StructType); ok {
+			// Copy struct value into the existing variable's storage.
+			irTyp := "%" + rhsType.ID.String()
+			dst := g.reg()
+			g.write("%s = load ptr, ptr %s", dst, symbol.Reg)
+			tmp := g.reg()
+			g.write("%s = load %s, ptr %s", tmp, irTyp, rhs)
+			g.write("store %s %s, ptr %s", irTyp, tmp, dst)
+		} else {
+			g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
+		}
 	case ast.FieldAccess:
 		fieldType, ptrReg := g.genFieldAccessPtr(lhsKind)
 		g.write("store %s %s, ptr %s", fieldType, rhs, ptrReg)
@@ -497,13 +508,24 @@ func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 
 func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	g.Gen(v.Expr)
-	// We are a bit lazy here and just use an `alloca` instruction.
-	// LLVM will optimize this.
 	reg := g.reg()
 	typ := g.irTypeOfNode(v.Expr)
-	expr := g.lookupCode(v.Expr)
+	exprReg := g.lookupCode(v.Expr)
+	exprType := g.engine.TypeOfNode(v.Expr)
+	if _, ok := exprType.Kind.(types.StructType); ok {
+		// Struct: copy by value so each variable owns independent data.
+		// `expr` is a ptr to the source struct. We alloca a new struct,
+		// copy the data, then let the normal path store that new ptr.
+		irTyp := "%" + exprType.ID.String()
+		copyReg := g.reg()
+		g.write("%s = alloca %s", copyReg, irTyp)
+		tmp := g.reg()
+		g.write("%s = load %s, ptr %s", tmp, irTyp, exprReg)
+		g.write("store %s %s, ptr %s", irTyp, tmp, copyReg)
+		exprReg = copyReg
+	}
 	g.write("%s = alloca %s", reg, typ)
-	g.write("store %s %s, ptr %s", typ, expr, reg)
+	g.write("store %s %s, ptr %s", typ, exprReg, reg)
 	g.setCode(id, reg)
 	g.setSymbol(id, v.Name.Name, reg, typ)
 }

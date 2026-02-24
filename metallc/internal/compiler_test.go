@@ -167,6 +167,34 @@ func TestCompile(t *testing.T) {
 			}
 			`, "Earth\nMars\nGod of War\n"},
 
+		{"struct copy on assignment", `
+			struct Planet {
+				name Str
+			}
+
+			fun main() void {
+				mut a = Planet("Earth")
+				mut b = a
+				b.name = "Mars"
+				print_str(a.name)
+				print_str(b.name)
+			}
+			`, "Earth\nMars\n"},
+
+		{"struct ref aliases", `
+			struct Planet {
+				name Str
+			}
+
+			fun main() void {
+				mut a = Planet("Earth")
+				let b = &a
+				let c = b
+				a.name = "Mars"
+				print_str(c.name)
+			}
+			`, "Mars\n"},
+
 		{"forward declare", `
 			fun main() void {
 				print_int(foo())
