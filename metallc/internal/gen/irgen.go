@@ -201,6 +201,14 @@ func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string, ptrReg string) {
 	g.Gen(fieldAccess.Target)
 	targetType := g.engine.TypeOfNode(fieldAccess.Target)
+	structReg := g.lookupCode(fieldAccess.Target)
+	if refTyp, ok := targetType.Kind.(types.RefType); ok {
+		// Auto de-reference one level deep.
+		targetType = g.engine.Type((refTyp.Type))
+		derefReg := g.reg()
+		g.write("%s = load ptr, ptr %s", derefReg, structReg)
+		structReg = derefReg
+	}
 	structType := base.Cast[types.StructType](targetType.Kind)
 	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
 	fieldType = g.irStructFieldType(structType.Fields[fieldIndex].Type)
@@ -210,7 +218,7 @@ func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string
 		ptrReg,
 		targetType.ID,
 		targetType.ID,
-		g.lookupCode(fieldAccess.Target),
+		structReg,
 		fieldIndex,
 	)
 	return fieldType, ptrReg

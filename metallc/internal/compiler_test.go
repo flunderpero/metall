@@ -111,6 +111,28 @@ func TestCompile(t *testing.T) {
 			}
 			`, "Earth\n"},
 
+		{"struct as ref parameter, struct ref auto-derefence, mut ref coercion", `
+			struct Planet {
+				name Str
+			}
+
+			fun print_planet(p &Planet) void {
+				print_str(p.name)
+			}
+
+			fun update(mut p &Planet, new_name Str) void {
+				p.name = new_name
+			}
+
+			fun main() void {
+				mut earth = Planet("Earth")
+				print_planet(&earth)
+
+				update(&earth, "Mother")
+				print_planet(&earth)
+			}
+			`, "Earth\nMother\n"},
+
 		{"struct as value return", `
 			struct Planet {
 				name Str
@@ -173,11 +195,12 @@ func TestCompile(t *testing.T) {
 		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
 			continue
 		}
-		t.Run(tt.name, func(t *testing.T) {
+		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := base.NewSource("test.met", []rune(tt.src))
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
-			outputPath := "./.build/" + reg.ReplaceAllString(tt.name, "_")
+			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
 			opts := CompileOpts{
 				Listener:         nil,
 				Output:           outputPath,

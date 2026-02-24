@@ -7,7 +7,7 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
-type NodeID int
+type NodeID uint64
 
 func (id NodeID) String() string {
 	return fmt.Sprintf("n%d", id)

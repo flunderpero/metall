@@ -61,6 +61,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"fun", `fun foo(a Int, b Str) Int { 123 }`, fun_t(Int, Str, Int), nil},
 		{"fun void return coerces body to void", `fun foo() void { 123 }`, fun_t(void), nil},
 		{"fun params", `fun foo(a Int) Int { a }`, fun_t(Int, Int), nil},
+		{
+			"fun params are scoped to the fun",
+			`{ fun foo(a Int) void {} fun bar(a Int) void {} }`,
+			fun_t(Int, void),
+			nil,
+		},
 		{"call", `{ fun foo(a Int) Int { 123 } foo(321) }`, Int, nil},
 		{"call void fun", `{ fun foo() void { } foo() }`, void, nil},
 		{"builtin print_str", `print_str("hello")`, void, nil},
@@ -78,12 +84,25 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				funID := block.Exprs[0]
 				typ, ok := e.TypeOfNode(funID).Kind.(FunType)
 				assert.Equal(true, ok, e.TypeOfNode(funID).ID)
-				assert.Equal("struct(Str)", e.TypeDisplay(typ.Params[0]))
+				assert.Equal("struct Planet(name Str)", e.TypeDisplay(typ.Params[0]))
 			},
 		},
 		{
 			"struct literal", `{ struct Planet { name Str diameter Int } let earth = Planet("Earth", 12500) earth }`,
 			struct_t("Planet", "name", Str, "diameter", Int), nil,
+		},
+		{
+			"struct ref",
+			`{ struct Planet { name Str } let p = Planet("Earth") &p }`,
+			// Our test strategy does not work for nested types (we zero out all type ids).
+			// That's why we verify in the check function.
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				got := e.TypeOfNode(id)
+				ref, ok := got.Kind.(RefType)
+				assert.Equal(true, ok)
+				assert.Equal("struct Planet(name Str)", e.TypeDisplay(ref.Type))
+			},
 		},
 		{"field read access", `{ struct Planet { name Str } let earth = Planet("Earth") earth.name }`, Str, nil},
 		{
@@ -101,9 +120,16 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"ref", `{ let a = 5 let b = &a b }`, ref_t(Int), nil},
 		{"mut ref", `{ mut a = 5 mut b = &a b }`, ref_mut_t(Int), nil},
 		{"deref", `{ let a = 5 let b = &a *b }`, Int, nil},
+		{
+			"deref field access",
+			`{ struct Planet{ name Str } let p = Planet("Earth") let r = &p r.name }`,
+			Str,
+			nil,
+		},
 		{"deref assign", `{ mut a = 1 mut b = &a *b = 321 }`, void, nil},
 		{"nested deref assign", `{ mut a = 1 mut b = &a mut c = &b *b = 123 **c = 321 }`, void, nil},
 		{"mut ref parameter", `{ fun foo(mut a &Int) void { *a = 321 } mut b = 123 foo(&b) }`, void, nil},
+		{"mut ref coercion", `{ fun foo(a &Int) void {} mut b = 123 foo(&b) }`, void, nil},
 		{"ref return", `{ fun foo(a &Int) &Int { a } let b = 123 foo(&b) }`, ref_t(Int), nil},
 
 		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t(void), nil},
@@ -113,7 +139,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
 	// violate the lifetime rules, but we still wan to test them in isolation.
-	skipLifetimeCheck := []string{"ref", "mut ref"}
+	skipLifetimeCheck := []string{"ref", "mut ref", "struct ref"}
 
 	assert := base.NewAssert(t)
 	hasOnly := false
@@ -127,7 +153,8 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
 			continue
 		}
-		t.Run(tt.name, func(t *testing.T) {
+		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
+		t.Run(name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
@@ -135,17 +162,23 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK, "ParseExpr returned false")
 			e := NewEngine(parser.AST)
+			// e.Debug = base.NewStdoutDebug("engine")
 			e.Query(exprID)
 			assert.Equal(0, len(e.Diagnostics), "diagnostics:\n%s", e.Diagnostics)
 			got := e.TypeOfNode(exprID)
-			e.IterTypes(zeroIDAndSpan)
-			assert.Equal(tt.want, got)
+			if tt.want != nil {
+				assert.NotEqual(InvalidTypeID, got.ID, "result type is invalid")
+				e.IterTypes(zeroIDAndSpan)
+				assert.Equal(tt.want, got)
+			} else {
+				assert.NotNil(tt.check, "`tt.check` cannot be nil if `tt.want` is already nil")
+			}
 			if tt.check != nil {
 				tt.check(e, exprID, assert)
 			}
-			if !slices.Contains(skipLifetimeCheck, tt.name) {
+			if !slices.Contains(skipLifetimeCheck, name) {
 				a := NewLifetimeAnalyzer(e)
-				a.Debug = base.NewStdoutDebug("lifetime")
+				// a.Debug = base.NewStdoutDebug("lifetime")
 				a.Check(exprID)
 				assert.Equal(0, len(a.Diagnostics), "lifetime check failed: %s", a.Diagnostics)
 			}
@@ -287,6 +320,11 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { mut a = 123 let b = 123 mut c = &a c = &b }` + "\n" +
 				`                                             ^^`,
 		}},
+		{"coerce an immutable ref to a mutable", `{ let a = 123 mut b = &a }`, []string{
+			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
+				`    { let a = 123 mut b = &a }` + "\n" +
+				`                          ^^`,
+		}},
 	}
 
 	assert := base.NewAssert(t)
@@ -301,7 +339,8 @@ func TestTypeCheckErr(t *testing.T) {
 		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
 			continue
 		}
-		t.Run(tt.name, func(t *testing.T) {
+		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
+		t.Run(name, func(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
@@ -378,13 +417,9 @@ func TestScopes(t *testing.T) {
 				a:-
 				b:a
 			`,
-			// The function parameter type `Int` (of `a Int`) is bound to the
-			// outer scope and not the function scope, because we first forward
-			// declare the parameter types before creating the function scope.
-			// This is technically not the cleanest way, but it works for now.
 			nodes: `
-				n1:SimpleType(name="Int"):a
-				n2:FunParam(name="a",mut=false,type=n1:SimpleType):a
+				n1:SimpleType(name="Int"):b
+				n2:FunParam(name="a",mut=false,type=n1:SimpleType):b
 				n3:SimpleType(name="Int"):a
 				n4:Ident(name="a"):b
 				n5:Block(createScope=false,exprs=[n4:Ident]):b

@@ -10,7 +10,7 @@ import (
 
 const InvalidTypeID = TypeID(0)
 
-type TypeID int
+type TypeID uint64
 
 func (id TypeID) String() string {
 	return fmt.Sprintf("t%d", id)
@@ -57,6 +57,8 @@ type StructType struct {
 }
 
 func (StructType) isTypeKind() {}
+
+const mutableRefFlag = 1 << 62
 
 type refTypeCacheKey struct {
 	TypeID
@@ -181,12 +183,12 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 		return sb.String()
 	case StructType:
 		var sb strings.Builder
-		sb.WriteString("struct(")
+		fmt.Fprintf(&sb, "struct %s(", kind.Name)
 		for i, field := range kind.Fields {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString(e.TypeDisplay(field.Type))
+			fmt.Fprintf(&sb, "%s %s", field.Name, e.TypeDisplay(field.Type))
 		}
 		sb.WriteString(")")
 		return sb.String()
@@ -364,7 +366,7 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if lhsTypeID != rhsTypeID {
+	if !e.isAssignableTo(rhsTypeID, lhsTypeID) {
 		rhsSpan := e.Node(assign.RHS).Span
 		e.diag(rhsSpan, "type mismatch: expected %s, got %s", e.TypeDisplay(lhsTypeID), e.TypeDisplay(rhsTypeID))
 		return InvalidTypeID, TypeDepFailed
@@ -452,7 +454,7 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if argTypeID != struct_.Fields[i].Type {
+		if !e.isAssignableTo(argTypeID, struct_.Fields[i].Type) {
 			e.diag(
 				argNode.Span,
 				"type mismatch at argument %d: expected %s, got %s",
@@ -471,8 +473,12 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	structTyp := e.Type(targetTypeID)
-	struct_, ok := structTyp.Kind.(StructType)
+	targetTyp := e.Type(targetTypeID)
+	if refTyp, ok := targetTyp.Kind.(RefType); ok {
+		// Auto de-reference one level deep.
+		targetTyp = e.Type(refTyp.Type)
+	}
+	struct_, ok := targetTyp.Kind.(StructType)
 	if !ok {
 		targetSpan := e.Node(fieldAccess.Target).Span
 		e.diag(targetSpan, "cannot access field on a non-struct type: %s", e.TypeDisplay(targetTypeID))
@@ -514,7 +520,7 @@ func (e *Engine) checkCall(call ast.Call, span base.Span) (TypeID, TypeStatus) {
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if argTypeID != fun.Params[i] {
+		if !e.isAssignableTo(argTypeID, fun.Params[i]) {
 			e.diag(
 				argNode.Span,
 				"type mismatch at argument %d: expected %s, got %s",
@@ -567,6 +573,7 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		typeID     TypeID
 		status     TypeStatus
 		cachedType *cachedType
+		scope      *Scope
 	}
 	decls := []*decl{}
 
@@ -574,10 +581,16 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 	for _, nodeID := range nodeIDs {
 		node := e.Node(nodeID)
 		switch node.Kind.(type) {
-		case ast.Fun, ast.Struct:
-			// Associate this node with the current scope.
+		case ast.Fun:
 			e.ScopeGraph.SetNodeScope(nodeID, e.scope)
-			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil})
+			// Functions create their own scope for their parameters and their body.
+			e.enterScope()
+			scope := e.scope
+			e.leaveScope()
+			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil, scope})
+		case ast.Struct:
+			e.ScopeGraph.SetNodeScope(nodeID, e.scope)
+			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil, e.scope})
 		}
 	}
 
@@ -603,11 +616,14 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		}
 	}
 
-	// Complete the type kinds.
+	// Complete the types.
 	for _, decl := range decls {
 		if decl.status.Failed() {
 			continue
 		}
+		prevScope := e.scope
+		e.scope = decl.scope
+		defer func() { e.scope = prevScope }()
 		typeKind := decl.cachedType.Type.Kind
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
@@ -628,6 +644,9 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 			continue
 		}
 		typeKind := decl.cachedType.Type.Kind
+		prevScope := e.scope
+		e.scope = decl.scope
+		defer func() { e.scope = prevScope }()
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
 			funType := base.Cast[FunType](typeKind)
@@ -689,8 +708,6 @@ func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType Struc
 }
 
 func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
-	e.enterScope()
-	defer e.leaveScope()
 	// Bind parameters.
 	for i, paramNodeID := range funNode.Params {
 		paramNode := base.Cast[ast.FunParam](e.Node(paramNodeID).Kind)
@@ -709,7 +726,7 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
 		panic(base.Errorf("expected block, got %T", blockNode.Kind))
 	}
 	// If the function returns void, we coerce the body to void.
-	if funType.Return != e.voidType && blockTypeID != funType.Return {
+	if funType.Return != e.voidType && !e.isAssignableTo(blockTypeID, funType.Return) {
 		// We want the span of the last expression for better diagnostics.
 		diagSpan := blockNode.Span
 		if len(block.Exprs) > 0 {
@@ -861,16 +878,29 @@ func (e *Engine) checkVar(
 	return e.voidType, TypeOK
 }
 
-func (e *Engine) buildRefType(
-	nodeID ast.NodeID, innerTypeID TypeID, mut bool, span base.Span,
-) TypeID {
+func (e *Engine) buildRefType(nodeID ast.NodeID, innerTypeID TypeID, mut bool, span base.Span) TypeID {
 	cacheKey := refTypeCacheKey{innerTypeID, mut}
 	if cached, ok := e.refTypes[cacheKey]; ok {
 		return cached.Type.ID
 	}
-	refTypeID := e.newType(RefType{innerTypeID, mut}, nodeID, span, TypeOK)
+	if !mut {
+		refTypeID := e.newType(RefType{innerTypeID, mut}, nodeID, span, TypeOK)
+		e.refTypes[cacheKey] = e.types[refTypeID]
+		return refTypeID
+	}
+	immutableRefTypID := e.buildRefType(0, innerTypeID, false, span)
+	refTypeID := immutableRefTypID | mutableRefFlag
+	e.newTypeWithID(refTypeID, RefType{innerTypeID, true}, nodeID, span, TypeOK)
 	e.refTypes[cacheKey] = e.types[refTypeID]
 	return refTypeID
+}
+
+func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
+	if got == expected {
+		return true
+	}
+	// A &mut T is assignable to &T (coerce by masking off the mutable flag).
+	return got&mutableRefFlag != 0 && got&^mutableRefFlag == expected
 }
 
 func (e *Engine) verifyMain(fun ast.Fun) {
@@ -963,18 +993,23 @@ func (e *Engine) diag(span base.Span, msg string, msgArgs ...any) {
 	e.Diagnostics = append(e.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
 
-func (e *Engine) newType(
-	kind TypeKind, nodeID ast.NodeID, span base.Span, status TypeStatus,
-) TypeID {
-	// todo: `nodeID != 0` is a workaround for the current special nature of builtin types.
+func (e *Engine) newType(kind TypeKind, nodeID ast.NodeID, span base.Span, status TypeStatus) TypeID {
+	newTypeID := e.nextID
+	e.nextID++
+	e.newTypeWithID(newTypeID, kind, nodeID, span, status)
+	return newTypeID
+}
+
+func (e *Engine) newTypeWithID(
+	typeID TypeID, kind TypeKind, nodeID ast.NodeID, span base.Span, status TypeStatus,
+) {
+	// todo: `nodeID != 0` is a workaround for the current special nature of builtin types and we
+	// 		 abuse it elsewhere (buildRefType).
 	if cached, ok := e.nodes[nodeID]; nodeID != 0 && ok {
 		panic(base.Errorf("type already set for %s: %s", e.AST.Debug(nodeID, false, 0), cached.Type.ID))
 	}
-	newTypeID := e.nextID
-	e.nextID++
-	typ := &Type{ID: newTypeID, Span: span, Kind: kind}
+	typ := &Type{ID: typeID, Span: span, Kind: kind}
 	cached := &cachedType{Type: typ, Status: status}
-	e.types[newTypeID] = cached
+	e.types[typeID] = cached
 	e.nodes[nodeID] = cached
-	return newTypeID
 }
