@@ -157,7 +157,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
 	// violate the lifetime rules, but we still wan to test them in isolation.
-	skipLifetimeCheck := []string{"ref", "mut ref", "struct ref"}
+	skipLifetimeCheck := []string{"ref", "mut ref", "struct ref", "ref return"}
 
 	assert := base.NewAssert(t)
 	hasOnly := false

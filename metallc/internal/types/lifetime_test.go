@@ -197,6 +197,96 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					}
 					`, "\n"),
 		}},
+		// Ref escapes through a function call - x's ref is returned by
+		// identity and escapes the block.
+		{"call return ref escape", `
+			{
+				fun identity(a &Int) &Int { a }
+				let r = {
+					let x = 42
+					identity(&x)
+				}
+				r
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        identity(&x)
+				        ^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Transitive: function calls another function, propagating ref through.
+		{"call transitive ref escape", `
+			{
+				fun identity(a &Int) &Int { a }
+				fun wrapper(a &Int) &Int { identity(a) }
+				let r = {
+					let x = 42
+					wrapper(&x)
+				}
+				r
+			}
+			`, []string{
+			"test.met:7:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        wrapper(&x)
+				        ^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Valid: transitive call where the ref does not escape.
+		{"valid call transitive no escape", `
+			{
+				fun identity(a &Int) &Int { a }
+				fun wrapper(a &Int) &Int { identity(a) }
+				let x = 42
+				let r = wrapper(&x)
+				r
+			}
+			`, []string{}},
+		// Function returns a struct by value with a ref field set to a param.
+		{"call return struct with ref field", `
+			{
+				struct Wrapper { ptr &Int }
+				fun wrap(a &Int) Wrapper { Wrapper(a) }
+				let w = {
+					let x = 42
+					wrap(&x)
+				}
+				w
+			}
+			`, []string{
+			"test.met:7:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        wrap(&x)
+				        ^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Nested structs: Outer contains Inner which has a ref field.
+		{"nested struct ref field escape", `
+			{
+				struct Inner { ptr &Int }
+				struct Outer { inner Inner }
+				let o = {
+					let x = 42
+					Outer(Inner(&x))
+				}
+				o
+			}
+			`, []string{
+			"test.met:7:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        Outer(Inner(&x))
+				        ^^^^^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
 	}
 
 	assert := base.NewAssert(t)
