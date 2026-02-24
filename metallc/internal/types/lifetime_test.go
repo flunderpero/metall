@@ -209,11 +209,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				r
 			}
 			`, []string{
-			"test.met:6:21: reference escaping its allocation scope\n" +
+			"test.met:6:30: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let x = 42
 				        identity(&x)
-				        ^^^^^^^^^^^^
+				                 ^^
 				    }
 				`, "\n"),
 		}},
@@ -229,11 +229,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				r
 			}
 			`, []string{
-			"test.met:7:21: reference escaping its allocation scope\n" +
+			"test.met:7:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let x = 42
 				        wrapper(&x)
-				        ^^^^^^^^^^^
+				                ^^
 				    }
 				`, "\n"),
 		}},
@@ -259,11 +259,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				w
 			}
 			`, []string{
-			"test.met:7:21: reference escaping its allocation scope\n" +
+			"test.met:7:26: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let x = 42
 				        wrap(&x)
-				        ^^^^^^^^
+				             ^^
 				    }
 				`, "\n"),
 		}},
@@ -279,11 +279,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				o
 			}
 			`, []string{
-			"test.met:7:21: reference escaping its allocation scope\n" +
+			"test.met:7:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let x = 42
 				        Outer(Inner(&x))
-				        ^^^^^^^^^^^^^^^^
+				                    ^^
 				    }
 				`, "\n"),
 		}},
@@ -298,11 +298,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				r
 			}
 			`, []string{
-			"test.met:6:21: reference escaping its allocation scope\n" +
+			"test.met:6:31: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let x = 42
 				        if true { &x } else { &a }
-				        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+				                  ^^
 				    }
 				`, "\n"),
 		}},

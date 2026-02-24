@@ -72,7 +72,7 @@ func (t *TaintScope) HasLocalTaints(taints TaintIDs) bool {
 // FunEffect records which parameters' taints flow into the return value.
 // ReturnParamTaints maps parameter taint IDs to parameter indices.
 type FunEffect struct {
-	ReturnParamTaints map[TaintID]int // param taint -> param index
+	ReturnParamTaints map[TaintID]int
 }
 
 type LifetimeCheck struct {
@@ -84,18 +84,21 @@ type LifetimeCheck struct {
 	refTaints   map[ast.NodeID]TaintIDs
 	refTargets  map[ast.NodeID]RefTargets
 	funEffects  map[TypeID]*FunEffect
+	// Which node to blame for each taint that escapes.
+	taintDiagNode map[TaintID]ast.NodeID
 }
 
 func NewLifetimeAnalyzer(e *Engine) *LifetimeCheck {
 	return &LifetimeCheck{
-		Diagnostics: nil,
-		Debug:       base.NilDebug{},
-		e:           e,
-		nextTaintID: 1,
-		taintScopes: map[ScopeID]*TaintScope{},
-		refTaints:   map[ast.NodeID]TaintIDs{},
-		refTargets:  map[ast.NodeID]RefTargets{},
-		funEffects:  map[TypeID]*FunEffect{},
+		Diagnostics:   nil,
+		Debug:         base.NilDebug{},
+		e:             e,
+		nextTaintID:   1,
+		taintScopes:   map[ScopeID]*TaintScope{},
+		refTaints:     map[ast.NodeID]TaintIDs{},
+		refTargets:    map[ast.NodeID]RefTargets{},
+		funEffects:    map[TypeID]*FunEffect{},
+		taintDiagNode: map[TaintID]ast.NodeID{},
 	}
 }
 
@@ -264,7 +267,7 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	if len(lastExprTaints) > 0 {
 		a.Debug.Print(1, "analyzeBlock: lastExprTaints=%s", lastExprTaints)
 		if taintScope.HasLocalTaints(lastExprTaints) {
-			a.diag(a.e.Node(lastExprNodeID).Span, "reference escaping its allocation scope")
+			a.diagEscape(lastExprNodeID, lastExprTaints, taintScope)
 		}
 		survived := TaintIDs{}
 		for _, t := range lastExprTaints {
@@ -289,11 +292,9 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	}
 	taintScope := a.taintScope(fun.Block)
 	if taintScope.HasLocalTaints(blockTaints) {
-		// Find the last expression for the diagnostic span.
 		block := base.Cast[ast.Block](a.e.Node(fun.Block).Kind)
 		lastExprNodeID := block.Exprs[len(block.Exprs)-1]
-		node := a.e.Node(lastExprNodeID)
-		a.diag(node.Span, "reference escaping its allocation scope")
+		a.diagEscape(lastExprNodeID, blockTaints, taintScope)
 	}
 	// Derive the function effect: check which parameter taints appear in the
 	// return value. At call sites we use this to propagate argument taints.
@@ -364,6 +365,7 @@ func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 		return
 	}
 	a.setNodeRefTaints(nodeID, TaintIDs{bindingTaints.Slot})
+	a.taintDiagNode[bindingTaints.Slot] = nodeID
 	scope := a.e.ScopeGraph.NodeScope(nodeID)
 	a.refTargets[nodeID] = append(a.refTargets[nodeID], RefTarget{scope.ID, ref.Name.Name})
 }
@@ -441,6 +443,24 @@ func (a *LifetimeCheck) newTaintID() TaintID {
 	return id
 }
 
-func (a *LifetimeCheck) diag(span base.Span, msg string, msgArgs ...any) { //nolint:unparam
+func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintIDs, scope *TaintScope) {
+	reported := map[ast.NodeID]bool{}
+	for _, t := range taints {
+		if !slices.Contains(scope.Taints, t) {
+			continue
+		}
+		diagNode, ok := a.taintDiagNode[t]
+		if !ok {
+			diagNode = fallbackNodeID
+		}
+		if reported[diagNode] {
+			continue
+		}
+		reported[diagNode] = true
+		a.diag(a.e.Node(diagNode).Span, "reference escaping its allocation scope")
+	}
+}
+
+func (a *LifetimeCheck) diag(span base.Span, msg string, msgArgs ...any) {
 	a.Diagnostics = append(a.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
