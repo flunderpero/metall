@@ -200,6 +200,22 @@ func TestCompile(t *testing.T) {
 			}
 			`, "Mars\nVenus\n"},
 
+		{"struct with ref field", `
+			struct Wrapper {
+				value Int
+				ptr &Int
+			}
+
+			fun main() void {
+				mut x = 42
+				let w = Wrapper(1, &x)
+				print_int(w.value)
+				print_int(*w.ptr)
+				x = 99
+				print_int(*w.ptr)
+			}
+			`, "1\n42\n99\n"},
+
 		{"struct ref aliases", `
 			struct Planet {
 				name Str

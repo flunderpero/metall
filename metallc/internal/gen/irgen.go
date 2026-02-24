@@ -140,7 +140,7 @@ func (g *IRGen) genStruct(id ast.NodeID, astStruct ast.Struct) {
 	g.indent++
 	for i, astFieldID := range astStruct.Fields {
 		astField := base.Cast[ast.StructField](g.engine.Node(astFieldID).Kind)
-		fieldIRType := g.irStructFieldType(structType.Fields[i].Type)
+		fieldIRType := g.irType(structType.Fields[i].Type)
 		comma := ""
 		if i < len(astStruct.Fields)-1 {
 			comma = ","
@@ -158,22 +158,16 @@ func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
 	}
 	targetTyp := g.engine.TypeOfNode(lit.Target)
 	structTyp := base.Cast[types.StructType](targetTyp.Kind)
+	irTyp := g.irType(targetTyp.ID)
 	reg := g.reg()
-	g.write("%s = alloca %%%s", reg, targetTyp.ID)
+	g.write("%s = alloca %s", reg, irTyp)
 	for i, arg := range lit.Args {
 		fieldReg := g.reg()
-		g.write(
-			"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d",
-			fieldReg,
-			targetTyp.ID,
-			targetTyp.ID,
-			reg,
-			i,
-		)
+		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", fieldReg, irTyp, irTyp, reg, i)
 		fieldTypeID := structTyp.Fields[i].Type
 		if _, ok := g.engine.Type(fieldTypeID).Kind.(types.StructType); ok {
 			// Struct field: copy by value (load the whole struct, store into embedded slot).
-			irTyp := "%" + fieldTypeID.String()
+			irTyp := g.irType(fieldTypeID)
 			tmp := g.reg()
 			g.write("%s = load %s, ptr %s", tmp, irTyp, g.lookupCode(arg))
 			g.write("store %s %s, ptr %s", irTyp, tmp, fieldReg)
@@ -203,21 +197,19 @@ func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string
 	targetType := g.engine.TypeOfNode(fieldAccess.Target)
 	structReg := g.lookupCode(fieldAccess.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
-		// Auto de-reference one level deep.
-		targetType = g.engine.Type((refTyp.Type))
-		derefReg := g.reg()
-		g.write("%s = load ptr, ptr %s", derefReg, structReg)
-		structReg = derefReg
+		// Auto de-reference: the loaded ref value is already a ptr to the struct data.
+		targetType = g.engine.Type(refTyp.Type)
 	}
 	structType := base.Cast[types.StructType](targetType.Kind)
 	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
-	fieldType = g.irStructFieldType(structType.Fields[fieldIndex].Type)
+	fieldType = g.irType(structType.Fields[fieldIndex].Type)
+	irTyp := g.irType(targetType.ID)
 	ptrReg = g.reg()
 	g.write(
-		"%s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d",
+		"%s = getelementptr %s, %s* %s, i32 0, i32 %d",
 		ptrReg,
-		targetType.ID,
-		targetType.ID,
+		irTyp,
+		irTyp,
 		structReg,
 		fieldIndex,
 	)
@@ -239,7 +231,7 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 		ret = "i32"
 	} else if isRetStruct {
 		ret = "void"
-		fmt.Fprintf(&params, "ptr sret(%%%s) %%out_ptr", fun.Return)
+		fmt.Fprintf(&params, "ptr sret(%s) %%out_ptr", g.irType(fun.Return))
 	}
 	paramAllocas := strings.Builder{}
 	for _, paramNodeID := range astFun.Params {
@@ -255,16 +247,21 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 		preg := g.reg()
 		paramTyp := g.engine.TypeOfNode(paramNodeID)
 		paramIRTyp := g.irTypeOfNode(paramNodeID)
-		params.WriteString(paramIRTyp)
-		params.WriteString(" ")
 		if _, ok := paramTyp.Kind.(types.StructType); ok {
-			fmt.Fprintf(&params, "byval(%%%s) ", paramTyp.ID)
+			// Struct param: byval gives us a ptr to the callee's copy directly.
+			// symbol.Reg = preg (single indirection, no alloca ptr wrapper).
+			fmt.Fprintf(&params, "ptr byval(%s) ", paramIRTyp)
+			params.WriteString(preg)
+			g.setSymbol(paramNodeID, param.Name.Name, preg, "ptr")
+		} else {
+			params.WriteString(paramIRTyp)
+			params.WriteString(" ")
+			params.WriteString(preg)
+			areg := g.reg()
+			fmt.Fprintf(&paramAllocas, "%s = alloca %s\n", areg, paramIRTyp)
+			fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s", paramIRTyp, preg, areg)
+			g.setSymbol(paramNodeID, param.Name.Name, areg, paramIRTyp)
 		}
-		params.WriteString(preg)
-		areg := g.reg()
-		fmt.Fprintf(&paramAllocas, "%s = alloca %s\n", areg, paramIRTyp)
-		fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s", paramIRTyp, preg, areg)
-		g.setSymbol(paramNodeID, param.Name.Name, areg, paramIRTyp)
 	}
 	attrs := ""
 	if g.opts.AddressSanitizer {
@@ -285,10 +282,10 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 		g.write("ret i32 0")
 	case isRetStruct:
 		lastCode := g.lookupCode(astFun.Block)
-		retTyp := g.engine.Type(fun.Return)
+		retIRTyp := g.irType(fun.Return)
 		tmp := g.reg()
-		g.write("%s = load %%%s, ptr %s", tmp, retTyp.ID, lastCode)
-		g.write("store %%%s %s, ptr %%out_ptr", retTyp.ID, tmp)
+		g.write("%s = load %s, ptr %s", tmp, retIRTyp, lastCode)
+		g.write("store %s %s, ptr %%out_ptr", retIRTyp, tmp)
 		g.write("ret void")
 	default:
 		lastCode := g.lookupCode(astFun.Block)
@@ -340,7 +337,11 @@ func (g *IRGen) genIf(id ast.NodeID, ifNode ast.If) {
 		phi := g.reg()
 		thenCode := g.lookupCode(ifNode.Then)
 		elseCode := g.lookupCode(*ifNode.Else)
-		typ := g.irTypeOfNode(ifNode.Then)
+		thenType := g.engine.TypeOfNode(ifNode.Then)
+		typ := g.irType(thenType.ID)
+		if _, ok := thenType.Kind.(types.StructType); ok {
+			typ = "ptr" // Struct values flow as pointers in code registers.
+		}
 		if typ != "void" {
 			g.write(
 				"%s = phi %s [%s, %%%s], [%s, %%%s]",
@@ -372,20 +373,18 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	lhsNode := g.engine.Node(assign.LHS)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
-		g.Gen(assign.LHS)
 		symbol, ok := g.lookupSymbol(assign.LHS, lhsKind.Name)
 		if !ok {
 			panic(base.Errorf("assign to unknown variable: %s", lhsKind.Name))
 		}
 		rhsType := g.engine.TypeOfNode(assign.RHS)
 		if _, ok := rhsType.Kind.(types.StructType); ok {
+			// Struct: symbol.Reg is directly the alloca %StructType.
 			// Copy struct value into the existing variable's storage.
-			irTyp := "%" + rhsType.ID.String()
-			dst := g.reg()
-			g.write("%s = load ptr, ptr %s", dst, symbol.Reg)
+			irTyp := g.irType(rhsType.ID)
 			tmp := g.reg()
 			g.write("%s = load %s, ptr %s", tmp, irTyp, rhs)
-			g.write("store %s %s, ptr %s", irTyp, tmp, dst)
+			g.write("store %s %s, ptr %s", irTyp, tmp, symbol.Reg)
 		} else {
 			g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
 		}
@@ -403,7 +402,16 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	case ast.Deref:
 		g.Gen(assign.LHS)
 		ptr := g.lookupCode(lhsKind.Expr)
-		g.write("store %s %s, ptr %s", g.irTypeOfNode(assign.LHS), rhs, ptr)
+		rhsType := g.engine.TypeOfNode(assign.RHS)
+		if _, ok := rhsType.Kind.(types.StructType); ok {
+			// Struct through deref: copy the struct value.
+			irTyp := g.irType(rhsType.ID)
+			tmp := g.reg()
+			g.write("%s = load %s, ptr %s", tmp, irTyp, rhs)
+			g.write("store %s %s, ptr %s", irTyp, tmp, ptr)
+		} else {
+			g.write("store %s %s, ptr %s", g.irTypeOfNode(assign.LHS), rhs, ptr)
+		}
 	default:
 		panic(base.Errorf("assign to unknown expression: %T", lhsKind))
 	}
@@ -428,7 +436,7 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 		g.setCode(id, "void")
 	} else if isRetStruct {
 		resReg = g.reg()
-		g.write("%s = alloca %%%s", resReg, fun.Return)
+		g.write("%s = alloca %s", resReg, g.irType(fun.Return))
 		g.setCode(id, resReg)
 	} else {
 		reg := g.reg()
@@ -451,8 +459,14 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 		if i > 0 || isRetStruct {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(g.irTypeOfNode(arg))
-		sb.WriteString(" ")
+		argType := g.engine.TypeOfNode(arg)
+		if _, ok := argType.Kind.(types.StructType); ok {
+			// Struct type flow as ptr in calls.
+			sb.WriteString("ptr ")
+		} else {
+			sb.WriteString(g.irType(argType.ID))
+			sb.WriteString(" ")
+		}
 		sb.WriteString(g.lookupCode(arg))
 	}
 	sb.WriteString(")")
@@ -461,6 +475,12 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 
 func (g *IRGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
+		identType := g.engine.TypeOfNode(id)
+		if _, ok := identType.Kind.(types.StructType); ok {
+			// Struct: symbol.Reg is already the ptr to struct data (single indirection).
+			g.setCode(id, symbol.Reg)
+			return
+		}
 		ptrreg := g.reg()
 		g.write("%s = load %s, ptr %s", ptrreg, symbol.Type, symbol.Reg)
 		g.setCode(id, ptrreg)
@@ -509,6 +529,11 @@ func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 		panic(base.Errorf("dereference: expected reference, got %T", exprType.Kind))
 	}
 	code := g.lookupCode(deref.Expr)
+	if _, ok := g.engine.Type(ref.Type).Kind.(types.StructType); ok {
+		// Deref of &Struct: the ref value is already a ptr to the struct data.
+		g.setCode(id, code)
+		return
+	}
 	reg := g.reg()
 	g.write("%s = load %s, ptr %s", reg, g.irType(ref.Type), code)
 	g.setCode(id, reg)
@@ -516,22 +541,31 @@ func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 
 func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	g.Gen(v.Expr)
-	reg := g.reg()
-	typ := g.irTypeOfNode(v.Expr)
 	exprReg := g.lookupCode(v.Expr)
 	exprType := g.engine.TypeOfNode(v.Expr)
 	if _, ok := exprType.Kind.(types.StructType); ok {
-		// Struct: copy by value so each variable owns independent data.
-		// `expr` is a ptr to the source struct. We alloca a new struct,
-		// copy the data, then let the normal path store that new ptr.
-		irTyp := "%" + exprType.ID.String()
-		copyReg := g.reg()
-		g.write("%s = alloca %s", copyReg, irTyp)
-		tmp := g.reg()
-		g.write("%s = load %s, ptr %s", tmp, irTyp, exprReg)
-		g.write("store %s %s, ptr %s", irTyp, tmp, copyReg)
-		exprReg = copyReg
+		// Struct: symbol.Reg points directly to alloca %StructType (single indirection).
+		exprNode := g.engine.Node(v.Expr)
+		switch exprNode.Kind.(type) {
+		case ast.StructLiteral, ast.Call:
+			// The result value is already a copy.
+			g.setCode(id, exprReg)
+			g.setSymbol(id, v.Name.Name, exprReg, "ptr")
+		default:
+			// Copy by value so each variable owns independent data.
+			irTyp := g.irType(exprType.ID)
+			reg := g.reg()
+			g.write("%s = alloca %s", reg, irTyp)
+			tmp := g.reg()
+			g.write("%s = load %s, ptr %s", tmp, irTyp, exprReg)
+			g.write("store %s %s, ptr %s", irTyp, tmp, reg)
+			g.setCode(id, reg)
+			g.setSymbol(id, v.Name.Name, reg, "ptr")
+		}
+		return
 	}
+	reg := g.reg()
+	typ := g.irTypeOfNode(v.Expr)
 	g.write("%s = alloca %s", reg, typ)
 	g.write("store %s %s, ptr %s", typ, exprReg, reg)
 	g.setCode(id, reg)
@@ -565,24 +599,15 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		default:
 			panic(base.Errorf("unknown builtin type: %s", kind.Name))
 		}
-	case types.RefType, types.StructType:
+	case types.RefType:
 		return "ptr"
+	case types.StructType:
+		return "%" + typeID.String()
 	case types.FunType:
 		panic("unexpected fun type")
 	default:
 		panic(base.Errorf("unknown type kind: %T", typ.Kind))
 	}
-}
-
-// Return the LLVM type for a struct field. For struct-typed fields this returns
-// the named struct type (e.g. %t8) so the inner struct is physically embedded
-// by value, rather than stored as a pointer.
-func (g *IRGen) irStructFieldType(typeID types.TypeID) string {
-	typ := g.engine.Type(typeID)
-	if _, ok := typ.Kind.(types.StructType); ok {
-		return "%" + typeID.String()
-	}
-	return g.irType(typeID)
 }
 
 func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {

@@ -24,7 +24,12 @@ type CompileListener interface {
 
 var ErrAbort = base.Errorf("aborted by listener")
 
-const DefaultLLVMPasses = "mem2reg,instcombine,simplifycfg"
+// LLVM optimization passes (https://llvm.org/docs/Passes.html):
+//   - mem2reg: Promote alloca'd scalars to SSA registers.
+//   - sroa: Scalar Replacement of Aggregates — decompose struct/array allocas into individual scalars.
+//   - instcombine: Peephole optimizations — constant folding, strength reduction, dead code elimination.
+//   - simplifycfg: Simplify the control flow graph — merge blocks, remove unreachable code.
+const DefaultLLVMPasses = "mem2reg,sroa,instcombine,simplifycfg"
 
 type CompileOpts struct {
 	Listener         CompileListener
