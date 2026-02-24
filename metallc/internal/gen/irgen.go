@@ -391,7 +391,15 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 		}
 	case ast.FieldAccess:
 		fieldType, ptrReg := g.genFieldAccessPtr(lhsKind)
-		g.write("store %s %s, ptr %s", fieldType, rhs, ptrReg)
+		rhsType := g.engine.TypeOfNode(assign.RHS)
+		if _, ok := rhsType.Kind.(types.StructType); ok {
+			// Copy the struct value.
+			tmp := g.reg()
+			g.write("%s = load %s, ptr %s", tmp, fieldType, rhs)
+			g.write("store %s %s, ptr %s", fieldType, tmp, ptrReg)
+		} else {
+			g.write("store %s %s, ptr %s", fieldType, rhs, ptrReg)
+		}
 	case ast.Deref:
 		g.Gen(assign.LHS)
 		ptr := g.lookupCode(lhsKind.Expr)

@@ -181,6 +181,25 @@ func TestCompile(t *testing.T) {
 			}
 			`, "Earth\nMars\n"},
 
+		{"assign struct to nested struct field copies value", `
+			struct Inner {
+				name Str
+			}
+
+			struct Outer {
+				inner Inner
+			}
+
+			fun main() void {
+				mut a = Outer(Inner("Earth"))
+				mut replacement = Inner("Mars")
+				a.inner = replacement
+				replacement.name = "Venus"
+				print_str(a.inner.name)
+				print_str(replacement.name)
+			}
+			`, "Mars\nVenus\n"},
+
 		{"struct ref aliases", `
 			struct Planet {
 				name Str
