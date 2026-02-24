@@ -119,6 +119,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeIf(nodeID, kind)
 	case ast.Deref:
 		a.analyzeDeref(nodeID, kind)
+	case ast.FieldAccess:
+		a.analyzeFieldAccess(nodeID, kind)
 	case ast.FunParam:
 		a.analyzeFunParam(nodeID, kind)
 	case ast.Ident:
@@ -320,6 +322,29 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	if len(effect.ReturnParamTaints) > 0 {
 		a.funEffects[funNodeType.ID] = effect
 		a.Debug.Print(1, "analyzeFun: effect for %s: %v", fun.Name.Name, effect.ReturnParamTaints)
+	}
+}
+
+func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess) {
+	targetType := a.e.TypeOfNode(fa.Target)
+	if _, ok := targetType.Kind.(RefType); ok {
+		// Field access auto-derefs the ref. The ref's own taints just say "I point
+		// at binding X" — we need X's taints to know what refs are inside the struct.
+		for _, target := range a.refTargets[fa.Target] {
+			taintScope := a.taintScopeByScope(target.ScopeID)
+			if b, ok := taintScope.Bindings[target.Name]; ok {
+				a.refTaints[nodeID] = a.refTaints[nodeID].Merge(b.Refs)
+				a.refTargets[nodeID] = a.refTargets[nodeID].Merge(b.RefTargets)
+			}
+		}
+		return
+	}
+	// Struct value: taints represent refs stored in its fields.
+	taints := a.nodeRefTaints(fa.Target)
+	targets := a.refTargets[fa.Target]
+	if len(taints) > 0 {
+		a.refTaints[nodeID] = taints
+		a.refTargets[nodeID] = targets
 	}
 }
 

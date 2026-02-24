@@ -287,6 +287,69 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// Field read: reading a ref field from a struct should propagate taints.
+		{"field read ref escape", `
+			{
+				struct Wrapper { ptr &Int }
+				let r = {
+					let x = 42
+					let w = Wrapper(&x)
+					w.ptr
+				}
+				r
+			}
+			`, []string{
+			"test.met:6:37: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        let w = Wrapper(&x)
+				                        ^^
+				        w.ptr
+				`, "\n"),
+		}},
+		// Field read through a ref to a struct with a ref field.
+		{"field read through ref escape", `
+			{
+				struct Wrapper { ptr &Int }
+				let r = {
+					let x = 42
+					let w = Wrapper(&x)
+					let rw = &w
+					rw.ptr
+				}
+				r
+			}
+			`, []string{
+			"test.met:7:30: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let w = Wrapper(&x)
+				        let rw = &w
+				                 ^^
+				        rw.ptr
+				`, "\n"),
+		}},
+		// Nested field access through a ref: r.inner.ptr where r is &Outer.
+		{"nested field read through ref escape", `
+			{
+				struct Inner { ptr &Int }
+				struct Outer { inner Inner }
+				let r = {
+					let x = 42
+					let o = Outer(Inner(&x))
+					let ro = &o
+					ro.inner.ptr
+				}
+				r
+			}
+			`, []string{
+			"test.met:8:30: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let o = Outer(Inner(&x))
+				        let ro = &o
+				                 ^^
+				        ro.inner.ptr
+				`, "\n"),
+		}},
 		// If/else: ref to a local escapes through one branch.
 		{"if ref escape", `
 			{
