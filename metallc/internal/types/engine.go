@@ -59,6 +59,27 @@ type StructType struct {
 
 func (StructType) isTypeKind() {}
 
+type AllocImpl int
+
+const (
+	AllocArena AllocImpl = iota + 1
+)
+
+func (a AllocImpl) String() string {
+	switch a {
+	case AllocArena:
+		return "Arena"
+	default:
+		panic(base.Errorf("unknown alloc impl: %d", a))
+	}
+}
+
+type AllocType struct {
+	Impl AllocImpl
+}
+
+func (AllocType) isTypeKind() {}
+
 const mutableRefFlag = 1 << 62
 
 type refTypeCacheKey struct {
@@ -113,6 +134,7 @@ type Engine struct {
 	builtins    map[string]TypeID
 	voidType    TypeID
 	boolType    TypeID
+	arenaType   TypeID
 }
 
 func NewEngine(a *ast.AST) *Engine {
@@ -133,16 +155,19 @@ func NewEngine(a *ast.AST) *Engine {
 	intType := e.newType(BuiltInType{"Int"}, 0, span, TypeOK)
 	strType := e.newType(BuiltInType{"Str"}, 0, span, TypeOK)
 	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
+	arenaType := e.newType(AllocType{AllocArena}, 0, span, TypeOK)
 	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
 	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
 	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
 
 	e.voidType = voidType
 	e.boolType = boolType
+	e.arenaType = arenaType
 	e.builtins = map[string]TypeID{
 		"Int":        intType,
 		"Str":        strType,
 		"Bool":       boolType,
+		"Arena":      arenaType,
 		"void":       e.voidType,
 		"print_str":  printStrFun,
 		"print_int":  printIntFun,
@@ -193,6 +218,8 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 		}
 		sb.WriteString(")")
 		return sb.String()
+	case AllocType:
+		return fmt.Sprintf("alloc(%s)", kind.Impl)
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
 	}
@@ -241,7 +268,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.StructField:
 		typeID, status = e.checkStructField(nodeID, nodeKind, node.Span)
 	case ast.StructLiteral:
-		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
+		typeID, status = e.checkStructLiteral(nodeID, nodeKind, node.Span)
+	case ast.AllocInit:
+		typeID, status = e.checkAllocInit(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
 		typeID, status = e.checkFieldAccess(nodeKind)
 	case ast.Ident:
@@ -304,6 +333,7 @@ func (e *Engine) WalkType(typeID TypeID, f func(typ *Type, e *Engine)) {
 			fieldTyp := e.Type(field.Type)
 			f(fieldTyp, e)
 		}
+	case AllocType:
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
 	}
@@ -433,7 +463,20 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	return thenType, TypeOK
 }
 
-func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkAllocInit(nodeID ast.NodeID, alloc ast.AllocInit, span base.Span) (TypeID, TypeStatus) {
+	if alloc.Allocator.Name != "Arena" {
+		e.diag(alloc.Allocator.Span, "unknown allocator type: %s", alloc.Allocator.Name)
+		return InvalidTypeID, TypeFailed
+	}
+	if len(alloc.Args) != 0 {
+		e.diag(span, "argument count mismatch: expected %d, got %d", 0, len(alloc.Args))
+		return InvalidTypeID, TypeFailed
+	}
+	e.bind(alloc.Name.Name, false, nodeID, e.arenaType, span)
+	return e.voidType, TypeOK
+}
+
+func (e *Engine) checkStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
 	structTypeID, status := e.Query(lit.Target)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -442,7 +485,7 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 	struct_, ok := structTyp.Kind.(StructType)
 	if !ok {
 		calleeSpan := e.Node(lit.Target).Span
-		e.diag(calleeSpan, "cannot call non-function: %s", e.TypeDisplay(structTypeID))
+		e.diag(calleeSpan, "not a struct: %s", e.TypeDisplay(structTypeID))
 		return InvalidTypeID, TypeFailed
 	}
 	if len(lit.Args) != len(struct_.Fields) {
@@ -465,6 +508,15 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 			)
 			return InvalidTypeID, TypeFailed
 		}
+	}
+	if lit.Alloc != nil {
+		_, _, ok := e.Scope().Lookup(lit.Alloc.Name)
+		if !ok {
+			e.diag(lit.Alloc.Span, "unknown allocator: %s", lit.Alloc.Name)
+			return InvalidTypeID, TypeFailed
+		}
+		refTyp := e.buildRefType(nodeID, structTypeID, false, span)
+		return refTyp, TypeOK
 	}
 	return structTypeID, TypeOK
 }

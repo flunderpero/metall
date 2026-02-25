@@ -11,7 +11,9 @@ import (
 type TokenKind int
 
 const (
-	Amp TokenKind = iota + 1
+	Alloc TokenKind = iota + 1
+	AllocIdent
+	Amp
 	Comma
 	Dot
 	Else
@@ -21,6 +23,7 @@ const (
 	Fun
 	Ident
 	If
+	InvalidAllocIdent
 	LCurly
 	Let
 	LParen
@@ -38,30 +41,33 @@ const (
 )
 
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
-	Amp:       "&",
-	Comma:     ",",
-	Dot:       ".",
-	Else:      "<else>",
-	EOF:       "<EOF>",
-	Eq:        "=",
-	False:     "false",
-	Fun:       "<fun>",
-	Ident:     "<identifier>",
-	If:        "<if>",
-	LCurly:    "{",
-	Let:       "<let>",
-	LParen:    "(",
-	Mut:       "<mut>",
-	Number:    "<number>",
-	RCurly:    "}",
-	RParen:    ")",
-	Star:      "*",
-	String:    "<string>",
-	Struct:    "<struct>",
-	True:      "true",
-	TypeIdent: "<type identifier>",
-	Unknown:   "<unknown>",
-	Void:      "<void>",
+	Alloc:             "<alloc>",
+	AllocIdent:        "<allocator identifier>",
+	Amp:               "&",
+	Comma:             ",",
+	Dot:               ".",
+	Else:              "<else>",
+	EOF:               "<EOF>",
+	Eq:                "=",
+	False:             "false",
+	Fun:               "<fun>",
+	Ident:             "<identifier>",
+	If:                "<if>",
+	InvalidAllocIdent: "<invalid allocation identifier>",
+	LCurly:            "{",
+	Let:               "<let>",
+	LParen:            "(",
+	Mut:               "<mut>",
+	Number:            "<number>",
+	RCurly:            "}",
+	RParen:            ")",
+	Star:              "*",
+	String:            "<string>",
+	Struct:            "<struct>",
+	True:              "true",
+	TypeIdent:         "<type identifier>",
+	Unknown:           "<unknown>",
+	Void:              "<void>",
 }
 
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
@@ -77,6 +83,7 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
+	"alloc":  Alloc,
 	"else":   Else,
 	"false":  False,
 	"fun":    Fun,
@@ -145,7 +152,7 @@ func lexToken(source *base.Source, idx int) Token {
 			value = append(value, c)
 		}
 		return Token{EOF, "", span}
-	case unicode.IsLetter(c):
+	case unicode.IsLetter(c), c == '@':
 		value := []rune{c}
 		for idx < len(source.Content) {
 			c := source.Content[idx]
@@ -160,7 +167,12 @@ func lexToken(source *base.Source, idx int) Token {
 			return Token{Kind: kind, Value: "", Span: span}
 		}
 		kind := TypeIdent
-		if unicode.IsLower(c) {
+		if c == '@' {
+			kind = AllocIdent
+			if len(value) < 2 || !unicode.IsLower(value[1]) {
+				kind = InvalidAllocIdent
+			}
+		} else if unicode.IsLower(c) {
 			kind = Ident
 		}
 		return Token{kind, string(value), span}

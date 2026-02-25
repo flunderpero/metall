@@ -124,6 +124,14 @@ type Var struct {
 
 func (Var) isKind() {}
 
+type AllocInit struct {
+	Name      Name
+	Allocator Name
+	Args      []NodeID
+}
+
+func (AllocInit) isKind() {}
+
 type Block struct {
 	Exprs       []NodeID
 	CreateScope bool
@@ -147,6 +155,7 @@ type Call struct {
 func (Call) isKind() {}
 
 type StructLiteral struct {
+	Alloc  *Name
 	Target NodeID
 	Args   []NodeID
 }
@@ -195,8 +204,8 @@ func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
 	return a.node(Call{Callee: callee, Args: args}, span)
 }
 
-func (a *AST) NewStructLiteral(target NodeID, args []NodeID, span base.Span) NodeID {
-	return a.node(StructLiteral{Target: target, Args: args}, span)
+func (a *AST) NewStructLiteral(alloc *Name, target NodeID, args []NodeID, span base.Span) NodeID {
+	return a.node(StructLiteral{Alloc: alloc, Target: target, Args: args}, span)
 }
 
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
@@ -229,6 +238,10 @@ func (a *AST) NewFieldAccess(target NodeID, field Name, span base.Span) NodeID {
 
 func (a *AST) NewIdent(name string, span base.Span) NodeID {
 	return a.node(Ident{Name: name}, span)
+}
+
+func (a *AST) NewAllocInit(name Name, allocator Name, args []NodeID, span base.Span) NodeID {
+	return a.node(AllocInit{Name: name, Allocator: allocator, Args: args}, span)
 }
 
 func (a *AST) NewInt(value int64, span base.Span) NodeID {
@@ -271,7 +284,7 @@ func (a *AST) Iter(f func(NodeID) bool) {
 	}
 }
 
-func (a *AST) Walk(id NodeID, f func(NodeID)) {
+func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	node := a.Node(id)
 	switch kind := node.Kind.(type) {
 	case Assign:
@@ -316,6 +329,10 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) {
 		f(kind.Target)
 	case StructLiteral:
 		f(kind.Target)
+		for i := range len(kind.Args) {
+			f(kind.Args[i])
+		}
+	case AllocInit:
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
 		}
@@ -457,11 +474,22 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("type", kind.Type)
 		}
 	case StructLiteral:
+		if kind.Alloc != nil {
+			addAttr("alloc", kind.Alloc.Name)
+		}
 		if !children {
 			addAttr("target", nodeIDKind(kind.Target))
 			addAttr("args", nodeIDList(kind.Args))
 		} else {
 			addChild("target", kind.Target)
+			addChild("args", kind.Args...)
+		}
+	case AllocInit:
+		addAttr("name", kind.Name.Name)
+		addAttr("allocator", kind.Allocator.Name)
+		if !children {
+			addAttr("args", nodeIDList(kind.Args))
+		} else {
 			addChild("args", kind.Args...)
 		}
 	case FieldAccess:

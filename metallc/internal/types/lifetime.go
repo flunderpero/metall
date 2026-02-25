@@ -136,6 +136,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeDeref(nodeID, kind)
 	case ast.FieldAccess:
 		a.analyzeFieldAccess(nodeID, kind)
+	case ast.AllocInit:
+		a.analyzeAllocInit(nodeID, kind)
 	case ast.StructLiteral:
 		a.analyzeStructLiteral(nodeID, kind)
 	case ast.Call:
@@ -192,10 +194,23 @@ func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess
 	a.flows[nodeID] = a.flow(fa.Target)
 }
 
+func (a *LifetimeCheck) analyzeAllocInit(nodeID ast.NodeID, alloc ast.AllocInit) {
+	ts := a.scope(nodeID)
+	ts.Bindings[alloc.Name.Name] = &BindingTaint{
+		nodeID, ts.AllocTaint,
+		Flow{Taints: TaintSet{ts.AllocTaint}, PointsTo: nil},
+	}
+}
+
 func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral) {
 	merged := Flow{}
 	for _, argNodeID := range lit.Args {
 		merged = merged.Merge(a.flow(argNodeID))
+	}
+	if lit.Alloc != nil {
+		if bt := a.lookupBinding(nodeID, lit.Alloc.Name); bt != nil {
+			merged = merged.Merge(bt.Flow)
+		}
 	}
 	a.flows[nodeID] = merged
 }
@@ -234,8 +249,9 @@ func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, funParam ast.FunParam) {
 	ts := a.scope(nodeID)
 	refs := TaintSet{}
-	// Ref params carry a taint from the caller's allocator, not the callee's.
-	if _, ok := a.e.TypeOfNode(nodeID).Kind.(RefType); ok {
+	// Ref and allocator params carry a taint from the caller, not the callee.
+	switch a.e.TypeOfNode(nodeID).Kind.(type) {
+	case RefType, AllocType:
 		refs = TaintSet{a.newTaintID()}
 	}
 	ts.Bindings[funParam.Name.Name] = &BindingTaint{nodeID, ts.AllocTaint, Flow{Taints: refs, PointsTo: nil}}

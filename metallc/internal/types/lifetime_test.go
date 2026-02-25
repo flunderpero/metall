@@ -372,6 +372,84 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				        w.ptr
 				`, "\n"),
 		}},
+		// Arena-allocated struct escapes the block where the allocator lives.
+		{"arena alloc escapes block", `
+			{
+				struct Planet { name Str }
+				let p = {
+					alloc @a = Arena()
+					Planet@a("Earth")
+				}
+				p
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        alloc @a = Arena()
+				        Planet@a("Earth")
+				        ^^^^^^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Valid: arena-allocated struct used within the allocator's scope.
+		{"valid arena alloc same scope", `
+			{
+				struct Planet { name Str }
+				alloc @a = Arena()
+				let p = Planet@a("Earth")
+				p
+			}
+			`, []string{}},
+		// Valid: allocator passed as param, result used in caller's scope.
+		{"valid arena alloc via param", `
+			{
+				struct Planet { name Str }
+				fun make(@a Arena) &Planet { Planet@a("Earth") }
+				alloc @a = Arena()
+				let p = make(@a)
+				p
+			}
+			`, []string{}},
+		// Arena-allocated struct escapes through a nested block result.
+		{"arena alloc escapes nested block", `
+			{
+				struct Planet { name Str }
+				alloc @outer = Arena()
+				let p = {
+					alloc @a = Arena()
+					Planet@a("Earth")
+				}
+				p
+			}
+			`, []string{
+			"test.met:7:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        alloc @a = Arena()
+				        Planet@a("Earth")
+				        ^^^^^^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Arena-allocated struct escapes through a function call with a local allocator.
+		{"arena alloc escapes via function call", `
+			{
+				struct Planet { name Str }
+				fun make(@a Arena) &Planet { Planet@a("Earth") }
+				let p = {
+					alloc @inner = Arena()
+					make(@inner)
+				}
+				p
+			}
+			`, []string{
+			"test.met:7:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        alloc @inner = Arena()
+				        make(@inner)
+				        ^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
 		// If/else: ref to a local escapes through one branch.
 		{"if ref escape", `
 			{

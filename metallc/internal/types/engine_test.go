@@ -166,11 +166,32 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t(void), nil},
 		{"self recursion", `{ fun foo(a Int) Int { foo(a) } foo(1) }`, Int, nil},
 		{"mutual recursion", `{ fun foo(a Int) Int { bar(a) } fun bar(a Int) Int { foo(a) } foo(10) }`, Int, nil},
+
+		{"declare alloc", `alloc @test = Arena()`, void, func(e *Engine, id ast.NodeID, assert base.Assert) {
+			scope := e.ScopeGraph.NodeScope(id)
+			b, _, ok := scope.Lookup("@test")
+			assert.Equal(true, ok)
+			typ, ok := e.Type(b.TypeID).Kind.(AllocType)
+			assert.Equal(true, ok)
+			assert.Equal(AllocArena, typ.Impl)
+		}},
+		{
+			"alloc", `{ alloc @test = Arena() struct Planet{name Str} let p = Planet@test("Earth") p }`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block, ok := e.Node(id).Kind.(ast.Block)
+				assert.Equal(true, ok)
+				refExpr := block.Exprs[len(block.Exprs)-1]
+				refTyp, ok := e.TypeOfNode(refExpr).Kind.(RefType)
+				assert.Equal(true, ok)
+				assert.Equal("struct Planet(name Str)", e.TypeDisplay(refTyp.Type))
+			},
+		},
+		{"pass alloc to fun", `{ fun foo(@alloc Arena) void {} alloc @a = Arena() foo(@a) }`, void, nil},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
 	// violate the lifetime rules, but we still wan to test them in isolation.
-	skipLifetimeCheck := []string{"ref", "mut ref", "struct ref", "ref return"}
+	skipLifetimeCheck := []string{"ref", "mut ref", "struct ref", "ref return", "alloc"}
 
 	assert := base.NewAssert(t)
 	hasOnly := false
@@ -443,6 +464,12 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
 				`    { let a = 123 mut b = &a }` + "\n" +
 				`                          ^^`,
+		}},
+
+		{"non-existing allocator", `{ struct Planet{name Str} let p = Planet@test("Earth") }`, []string{
+			"test.met:1:41: unknown allocator: @test\n" +
+				`    { struct Planet{name Str} let p = Planet@test("Earth") }` + "\n" +
+				`                                            ^^^^^`,
 		}},
 	}
 

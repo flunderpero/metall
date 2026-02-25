@@ -1,0 +1,75 @@
+// This is a simple Arena allocator.
+//
+// Functions are non-static so clang emits them. The build pipeline
+// rewrites them to `define internal` in the .ll output.
+
+#include <stddef.h>
+#include <stdlib.h>
+
+// A page is a contiguous block of memory. Pages form a singly-linked list
+// where each page points to the *previous* page (newest -> oldest), so
+// arena_destroy can walk the chain without a separate "first" pointer.
+typedef struct Page {
+    struct Page *prev;     // previous page (NULL if this is the first)
+    size_t      capacity;  // total usable bytes in this page
+    size_t      used;      // bytes already handed out
+    char        data[];    // flexible array member -- the actual memory
+} Page;
+
+// The arena tracks only the current page and the default page size.
+typedef struct Arena {
+    Page   *current;       // page we're currently allocating from
+    size_t  page_size;     // default capacity for newly-allocated pages
+} Arena;
+
+static Page *page_create(size_t min_capacity, Page *prev) {
+    Page *p = malloc(sizeof(Page) + min_capacity);
+    if (!p) return NULL;
+    p->prev     = prev;
+    p->capacity = min_capacity;
+    p->used     = 0;
+    return p;
+}
+
+Arena *arena_create(size_t first_page_size) {
+    if (first_page_size == 0) first_page_size = 4096;
+
+    Arena *a = malloc(sizeof(Arena));
+    if (!a) return NULL;
+
+    Page *p = page_create(first_page_size, NULL);
+    if (!p) { free(a); return NULL; }
+
+    a->current   = p;
+    a->page_size = first_page_size;
+    return a;
+}
+
+void *arena_alloc(Arena *a, size_t size) {
+    Page *p = a->current;
+
+    if (p->used + size > p->capacity) {
+        size_t cap = a->page_size;
+        if (size > cap) cap = size;
+
+        Page *np = page_create(cap, p);
+        if (!np) return NULL;
+
+        a->current = np;
+        p = np;
+    }
+
+    void *ptr = p->data + p->used;
+    p->used  += size;
+    return ptr;
+}
+
+void arena_destroy(Arena *a) {
+    Page *p = a->current;
+    while (p) {
+        Page *prev = p->prev;
+        free(p);
+        p = prev;
+    }
+    free(a);
+}

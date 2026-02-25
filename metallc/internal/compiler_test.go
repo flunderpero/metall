@@ -282,6 +282,31 @@ func TestCompile(t *testing.T) {
 			}
 
 			`, "123\n"},
+
+		{"allocator", `
+			struct Planet {
+				name Str
+			}
+
+			fun make_saturn(@a Arena) &Planet {
+				Planet@a("Saturn")
+			}
+
+			fun main() void {
+				alloc @a = Arena()
+				let earth = Planet@a("Earth")
+				let mars = Planet@a("Mars")
+				{
+					alloc @b = Arena()
+					let venus = Planet@b("Venus")
+					print_str(venus.name)
+				}
+				print_str(mars.name)
+				print_str(earth.name)
+				let saturn = make_saturn(@a)
+				print_str(saturn.name)
+			}
+			`, "Venus\nMars\nEarth\nSaturn\n"},
 	}
 
 	assert := base.NewAssert(t)

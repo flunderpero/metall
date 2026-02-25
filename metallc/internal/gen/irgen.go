@@ -1,6 +1,7 @@
 package gen
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,9 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/types"
 )
+
+//go:embed arena.ll
+var arenaRuntime string
 
 type CodeWriter struct {
 	indent int
@@ -44,27 +48,29 @@ type Symbol struct {
 
 type IRGen struct {
 	CodeWriter
-	engine       *types.Engine
-	symbols      map[types.ScopeID]map[string]Symbol
-	regCounter   int
-	constCounter int
-	strConsts    map[string]int
-	astCode      map[ast.NodeID]string
-	lastLabel    Label
-	opts         IROpts
+	engine             *types.Engine
+	symbols            map[types.ScopeID]map[string]Symbol
+	regCounter         int
+	constCounter       int
+	strConsts          map[string]int
+	astCode            map[ast.NodeID]string
+	lastLabel          Label
+	opts               IROpts
+	blockAllocatorRegs []string
 }
 
 func NewIRGen(engine *types.Engine, opts IROpts) *IRGen {
 	return &IRGen{
-		CodeWriter:   *NewCodeWriter(),
-		engine:       engine,
-		symbols:      map[types.ScopeID]map[string]Symbol{},
-		regCounter:   1,
-		constCounter: 0,
-		strConsts:    map[string]int{},
-		astCode:      map[ast.NodeID]string{},
-		lastLabel:    "",
-		opts:         opts,
+		CodeWriter:         *NewCodeWriter(),
+		engine:             engine,
+		symbols:            map[types.ScopeID]map[string]Symbol{},
+		regCounter:         1,
+		constCounter:       0,
+		strConsts:          map[string]int{},
+		astCode:            map[ast.NodeID]string{},
+		lastLabel:          "",
+		opts:               opts,
+		blockAllocatorRegs: nil,
 	}
 }
 
@@ -109,6 +115,8 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genRef(id, kind)
 	case ast.RefType:
 		// Types don't generate code
+	case ast.AllocInit:
+		g.genAllocInit(id, kind)
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -160,7 +168,14 @@ func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
 	structTyp := base.Cast[types.StructType](targetTyp.Kind)
 	irTyp := g.irType(targetTyp.ID)
 	reg := g.reg()
-	g.write("%s = alloca %s", reg, irTyp)
+	if lit.Alloc != nil {
+		b, _ := g.lookupSymbol(id, lit.Alloc.Name)
+		g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
+		g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
+		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, b.Reg, reg)
+	} else {
+		g.write("%s = alloca %s", reg, irTyp)
+	}
 	for i, arg := range lit.Args {
 		fieldReg := g.reg()
 		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", fieldReg, irTyp, irTyp, reg, i)
@@ -247,13 +262,19 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 		preg := g.reg()
 		paramTyp := g.engine.TypeOfNode(paramNodeID)
 		paramIRTyp := g.irTypeOfNode(paramNodeID)
-		if _, ok := paramTyp.Kind.(types.StructType); ok {
+		switch paramTyp.Kind.(type) {
+		case types.AllocType:
+			// Allocator param: passed as a raw ptr, no alloca wrapping.
+			params.WriteString("ptr ")
+			params.WriteString(preg)
+			g.setSymbol(paramNodeID, param.Name.Name, preg, "ptr")
+		case types.StructType:
 			// Struct param: byval gives us a ptr to the callee's copy directly.
 			// symbol.Reg = preg (single indirection, no alloca ptr wrapper).
 			fmt.Fprintf(&params, "ptr byval(%s) ", paramIRTyp)
 			params.WriteString(preg)
 			g.setSymbol(paramNodeID, param.Name.Name, preg, "ptr")
-		} else {
+		default:
 			params.WriteString(paramIRTyp)
 			params.WriteString(" ")
 			params.WriteString(preg)
@@ -301,9 +322,15 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 }
 
 func (g *IRGen) genBlock(id ast.NodeID, block ast.Block) {
+	savedAllocatorRegs := g.blockAllocatorRegs
+	g.blockAllocatorRegs = nil
 	for _, expr := range block.Exprs {
 		g.Gen(expr)
 	}
+	for _, reg := range g.blockAllocatorRegs {
+		g.write("call void @arena_destroy (ptr %s)", reg)
+	}
+	g.blockAllocatorRegs = savedAllocatorRegs
 	code := "void"
 	if len(block.Exprs) > 0 {
 		code = g.lookupCode(block.Exprs[len(block.Exprs)-1])
@@ -475,8 +502,9 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 func (g *IRGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
 		identType := g.engine.TypeOfNode(id)
-		if _, ok := identType.Kind.(types.StructType); ok {
-			// Struct: symbol.Reg is already the ptr to struct data (single indirection).
+		switch identType.Kind.(type) {
+		case types.StructType, types.AllocType:
+			// Struct/Alloc: symbol.Reg is already the raw ptr (single indirection, no alloca).
 			g.setCode(id, symbol.Reg)
 			return
 		}
@@ -536,6 +564,14 @@ func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 	reg := g.reg()
 	g.write("%s = load %s, ptr %s", reg, g.irType(ref.Type), code)
 	g.setCode(id, reg)
+}
+
+func (g *IRGen) genAllocInit(id ast.NodeID, alloc ast.AllocInit) {
+	reg := g.reg()
+	g.write("%s = call ptr @arena_create(i64 4096)", reg)
+	g.blockAllocatorRegs = append(g.blockAllocatorRegs, reg)
+	g.setCode(id, reg)
+	g.setSymbol(id, alloc.Name.Name, reg, "ptr")
 }
 
 func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
@@ -598,7 +634,7 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		default:
 			panic(base.Errorf("unknown builtin type: %s", kind.Name))
 		}
-	case types.RefType:
+	case types.RefType, types.AllocType:
 		return "ptr"
 	case types.StructType:
 		return "%" + typeID.String()
@@ -668,6 +704,8 @@ func GenIR(fileID ast.NodeID, engine *types.Engine, opts IROpts) (string, error)
 	g := NewIRGen(engine, opts)
 	g.Gen(fileID)
 	g.write(builtins)
+	g.write("; >>> Arena runtime")
+	g.write(arenaRuntime)
 	return g.sb.String(), nil
 }
 

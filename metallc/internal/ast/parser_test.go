@@ -180,6 +180,29 @@ func TestParseOK(t *testing.T) {
 				)
 			},
 		},
+
+		{"declare allocator", "expr", "alloc @test = Arena(123)", func(a *TestAST) NodeID {
+			return a.alloc_init("@test", "Arena", a.int_(123))
+		}},
+		{"alloc", "expr", `Planet@test()`, func(a *TestAST) NodeID {
+			return a.struct_lit_alloc("@test", a.ident("Planet"))
+		}},
+		{
+			"alloc as fun param", "expr", "fun foo(@alloc Arena, name Str, @alloc2 Arena) void {}",
+			func(a *TestAST) NodeID {
+				return a.fun("foo", []NodeID{
+					a.fun_param("@alloc", a.typ("Arena")),
+					a.fun_param("name", a.str_typ()),
+					a.fun_param("@alloc2", a.typ("Arena")),
+				}, a.void_typ(), a.fun_block())
+			},
+		},
+		{
+			"alloc in call", "expr", "foo(@a)",
+			func(a *TestAST) NodeID {
+				return a.call(a.ident("foo"), a.ident("@a"))
+			},
+		},
 	}
 
 	hasOnly := false
@@ -226,7 +249,7 @@ func TestParseErr(t *testing.T) {
 		want []string
 	}{
 		{"unexpected token", `=`, []string{
-			"test.met:1:1: unexpected token: expected one of '&', '{', 'true', 'false', <if>, <fun>, <struct>, <identifier>, <type identifier>, <number>, <string>, <let>, <mut>, got =\n" +
+			"test.met:1:1: unexpected token: expected start of an expression, got =\n" +
 				`    =` + "\n" +
 				"    ^",
 		}},
@@ -244,6 +267,17 @@ func TestParseErr(t *testing.T) {
 			"test.met:1:4: unexpected token: expected <identifier>, got <number>\n" +
 				`    { &123 }` + "\n" +
 				"       ^^^",
+		}},
+
+		{"Arena is a reserved work", `struct Arena{name Str}`, []string{
+			"test.met:1:8: reserved word: Arena\n" +
+				`    struct Arena{name Str}` + "\n" +
+				"           ^^^^^",
+		}},
+		{"alloc ident is not an expression", `@test`, []string{
+			"test.met:1:1: unexpected token: expected start of an expression, got <allocator identifier>\n" +
+				`    @test` + "\n" +
+				"    ^^^^^",
 		}},
 	}
 
@@ -323,7 +357,14 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 	if args == nil {
 		args = []NodeID{}
 	}
-	return a.NewStructLiteral(struct_, args, a.span)
+	return a.NewStructLiteral(nil, struct_, args, a.span)
+}
+
+func (a *TestAST) struct_lit_alloc(alloc string, struct_ NodeID, args ...NodeID) NodeID {
+	if args == nil {
+		args = []NodeID{}
+	}
+	return a.NewStructLiteral(&Name{alloc, a.span}, struct_, args, a.span)
 }
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {
@@ -372,8 +413,19 @@ func (a *TestAST) void_typ() NodeID {
 	return a.NewSimpleType(Name{"void", a.span}, a.span)
 }
 
+func (a *TestAST) typ(name string) NodeID {
+	return a.NewSimpleType(Name{name, a.span}, a.span)
+}
+
 func (a *TestAST) ident(name string) NodeID {
 	return a.NewIdent(name, a.span)
+}
+
+func (a *TestAST) alloc_init(name string, allocator string, args ...NodeID) NodeID {
+	if args == nil {
+		args = []NodeID{}
+	}
+	return a.NewAllocInit(Name{name, a.span}, Name{allocator, a.span}, args, a.span)
 }
 
 func (a *TestAST) assign(lhs NodeID, rhs NodeID) NodeID {
@@ -432,6 +484,15 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			node.Kind = kind
 		case Struct:
 			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case StructLiteral:
+			if kind.Alloc != nil {
+				kind.Alloc.Span = base.Span{}
+			}
+			node.Kind = kind
+		case AllocInit:
+			kind.Name.Span = base.Span{}
+			kind.Allocator.Span = base.Span{}
 			node.Kind = kind
 		case FieldAccess:
 			kind.Field.Span = base.Span{}

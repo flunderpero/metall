@@ -8,6 +8,8 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
+var ReservedIdents = []string{"Arena"} //nolint:gochecknoglobals
+
 const ParseFailed = NodeID(0)
 
 type Parser struct {
@@ -135,6 +137,10 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	if slices.Contains(ReservedIdents, nameToken.Value) {
+		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
+		return ParseFailed, false
+	}
 	name := Name{nameToken.Value, nameToken.Span}
 	if _, ok := p.expect(token.LCurly); !ok {
 		return ParseFailed, false
@@ -154,12 +160,21 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	var alloc *Name
+	t, ok := p.peek()
+	if !ok {
+		return ParseFailed, false
+	}
+	if t.Kind == token.AllocIdent {
+		p.next()
+		alloc = &Name{t.Value, t.Span}
+	}
 	ident := p.NewIdent(struct_.Value, struct_.Span)
 	args, ok := p.ParseCallArgs()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
+	return p.NewStructLiteral(alloc, ident, args, struct_.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseBlock() (NodeID, bool) {
@@ -245,30 +260,6 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	if !ok {
 		return ParseFailed, false
 	}
-	expectedTokenKinds := []token.TokenKind{
-		token.Amp,
-		token.LCurly,
-		token.True,
-		token.False,
-		token.If,
-		token.Fun,
-		token.Struct,
-		token.Ident,
-		token.TypeIdent,
-		token.Number,
-		token.String,
-		token.Let,
-		token.Mut,
-	}
-	if !slices.Contains(expectedTokenKinds, t.Kind) {
-		p.diagnostic(
-			t.Span,
-			"unexpected token: expected one of %s, got %s",
-			token.PrettyPrintTokenKinds(expectedTokenKinds),
-			t.Kind,
-		)
-		return ParseFailed, false
-	}
 	var expr NodeID
 	switch t.Kind { //nolint:exhaustive
 	case token.Amp:
@@ -336,8 +327,15 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = var_
+	case token.Alloc:
+		alloc, ok := p.ParseAllocInit()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = alloc
 	default:
-		panic(base.Errorf("this should have been catch earlier: unexpected token: %s", t.Kind))
+		p.diagnostic(t.Span, "unexpected token: expected start of an expression, got %s", t.Kind)
+		return ParseFailed, false
 	}
 	return expr, true
 }
@@ -370,9 +368,15 @@ func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
 			p.next()
 			return args, true
 		}
-		expr, ok := p.ParseExpr()
-		if !ok {
-			return args, true
+		var expr NodeID
+		if t.Kind == token.AllocIdent {
+			p.next()
+			expr = p.NewIdent(t.Value, t.Span)
+		} else {
+			expr, ok = p.ParseExpr()
+			if !ok {
+				return args, false
+			}
 		}
 		args = append(args, expr)
 		t, ok = p.next()
@@ -388,6 +392,36 @@ func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
 			return args, false
 		}
 	}
+}
+
+func (p *Parser) ParseAllocInit() (NodeID, bool) {
+	t, ok := p.expect(token.Alloc)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	name, ok := p.expect(token.AllocIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	_, ok = p.expect(token.Eq)
+	if !ok {
+		return ParseFailed, false
+	}
+	allocator, ok := p.expect(token.TypeIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	args, ok := p.ParseCallArgs()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewAllocInit(
+		Name{Name: name.Value, Span: name.Span},
+		Name{Name: allocator.Value, Span: allocator.Span},
+		args,
+		span.Combine(p.span()),
+	), true
 }
 
 func (p *Parser) ParseVar() (NodeID, bool) {
@@ -430,12 +464,12 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 			return funParams, true
 		}
 		switch t.Kind { //nolint:exhaustive
-		case token.Ident:
-			nameToken, ok := p.expect(token.Ident)
-			name := Name{nameToken.Value, nameToken.Span}
+		case token.Ident, token.AllocIdent:
+			nameToken, ok := p.next()
 			if !ok {
 				return funParams, false
 			}
+			name := Name{nameToken.Value, nameToken.Span}
 			type_, ok := p.ParseType()
 			if !ok {
 				p.diagnostic(t.Span, "expected type, got %s", t.Kind)
