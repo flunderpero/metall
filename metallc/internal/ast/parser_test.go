@@ -204,7 +204,7 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 
-		{"array type", "expr", `fun foo(a [Int 5]) void {}}`, func(a *TestAST) NodeID {
+		{"array type", "expr", `fun foo(a [5]Int) void {}}`, func(a *TestAST) NodeID {
 			return a.fun("foo", []NodeID{a.fun_param("a", a.arr_typ(a.int_typ(), 5))}, a.void_typ(), a.fun_block())
 		}},
 		{"array literal", "expr", `[1, 2, 3]`, func(a *TestAST) NodeID {

@@ -351,7 +351,7 @@ func TestCompile(t *testing.T) {
 			`, "2\n3\n6\n"},
 		{"array in struct", `
 			struct Numbers {
-				values [Int 3]
+				values [3]Int
 			}
 
 			fun main() void {

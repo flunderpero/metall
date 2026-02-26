@@ -189,7 +189,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{"pass alloc to fun", `{ fun foo(@alloc Arena) void {} alloc @a = Arena() foo(@a) }`, void, nil},
 
-		{"array type", `fun foo(arr [Int 5]) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
+		{"array type", `fun foo(arr [5]Int) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
 			fun, ok := e.TypeOfNode(id).Kind.(FunType)
 			assert.Equal(true, ok)
 			assert.Equal(1, len(fun.Params))
@@ -200,7 +200,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		}},
 		{
 			"array type ids are stable",
-			`fun foo(a [Int 5], b [Int 5], c [Int 6]) void { [1, 2, 3, 4, 5]}`,
+			`fun foo(a [5]Int, b [5]Int, c [6]Int) void { [1, 2, 3, 4, 5]}`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				funNode, ok := e.Node(id).Kind.(ast.Fun)

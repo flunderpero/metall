@@ -618,7 +618,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		// Index assign: foo.arr[0] = &c where c is local and foo escapes.
 		{"index assign through field escapes", `
 			{
-				struct Container { mut values [&mut Int 1] }
+				struct Container { mut values [1]&mut Int }
 				mut a = 123
 				mut foo = Container([&a])
 				{
@@ -638,7 +638,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		// Valid: index assign through field where ref doesn't escape.
 		{"valid index assign through field no escape", `
 			{
-				struct Container { mut values [&mut Int 1] }
+				struct Container { mut values [1]&mut Int }
 				mut a = 123
 				mut b = 456
 				mut foo = Container([&a])
@@ -670,7 +670,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			e.Query(exprID)
 			assert.Equal(0, len(e.Diagnostics), "type check failed: %s", e.Diagnostics)
 			a := NewLifetimeAnalyzer(e)
-			a.Debug = base.NewStdoutDebug("lifetime")
+			// a.Debug = base.NewStdoutDebug("lifetime")
 			a.Check(exprID)
 			for i, want := range tt.want {
 				if i >= len(a.Diagnostics) {

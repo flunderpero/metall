@@ -357,13 +357,11 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = array
 	case token.Number:
-		p.next()
-		number, err := strconv.ParseInt(t.Value, 10, 64)
-		if err != nil {
-			p.diagnostic(t.Span, "invalid number: %s", t.Value)
+		num, ok := p.ParseNumber()
+		if !ok {
 			return ParseFailed, false
 		}
-		expr = p.NewInt(number, t.Span.Combine(p.span()))
+		expr = num
 	case token.True:
 		p.next()
 		expr = p.NewBool(true, t.Span)
@@ -557,34 +555,18 @@ func (p *Parser) ParseType() (NodeID, bool) {
 	case token.TypeIdent:
 		return p.NewSimpleType(Name{t.Value, span}, span), true
 	case token.LBracket:
+		len_, ok := p.expectInt()
+		if !ok {
+			return ParseFailed, false
+		}
+			if _, ok := p.expect(token.RBracket); !ok {
+				return ParseFailed, false
+			}
 		typ, ok := p.ParseType()
 		if !ok {
 			return ParseFailed, false
 		}
-		t, ok := p.next()
-		if !ok {
-			return ParseFailed, false
-		}
-		switch t.Kind { //nolint:exhaustive
-		case token.Number:
-			if _, ok := p.expect(token.RBracket); !ok {
-				return ParseFailed, false
-			}
-			size, err := strconv.ParseInt(t.Value, 10, 64)
-			if err != nil {
-				p.diagnostic(t.Span, "invalid number: %s", t.Value)
-				return ParseFailed, false
-			}
-			return p.NewArrayType(typ, size, span.Combine(p.span())), true
-		default:
-			p.diagnostic(
-				t.Span,
-				"unexpected token: expected %s, got %s",
-				token.PrettyPrintTokenKinds([]token.TokenKind{token.Number, token.RBracket}),
-				t.Kind,
-			)
-			return ParseFailed, false
-		}
+		return p.NewArrayType(typ, len_, span.Combine(p.span())), true
 	case token.Amp:
 		mut := false
 		if next, ok := p.peek(); ok && next.Kind == token.Mut {
@@ -636,6 +618,14 @@ func (p *Parser) ParseIdent() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewIdent(t.Value, t.Span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseNumber() (NodeID, bool) {
+	i, ok := p.expectInt()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewInt(i, p.span()), true
 }
 
 func (p *Parser) parseBlock(createScope bool) (NodeID, bool) {
@@ -694,6 +684,19 @@ func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {
 		return nil, false
 	}
 	return t, true
+}
+
+func (p *Parser) expectInt() (int64, bool) {
+	t, ok := p.expect(token.Number)
+	if !ok {
+		return 0, false
+	}
+	number, err := strconv.ParseInt(t.Value, 10, 64)
+	if err != nil {
+		p.diagnostic(t.Span, "invalid number: %s", t.Value)
+		return 0, false
+	}
+	return number, true
 }
 
 func (p *Parser) span() base.Span {
