@@ -177,6 +177,47 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	return p.NewStructLiteral(alloc, ident, args, struct_.Span.Combine(p.span())), true
 }
 
+func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
+	t, ok := p.expect(token.LBracket)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	elems := []NodeID{}
+	for {
+		t, ok := p.peek()
+		if !ok {
+			return ParseFailed, false
+		}
+		if t.Kind == token.RBracket {
+			p.next()
+			break
+		}
+		expr, ok := p.ParseExpr()
+		if !ok {
+			return ParseFailed, false
+		}
+		elems = append(elems, expr)
+		t, ok = p.next()
+		if !ok {
+			return ParseFailed, false
+		}
+		if t.Kind == token.RBracket {
+			break
+		}
+		if t.Kind != token.Comma {
+			p.diagnostic(
+				t.Span,
+				"unexpected token: expected on of %s, got %s",
+				token.PrettyPrintTokenKinds([]token.TokenKind{token.RBracket, token.Comma}),
+				t.Kind,
+			)
+			return ParseFailed, false
+		}
+	}
+	return p.NewArrayLiteral(elems, span.Combine(p.span())), true
+}
+
 func (p *Parser) ParseBlock() (NodeID, bool) {
 	return p.parseBlock(true)
 }
@@ -241,6 +282,17 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 			}
 			expr = p.NewCall(callee, args, span.Combine(p.span()))
 			continue
+		case token.LBracketIndex:
+			p.next()
+			index, ok := p.ParseExpr()
+			if !ok {
+				return ParseFailed, false
+			}
+			if _, ok := p.expect(token.RBracket); !ok {
+				return ParseFailed, false
+			}
+			expr = p.NewIndex(expr, index, span.Combine(p.span()))
+			continue
 		case token.Dot:
 			p.next()
 			name, ok := p.expect(token.Ident)
@@ -298,6 +350,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = struct_literal
+	case token.LBracket:
+		array, ok := p.ParseArrayLiteral()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = array
 	case token.Number:
 		p.next()
 		number, err := strconv.ParseInt(t.Value, 10, 64)
@@ -494,9 +552,39 @@ func (p *Parser) ParseType() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	span := t.Span
 	switch t.Kind { //nolint:exhaustive
 	case token.TypeIdent:
-		return p.NewSimpleType(Name{t.Value, t.Span}, t.Span.Combine(p.span())), true
+		return p.NewSimpleType(Name{t.Value, span}, span), true
+	case token.LBracket:
+		typ, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		t, ok := p.next()
+		if !ok {
+			return ParseFailed, false
+		}
+		switch t.Kind { //nolint:exhaustive
+		case token.Number:
+			if _, ok := p.expect(token.RBracket); !ok {
+				return ParseFailed, false
+			}
+			size, err := strconv.ParseInt(t.Value, 10, 64)
+			if err != nil {
+				p.diagnostic(t.Span, "invalid number: %s", t.Value)
+				return ParseFailed, false
+			}
+			return p.NewArrayType(typ, size, span.Combine(p.span())), true
+		default:
+			p.diagnostic(
+				t.Span,
+				"unexpected token: expected %s, got %s",
+				token.PrettyPrintTokenKinds([]token.TokenKind{token.Number, token.RBracket}),
+				t.Kind,
+			)
+			return ParseFailed, false
+		}
 	case token.Amp:
 		mut := false
 		if next, ok := p.peek(); ok && next.Kind == token.Mut {
@@ -507,9 +595,9 @@ func (p *Parser) ParseType() (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
-		return p.NewRefType(inner, mut, t.Span.Combine(p.span())), true
+		return p.NewRefType(inner, mut, span.Combine(p.span())), true
 	default:
-		p.diagnostic(t.Span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
+		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
 		return ParseFailed, false
 	}
 }
@@ -597,11 +685,15 @@ func (p *Parser) peek() (*token.Token, bool) {
 
 func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {
 	t, ok := p.next()
-	if ok && t.Kind == kind {
-		return t, true
+	if !ok {
+		p.diagnostic(p.span(), "unexpected end of file")
+		return nil, false
 	}
-	p.diagnostic(p.span(), "unexpected token: expected %s, got %s", kind, t.Kind)
-	return nil, false
+	if t.Kind != kind {
+		p.diagnostic(p.span(), "unexpected token: expected %s, got %s", kind, t.Kind)
+		return nil, false
+	}
+	return t, true
 }
 
 func (p *Parser) span() base.Span {

@@ -23,6 +23,26 @@ func TestLexer(t *testing.T) {
 	}{
 		{"parens", "()", []want{{LParen, "", "1:1"}, {RParen, "", "1:2"}}},
 		{"curly", "{}", []want{{LCurly, "", "1:1"}, {RCurly, "", "1:2"}}},
+		{"brackets", "[]", []want{{LBracket, "", "1:1"}, {RBracket, "", "1:2"}}},
+		{
+			"lbracket vs lbracketindex",
+			"a[ [ ([ [[ {[",
+			[]want{
+				{Ident, "a", "1:1"},
+				{LBracketIndex, "", "1:2"},
+
+				{LBracket, "", "1:4"},
+
+				{LParen, "", "1:6"},
+				{LBracket, "", "1:7"},
+
+				{LBracket, "", "1:9"},
+				{LBracket, "", "1:10"},
+
+				{LCurly, "", "1:12"},
+				{LBracket, "", "1:13"},
+			},
+		},
 		{"eq", "=", []want{{Eq, "", "1:1"}}},
 		{"amp", "&", []want{{Amp, "", "1:1"}}},
 		{"star", "*", []want{{Star, "", "1:1"}}},

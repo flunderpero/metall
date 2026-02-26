@@ -46,6 +46,26 @@ type SimpleType struct {
 
 func (SimpleType) isKind() {}
 
+type ArrayType struct {
+	Elem NodeID
+	Len  int64
+}
+
+func (ArrayType) isKind() {}
+
+type ArrayLiteral struct {
+	Elems []NodeID
+}
+
+func (ArrayLiteral) isKind() {}
+
+type Index struct {
+	Target NodeID
+	Index  NodeID
+}
+
+func (Index) isKind() {}
+
 type RefType struct {
 	Type NodeID
 	Mut  bool
@@ -260,6 +280,18 @@ func (a *AST) NewSimpleType(name Name, span base.Span) NodeID {
 	return a.node(SimpleType{Name: name}, span)
 }
 
+func (a *AST) NewArrayType(elemType NodeID, len_ int64, span base.Span) NodeID {
+	return a.node(ArrayType{elemType, len_}, span)
+}
+
+func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
+	return a.node(ArrayLiteral{Elems: elems}, span)
+}
+
+func (a *AST) NewIndex(target NodeID, index NodeID, span base.Span) NodeID {
+	return a.node(Index{Target: target, Index: index}, span)
+}
+
 func (a *AST) NewRefType(type_ NodeID, mut bool, span base.Span) NodeID {
 	return a.node(RefType{Type: type_, Mut: mut}, span)
 }
@@ -336,6 +368,15 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
 		}
+	case ArrayType:
+		f(kind.Elem)
+	case ArrayLiteral:
+		for i := range len(kind.Elems) {
+			f(kind.Elems[i])
+		}
+	case Index:
+		f(kind.Target)
+		f(kind.Index)
 	case Ident:
 	case Int:
 	case Bool:
@@ -515,6 +556,30 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addAttr("expr", nodeIDKind(kind.Expr))
 		} else {
 			addChild("expr", kind.Expr)
+		}
+	case ArrayType:
+		addAttr("len", fmt.Sprintf("%d", kind.Len))
+		if !children {
+			addAttr("type", nodeIDKind(kind.Elem))
+		} else {
+			addChild("type", kind.Elem)
+		}
+	case ArrayLiteral:
+		addAttr("len", fmt.Sprintf("%d", len(kind.Elems)))
+		if len(kind.Elems) > 0 {
+			if !children {
+				addAttr("first", nodeIDKind(kind.Elems[0]))
+			} else {
+				addChild("first", kind.Elems[0])
+			}
+		}
+	case Index:
+		if !children {
+			addAttr("target", nodeIDKind(kind.Target))
+			addAttr("index", nodeIDKind(kind.Index))
+		} else {
+			addChild("target", kind.Target)
+			addChild("index", kind.Index)
 		}
 	case SimpleType:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))

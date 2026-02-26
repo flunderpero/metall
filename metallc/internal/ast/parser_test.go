@@ -203,6 +203,16 @@ func TestParseOK(t *testing.T) {
 				return a.call(a.ident("foo"), a.ident("@a"))
 			},
 		},
+
+		{"array type", "expr", `fun foo(a [Int 5]) void {}}`, func(a *TestAST) NodeID {
+			return a.fun("foo", []NodeID{a.fun_param("a", a.arr_typ(a.int_typ(), 5))}, a.void_typ(), a.fun_block())
+		}},
+		{"array literal", "expr", `[1, 2, 3]`, func(a *TestAST) NodeID {
+			return a.arr_lit(a.int_(1), a.int_(2), a.int_(3))
+		}},
+		{"index read", "expr", `a[1]`, func(a *TestAST) NodeID {
+			return a.index(a.ident("a"), a.int_(1))
+		}},
 	}
 
 	hasOnly := false
@@ -407,6 +417,21 @@ func (a *TestAST) str_typ() NodeID {
 
 func (a *TestAST) int_typ() NodeID {
 	return a.NewSimpleType(Name{"Int", a.span}, a.span)
+}
+
+func (a *TestAST) arr_typ(typ NodeID, size int) NodeID {
+	return a.NewArrayType(typ, int64(size), a.span)
+}
+
+func (a *TestAST) arr_lit(elems ...NodeID) NodeID {
+	if elems == nil {
+		elems = []NodeID{}
+	}
+	return a.NewArrayLiteral(elems, a.span)
+}
+
+func (a *TestAST) index(base NodeID, index NodeID) NodeID {
+	return a.NewIndex(base, index, a.span)
 }
 
 func (a *TestAST) void_typ() NodeID {

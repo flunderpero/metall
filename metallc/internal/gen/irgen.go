@@ -95,6 +95,10 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genStruct(id, kind)
 	case ast.StructLiteral:
 		g.genStructLiteral(id, kind)
+	case ast.ArrayLiteral:
+		g.genArrayLiteral(id, kind)
+	case ast.Index:
+		g.genIndex(id, kind)
 	case ast.FieldAccess:
 		g.genFieldAccess(id, kind)
 	case ast.FunParam:
@@ -159,6 +163,36 @@ func (g *IRGen) genStruct(id ast.NodeID, astStruct ast.Struct) {
 	g.write("}\n")
 }
 
+func (g *IRGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
+	for _, elem := range lit.Elems {
+		g.Gen(elem)
+	}
+	arrTyp := base.Cast[types.ArrayType](g.engine.TypeOfNode(id).Kind)
+	arrIRType := g.irType(g.engine.TypeOfNode(id).ID)
+	reg := g.reg()
+	g.write("%s = alloca %s", reg, arrIRType)
+	g.setCode(id, reg)
+	for i, elem := range lit.Elems {
+		ptrReg := g.reg()
+		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", ptrReg, arrIRType, arrIRType, reg, i)
+		elemReg := g.lookupCode(elem)
+		g.storeValue(elemReg, ptrReg, arrTyp.Elem)
+	}
+}
+
+func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
+	g.Gen(index.Target)
+	g.Gen(index.Index)
+	targetTyp := base.Cast[types.ArrayType](g.engine.TypeOfNode(index.Target).Kind)
+	arrIRType := g.irType(g.engine.TypeOfNode(index.Target).ID)
+	ptrReg := g.reg()
+	indexReg := g.lookupCode(index.Index)
+	targetReg := g.lookupCode(index.Target)
+	g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
+	valReg := g.loadValue(ptrReg, targetTyp.Elem)
+	g.setCode(id, valReg)
+}
+
 func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
 	g.Gen(lit.Target)
 	for _, arg := range lit.Args {
@@ -179,32 +213,16 @@ func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
 	for i, arg := range lit.Args {
 		fieldReg := g.reg()
 		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", fieldReg, irTyp, irTyp, reg, i)
-		fieldTypeID := structTyp.Fields[i].Type
-		if _, ok := g.engine.Type(fieldTypeID).Kind.(types.StructType); ok {
-			// Struct field: copy by value (load the whole struct, store into embedded slot).
-			irTyp := g.irType(fieldTypeID)
-			tmp := g.reg()
-			g.write("%s = load %s, ptr %s", tmp, irTyp, g.lookupCode(arg))
-			g.write("store %s %s, ptr %s", irTyp, tmp, fieldReg)
-		} else {
-			fieldTyp := g.irTypeOfNode(arg)
-			g.write("store %s %s, ptr %s", fieldTyp, g.lookupCode(arg), fieldReg)
-		}
+		argReg := g.lookupCode(arg)
+		g.storeValue(argReg, fieldReg, structTyp.Fields[i].Type)
 	}
 	g.setCode(id, reg)
 }
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
-	fieldType, ptrReg := g.genFieldAccessPtr(fieldAccess)
-	fieldTypeObj := g.engine.TypeOfNode(id)
-	if _, ok := fieldTypeObj.Kind.(types.StructType); ok {
-		// Struct-typed field: the GEP pointer already points to the embedded struct.
-		g.setCode(id, ptrReg)
-	} else {
-		reg := g.reg()
-		g.write("%s = load %s, ptr %s", reg, fieldType, ptrReg)
-		g.setCode(id, reg)
-	}
+	_, ptrReg := g.genFieldAccessPtr(fieldAccess)
+	valReg := g.loadValue(ptrReg, g.engine.TypeOfNode(id).ID)
+	g.setCode(id, valReg)
 }
 
 func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string, ptrReg string) {
@@ -239,12 +257,12 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 	}
 	name := astFun.Name.Name
 	isMain := name == "main"
-	_, isRetStruct := g.engine.Type(fun.Return).Kind.(types.StructType)
+	isRetAggregate := g.isAggregateType(fun.Return)
 	ret := g.irType(fun.Return)
 	params := strings.Builder{}
 	if isMain {
 		ret = "i32"
-	} else if isRetStruct {
+	} else if isRetAggregate {
 		ret = "void"
 		fmt.Fprintf(&params, "ptr sret(%s) %%out_ptr", g.irType(fun.Return))
 	}
@@ -262,19 +280,18 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 		preg := g.reg()
 		paramTyp := g.engine.TypeOfNode(paramNodeID)
 		paramIRTyp := g.irTypeOfNode(paramNodeID)
-		switch paramTyp.Kind.(type) {
-		case types.AllocType:
+		if _, ok := paramTyp.Kind.(types.AllocType); ok {
 			// Allocator param: passed as a raw ptr, no alloca wrapping.
 			params.WriteString("ptr ")
 			params.WriteString(preg)
 			g.setSymbol(paramNodeID, param.Name.Name, preg, "ptr")
-		case types.StructType:
-			// Struct param: byval gives us a ptr to the callee's copy directly.
+		} else if g.isAggregateType(paramTyp.ID) {
+			// Aggregate param: byval gives us a ptr to the callee's copy directly.
 			// symbol.Reg = preg (single indirection, no alloca ptr wrapper).
 			fmt.Fprintf(&params, "ptr byval(%s) ", paramIRTyp)
 			params.WriteString(preg)
 			g.setSymbol(paramNodeID, param.Name.Name, preg, "ptr")
-		default:
+		} else {
 			params.WriteString(paramIRTyp)
 			params.WriteString(" ")
 			params.WriteString(preg)
@@ -301,7 +318,7 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 	switch {
 	case isMain:
 		g.write("ret i32 0")
-	case isRetStruct:
+	case isRetAggregate:
 		lastCode := g.lookupCode(astFun.Block)
 		retIRTyp := g.irType(fun.Return)
 		tmp := g.reg()
@@ -366,8 +383,8 @@ func (g *IRGen) genIf(id ast.NodeID, ifNode ast.If) {
 		elseCode := g.lookupCode(*ifNode.Else)
 		thenType := g.engine.TypeOfNode(ifNode.Then)
 		typ := g.irType(thenType.ID)
-		if _, ok := thenType.Kind.(types.StructType); ok {
-			typ = "ptr" // Struct values flow as pointers in code registers.
+		if g.isAggregateType(thenType.ID) {
+			typ = "ptr" // Aggregate values flow as pointers in code registers.
 		}
 		if typ != "void" {
 			g.write(
@@ -405,9 +422,7 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 			panic(base.Errorf("assign to unknown variable: %s", lhsKind.Name))
 		}
 		rhsType := g.engine.TypeOfNode(assign.RHS)
-		if _, ok := rhsType.Kind.(types.StructType); ok {
-			// Struct: symbol.Reg is directly the alloca %StructType.
-			// Copy struct value into the existing variable's storage.
+		if g.isAggregateType(rhsType.ID) {
 			irTyp := g.irType(rhsType.ID)
 			tmp := g.reg()
 			g.write("%s = load %s, ptr %s", tmp, irTyp, rhs)
@@ -418,8 +433,7 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	case ast.FieldAccess:
 		fieldType, ptrReg := g.genFieldAccessPtr(lhsKind)
 		rhsType := g.engine.TypeOfNode(assign.RHS)
-		if _, ok := rhsType.Kind.(types.StructType); ok {
-			// Copy the struct value.
+		if g.isAggregateType(rhsType.ID) {
 			tmp := g.reg()
 			g.write("%s = load %s, ptr %s", tmp, fieldType, rhs)
 			g.write("store %s %s, ptr %s", fieldType, tmp, ptrReg)
@@ -430,8 +444,7 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 		g.Gen(assign.LHS)
 		ptr := g.lookupCode(lhsKind.Expr)
 		rhsType := g.engine.TypeOfNode(assign.RHS)
-		if _, ok := rhsType.Kind.(types.StructType); ok {
-			// Struct through deref: copy the struct value.
+		if g.isAggregateType(rhsType.ID) {
 			irTyp := g.irType(rhsType.ID)
 			tmp := g.reg()
 			g.write("%s = load %s, ptr %s", tmp, irTyp, rhs)
@@ -457,11 +470,11 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	}
 	sb := strings.Builder{}
 	retType := g.engine.Type(fun.Return)
-	_, isRetStruct := retType.Kind.(types.StructType)
+	isRetAggregate := g.isAggregateType(fun.Return)
 	var resReg string
 	if builtin, ok := retType.Kind.(types.BuiltInType); ok && builtin.Name == "void" {
 		g.setCode(id, "void")
-	} else if isRetStruct {
+	} else if isRetAggregate {
 		resReg = g.reg()
 		g.write("%s = alloca %s", resReg, g.irType(fun.Return))
 		g.setCode(id, resReg)
@@ -471,7 +484,7 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 		g.setCode(id, reg)
 	}
 	sb.WriteString("call ")
-	if isRetStruct {
+	if isRetAggregate {
 		sb.WriteString("void")
 	} else {
 		sb.WriteString(g.irType(fun.Return))
@@ -479,15 +492,15 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	sb.WriteString(" @")
 	sb.WriteString(g.lookupCode(call.Callee))
 	sb.WriteString(" (")
-	if isRetStruct {
+	if isRetAggregate {
 		fmt.Fprintf(&sb, "ptr sret(%s) %s", g.irType(fun.Return), resReg)
 	}
 	for i, arg := range call.Args {
-		if i > 0 || isRetStruct {
+		if i > 0 || isRetAggregate {
 			sb.WriteString(", ")
 		}
 		argType := g.engine.TypeOfNode(arg)
-		if _, ok := argType.Kind.(types.StructType); ok {
+		if g.isAggregateType(argType.ID) {
 			fmt.Fprintf(&sb, "ptr byval(%s) ", g.irType(argType.ID))
 		} else {
 			sb.WriteString(g.irType(argType.ID))
@@ -502,9 +515,8 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 func (g *IRGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
 		identType := g.engine.TypeOfNode(id)
-		switch identType.Kind.(type) {
-		case types.StructType, types.AllocType:
-			// Struct/Alloc: symbol.Reg is already the raw ptr (single indirection, no alloca).
+		if _, ok := identType.Kind.(types.AllocType); ok || g.isAggregateType(identType.ID) {
+			// Aggregate/Alloc: symbol.Reg is already the raw ptr (single indirection, no alloca).
 			g.setCode(id, symbol.Reg)
 			return
 		}
@@ -556,14 +568,8 @@ func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 		panic(base.Errorf("dereference: expected reference, got %T", exprType.Kind))
 	}
 	code := g.lookupCode(deref.Expr)
-	if _, ok := g.engine.Type(ref.Type).Kind.(types.StructType); ok {
-		// Deref of &Struct: the ref value is already a ptr to the struct data.
-		g.setCode(id, code)
-		return
-	}
-	reg := g.reg()
-	g.write("%s = load %s, ptr %s", reg, g.irType(ref.Type), code)
-	g.setCode(id, reg)
+	valReg := g.loadValue(code, ref.Type)
+	g.setCode(id, valReg)
 }
 
 func (g *IRGen) genAllocInit(id ast.NodeID, alloc ast.AllocInit) {
@@ -578,11 +584,10 @@ func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	g.Gen(v.Expr)
 	exprReg := g.lookupCode(v.Expr)
 	exprType := g.engine.TypeOfNode(v.Expr)
-	if _, ok := exprType.Kind.(types.StructType); ok {
-		// Struct: symbol.Reg points directly to alloca %StructType (single indirection).
+	if g.isAggregateType(exprType.ID) {
 		exprNode := g.engine.Node(v.Expr)
 		switch exprNode.Kind.(type) {
-		case ast.StructLiteral, ast.Call:
+		case ast.StructLiteral, ast.ArrayLiteral, ast.Call:
 			// The result value is already a copy.
 			g.setCode(id, exprReg)
 			g.setSymbol(id, v.Name.Name, exprReg, "ptr")
@@ -638,6 +643,8 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		return "ptr"
 	case types.StructType:
 		return "%" + typeID.String()
+	case types.ArrayType:
+		return fmt.Sprintf("[%d x %s]", kind.Len, g.irType(kind.Elem))
 	case types.FunType:
 		panic("unexpected fun type")
 	default:
@@ -685,6 +692,35 @@ func (g *IRGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
 		scope = scope.Parent
 	}
 	return Symbol{}, false
+}
+
+func (g *IRGen) isAggregateType(typeID types.TypeID) bool {
+	switch g.engine.Type(typeID).Kind.(type) {
+	case types.StructType, types.ArrayType:
+		return true
+	default:
+		return false
+	}
+}
+
+func (g *IRGen) loadValue(ptrReg string, typeID types.TypeID) string {
+	if g.isAggregateType(typeID) {
+		return ptrReg
+	}
+	reg := g.reg()
+	g.write("%s = load %s, ptr %s", reg, g.irType(typeID), ptrReg)
+	return reg
+}
+
+func (g *IRGen) storeValue(srcReg string, dstReg string, typeID types.TypeID) {
+	irTyp := g.irType(typeID)
+	if g.isAggregateType(typeID) {
+		tmp := g.reg()
+		g.write("%s = load %s, ptr %s", tmp, irTyp, srcReg)
+		g.write("store %s %s, ptr %s", irTyp, tmp, dstReg)
+	} else {
+		g.write("store %s %s, ptr %s", irTyp, srcReg, dstReg)
+	}
 }
 
 func indexOfStructField(s types.StructType, name string) int {

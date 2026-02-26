@@ -24,11 +24,14 @@ const (
 	Ident
 	If
 	InvalidAllocIdent
+	LBracket
+	LBracketIndex
 	LCurly
 	Let
 	LParen
 	Mut
 	Number
+	RBracket
 	RCurly
 	RParen
 	Star
@@ -54,11 +57,14 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Ident:             "<identifier>",
 	If:                "<if>",
 	InvalidAllocIdent: "<invalid allocation identifier>",
+	LBracket:          "[",
+	LBracketIndex:     "<[index>",
 	LCurly:            "{",
 	Let:               "<let>",
 	LParen:            "(",
 	Mut:               "<mut>",
 	Number:            "<number>",
+	RBracket:          "]",
 	RCurly:            "}",
 	RParen:            ")",
 	Star:              "*",
@@ -77,6 +83,7 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'=': Eq,
 	'{': LCurly,
 	'(': LParen,
+	']': RBracket,
 	'}': RCurly,
 	')': RParen,
 	'*': Star,
@@ -131,7 +138,7 @@ func (t Token) String() string {
 	return fmt.Sprintf("%s: %s", t.Span, t.Kind)
 }
 
-func lexToken(source *base.Source, idx int) Token {
+func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	start := idx
 	c := source.Content[idx]
 	span := base.NewSpan(source, start, idx)
@@ -152,6 +159,15 @@ func lexToken(source *base.Source, idx int) Token {
 			value = append(value, c)
 		}
 		return Token{EOF, "", span}
+	case c == '[':
+		kind := LBracket
+		if idx > 1 {
+			prev := source.Content[idx-2]
+			if unicode.IsLetter(prev) || prev == '_' || prev == ')' || prev == ']' {
+				kind = LBracketIndex
+			}
+		}
+		return Token{Kind: kind, Value: "", Span: span}
 	case unicode.IsLetter(c), c == '@':
 		value := []rune{c}
 		for idx < len(source.Content) {

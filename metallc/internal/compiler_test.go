@@ -308,6 +308,76 @@ func TestCompile(t *testing.T) {
 				print_str(saturn.name)
 			}
 			`, "Venus\nMars\nEarth\nSaturn\n"},
+
+		{"int array", `
+			fun main() void {
+				let number = [1, 2, 3]
+				print_int(number[2])
+				print_int(number[1])
+				print_int(number[0])
+			}
+			`, "3\n2\n1\n"},
+
+		{"struct array", `
+			struct Planet {
+				name Str
+			}
+
+			fun main() void {
+				let planets = [
+					Planet("Earth"),
+					Planet("Mars"),
+					Planet("Venus"),
+				]
+				print_str(planets[2].name)
+				print_str(planets[1].name)
+				print_str(planets[0].name)
+			}
+			`, "Venus\nMars\nEarth\n"},
+		{"nested array", `
+			fun main() void {
+				let nested = [
+					[1, 2],
+					[3, 4],
+					[5, 6],
+				]
+				let first = nested[0]
+				print_int(first[1])
+				let second = nested[1]
+				print_int(second[0])
+				let third = nested[2]
+				print_int(third[1])
+			}
+			`, "2\n3\n6\n"},
+		{"array in struct", `
+			struct Numbers {
+				values [Int 3]
+			}
+
+			fun main() void {
+				let n = Numbers([1, 2, 3])
+				print_int(n.values[1])
+			}
+			`, "2\n"},
+		{"array with refs", `
+			struct Planet {
+			 	name Str
+			}
+
+			fun main() void {
+				let earth = Planet("Earth")
+				let mars = Planet("Mars")
+				let planets = [earth, mars]
+				print_str(planets[1].name)
+				print_str(planets[0].name)
+
+				let one = 1
+				let two = 2
+				let nums = [&one, &two]
+				print_int(*nums[1])
+				print_int(*nums[0])
+			}
+			`, "Mars\nEarth\n2\n1\n"},
 	}
 
 	assert := base.NewAssert(t)

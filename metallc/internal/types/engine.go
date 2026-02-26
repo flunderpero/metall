@@ -59,6 +59,13 @@ type StructType struct {
 
 func (StructType) isTypeKind() {}
 
+type ArrayType struct {
+	Elem TypeID
+	Len  int64
+}
+
+func (ArrayType) isTypeKind() {}
+
 type AllocImpl int
 
 const (
@@ -85,6 +92,11 @@ const mutableRefFlag = 1 << 62
 type refTypeCacheKey struct {
 	TypeID
 	Mut bool
+}
+
+type arrayTypeCacheKey struct {
+	Elem TypeID
+	Len  int64
 }
 
 type TypeStatus int
@@ -128,6 +140,7 @@ type Engine struct {
 	nodes       map[ast.NodeID]*cachedType
 	types       map[TypeID]*cachedType
 	refTypes    map[refTypeCacheKey]*cachedType
+	arrayTypes  map[arrayTypeCacheKey]*cachedType
 	nextID      TypeID
 	nextScopeID ScopeID
 	scope       *Scope
@@ -135,6 +148,7 @@ type Engine struct {
 	voidType    TypeID
 	boolType    TypeID
 	arenaType   TypeID
+	intType     TypeID
 }
 
 func NewEngine(a *ast.AST) *Engine {
@@ -146,6 +160,7 @@ func NewEngine(a *ast.AST) *Engine {
 		nodes:       map[ast.NodeID]*cachedType{},
 		types:       map[TypeID]*cachedType{},
 		refTypes:    map[refTypeCacheKey]*cachedType{},
+		arrayTypes:  map[arrayTypeCacheKey]*cachedType{},
 		nextID:      1,
 		nextScopeID: 1,
 		scope:       rootScope,
@@ -163,6 +178,7 @@ func NewEngine(a *ast.AST) *Engine {
 	e.voidType = voidType
 	e.boolType = boolType
 	e.arenaType = arenaType
+	e.intType = intType
 	e.builtins = map[string]TypeID{
 		"Int":        intType,
 		"Str":        strType,
@@ -218,6 +234,8 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 		}
 		sb.WriteString(")")
 		return sb.String()
+	case ArrayType:
+		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case AllocType:
 		return fmt.Sprintf("alloc(%s)", kind.Impl)
 	default:
@@ -269,6 +287,12 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkStructField(nodeID, nodeKind, node.Span)
 	case ast.StructLiteral:
 		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
+	case ast.ArrayType:
+		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
+	case ast.ArrayLiteral:
+		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span)
+	case ast.Index:
+		typeID, status = e.checkIndex(nodeKind)
 	case ast.AllocInit:
 		typeID, status = e.checkAllocInit(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
@@ -333,6 +357,9 @@ func (e *Engine) WalkType(typeID TypeID, f func(typ *Type, e *Engine)) {
 			fieldTyp := e.Type(field.Type)
 			f(fieldTyp, e)
 		}
+	case ArrayType:
+		elemTyp := e.Type(kind.Elem)
+		f(elemTyp, e)
 	case AllocType:
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
@@ -474,6 +501,69 @@ func (e *Engine) checkAllocInit(nodeID ast.NodeID, alloc ast.AllocInit, span bas
 	}
 	e.bind(alloc.Name.Name, false, nodeID, e.arenaType, span)
 	return e.voidType, TypeOK
+}
+
+func (e *Engine) checkArrayType(nodeID ast.NodeID, array ast.ArrayType, span base.Span) (TypeID, TypeStatus) {
+	elemTypeID, status := e.Query(array.Elem)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	return e.buildArrayType(elemTypeID, array.Len, nodeID, span), TypeOK
+}
+
+func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, span base.Span) (TypeID, TypeStatus) {
+	if len(array.Elems) == 0 {
+		e.diag(span, "array literal cannot be empty")
+		return InvalidTypeID, TypeFailed
+	}
+	elemTyp, status := e.Query(array.Elems[0])
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	for _, elemNodeID := range array.Elems[1:] {
+		elemTyp2, status := e.Query(elemNodeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if !e.isAssignableTo(elemTyp2, elemTyp) {
+			e.diag(
+				e.Node(elemNodeID).Span,
+				"array literal element type mismatch: expected %s, got %s",
+				e.TypeDisplay(elemTyp),
+				e.TypeDisplay(elemTyp2),
+			)
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	return e.buildArrayType(elemTyp, int64(len(array.Elems)), nodeID, span), TypeOK
+}
+
+func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
+	targetTypeID, status := e.Query(index.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	arrTyp, ok := e.Type(targetTypeID).Kind.(ArrayType)
+	if !ok {
+		targetSpan := e.Node(index.Target).Span
+		e.diag(targetSpan, "not an array: %s", e.TypeDisplay(targetTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	indexTypeID, status := e.Query(index.Index)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if indexTypeID != e.intType {
+		indexSpan := e.Node(index.Index).Span
+		e.diag(
+			indexSpan,
+			"index type mismatch: expected %s, got %s",
+			e.TypeDisplay(e.intType),
+			e.TypeDisplay(indexTypeID),
+		)
+		return InvalidTypeID, TypeFailed
+	}
+	return arrTyp.Elem, TypeOK
 }
 
 func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
@@ -922,6 +1012,16 @@ func (e *Engine) buildRefType(nodeID ast.NodeID, innerTypeID TypeID, mut bool, s
 	e.newTypeWithID(refTypeID, RefType{innerTypeID, true}, nodeID, span, TypeOK)
 	e.refTypes[cacheKey] = e.types[refTypeID]
 	return refTypeID
+}
+
+func (e *Engine) buildArrayType(elemTypeID TypeID, length int64, nodeID ast.NodeID, span base.Span) TypeID {
+	cacheKey := arrayTypeCacheKey{elemTypeID, length}
+	if cached, ok := e.arrayTypes[cacheKey]; ok {
+		return cached.Type.ID
+	}
+	typeID := e.newType(ArrayType{Elem: elemTypeID, Len: length}, nodeID, span, TypeOK)
+	e.arrayTypes[cacheKey] = e.types[typeID]
+	return typeID
 }
 
 func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {

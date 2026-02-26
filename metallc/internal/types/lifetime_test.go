@@ -535,6 +535,54 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				r
 			}
 			`, []string{}},
+
+		// Struct literal containing a ref to a local — ref escapes via intermediate binding.
+		{"struct literal ref escape via binding", `
+			{
+				struct Wrapper { ptr &Int }
+				let r = {
+					let x = 42
+					let w = Wrapper(&x)
+					w
+				}
+				r
+			}
+			`, []string{
+			"test.met:6:37: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        let w = Wrapper(&x)
+				                        ^^
+				        w
+				`, "\n"),
+		}},
+		// Array literal containing a ref to a local — ref escapes via intermediate binding.
+		{"array literal ref escape via binding", `
+			{
+				let r = {
+					let x = 42
+					let arr = [&x]
+					arr
+				}
+				r
+			}
+			`, []string{
+			"test.met:5:32: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let x = 42
+				        let arr = [&x]
+				                   ^^
+				        arr
+				`, "\n"),
+		}},
+		// Valid: array of refs where the refs don't escape.
+		{"valid array literal ref no escape", `
+			{
+				let x = 42
+				let arr = [&x]
+				arr
+			}
+			`, []string{}},
 	}
 
 	assert := base.NewAssert(t)

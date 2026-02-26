@@ -188,6 +188,42 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			},
 		},
 		{"pass alloc to fun", `{ fun foo(@alloc Arena) void {} alloc @a = Arena() foo(@a) }`, void, nil},
+
+		{"array type", `fun foo(arr [Int 5]) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
+			fun, ok := e.TypeOfNode(id).Kind.(FunType)
+			assert.Equal(true, ok)
+			assert.Equal(1, len(fun.Params))
+			arr, ok := e.Type(fun.Params[0]).Kind.(ArrayType)
+			assert.Equal(true, ok)
+			assert.Equal(int64(5), arr.Len)
+			assert.Equal(Int.ID, arr.Elem)
+		}},
+		{
+			"array type ids are stable",
+			`fun foo(a [Int 5], b [Int 5], c [Int 6]) void { [1, 2, 3, 4, 5]}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				funNode, ok := e.Node(id).Kind.(ast.Fun)
+				assert.Equal(ok, true)
+				fun, ok := e.TypeOfNode(id).Kind.(FunType)
+				assert.Equal(true, ok)
+				assert.Equal(3, len(fun.Params))
+				for _, elem := range fun.Params {
+					_, ok := e.Type(elem).Kind.(ArrayType)
+					assert.Equal(true, ok)
+				}
+				assert.Equal(fun.Params[0], fun.Params[1])
+				assert.NotEqual(fun.Params[0], fun.Params[2])
+				// The array literal in the body should have the same type as param 0.
+				block, ok := e.Node(funNode.Block).Kind.(ast.Block)
+				assert.Equal(true, ok)
+				literalTypeID := e.TypeOfNode(block.Exprs[0]).ID
+				assert.Equal(fun.Params[0], literalTypeID)
+			},
+		},
+
+		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
+		{"index read", `{ let a = [1, 2, 3] a[1] }`, Int, nil},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -462,6 +498,16 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { struct Planet{name Str} let p = Planet@test("Earth") }` + "\n" +
 				`                                            ^^^^^`,
 		}},
+		{"index non-array", `{ let a = 123 a[0] }`, []string{
+			"test.met:1:15: not an array: Int\n" +
+				"    { let a = 123 a[0] }\n" +
+				"                  ^",
+		}},
+		{"index with non-int", `{ let a = [1, 2, 3] a["hello"] }`, []string{
+			"test.met:1:23: index type mismatch: expected Int, got Str\n" +
+				`    { let a = [1, 2, 3] a["hello"] }` + "\n" +
+				`                          ^^^^^^^`,
+		}},
 	}
 
 	assert := base.NewAssert(t)
@@ -703,6 +749,10 @@ func struct_t(name string, fields ...any) *Type {
 		}
 	}
 	return &Type{Kind: StructType{name, structFields}}
+}
+
+func arr_t(typ *Type, size int) *Type {
+	return &Type{Kind: ArrayType{typ.ID, int64(size)}}
 }
 
 func fun_t(types ...*Type) *Type {

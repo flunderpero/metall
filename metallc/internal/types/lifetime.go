@@ -140,6 +140,10 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeAllocInit(nodeID, kind)
 	case ast.StructLiteral:
 		a.analyzeStructLiteral(nodeID, kind)
+	case ast.ArrayLiteral:
+		a.analyzeArrayLiteral(nodeID, kind)
+	case ast.Index:
+		a.analyzeIndex(nodeID, kind)
 	case ast.Call:
 		a.analyzeCall(nodeID, kind)
 	case ast.If:
@@ -224,6 +228,18 @@ func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLi
 		}
 	}
 	a.flows[nodeID] = merged
+}
+
+func (a *LifetimeCheck) analyzeArrayLiteral(nodeID ast.NodeID, lit ast.ArrayLiteral) {
+	merged := Flow{}
+	for _, elemNodeID := range lit.Elems {
+		merged = merged.Merge(a.flow(elemNodeID))
+	}
+	a.flows[nodeID] = merged
+}
+
+func (a *LifetimeCheck) analyzeIndex(nodeID ast.NodeID, index ast.Index) {
+	a.flows[nodeID] = a.flow(index.Target)
 }
 
 func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
