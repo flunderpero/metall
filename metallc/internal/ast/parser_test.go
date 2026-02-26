@@ -213,6 +213,9 @@ func TestParseOK(t *testing.T) {
 		{"index read", "expr", `a[1]`, func(a *TestAST) NodeID {
 			return a.index(a.ident("a"), a.int_(1))
 		}},
+		{"index write", "expr", `a[1] = 2`, func(a *TestAST) NodeID {
+			return a.assign(a.index(a.ident("a"), a.int_(1)), a.int_(2))
+		}},
 	}
 
 	hasOnly := false

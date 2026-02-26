@@ -21,9 +21,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				"                              ^^^^",
 		}},
 		{"assign ref to outer", `{ mut a = 123 mut b = &a { mut c = 123 b = &c } }`, []string{
-			"test.met:1:40: reference escaping its allocation scope\n" +
+			"test.met:1:44: reference escaping its allocation scope\n" +
 				`    { mut a = 123 mut b = &a { mut c = 123 b = &c } }` + "\n" +
-				"                                           ^^^^^^",
+				"                                               ^^",
 		}},
 		{"nested", `
 			{
@@ -37,11 +37,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			    }
 			}
 			`, []string{
-			"test.met:8:25: reference escaping its allocation scope\n" +
+			"test.met:8:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					    {
 						    b = &c
-						    ^^^^^^
+						        ^^
 					    }
 					`, "\n"),
 		}},
@@ -56,11 +56,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:19: reference escaping its allocation scope\n" +
+			"test.met:8:24: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				      mut c = 456
 				      *z = &c
-				      ^^^^^^^
+				           ^^
 				    }
 				`, "\n"),
 		}},
@@ -80,11 +80,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:10:25: reference escaping its allocation scope\n" +
+			"test.met:10:30: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					        mut c = 789
 					        *y = &c
-					        ^^^^^^^
+					             ^^
 					    }
 					`, "\n"),
 		}},
@@ -120,11 +120,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:21: reference escaping its allocation scope\n" +
+			"test.met:8:26: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					    mut c = 456
 					    *y = &c
-					    ^^^^^^^
+					         ^^
 					}
 					`, "\n"),
 		}},
@@ -140,11 +140,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:21: reference escaping its allocation scope\n" +
+			"test.met:8:31: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					    mut c = 456
 					    foo.ptr = &c
-					    ^^^^^^^^^^^^
+					              ^^
 					}
 					`, "\n"),
 		}},
@@ -189,12 +189,12 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:9:21: reference escaping its allocation scope\n" +
+			"test.met:8:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
+					    mut cRef = &c
 					    mut x = &cRef
+					            ^^^^^
 					    bRef = *x
-					    ^^^^^^^^^
-					}
 					`, "\n"),
 		}},
 		// Ref escapes through a function call - x's ref is returned by
@@ -364,11 +364,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				r
 			}
 			`, []string{
-			"test.met:8:21: reference escaping its allocation scope\n" +
+			"test.met:8:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let x = 42
 				        w = Wrapper(&x)
-				        ^^^^^^^^^^^^^^^
+				                    ^^
 				        w.ptr
 				`, "\n"),
 		}},
@@ -581,6 +581,68 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				let x = 42
 				let arr = [&x]
 				arr
+			}
+			`, []string{}},
+
+		// Field assign through index: arr[0].ptr = &c where c is local and arr escapes.
+		{"field assign through index escapes", `
+			{
+				struct Wrapper { mut ptr &Int }
+				mut a = 123
+				mut arr = [Wrapper(&a)]
+				{
+					mut c = 456
+					arr[0].ptr = &c
+				}
+			}
+			`, []string{
+			"test.met:8:34: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    mut c = 456
+					    arr[0].ptr = &c
+					                 ^^
+					}
+					`, "\n"),
+		}},
+		// Valid: field assign through index where ref doesn't escape.
+		{"valid field assign through index no escape", `
+			{
+				struct Wrapper { mut ptr &Int }
+				mut a = 123
+				mut b = 456
+				mut arr = [Wrapper(&a)]
+				arr[0].ptr = &b
+			}
+			`, []string{}},
+
+		// Index assign: foo.arr[0] = &c where c is local and foo escapes.
+		{"index assign through field escapes", `
+			{
+				struct Container { mut values [&mut Int 1] }
+				mut a = 123
+				mut foo = Container([&a])
+				{
+					mut c = 456
+					foo.values[0] = &c
+				}
+			}
+			`, []string{
+			"test.met:8:37: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    mut c = 456
+					    foo.values[0] = &c
+					                    ^^
+					}
+					`, "\n"),
+		}},
+		// Valid: index assign through field where ref doesn't escape.
+		{"valid index assign through field no escape", `
+			{
+				struct Container { mut values [&mut Int 1] }
+				mut a = 123
+				mut b = 456
+				mut foo = Container([&a])
+				foo.values[0] = &b
 			}
 			`, []string{}},
 	}

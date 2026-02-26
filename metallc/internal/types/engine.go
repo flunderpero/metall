@@ -1074,6 +1074,8 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 		} else {
 			e.diag(node.Span, "cannot assign to field of immutable value")
 		}
+	case ast.Index:
+		e.diag(node.Span, "cannot assign to element of immutable array")
 	default:
 		e.diag(node.Span, "cannot assign to left-hand-side expression of type: %T", kind)
 	}
@@ -1082,7 +1084,7 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 
 // Check whether the given node is a valid mutable assignment target.
 // Return the node's type and whether it is mutable.
-func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) {
+func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:funlen
 	typeID, status := e.Query(nodeID)
 	if status.Failed() {
 		return InvalidTypeID, false
@@ -1103,6 +1105,22 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) {
 		}
 		ref := base.Cast[RefType](e.Type(exprTypeID).Kind)
 		return typeID, ref.Mut
+	case ast.Index:
+		targetTypeID, status := e.Query(kind.Target)
+		if status.Failed() {
+			return InvalidTypeID, false
+		}
+		var mut bool
+		if ref, ok := e.Type(targetTypeID).Kind.(RefType); ok {
+			mut = ref.Mut
+		} else {
+			_, mut = e.isPlaceMutable(kind.Target)
+		}
+		arrayTyp, ok := e.TypeOfNode(kind.Target).Kind.(ArrayType)
+		if !ok {
+			return InvalidTypeID, false
+		}
+		return arrayTyp.Elem, mut
 	case ast.FieldAccess:
 		targetTypeID, status := e.Query(kind.Target)
 		if status.Failed() {

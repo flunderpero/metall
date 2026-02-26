@@ -224,6 +224,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let a = [1, 2, 3] a[1] }`, Int, nil},
+		{"index write", `{ mut a = [1, 2, 3] a[1] = 5 }`, void, nil},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests

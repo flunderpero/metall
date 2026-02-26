@@ -440,6 +440,16 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 		} else {
 			g.write("store %s %s, ptr %s", fieldType, rhs, ptrReg)
 		}
+	case ast.Index:
+		g.Gen(lhsKind.Target)
+		g.Gen(lhsKind.Index)
+		arrIRType := g.irType(g.engine.TypeOfNode(lhsKind.Target).ID)
+		targetReg := g.lookupCode(lhsKind.Target)
+		indexReg := g.lookupCode(lhsKind.Index)
+		ptrReg := g.reg()
+		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
+		elemTypeID := base.Cast[types.ArrayType](g.engine.TypeOfNode(lhsKind.Target).Kind).Elem
+		g.storeValue(rhs, ptrReg, elemTypeID)
 	case ast.Deref:
 		g.Gen(assign.LHS)
 		ptr := g.lookupCode(lhsKind.Expr)

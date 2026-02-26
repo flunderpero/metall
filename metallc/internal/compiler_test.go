@@ -378,6 +378,37 @@ func TestCompile(t *testing.T) {
 				print_int(*nums[0])
 			}
 			`, "Mars\nEarth\n2\n1\n"},
+		{"assign to array index", `
+			fun main() void {
+				mut a = [1, 2, 3]
+				print_int(a[1])
+				a[1] = 4
+				print_int(a[1])
+			}
+			`, "2\n4\n"},
+		{"assign struct to array index", `
+			struct Planet { name Str }
+
+			fun main() void {
+				mut planets = [Planet("Earth"), Planet("Mars")]
+				print_str(planets[0].name)
+				planets[0] = Planet("Venus")
+				print_str(planets[0].name)
+			}
+			`, "Earth\nVenus\n"},
+		{"assign ref struct to array index", `
+			struct Planet { name Str }
+
+			fun main() void {
+				let earth = Planet("Earth")
+				let mars = Planet("Mars")
+				let venus = Planet("Venus")
+				mut planets = [&earth, &mars]
+				print_str(planets[0].name)
+				planets[0] = &venus
+				print_str(planets[0].name)
+			}
+			`, "Earth\nVenus\n"},
 	}
 
 	assert := base.NewAssert(t)

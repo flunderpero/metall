@@ -293,6 +293,8 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 		ts.Bindings[lhsKind.Name] = &BindingTaint{nodeID, 0, rhs}
 	case ast.FieldAccess:
 		a.analyzeAssignToField(nodeID, lhsKind, rhs)
+	case ast.Index:
+		a.analyzeAssignToArray(nodeID, lhsKind, rhs)
 	case ast.Deref:
 		a.analyzeAssignThroughDeref(nodeID, lhsKind, rhs)
 	default:
@@ -300,11 +302,24 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 	}
 }
 
+func (a *LifetimeCheck) analyzeAssignToArray(nodeID ast.NodeID, index ast.Index, rhs Flow) {
+	a.mergeRHSIntoChainRoot(nodeID, index.Target, rhs)
+}
+
 func (a *LifetimeCheck) analyzeAssignToField(nodeID ast.NodeID, fa ast.FieldAccess, rhs Flow) {
-	// Walk field-access chain to find the root binding.
-	root := fa.Target
+	a.mergeRHSIntoChainRoot(nodeID, fa.Target, rhs)
+}
+
+// mergeRHSIntoChainRoot walks a chain of FieldAccess and Index nodes to find
+// the root Ident, then merges the RHS flow into that binding's taint.
+func (a *LifetimeCheck) mergeRHSIntoChainRoot(nodeID ast.NodeID, target ast.NodeID, rhs Flow) {
+	root := target
 	for {
-		if inner, ok := a.e.Node(root).Kind.(ast.FieldAccess); ok {
+		switch inner := a.e.Node(root).Kind.(type) {
+		case ast.FieldAccess:
+			root = inner.Target
+			continue
+		case ast.Index:
 			root = inner.Target
 			continue
 		}
@@ -326,7 +341,7 @@ func (a *LifetimeCheck) analyzeAssignThroughDeref(nodeID ast.NodeID, deref ast.D
 	for _, target := range targets {
 		targetScope := a.scopeByID(target.ScopeID)
 		if targetScope != localScope && rhs.Taints.ContainsAny(localScope.LocalTaints) {
-			a.diag(a.e.Node(nodeID).Span, "reference escaping its allocation scope")
+			a.diagEscape(nodeID, rhs.Taints, localScope)
 		}
 		if bt, ok := targetScope.Bindings[target.Name]; ok {
 			bt.Flow = rhs
@@ -363,7 +378,7 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 			continue
 		}
 		if bt.Flow.Taints.ContainsAny(ts.LocalTaints) {
-			a.diag(a.e.Node(bt.DiagNode).Span, "reference escaping its allocation scope")
+			a.diagEscape(bt.DiagNode, bt.Flow.Taints, ts)
 		}
 		if pbt, ok := parentScope.Bindings[name]; ok {
 			pbt.Flow = pbt.Flow.Merge(bt.Flow)
