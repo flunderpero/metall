@@ -177,7 +177,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			assert.Equal(AllocArena, typ.Impl)
 		}},
 		{
-			"alloc", `{ alloc @test = Arena() struct Planet{name Str} let p = Planet@test("Earth") p }`, nil,
+			"alloc", `{ alloc @test = Arena() struct Planet{name Str} let p = @test Planet("Earth") p }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
@@ -494,10 +494,10 @@ func TestTypeCheckErr(t *testing.T) {
 					"                                           ^",
 			},
 		},
-		{"non-existing allocator", `{ struct Planet{name Str} let p = Planet@test("Earth") }`, []string{
-			"test.met:1:41: unknown allocator: @test\n" +
-				`    { struct Planet{name Str} let p = Planet@test("Earth") }` + "\n" +
-				`                                            ^^^^^`,
+		{"non-existing allocator", `{ struct Planet{name Str} let p = @test Planet("Earth") }`, []string{
+			"test.met:1:35: unknown allocator: @test\n" +
+				`    { struct Planet{name Str} let p = @test Planet("Earth") }` + "\n" +
+				`                                      ^^^^^`,
 		}},
 		{"index non-array", `{ let a = 123 a[0] }`, []string{
 			"test.met:1:15: not an array: Int\n" +

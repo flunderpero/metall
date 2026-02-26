@@ -94,7 +94,9 @@ func (g *IRGen) Gen(id ast.NodeID) {
 	case ast.Struct:
 		g.genStruct(id, kind)
 	case ast.StructLiteral:
-		g.genStructLiteral(id, kind)
+		g.genStructLiteralOnStack(id, kind)
+	case ast.Allocation:
+		g.genAllocation(id, kind)
 	case ast.ArrayLiteral:
 		g.genArrayLiteral(id, kind)
 	case ast.Index:
@@ -193,7 +195,25 @@ func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 	g.setCode(id, valReg)
 }
 
-func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
+func (g *IRGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
+	irTyp := g.irType(g.engine.TypeOfNode(lit.Target).ID)
+	reg := g.reg()
+	g.write("%s = alloca %s", reg, irTyp)
+	g.genStructLiteralFields(id, lit, reg)
+}
+
+func (g *IRGen) genAllocation(id ast.NodeID, alloc ast.Allocation) {
+	lit := base.Cast[ast.StructLiteral](g.engine.Node(alloc.Target).Kind)
+	irTyp := g.irType(g.engine.TypeOfNode(lit.Target).ID)
+	b, _ := g.lookupSymbol(id, alloc.Alloc.Name)
+	reg := g.reg()
+	g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
+	g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
+	g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, b.Reg, reg)
+	g.genStructLiteralFields(id, lit, reg)
+}
+
+func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, destReg string) {
 	g.Gen(lit.Target)
 	for _, arg := range lit.Args {
 		g.Gen(arg)
@@ -201,22 +221,13 @@ func (g *IRGen) genStructLiteral(id ast.NodeID, lit ast.StructLiteral) {
 	targetTyp := g.engine.TypeOfNode(lit.Target)
 	structTyp := base.Cast[types.StructType](targetTyp.Kind)
 	irTyp := g.irType(targetTyp.ID)
-	reg := g.reg()
-	if lit.Alloc != nil {
-		b, _ := g.lookupSymbol(id, lit.Alloc.Name)
-		g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
-		g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
-		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, b.Reg, reg)
-	} else {
-		g.write("%s = alloca %s", reg, irTyp)
-	}
 	for i, arg := range lit.Args {
 		fieldReg := g.reg()
-		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", fieldReg, irTyp, irTyp, reg, i)
+		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", fieldReg, irTyp, irTyp, destReg, i)
 		argReg := g.lookupCode(arg)
 		g.storeValue(argReg, fieldReg, structTyp.Fields[i].Type)
 	}
-	g.setCode(id, reg)
+	g.setCode(id, destReg)
 }
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
@@ -597,7 +608,7 @@ func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	if g.isAggregateType(exprType.ID) {
 		exprNode := g.engine.Node(v.Expr)
 		switch exprNode.Kind.(type) {
-		case ast.StructLiteral, ast.ArrayLiteral, ast.Call:
+		case ast.StructLiteral, ast.Allocation, ast.ArrayLiteral, ast.Call:
 			// The result value is already a copy.
 			g.setCode(id, exprReg)
 			g.setSymbol(id, v.Name.Name, exprReg, "ptr")

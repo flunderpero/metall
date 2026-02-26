@@ -378,7 +378,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Planet { name Str }
 				let p = {
 					alloc @a = Arena()
-					Planet@a("Earth")
+					@a Planet("Earth")
 				}
 				p
 			}
@@ -386,8 +386,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:6:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        alloc @a = Arena()
-				        Planet@a("Earth")
-				        ^^^^^^^^^^^^^^^^^
+				        @a Planet("Earth")
+				        ^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -396,7 +396,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				struct Planet { name Str }
 				alloc @a = Arena()
-				let p = Planet@a("Earth")
+				let p = @a Planet("Earth")
 				p
 			}
 			`, []string{}},
@@ -404,7 +404,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"valid arena alloc via param", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = Planet@a("Earth") &p }
+				fun make(@a Arena) &Planet { let p = @a Planet("Earth") &p }
 				alloc @a = Arena()
 				let p = make(@a)
 				p
@@ -417,7 +417,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				alloc @outer = Arena()
 				let p = {
 					alloc @a = Arena()
-					Planet@a("Earth")
+					@a Planet("Earth")
 				}
 				p
 			}
@@ -425,8 +425,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:7:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        alloc @a = Arena()
-				        Planet@a("Earth")
-				        ^^^^^^^^^^^^^^^^^
+				        @a Planet("Earth")
+				        ^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -434,7 +434,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"arena ref propagates through assignment and call", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = Planet@a("Earth") &p }
+				fun make(@a Arena) &Planet { let p = @a Planet("Earth") &p }
 				fun identity(p &Planet) &Planet { p }
 				let r = {
 					alloc @a = Arena()
@@ -457,7 +457,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"arena alloc escapes via function call", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = Planet@a("Earth") &p }
+				fun make(@a Arena) &Planet { let p = @a Planet("Earth") &p }
 				let p = {
 					alloc @inner = Arena()
 					make(@inner)

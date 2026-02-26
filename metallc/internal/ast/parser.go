@@ -160,21 +160,25 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	var alloc *Name
-	t, ok := p.peek()
-	if !ok {
-		return ParseFailed, false
-	}
-	if t.Kind == token.AllocIdent {
-		p.next()
-		alloc = &Name{t.Value, t.Span}
-	}
 	ident := p.NewIdent(struct_.Value, struct_.Span)
 	args, ok := p.ParseCallArgs()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewStructLiteral(alloc, ident, args, struct_.Span.Combine(p.span())), true
+	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseAllocation() (NodeID, bool) {
+	allocToken, ok := p.expect(token.AllocIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	target, ok := p.ParseStructLiteral()
+	if !ok {
+		return ParseFailed, false
+	}
+	alloc := Name{allocToken.Value, allocToken.Span}
+	return p.NewAllocation(alloc, target, allocToken.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
@@ -350,6 +354,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = struct_literal
+	case token.AllocIdent:
+		allocation, ok := p.ParseAllocation()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = allocation
 	case token.LBracket:
 		array, ok := p.ParseArrayLiteral()
 		if !ok {
@@ -559,9 +569,9 @@ func (p *Parser) ParseType() (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
-			if _, ok := p.expect(token.RBracket); !ok {
-				return ParseFailed, false
-			}
+		if _, ok := p.expect(token.RBracket); !ok {
+			return ParseFailed, false
+		}
 		typ, ok := p.ParseType()
 		if !ok {
 			return ParseFailed, false

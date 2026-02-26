@@ -184,8 +184,8 @@ func TestParseOK(t *testing.T) {
 		{"declare allocator", "expr", "alloc @test = Arena(123)", func(a *TestAST) NodeID {
 			return a.alloc_init("@test", "Arena", a.int_(123))
 		}},
-		{"alloc", "expr", `Planet@test()`, func(a *TestAST) NodeID {
-			return a.struct_lit_alloc("@test", a.ident("Planet"))
+		{"alloc", "expr", `@test Planet()`, func(a *TestAST) NodeID {
+			return a.allocation("@test", a.ident("Planet"))
 		}},
 		{
 			"alloc as fun param", "expr", "fun foo(@alloc Arena, name Str, @alloc2 Arena) void {}",
@@ -287,8 +287,8 @@ func TestParseErr(t *testing.T) {
 				`    struct Arena{name Str}` + "\n" +
 				"           ^^^^^",
 		}},
-		{"alloc ident is not an expression", `@test`, []string{
-			"test.met:1:1: unexpected token: expected start of an expression, got <allocator identifier>\n" +
+		{"alloc ident without struct literal", `@test`, []string{
+			"test.met:1:1: unexpected end of file\n" +
 				`    @test` + "\n" +
 				"    ^^^^^",
 		}},
@@ -370,14 +370,12 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 	if args == nil {
 		args = []NodeID{}
 	}
-	return a.NewStructLiteral(nil, struct_, args, a.span)
+	return a.NewStructLiteral(struct_, args, a.span)
 }
 
-func (a *TestAST) struct_lit_alloc(alloc string, struct_ NodeID, args ...NodeID) NodeID {
-	if args == nil {
-		args = []NodeID{}
-	}
-	return a.NewStructLiteral(&Name{alloc, a.span}, struct_, args, a.span)
+func (a *TestAST) allocation(alloc string, struct_ NodeID, args ...NodeID) NodeID {
+	lit := a.struct_lit(struct_, args...)
+	return a.NewAllocation(Name{alloc, a.span}, lit, a.span)
 }
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {
@@ -514,9 +512,9 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case StructLiteral:
-			if kind.Alloc != nil {
-				kind.Alloc.Span = base.Span{}
-			}
+			node.Kind = kind
+		case Allocation:
+			kind.Alloc.Span = base.Span{}
 			node.Kind = kind
 		case AllocInit:
 			kind.Name.Span = base.Span{}

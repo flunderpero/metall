@@ -287,6 +287,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkStructField(nodeID, nodeKind, node.Span)
 	case ast.StructLiteral:
 		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
+	case ast.Allocation:
+		typeID, status = e.checkAllocation(nodeKind)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.ArrayLiteral:
@@ -566,6 +568,19 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 	return arrTyp.Elem, TypeOK
 }
 
+func (e *Engine) checkAllocation(alloc ast.Allocation) (TypeID, TypeStatus) {
+	_, _, ok := e.Scope().Lookup(alloc.Alloc.Name)
+	if !ok {
+		e.diag(alloc.Alloc.Span, "unknown allocator: %s", alloc.Alloc.Name)
+		return InvalidTypeID, TypeFailed
+	}
+	typeID, status := e.Query(alloc.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	return typeID, TypeOK
+}
+
 func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
 	structTypeID, status := e.Query(lit.Target)
 	if status.Failed() {
@@ -596,13 +611,6 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 				e.TypeDisplay(struct_.Fields[i].Type),
 				e.TypeDisplay(argTypeID),
 			)
-			return InvalidTypeID, TypeFailed
-		}
-	}
-	if lit.Alloc != nil {
-		_, _, ok := e.Scope().Lookup(lit.Alloc.Name)
-		if !ok {
-			e.diag(lit.Alloc.Span, "unknown allocator: %s", lit.Alloc.Name)
 			return InvalidTypeID, TypeFailed
 		}
 	}

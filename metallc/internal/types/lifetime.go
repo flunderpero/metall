@@ -140,6 +140,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeAllocInit(nodeID, kind)
 	case ast.StructLiteral:
 		a.analyzeStructLiteral(nodeID, kind)
+	case ast.Allocation:
+		a.analyzeAllocation(nodeID, kind)
 	case ast.ArrayLiteral:
 		a.analyzeArrayLiteral(nodeID, kind)
 	case ast.Index:
@@ -222,10 +224,13 @@ func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLi
 	for _, argNodeID := range lit.Args {
 		merged = merged.Merge(a.flow(argNodeID))
 	}
-	if lit.Alloc != nil {
-		if bt := a.lookupBinding(nodeID, lit.Alloc.Name); bt != nil {
-			merged = merged.Merge(bt.Flow)
-		}
+	a.flows[nodeID] = merged
+}
+
+func (a *LifetimeCheck) analyzeAllocation(nodeID ast.NodeID, alloc ast.Allocation) {
+	merged := a.flow(alloc.Target)
+	if bt := a.lookupBinding(nodeID, alloc.Alloc.Name); bt != nil {
+		merged = merged.Merge(bt.Flow)
 	}
 	a.flows[nodeID] = merged
 }

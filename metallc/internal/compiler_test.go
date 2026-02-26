@@ -289,17 +289,17 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun make_saturn(@a Arena) &Planet {
-				let p = Planet@a("Saturn")
+				let p = @a Planet("Saturn")
 				&p
 			}
 
 			fun main() void {
 				alloc @a = Arena()
-				let earth = Planet@a("Earth")
-				let mars = Planet@a("Mars")
+				let earth = @a Planet("Earth")
+				let mars = @a Planet("Mars")
 				{
 					alloc @b = Arena()
-					let venus = Planet@b("Venus")
+					let venus = @b Planet("Venus")
 					print_str(venus.name)
 				}
 				print_str(mars.name)
