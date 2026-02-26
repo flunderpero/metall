@@ -289,7 +289,8 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun make_saturn(@a Arena) &Planet {
-				Planet@a("Saturn")
+				let p = Planet@a("Saturn")
+				&p
 			}
 
 			fun main() void {

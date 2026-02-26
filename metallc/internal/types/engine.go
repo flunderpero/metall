@@ -268,7 +268,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.StructField:
 		typeID, status = e.checkStructField(nodeID, nodeKind, node.Span)
 	case ast.StructLiteral:
-		typeID, status = e.checkStructLiteral(nodeID, nodeKind, node.Span)
+		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
 	case ast.AllocInit:
 		typeID, status = e.checkAllocInit(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
@@ -476,7 +476,7 @@ func (e *Engine) checkAllocInit(nodeID ast.NodeID, alloc ast.AllocInit, span bas
 	return e.voidType, TypeOK
 }
 
-func (e *Engine) checkStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
 	structTypeID, status := e.Query(lit.Target)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -515,8 +515,6 @@ func (e *Engine) checkStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral, sp
 			e.diag(lit.Alloc.Span, "unknown allocator: %s", lit.Alloc.Name)
 			return InvalidTypeID, TypeFailed
 		}
-		refTyp := e.buildRefType(nodeID, structTypeID, false, span)
-		return refTyp, TypeOK
 	}
 	return structTypeID, TypeOK
 }
@@ -901,13 +899,6 @@ func (e *Engine) checkVar(
 	}
 	if exprTypeID == e.voidType {
 		e.diag(span, "cannot assign void to a variable")
-		return InvalidTypeID, TypeFailed
-	}
-	exprTyp := e.Type(exprTypeID)
-	ref, isRef := exprTyp.Kind.(RefType)
-	if varNode.Mut && isRef && !ref.Mut {
-		exprSpan := e.Node(varNode.Expr).Span
-		e.diag(exprSpan, "cannot take a mutable reference to an immutable value")
 		return InvalidTypeID, TypeFailed
 	}
 	if !e.bind(varNode.Name.Name, varNode.Mut, nodeID, exprTypeID, varNode.Name.Span) {

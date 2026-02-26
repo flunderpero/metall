@@ -404,7 +404,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"valid arena alloc via param", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { Planet@a("Earth") }
+				fun make(@a Arena) &Planet { let p = Planet@a("Earth") &p }
 				alloc @a = Arena()
 				let p = make(@a)
 				p
@@ -430,11 +430,34 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// Arena ref assigned to another variable and passed to a function still escapes.
+		{"arena ref propagates through assignment and call", `
+			{
+				struct Planet { name Str }
+				fun make(@a Arena) &Planet { let p = Planet@a("Earth") &p }
+				fun identity(p &Planet) &Planet { p }
+				let r = {
+					alloc @a = Arena()
+					let p = make(@a)
+					let q = p
+					identity(q)
+				}
+				r
+			}
+			`, []string{
+			"test.met:10:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let q = p
+				        identity(q)
+				        ^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
 		// Arena-allocated struct escapes through a function call with a local allocator.
 		{"arena alloc escapes via function call", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { Planet@a("Earth") }
+				fun make(@a Arena) &Planet { let p = Planet@a("Earth") &p }
 				let p = {
 					alloc @inner = Arena()
 					make(@inner)
@@ -450,6 +473,18 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// Valid: shadowed variable with ref should not trigger false positive.
+		{"valid shadowed ref no escape", `
+			{
+				mut a = 123
+				mut b = &a
+				{
+					mut c = 456
+					mut b = &c
+					*b = 789
+				}
+			}
+			`, []string{}},
 		// If/else: ref to a local escapes through one branch.
 		{"if ref escape", `
 			{
@@ -469,6 +504,37 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// Two refs from different scopes passed to a function that could
+		// return either — result carries both taints, should fail.
+		{"two refs different scopes pick escapes", `
+			{
+				fun pick(a &Int, b &Int) &Int { if true { a } else { b } }
+				let x = 42
+				let r = {
+					let y = 99
+					pick(&x, &y)
+				}
+				r
+			}
+			`, []string{
+			"test.met:7:30: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let y = 99
+				        pick(&x, &y)
+				                 ^^
+				    }
+				`, "\n"),
+		}},
+		// Valid: both refs from same scope, pick result doesn't escape.
+		{"valid two refs same scope pick", `
+			{
+				fun pick(a &Int, b &Int) &Int { if true { a } else { b } }
+				let x = 42
+				let y = 99
+				let r = pick(&x, &y)
+				r
+			}
+			`, []string{}},
 	}
 
 	assert := base.NewAssert(t)

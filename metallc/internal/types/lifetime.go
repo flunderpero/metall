@@ -163,10 +163,21 @@ func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 	if bt == nil {
 		return
 	}
-	a.taintOrigin[bt.AllocTaint] = nodeID
+	// Use flow taints if present (arena-allocated values carry allocator taint).
+	// Fall back to AllocTaint for stack values — the scope taint only matters
+	// at the point of & (ref-taking), not at variable declaration.
+	taints := bt.Flow.Taints
+	if len(taints) == 0 {
+		taints = TaintSet{bt.AllocTaint}
+		a.taintOrigin[bt.AllocTaint] = nodeID
+	} else {
+		for _, t := range taints {
+			a.taintOrigin[t] = nodeID
+		}
+	}
 	scope := a.e.ScopeGraph.NodeScope(nodeID)
 	a.flows[nodeID] = Flow{
-		Taints:   TaintSet{bt.AllocTaint},
+		Taints:   taints,
 		PointsTo: PointsToSet{{scope.ID, ref.Name.Name}},
 	}
 }
@@ -328,8 +339,11 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	parentScope := a.scopeByID(outerScope.ID)
 
 	// Propagate mutations of outer-scope bindings back to the parent scope.
+	// Skip bindings that are declared directly in the block's own scope
+	// (they shadow outer bindings and are not mutations).
+	innerScope := a.e.ScopeGraph.NodeScope(lastExpr)
 	for name, bt := range ts.Bindings {
-		if _, _, ok := outerScope.Lookup(name); !ok {
+		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
 			continue
 		}
 		if bt.Flow.Taints.ContainsAny(ts.LocalTaints) {

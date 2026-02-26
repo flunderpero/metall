@@ -136,6 +136,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"if w/o else", `{ let a = true if a { 42 } }`, void, nil},
 
 		{"ref", `{ let a = 5 let b = &a b }`, ref_t(Int), nil},
+		{"mut binding of immutable ref", `{ let a = 5 mut b = &a b }`, ref_t(Int), nil},
 		{"mut ref", `{ mut a = 5 mut b = &a b }`, ref_mut_t(Int), nil},
 		{"deref", `{ let a = 5 let b = &a *b }`, Int, nil},
 		{
@@ -180,10 +181,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
-				refExpr := block.Exprs[len(block.Exprs)-1]
-				refTyp, ok := e.TypeOfNode(refExpr).Kind.(RefType)
+				lastExpr := block.Exprs[len(block.Exprs)-1]
+				_, ok = e.TypeOfNode(lastExpr).Kind.(StructType)
 				assert.Equal(true, ok)
-				assert.Equal("struct Planet(name Str)", e.TypeDisplay(refTyp.Type))
+				assert.Equal("struct Planet(name Str)", e.TypeDisplay(e.TypeOfNode(lastExpr).ID))
 			},
 		},
 		{"pass alloc to fun", `{ fun foo(@alloc Arena) void {} alloc @a = Arena() foo(@a) }`, void, nil},
@@ -191,7 +192,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
 	// violate the lifetime rules, but we still wan to test them in isolation.
-	skipLifetimeCheck := []string{"ref", "mut ref", "struct ref", "ref return", "alloc"}
+	skipLifetimeCheck := []string{"ref", "mut binding of immutable ref", "mut ref", "struct ref", "ref return", "alloc"}
 
 	assert := base.NewAssert(t)
 	hasOnly := false
@@ -362,11 +363,7 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { fun foo(a &Int) void { *a = 123 }}` + "\n" +
 				`                             ^^`,
 		}},
-		{"take mutable ref to immutable in var", `{ let a = 123 mut b = &a }`, []string{
-			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
-				`    { let a = 123 mut b = &a }` + "\n" +
-				`                          ^^`,
-		}},
+
 		{"take mutable ref to immutable in assign", `{ mut a = 123 let b = 123 mut c = &a c = &b }`, []string{
 			"test.met:1:42: type mismatch: expected &mut Int, got &Int\n" +
 				`    { mut a = 123 let b = 123 mut c = &a c = &b }` + "\n" +
@@ -460,12 +457,6 @@ func TestTypeCheckErr(t *testing.T) {
 					"                                           ^",
 			},
 		},
-		{"coerce an immutable ref to a mutable", `{ let a = 123 mut b = &a }`, []string{
-			"test.met:1:23: cannot take a mutable reference to an immutable value\n" +
-				`    { let a = 123 mut b = &a }` + "\n" +
-				`                          ^^`,
-		}},
-
 		{"non-existing allocator", `{ struct Planet{name Str} let p = Planet@test("Earth") }`, []string{
 			"test.met:1:41: unknown allocator: @test\n" +
 				`    { struct Planet{name Str} let p = Planet@test("Earth") }` + "\n" +
