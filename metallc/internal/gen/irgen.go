@@ -170,7 +170,7 @@ func (g *IRGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 		g.Gen(elem)
 	}
 	arrTyp := base.Cast[types.ArrayType](g.engine.TypeOfNode(id).Kind)
-	arrIRType := g.irType(g.engine.TypeOfNode(id).ID)
+	arrIRType := g.irTypeOfNode(id)
 	reg := g.reg()
 	g.write("%s = alloca %s", reg, arrIRType)
 	g.setCode(id, reg)
@@ -203,14 +203,28 @@ func (g *IRGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
 }
 
 func (g *IRGen) genAllocation(id ast.NodeID, alloc ast.Allocation) {
-	lit := base.Cast[ast.StructLiteral](g.engine.Node(alloc.Target).Kind)
-	irTyp := g.irType(g.engine.TypeOfNode(lit.Target).ID)
-	b, _ := g.lookupSymbol(id, alloc.Alloc.Name)
-	reg := g.reg()
-	g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
-	g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
-	g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, b.Reg, reg)
-	g.genStructLiteralFields(id, lit, reg)
+	allocator, _ := g.lookupSymbol(id, alloc.Alloc.Name)
+	lit := g.engine.Node(alloc.Target).Kind
+	switch lit := lit.(type) {
+	case ast.ArrayType:
+		reg := g.reg()
+		irTyp := g.irTypeOfNode(lit.Elem)
+		g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
+		g.write("%s_elm_size = ptrtoint ptr %s_elm_size_ptr to i64", reg, reg)
+		g.write("%s_size = mul i64 %s_elm_size, %d", reg, reg, lit.Len)
+		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocator.Reg, reg)
+		g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_size, i1 false)", reg, reg)
+		g.setCode(id, reg)
+	case ast.StructLiteral:
+		irTyp := g.irTypeOfNode(lit.Target)
+		reg := g.reg()
+		g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
+		g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
+		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocator.Reg, reg)
+		g.genStructLiteralFields(id, lit, reg)
+	default:
+		panic(base.Errorf("unsupported allocation type %T", lit))
+	}
 }
 
 func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, destReg string) {

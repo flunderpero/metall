@@ -578,6 +578,14 @@ func (e *Engine) checkAllocation(alloc ast.Allocation) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
+	typ := e.Type(typeID)
+	switch typ.Kind.(type) {
+	case StructType, ArrayType:
+	default:
+		targetSpan := e.Node(alloc.Target).Span
+		e.diag(targetSpan, "only structs and arrays can be allocated, got %s", e.TypeDisplay(typeID))
+		return InvalidTypeID, TypeFailed
+	}
 	return typeID, TypeOK
 }
 

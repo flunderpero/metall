@@ -185,7 +185,7 @@ func TestParseOK(t *testing.T) {
 			return a.alloc_init("@test", "Arena", a.int_(123))
 		}},
 		{"alloc", "expr", `@test Planet()`, func(a *TestAST) NodeID {
-			return a.allocation("@test", a.ident("Planet"))
+			return a.alloc("@test", a.struct_lit(a.ident("Planet")))
 		}},
 		{
 			"alloc as fun param", "expr", "fun foo(@alloc Arena, name Str, @alloc2 Arena) void {}",
@@ -215,6 +215,9 @@ func TestParseOK(t *testing.T) {
 		}},
 		{"index write", "expr", `a[1] = 2`, func(a *TestAST) NodeID {
 			return a.assign(a.index(a.ident("a"), a.int_(1)), a.int_(2))
+		}},
+		{"alloc array", "expr", `@a [5]Int()`, func(a *TestAST) NodeID {
+			return a.alloc("@a", a.arr_typ(a.int_typ(), 5))
 		}},
 	}
 
@@ -287,7 +290,7 @@ func TestParseErr(t *testing.T) {
 				`    struct Arena{name Str}` + "\n" +
 				"           ^^^^^",
 		}},
-		{"alloc ident without struct literal", `@test`, []string{
+		{"alloc without target", `@test`, []string{
 			"test.met:1:1: unexpected end of file\n" +
 				`    @test` + "\n" +
 				"    ^^^^^",
@@ -373,9 +376,8 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 	return a.NewStructLiteral(struct_, args, a.span)
 }
 
-func (a *TestAST) allocation(alloc string, struct_ NodeID, args ...NodeID) NodeID {
-	lit := a.struct_lit(struct_, args...)
-	return a.NewAllocation(Name{alloc, a.span}, lit, a.span)
+func (a *TestAST) alloc(alloc string, target NodeID) NodeID {
+	return a.NewAllocation(Name{alloc, a.span}, target, a.span)
 }
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {
@@ -420,8 +422,8 @@ func (a *TestAST) int_typ() NodeID {
 	return a.NewSimpleType(Name{"Int", a.span}, a.span)
 }
 
-func (a *TestAST) arr_typ(typ NodeID, size int) NodeID {
-	return a.NewArrayType(typ, int64(size), a.span)
+func (a *TestAST) arr_typ(typ NodeID, len_ int) NodeID {
+	return a.NewArrayType(typ, int64(len_), a.span)
 }
 
 func (a *TestAST) arr_lit(elems ...NodeID) NodeID {

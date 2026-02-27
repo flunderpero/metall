@@ -409,6 +409,18 @@ func TestCompile(t *testing.T) {
 				print_str(planets[0].name)
 			}
 			`, "Earth\nVenus\n"},
+		{"array alloc", `
+			fun main() void {
+				alloc @a = Arena()
+				mut numbers = @a [5]Int()
+				numbers[1] = 1
+				numbers[2] = 2
+
+				print_int(numbers[0])
+				print_int(numbers[1])
+				print_int(numbers[2])
+			}
+			`, "0\n1\n2\n"},
 	}
 
 	assert := base.NewAssert(t)

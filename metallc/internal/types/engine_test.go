@@ -221,7 +221,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(fun.Params[0], literalTypeID)
 			},
 		},
-
+		{"array alloc", `{ alloc @a = Arena() @a [5]Int() }`, arr_t(Int, 5), nil},
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let a = [1, 2, 3] a[1] }`, Int, nil},
 		{"index write", `{ mut a = [1, 2, 3] a[1] = 5 }`, void, nil},
@@ -229,7 +229,15 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
 	// violate the lifetime rules, but we still wan to test them in isolation.
-	skipLifetimeCheck := []string{"ref", "mut binding of immutable ref", "mut ref", "struct ref", "ref return", "alloc"}
+	skipLifetimeCheck := []string{
+		"ref",
+		"mut binding of immutable ref",
+		"mut ref",
+		"struct ref",
+		"ref return",
+		"alloc",
+		"array alloc",
+	}
 
 	assert := base.NewAssert(t)
 	hasOnly := false

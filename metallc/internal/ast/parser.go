@@ -36,7 +36,7 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 	decls := make([]NodeID, 0)
 	result := true
 	for {
-		t, ok := p.peek()
+		t, ok := p.mayPeek()
 		if !ok {
 			return decls, result
 		}
@@ -71,7 +71,7 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	t, ok = p.peek()
+	t, ok = p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -95,7 +95,7 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 func (p *Parser) ParseStructFields() ([]NodeID, bool) {
 	fields := []NodeID{}
 	for {
-		t, ok := p.peek()
+		t, ok := p.mayPeek()
 		if !ok {
 			return fields, true
 		}
@@ -173,8 +173,35 @@ func (p *Parser) ParseAllocation() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	target, ok := p.ParseStructLiteral()
+	t, ok := p.mustPeek()
 	if !ok {
+		return ParseFailed, false
+	}
+	var target NodeID
+	switch t.Kind { //nolint:exhaustive
+	case token.LBracket:
+		target, ok = p.ParseArrayType()
+		if !ok {
+			return ParseFailed, false
+		}
+		if _, ok := p.expect(token.LParen); !ok {
+			return ParseFailed, false
+		}
+		if _, ok := p.expect(token.RParen); !ok {
+			return ParseFailed, false
+		}
+	case token.TypeIdent:
+		target, ok = p.ParseStructLiteral()
+		if !ok {
+			return ParseFailed, false
+		}
+	default:
+		p.diagnostic(
+			t.Span,
+			"unexpected token: expected one of %s, got %s",
+			token.PrettyPrintTokenKinds([]token.TokenKind{token.LBracket, token.TypeIdent}),
+			t.Kind,
+		)
 		return ParseFailed, false
 	}
 	alloc := Name{allocToken.Value, allocToken.Span}
@@ -189,7 +216,7 @@ func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
 	span := t.Span
 	elems := []NodeID{}
 	for {
-		t, ok := p.peek()
+		t, ok := p.mustPeek()
 		if !ok {
 			return ParseFailed, false
 		}
@@ -227,7 +254,7 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 }
 
 func (p *Parser) ParseExpr() (NodeID, bool) {
-	t, ok := p.peek()
+	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -236,7 +263,7 @@ func (p *Parser) ParseExpr() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	switch t, ok := p.peek(); {
+	switch t, ok := p.mayPeek(); {
 	case !ok:
 		return lhs, true
 	case t.Kind == token.Eq:
@@ -252,7 +279,7 @@ func (p *Parser) ParseExpr() (NodeID, bool) {
 }
 
 func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
-	t, ok := p.peek()
+	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -273,7 +300,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 		}
 	}
 	for {
-		t, ok := p.peek()
+		t, ok := p.mayPeek()
 		if !ok {
 			break
 		}
@@ -312,7 +339,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 }
 
 func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
-	t, ok := p.peek()
+	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -426,7 +453,7 @@ func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
 	}
 	args := []NodeID{}
 	for {
-		t, ok := p.peek()
+		t, ok := p.mayPeek()
 		if !ok {
 			return args, true
 		}
@@ -491,7 +518,7 @@ func (p *Parser) ParseAllocInit() (NodeID, bool) {
 }
 
 func (p *Parser) ParseVar() (NodeID, bool) {
-	t, ok := p.peek()
+	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -525,7 +552,7 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 	}
 	funParams := []NodeID{}
 	for {
-		t, ok := p.peek()
+		t, ok := p.mayPeek()
 		if !ok {
 			return funParams, true
 		}
@@ -555,31 +582,42 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 	}
 }
 
+func (p *Parser) ParseArrayType() (NodeID, bool) {
+	t, ok := p.expect(token.LBracket)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	len_, ok := p.expectInt()
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.RBracket); !ok {
+		return ParseFailed, false
+	}
+	typ, ok := p.ParseType()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewArrayType(typ, len_, span.Combine(p.span())), true
+}
+
 func (p *Parser) ParseType() (NodeID, bool) {
-	t, ok := p.next()
+	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
 	span := t.Span
 	switch t.Kind { //nolint:exhaustive
 	case token.TypeIdent:
+		p.next()
 		return p.NewSimpleType(Name{t.Value, span}, span), true
 	case token.LBracket:
-		len_, ok := p.expectInt()
-		if !ok {
-			return ParseFailed, false
-		}
-		if _, ok := p.expect(token.RBracket); !ok {
-			return ParseFailed, false
-		}
-		typ, ok := p.ParseType()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewArrayType(typ, len_, span.Combine(p.span())), true
+		return p.ParseArrayType()
 	case token.Amp:
+		p.next()
 		mut := false
-		if next, ok := p.peek(); ok && next.Kind == token.Mut {
+		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
 			mut = true
 			p.next()
 		}
@@ -607,7 +645,7 @@ func (p *Parser) ParseIf() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	et, ok := p.peek()
+	et, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -646,7 +684,7 @@ func (p *Parser) parseBlock(createScope bool) (NodeID, bool) {
 	span := t.Span
 	exprs := []NodeID{}
 	for {
-		t, ok := p.peek()
+		t, ok := p.mayPeek()
 		if !ok {
 			break
 		}
@@ -669,6 +707,7 @@ func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {
 
 func (p *Parser) next() (*token.Token, bool) {
 	if p.pos >= len(p.tokens) {
+		p.diagnostic(p.span(), "unexpected end of file")
 		return nil, false
 	}
 	token := &p.tokens[p.pos]
@@ -676,11 +715,21 @@ func (p *Parser) next() (*token.Token, bool) {
 	return token, true
 }
 
-func (p *Parser) peek() (*token.Token, bool) {
+func (p *Parser) mayPeek() (*token.Token, bool) {
 	if p.pos >= len(p.tokens) {
 		return nil, false
 	}
 	return &p.tokens[p.pos], true
+}
+
+// Same as `peek()` but adds a diagnostic if there are no more tokens.
+func (p *Parser) mustPeek() (*token.Token, bool) {
+	t, ok := p.mayPeek()
+	if !ok {
+		p.diagnostic(p.span(), "unexpected end of file")
+		return nil, false
+	}
+	return t, ok
 }
 
 func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {

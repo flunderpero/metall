@@ -391,6 +391,24 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// Arena-allocated array escapes the block where the allocator lives.
+		{"arena array alloc escapes block", `
+			{
+				let p = {
+					alloc @a = Arena()
+					@a [5]Int()
+				}
+				p
+			}
+			`, []string{
+			"test.met:5:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        alloc @a = Arena()
+				        @a [5]Int()
+				        ^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
 		// Valid: arena-allocated struct used within the allocator's scope.
 		{"valid arena alloc same scope", `
 			{
