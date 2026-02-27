@@ -53,6 +53,11 @@ compile-runtime:
         -e 's/ #[0-9]+//g' \
         -e 's/, !llvm\.loop ![0-9]+//g' \
         -e 's/^define (internal )?/define internal /' \
+        -e 's/^(define internal) (ptr @arena_create\()/\1 noalias \2/' \
+        -e 's/(@arena_create\(i64 noundef %[0-9]+\)) \{/\1 allockind("alloc") "alloc-family"="arena" allocsize(0) {/' \
+        -e 's/^(define internal) (ptr @arena_alloc\()/\1 noalias \2/' \
+        -e 's/(@arena_alloc\(ptr noundef %[0-9]+, i64 noundef %[0-9]+\)) \{/\1 allockind("alloc") allocsize(1) {/' \
+        -e 's/(@arena_destroy\()(ptr noundef %[0-9]+\)) \{/\1ptr allocptr nocapture noundef %0) allockind("free") "alloc-family"="arena" {/' \
     > metallc/internal/gen/arena.ll
 
 go-mod:

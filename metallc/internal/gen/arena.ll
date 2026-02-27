@@ -2,7 +2,7 @@
 %struct.Arena = type { ptr, i64 }
 %struct.Page = type { ptr, i64, i64, [0 x i8] }
 
-define internal ptr @arena_create(i64 noundef %0) {
+define internal noalias ptr @arena_create(i64 noundef %0) allockind("alloc") "alloc-family"="arena" allocsize(0) {
   %2 = alloca ptr, align 8
   %3 = alloca i64, align 8
   %4 = alloca ptr, align 8
@@ -103,7 +103,7 @@ define internal ptr @page_create(i64 noundef %0, ptr noundef %1) {
 
 declare void @free(ptr noundef)
 
-define internal ptr @arena_alloc(ptr noundef %0, i64 noundef %1) {
+define internal noalias ptr @arena_alloc(ptr noundef %0, i64 noundef %1) allockind("alloc") allocsize(1) {
   %3 = alloca ptr, align 8
   %4 = alloca ptr, align 8
   %5 = alloca i64, align 8
@@ -189,7 +189,7 @@ define internal ptr @arena_alloc(ptr noundef %0, i64 noundef %1) {
   ret ptr %58
 }
 
-define internal void @arena_destroy(ptr noundef %0) {
+define internal void @arena_destroy(ptr allocptr nocapture noundef %0) allockind("free") "alloc-family"="arena" {
   %2 = alloca ptr, align 8
   %3 = alloca ptr, align 8
   %4 = alloca ptr, align 8
