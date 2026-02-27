@@ -17,9 +17,10 @@ func (id TypeID) String() string {
 }
 
 type Type struct {
-	ID   TypeID
-	Span base.Span
-	Kind TypeKind
+	ID     TypeID
+	NodeID ast.NodeID
+	Span   base.Span
+	Kind   TypeKind
 }
 
 type TypeKind interface {
@@ -324,6 +325,13 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	return typeID, status
 }
 
+func (e *Engine) DeclNode(typeID TypeID) ast.NodeID {
+	if cached, ok := e.types[typeID]; ok {
+		return cached.Type.NodeID
+	}
+	return 0
+}
+
 func (e *Engine) Type(typeID TypeID) *Type {
 	cached, ok := e.types[typeID]
 	if !ok {
@@ -569,9 +577,14 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 }
 
 func (e *Engine) checkAllocation(alloc ast.Allocation) (TypeID, TypeStatus) {
-	_, _, ok := e.Scope().Lookup(alloc.Alloc.Name)
-	if !ok {
-		e.diag(alloc.Alloc.Span, "unknown allocator: %s", alloc.Alloc.Name)
+	allocTypeID, allocStatus := e.Query(alloc.Alloc)
+	if allocStatus.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	allocType := e.Type(allocTypeID)
+	if _, ok := allocType.Kind.(AllocType); !ok {
+		allocSpan := e.Node(alloc.Alloc).Span
+		e.diag(allocSpan, "expected allocator, got %s", e.TypeDisplay(allocTypeID))
 		return InvalidTypeID, TypeFailed
 	}
 	typeID, status := e.Query(alloc.Target)
@@ -1209,7 +1222,7 @@ func (e *Engine) newTypeWithID(
 	if cached, ok := e.nodes[nodeID]; nodeID != 0 && ok {
 		panic(base.Errorf("type already set for %s: %s", e.AST.Debug(nodeID, false, 0), cached.Type.ID))
 	}
-	typ := &Type{ID: typeID, Span: span, Kind: kind}
+	typ := &Type{ID: typeID, NodeID: nodeID, Span: span, Kind: kind}
 	cached := &cachedType{Type: typ, Status: status}
 	e.types[typeID] = cached
 	e.nodes[nodeID] = cached

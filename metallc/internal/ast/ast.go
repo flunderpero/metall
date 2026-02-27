@@ -182,7 +182,7 @@ type StructLiteral struct {
 func (StructLiteral) isKind() {}
 
 type Allocation struct {
-	Alloc  Name
+	Alloc  NodeID
 	Target NodeID
 }
 
@@ -235,7 +235,7 @@ func (a *AST) NewStructLiteral(target NodeID, args []NodeID, span base.Span) Nod
 	return a.node(StructLiteral{Target: target, Args: args}, span)
 }
 
-func (a *AST) NewAllocation(alloc Name, target NodeID, span base.Span) NodeID {
+func (a *AST) NewAllocation(alloc NodeID, target NodeID, span base.Span) NodeID {
 	return a.node(Allocation{Alloc: alloc, Target: target}, span)
 }
 
@@ -376,6 +376,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 			f(kind.Args[i])
 		}
 	case Allocation:
+		f(kind.Alloc)
 		f(kind.Target)
 	case AllocInit:
 		for i := range len(kind.Args) {
@@ -536,10 +537,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("args", kind.Args...)
 		}
 	case Allocation:
-		addAttr("alloc", kind.Alloc.Name)
 		if !children {
+			addAttr("alloc", nodeIDKind(kind.Alloc))
 			addAttr("target", nodeIDKind(kind.Target))
 		} else {
+			addChild("alloc", kind.Alloc)
 			addChild("target", kind.Target)
 		}
 	case AllocInit:

@@ -30,6 +30,7 @@ const (
 	Let
 	LParen
 	Mut
+	New
 	Number
 	RBracket
 	RCurly
@@ -63,6 +64,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Let:               "<let>",
 	LParen:            "(",
 	Mut:               "<mut>",
+	New:               "<new>",
 	Number:            "<number>",
 	RBracket:          "]",
 	RCurly:            "}",
@@ -97,6 +99,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"if":     If,
 	"let":    Let,
 	"mut":    Mut,
+	"new":    New,
 	"struct": Struct,
 	"true":   True,
 	"void":   Void,

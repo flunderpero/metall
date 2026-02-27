@@ -112,6 +112,9 @@ func TestParseOK(t *testing.T) {
 		{"struct", "expr", "struct Planet { name Str mut diameter Int }", func(a *TestAST) NodeID {
 			return a.struct_("Planet", a.struct_field("name", a.str_typ()), a.mut_struct_field("diameter", a.int_typ()))
 		}},
+		{"struct with allocator field", "expr", "struct Holder { @a Arena }", func(a *TestAST) NodeID {
+			return a.struct_("Holder", a.struct_field("@a", a.typ("Arena")))
+		}},
 		{"struct literal", "expr", "Planet(\"Earth\", 12500)", func(a *TestAST) NodeID {
 			return a.struct_lit(a.ident("Planet"), a.string_("Earth"), a.int_(12500))
 		}},
@@ -170,8 +173,8 @@ func TestParseOK(t *testing.T) {
 		{"declare allocator", "expr", "alloc @test = Arena(123)", func(a *TestAST) NodeID {
 			return a.alloc_init("@test", "Arena", a.int_(123))
 		}},
-		{"alloc", "expr", `@test Planet()`, func(a *TestAST) NodeID {
-			return a.alloc("@test", a.struct_lit(a.ident("Planet")))
+		{"alloc", "expr", `new @test Planet()`, func(a *TestAST) NodeID {
+			return a.alloc(a.ident("@test"), a.struct_lit(a.ident("Planet")))
 		}},
 		{
 			"alloc as fun param", "expr", "fun foo(@alloc Arena, name Str, @alloc2 Arena) void {}",
@@ -202,8 +205,11 @@ func TestParseOK(t *testing.T) {
 		{"index write", "expr", `a[1] = 2`, func(a *TestAST) NodeID {
 			return a.assign(a.index(a.ident("a"), a.int_(1)), a.int_(2))
 		}},
-		{"alloc array", "expr", `@a [5]Int()`, func(a *TestAST) NodeID {
-			return a.alloc("@a", a.arr_typ(a.int_typ(), 5))
+		{"alloc from struct field", "expr", `new holder.@a Planet("Earth")`, func(a *TestAST) NodeID {
+			return a.alloc(a.field_access(a.ident("holder"), "@a"), a.struct_lit(a.ident("Planet"), a.string_("Earth")))
+		}},
+		{"alloc array", "expr", `new @a [5]Int()`, func(a *TestAST) NodeID {
+			return a.alloc(a.ident("@a"), a.arr_typ(a.int_typ(), 5))
 		}},
 	}
 
@@ -276,10 +282,10 @@ func TestParseErr(t *testing.T) {
 				`    struct Arena{name Str}` + "\n" +
 				"           ^^^^^",
 		}},
-		{"alloc without target", `@test`, []string{
-			"test.met:1:1: unexpected end of file\n" +
-				`    @test` + "\n" +
-				"    ^^^^^",
+		{"alloc without target", `new @test`, []string{
+			"test.met:1:5: unexpected end of file\n" +
+				`    new @test` + "\n" +
+				"        ^^^^^",
 		}},
 	}
 
@@ -362,8 +368,8 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 	return a.NewStructLiteral(struct_, args, a.span)
 }
 
-func (a *TestAST) alloc(alloc string, target NodeID) NodeID {
-	return a.NewAllocation(Name{alloc, a.span}, target, a.span)
+func (a *TestAST) alloc(alloc NodeID, target NodeID) NodeID {
+	return a.NewAllocation(alloc, target, a.span)
 }
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {
@@ -506,7 +512,6 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 		case StructLiteral:
 			node.Kind = kind
 		case Allocation:
-			kind.Alloc.Span = base.Span{}
 			node.Kind = kind
 		case AllocInit:
 			kind.Name.Span = base.Span{}

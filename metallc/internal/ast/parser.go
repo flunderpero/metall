@@ -103,7 +103,7 @@ func (p *Parser) ParseStructFields() ([]NodeID, bool) {
 		var name Name
 		mut := false
 		switch t.Kind { //nolint:exhaustive
-		case token.Ident:
+		case token.Ident, token.AllocIdent:
 			name = Name{t.Value, t.Span}
 			p.next()
 		case token.Mut:
@@ -168,12 +168,53 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseAllocation() (NodeID, bool) {
-	allocToken, ok := p.expect(token.AllocIdent)
+func (p *Parser) ParseAllocation() (NodeID, bool) { //nolint:funlen
+	newToken, ok := p.expect(token.New)
 	if !ok {
 		return ParseFailed, false
 	}
+	// Parse the allocator: `@a` or a field access chain ending in an
+	// AllocIdent, e.g. `holder.@a` or `a.b.@c`.
+	var alloc NodeID
 	t, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	switch t.Kind { //nolint:exhaustive
+	case token.AllocIdent:
+		p.next()
+		alloc = p.NewIdent(t.Value, t.Span)
+	case token.Ident:
+		p.next()
+		alloc = p.NewIdent(t.Value, t.Span)
+		for {
+			if _, ok := p.expect(token.Dot); !ok {
+				return ParseFailed, false
+			}
+			field, ok := p.mustPeek()
+			if !ok {
+				return ParseFailed, false
+			}
+			switch field.Kind { //nolint:exhaustive
+			case token.AllocIdent:
+				p.next()
+				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, t.Span.Combine(field.Span))
+			case token.Ident:
+				p.next()
+				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, t.Span.Combine(field.Span))
+				continue
+			default:
+				p.diagnostic(field.Span, "expected field name or allocator, got %s", field.Kind)
+				return ParseFailed, false
+			}
+			break
+		}
+	default:
+		p.diagnostic(t.Span, "expected allocator, got %s", t.Kind)
+		return ParseFailed, false
+	}
+	// Parse the target: struct literal or array type.
+	t, ok = p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -204,8 +245,7 @@ func (p *Parser) ParseAllocation() (NodeID, bool) {
 		)
 		return ParseFailed, false
 	}
-	alloc := Name{allocToken.Value, allocToken.Span}
-	return p.NewAllocation(alloc, target, allocToken.Span.Combine(p.span())), true
+	return p.NewAllocation(alloc, target, newToken.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
@@ -381,7 +421,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = struct_literal
-	case token.AllocIdent:
+	case token.New:
 		allocation, ok := p.ParseAllocation()
 		if !ok {
 			return ParseFailed, false

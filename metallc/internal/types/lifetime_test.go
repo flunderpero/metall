@@ -189,12 +189,12 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:29: reference escaping its allocation scope\n" +
+			"test.met:7:32: reference escaping its allocation scope\n" +
 				strings.Trim(`
+						mut c = 456
 					    mut cRef = &c
+								   ^^
 					    mut x = &cRef
-					            ^^^^^
-					    bRef = *x
 					`, "\n"),
 		}},
 		// Ref escapes through a function call - x's ref is returned by
@@ -320,12 +320,12 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				r
 			}
 			`, []string{
-			"test.met:7:30: reference escaping its allocation scope\n" +
+			"test.met:6:37: reference escaping its allocation scope\n" +
 				strings.Trim(`
+						let x = 42
 				        let w = Wrapper(&x)
+									    ^^
 				        let rw = &w
-				                 ^^
-				        rw.ptr
 				`, "\n"),
 		}},
 		// Nested field access through a ref: r.inner.ptr where r is &Outer.
@@ -342,12 +342,12 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				r
 			}
 			`, []string{
-			"test.met:8:30: reference escaping its allocation scope\n" +
+			"test.met:7:41: reference escaping its allocation scope\n" +
 				strings.Trim(`
+						let x = 42
 				        let o = Outer(Inner(&x))
+										    ^^
 				        let ro = &o
-				                 ^^
-				        ro.inner.ptr
 				`, "\n"),
 		}},
 		// Struct reassignment: w is reassigned to carry a local ref, then w.ptr escapes.
@@ -378,7 +378,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Planet { name Str }
 				let p = {
 					alloc @a = Arena()
-					@a Planet("Earth")
+					new @a Planet("Earth")
 				}
 				p
 			}
@@ -386,8 +386,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:6:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        alloc @a = Arena()
-				        @a Planet("Earth")
-				        ^^^^^^^^^^^^^^^^^^
+				        new @a Planet("Earth")
+				        ^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -396,7 +396,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				let p = {
 					alloc @a = Arena()
-					@a [5]Int()
+					new @a [5]Int()
 				}
 				p
 			}
@@ -404,8 +404,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:5:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        alloc @a = Arena()
-				        @a [5]Int()
-				        ^^^^^^^^^^^
+				        new @a [5]Int()
+				        ^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -414,7 +414,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				struct Planet { name Str }
 				alloc @a = Arena()
-				let p = @a Planet("Earth")
+				let p = new @a Planet("Earth")
 				p
 			}
 			`, []string{}},
@@ -422,7 +422,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"valid arena alloc via param", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = @a Planet("Earth") &p }
+				fun make(@a Arena) &Planet { let p = new @a Planet("Earth") &p }
 				alloc @a = Arena()
 				let p = make(@a)
 				p
@@ -435,7 +435,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				alloc @outer = Arena()
 				let p = {
 					alloc @a = Arena()
-					@a Planet("Earth")
+					new @a Planet("Earth")
 				}
 				p
 			}
@@ -443,8 +443,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:7:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        alloc @a = Arena()
-				        @a Planet("Earth")
-				        ^^^^^^^^^^^^^^^^^^
+				        new @a Planet("Earth")
+				        ^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -452,7 +452,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"arena ref propagates through assignment and call", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = @a Planet("Earth") &p }
+				fun make(@a Arena) &Planet { let p = new @a Planet("Earth") &p }
 				fun identity(p &Planet) &Planet { p }
 				let r = {
 					alloc @a = Arena()
@@ -475,7 +475,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"arena alloc escapes via function call", `
 			{
 				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = @a Planet("Earth") &p }
+				fun make(@a Arena) &Planet { let p = new @a Planet("Earth") &p }
 				let p = {
 					alloc @inner = Arena()
 					make(@inner)
@@ -491,6 +491,82 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		{"allocator in struct escapes via function", `
+			{
+				struct Planet { name Str }
+				struct Holder { @a Arena }
+				fun make_planet(h Holder) &Planet {
+					let p = new h.@a Planet("Earth")
+					&p
+				}
+				let result = {
+					alloc @a = Arena()
+					let h = Holder(@a)
+					make_planet(h)
+				}
+				result
+			}
+			`, []string{
+			"test.met:12:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let h = Holder(@a)
+				        make_planet(h)
+				        ^^^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+
+		// Valid: function takes a Holder but doesn't use its allocator in return value.
+		{"valid allocator in struct not used in return", `
+			{
+				struct Planet { name Str }
+				struct Holder { @a Arena }
+				fun ignore_holder(h Holder, p &Planet) &Planet { p }
+				alloc @a = Arena()
+				let h = Holder(@a)
+				let p = new @a Planet("Earth")
+				ignore_holder(h, &p)
+			}
+			`, []string{}},
+
+		// Valid: struct with allocator used within same scope.
+		{"valid struct with allocator same scope", `
+			{
+				struct Planet { name Str }
+				struct Holder { @a Arena }
+				alloc @a = Arena()
+				let h = Holder(@a)
+				let p = new h.@a Planet("Earth")
+			}
+			`, []string{}},
+
+		// Nested struct: allocator buried two levels deep.
+		{"allocator in nested struct escapes", `
+			{
+				struct Planet { name Str }
+				struct Inner { @a Arena }
+				struct Outer { inner Inner }
+				fun make_planet(o Outer) &Planet {
+					let p = new o.inner.@a Planet("Earth")
+					&p
+				}
+				let result = {
+					alloc @a = Arena()
+					let o = Outer(Inner(@a))
+					make_planet(o)
+				}
+				result
+			}
+			`, []string{
+			"test.met:13:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let o = Outer(Inner(@a))
+				        make_planet(o)
+				        ^^^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+
 		// Valid: shadowed variable with ref should not trigger false positive.
 		{"valid shadowed ref no escape", `
 			{
@@ -663,8 +739,306 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				foo.values[0] = &mut b
 			}
 			`, []string{}},
-	}
 
+		{"function reassign then return ref escapes", `
+			{
+				fun bad(src &Int) &Int {
+					mut x = 1
+					x = *src
+					&x
+				}
+				let a = 42
+				bad(&a)
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        x = *src
+				        &x
+				        ^^
+				    }
+				`, "\n"),
+		}},
+		{"allocator field function reassign then return ref escapes", `
+			{
+				struct Holder { @a Arena }
+				fun bad(src &Holder) &Holder {
+					alloc @tmp = Arena()
+					mut h = Holder(@tmp)
+					h = *src
+					&h
+				}
+				alloc @a = Arena()
+				let src = Holder(@a)
+				bad(&src)
+			}
+			`, []string{
+			"test.met:8:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        h = *src
+				        &h
+				        ^^
+				    }
+				`, "\n"),
+		}},
+		{"reassign then ref escapes", `
+			{
+				let r = {
+					mut x = 1
+					x = 2
+					&x
+				}
+				r
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        x = 2
+				        &x
+				        ^^
+				    }
+				`, "\n"),
+		}},
+		{"leak through field mutation bypass", `
+			{
+				struct S { mut r &Int }
+				fun store(s &mut S, p &Int) void {
+					s.r = p
+				}
+				mut x = 42
+				mut s = S(&mut x)
+				{
+					mut y = 99
+					store(&mut s, &y)
+				}
+				print_int(*s.r)
+			}
+			`, []string{
+			"test.met:11:35: reference escaping its allocation scope\n" +
+				strings.Trim(`
+						mut y = 99
+						store(&mut s, &y)
+								      ^^
+					}
+				`, "\n"),
+		}},
+		{"leak through transitive mutation bypass", `
+			{
+				struct S { mut r &Int }
+				fun identity(s &mut S) &mut S { s }
+				mut x = 42
+				mut s = S(&mut x)
+				{
+					mut y = 99
+					let s2 = identity(&mut s)
+					s2.r = &y
+				}
+				print_int(*s.r)
+			}
+			`, []string{
+			"test.met:10:28: reference escaping its allocation scope\n" +
+				strings.Trim(`
+						let s2 = identity(&mut s)
+						s2.r = &y
+							   ^^
+					}
+				`, "\n"),
+		}},
+		{"leak through returned ref bypass", `
+			{
+				struct Planet { mut diameter &Int }
+				fun identity(p &mut Planet) &mut Planet { p }
+				mut initial_diameter = 12742
+				mut earth = Planet(&mut initial_diameter)
+				{
+					mut local_diameter = 99
+					let earth_ref = identity(&mut earth)
+					earth_ref.diameter = &local_diameter
+				}
+				print_int(*earth.diameter)
+			}
+			`, []string{
+			"test.met:10:42: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    let earth_ref = identity(&mut earth)
+						earth_ref.diameter = &local_diameter
+											 ^^^^^^^^^^^^^^^
+					}
+				`, "\n"),
+		}},
+		{"leak stack-ref into arena-allocated struct", `
+			{
+				struct S { mut r &Int }
+				fun store(s &mut S, p &Int) void { s.r = p }
+				alloc @a = Arena()
+				mut x = 1
+				mut s = new @a S(&mut x)
+				{
+					mut y = 99
+					store(&mut s, &y)
+				}
+				print_int(*s.r)
+			}
+			`, []string{
+			"test.met:10:35: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        mut y = 99
+				        store(&mut s, &y)
+				                      ^^
+				    }
+				`, "\n"),
+		}},
+		{"leak through forward declare bypass", `
+			{
+				struct S { mut r &Int }
+				fun f1(s &mut S, p &Int) void {
+					f2(s, p)
+				}
+				fun f2(s &mut S, p &Int) void {
+					s.r = p
+				}
+				mut x = 42
+				mut s = S(&mut x)
+				{
+					mut y = 99
+					f1(&mut s, &y)
+				}
+				print_int(*s.r)
+			}
+			`, []string{
+			"test.met:14:32: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        mut y = 99
+				        f1(&mut s, &y)
+				                   ^^
+				    }
+				`, "\n"),
+		}},
+		// mutual recursion (perform_task -> delegate_work -> perform_task). The analyzer detects the cycle
+		// during on-demand analysis and applies a pessimistic "worst-case" effect (assuming all parameters
+		// could be mutated/returned). This is sound but overzealous, as it flags safe code like this as a leak.
+		{"pessimistic mutual recursion (overzealous)", `
+			{
+				struct Worker {
+					mut current_task &Int
+				}
+
+				fun perform_task(worker &mut Worker, task &Int) void {
+					delegate_work(worker, task)
+				}
+
+				fun delegate_work(worker &mut Worker, task &Int) void {
+					perform_task(worker, task)
+				}
+
+				mut default_task = 0
+				mut primary_worker = Worker(&mut default_task)
+
+				{
+					mut local_task = 99
+					perform_task(&mut primary_worker, &local_task)
+				}
+
+				print_int(*primary_worker.current_task)
+			}
+			`, []string{
+			"test.met:20:55: reference escaping its allocation scope\n" +
+				strings.Trim(`
+						mut local_task = 99
+						perform_task(&mut primary_worker, &local_task)
+                                                          ^^^^^^^^^^^
+					}
+				`, "\n"),
+		}},
+		{"leak through side-effect on returned reference argument", `
+			{
+				struct Planet { mut diameter &Int }
+				fun identity(p &mut Planet) &mut Planet { p }
+				fun update_diameter(p &mut Planet, new_diameter &Int) void { p.diameter = new_diameter }
+
+				mut initial_diameter = 12742
+				mut earth = Planet(&mut initial_diameter)
+				{
+					mut local_diameter = 99
+					update_diameter(identity(&mut earth), &local_diameter)
+				}
+				print_int(*earth.diameter)
+			}
+			`, []string{
+			"test.met:11:59: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        mut local_diameter = 99
+				        update_diameter(identity(&mut earth), &local_diameter)
+				                                              ^^^^^^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		{"bypass: multi-level pointer mutation", `
+			{
+				struct Planet { mut diameter &Int }
+				mut initial_diameter = 12742
+				mut earth = Planet(&mut initial_diameter)
+				mut earth_ptr = &mut earth
+				mut earth_ptr_ptr = &mut earth_ptr
+				{
+					mut local_diameter = 99
+					mut local_earth = Planet(&mut local_diameter)
+					**earth_ptr_ptr = local_earth
+				}
+				print_int(*earth.diameter)
+			}
+			`, []string{
+			"test.met:10:46: reference escaping its allocation scope\n" +
+				strings.Trim(`
+						mut local_diameter = 99
+						mut local_earth = Planet(&mut local_diameter)
+												 ^^^^^^^^^^^^^^^^^^^
+						**earth_ptr_ptr = local_earth
+				`, "\n"),
+		}},
+		{"bypass: mutation through field reference", `
+			{
+				struct Planet { mut diameter_ref &mut &Int }
+				mut initial_diameter = 12742
+				mut initial_diameter_ptr = &initial_diameter
+				mut earth = Planet(&mut initial_diameter_ptr)
+				{
+					mut local_diameter = 99
+					*earth.diameter_ref = &local_diameter
+				}
+				print_int(**earth.diameter_ref)
+			}
+			`, []string{
+			"test.met:9:43: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    mut local_diameter = 99
+					    *earth.diameter_ref = &local_diameter
+					                          ^^^^^^^^^^^^^^^
+					}
+					`, "\n"),
+		}},
+		{"bypass: multiple field assignments overwrite leak", `
+			{
+				struct Planet { mut name Str  mut diameter &Int }
+				mut initial_diameter = 12742
+				mut earth = Planet("Earth", &initial_diameter)
+				{
+					mut local_diameter = 99
+					earth.diameter = &local_diameter
+					earth.name = "New Earth"
+				}
+				print_int(*earth.diameter)
+			}
+			`, []string{
+			"test.met:8:38: reference escaping its allocation scope\n" +
+				strings.Trim(`
+					    mut local_diameter = 99
+					    earth.diameter = &local_diameter
+					                     ^^^^^^^^^^^^^^^
+					    earth.name = "New Earth"
+					`, "\n"),
+		}},
+	}
 	assert := base.NewAssert(t)
 	hasOnly := false
 	for _, tt := range tests {

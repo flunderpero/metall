@@ -15,10 +15,10 @@ import (
 func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	// TypeIDs for builtin types are stable, so we can do this.
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
-	void := &Type{1, span, BuiltInType{"void"}}
-	Int := &Type{2, span, BuiltInType{"Int"}}
-	Str := &Type{3, span, BuiltInType{"Str"}}
-	Bool := &Type{4, span, BuiltInType{"Bool"}}
+	void := &Type{1, 0, span, BuiltInType{"void"}}
+	Int := &Type{2, 0, span, BuiltInType{"Int"}}
+	Str := &Type{3, 0, span, BuiltInType{"Str"}}
+	Bool := &Type{4, 0, span, BuiltInType{"Bool"}}
 
 	tests := []struct {
 		name  string
@@ -178,7 +178,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			assert.Equal(AllocArena, typ.Impl)
 		}},
 		{
-			"alloc", `{ alloc @test = Arena() struct Planet{name Str} let p = @test Planet("Earth") p }`, nil,
+			"alloc", `{ alloc @test = Arena() struct Planet{name Str} let p = new @test Planet("Earth") p }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
@@ -222,7 +222,28 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(fun.Params[0], literalTypeID)
 			},
 		},
-		{"array alloc", `{ alloc @a = Arena() @a [5]Int() }`, arr_t(Int, 5), nil},
+		{
+			"struct with allocator field",
+			`{ struct Holder { @a Arena } alloc @a = Arena() let h = Holder(@a) }`, void,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				// The `let h = Holder(@a)` is the last expr; its type is void.
+				// Inspect the Holder struct literal inside the var.
+				varNode := base.Cast[ast.Var](e.Node(block.Exprs[len(block.Exprs)-1]).Kind)
+				st, ok := e.TypeOfNode(varNode.Expr).Kind.(StructType)
+				assert.Equal(true, ok)
+				assert.Equal(1, len(st.Fields))
+				assert.Equal("@a", st.Fields[0].Name)
+				_, ok = e.Type(st.Fields[0].Type).Kind.(AllocType)
+				assert.Equal(true, ok)
+			},
+		},
+		{
+			"alloc from struct field",
+			`{ struct Planet{name Str} struct Holder { @a Arena } alloc @a = Arena() let h = Holder(@a) let p = new h.@a Planet("Earth") }`,
+			void, nil,
+		},
+		{"array alloc", `{ alloc @a = Arena() new @a [5]Int() }`, arr_t(Int, 5), nil},
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let a = [1, 2, 3] a[1] }`, Int, nil},
 		{"index write", `{ mut a = [1, 2, 3] a[1] = 5 }`, void, nil},
@@ -504,10 +525,10 @@ func TestTypeCheckErr(t *testing.T) {
 					"                                           ^",
 			},
 		},
-		{"non-existing allocator", `{ struct Planet{name Str} let p = @test Planet("Earth") }`, []string{
-			"test.met:1:35: unknown allocator: @test\n" +
-				`    { struct Planet{name Str} let p = @test Planet("Earth") }` + "\n" +
-				`                                      ^^^^^`,
+		{"non-existing allocator", `{ struct Planet{name Str} let p = new @test Planet("Earth") }`, []string{
+			"test.met:1:39: symbol not defined: @test\n" +
+				`    { struct Planet{name Str} let p = new @test Planet("Earth") }` + "\n" +
+				`                                          ^^^^^`,
 		}},
 		{"index non-array", `{ let a = 123 a[0] }`, []string{
 			"test.met:1:15: not an array: Int\n" +
@@ -737,6 +758,7 @@ func zeroIDAndSpan(typ *Type, status TypeStatus) bool {
 		return true
 	}
 	typ.ID = TypeID(0)
+	typ.NodeID = ast.NodeID(0)
 	typ.Span = base.Span{}
 	return true
 }
