@@ -190,6 +190,7 @@ func (Allocation) isKind() {}
 
 type Ref struct {
 	Name Name
+	Mut  bool
 }
 
 func (Ref) isKind() {}
@@ -278,8 +279,8 @@ func (a *AST) NewInt(value int64, span base.Span) NodeID {
 	return a.node(Int{Value: value}, span)
 }
 
-func (a *AST) NewRef(name Name, span base.Span) NodeID {
-	return a.node(Ref{Name: name}, span)
+func (a *AST) NewRef(name Name, mut bool, span base.Span) NodeID {
+	return a.node(Ref{Name: name, Mut: mut}, span)
 }
 
 func (a *AST) NewString(value string, span base.Span) NodeID {
@@ -601,6 +602,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 	case Ref:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 	case RefType:
 		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 		if !children {

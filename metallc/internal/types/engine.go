@@ -959,7 +959,11 @@ func (e *Engine) checkRef(
 		e.diag(span, "symbol not defined: %s", ref.Name.Name)
 		return InvalidTypeID, TypeFailed
 	}
-	refTypeID := e.buildRefType(nodeID, binding.TypeID, binding.Mut, span)
+	if ref.Mut && !binding.Mut {
+		e.diag(span, "cannot take mutable reference to immutable value")
+		return InvalidTypeID, TypeFailed
+	}
+	refTypeID := e.buildRefType(nodeID, binding.TypeID, ref.Mut, span)
 	return refTypeID, TypeOK
 }
 

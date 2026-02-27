@@ -439,12 +439,21 @@ func (p *Parser) ParseRefExpr() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	span := t.Span
+	mut := false
+	t, ok = p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	if t.Kind == token.Mut {
+		p.next()
+		mut = true
+	}
 	t, ok = p.expect(token.Ident)
 	if !ok {
 		return ParseFailed, false
 	}
 	name := Name{t.Value, t.Span}
-	return p.NewRef(name, span.Combine(p.span())), true
+	return p.NewRef(name, mut, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseCallArgs() ([]NodeID, bool) {

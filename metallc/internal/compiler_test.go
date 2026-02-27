@@ -54,12 +54,16 @@ func TestCompile(t *testing.T) {
 			}
 			`, "123\n"},
 
-		{"ref/deref", `fun main() void { mut a = 123 mut b = &a print_int(*b) *b = 321 print_int(a) }`, "123\n321\n"},
+		{
+			"ref/deref",
+			`fun main() void { mut a = 123 mut b = &mut a print_int(*b) *b = 321 print_int(a) }`,
+			"123\n321\n",
+		},
 		{"nested ref/deref", `
 			fun main() void { 
 				mut a = 123 
-				mut b = &a
-				mut c = &b
+				mut b = &mut a
+				mut c = &mut b
 				print_int(*b)
 				*b = 321 
 				print_int(a)
@@ -73,7 +77,7 @@ func TestCompile(t *testing.T) {
 			}
 			fun main() void { 
 				mut a = 123 
-				foo(&a)
+				foo(&mut a)
 				print_int(a)
 			}
 			`, "123\n321\n"},
@@ -128,7 +132,7 @@ func TestCompile(t *testing.T) {
 				mut earth = Planet("Earth")
 				print_planet(&earth)
 
-				update(&earth, "Mother")
+				update(&mut earth, "Mother")
 				print_planet(&earth)
 			}
 			`, "Earth\nMother\n"},

@@ -128,29 +128,15 @@ func TestParseOK(t *testing.T) {
 			return a.call(a.field_access(a.field_access(a.ident("earth"), "info"), "name"))
 		}},
 
+		{"ref ident expr", "expr", `&foo`, func(a *TestAST) NodeID { return a.ref("foo") }},
+		{"mut ref ident expr", "expr", `&mut foo`, func(a *TestAST) NodeID { return a.mut_ref("foo") }},
+		{"deref expr", "expr", `*foo`, func(a *TestAST) NodeID { return a.deref(a.ident("foo")) }},
+		{"nested deref expr", "expr", `**foo`, func(a *TestAST) NodeID { return a.deref(a.deref(a.ident("foo"))) }},
 		{
-			"ref ident expr", "expr", `&foo`,
-			func(a *TestAST) NodeID {
-				return a.ref("foo")
-			},
-		},
-		{
-			"deref expr", "expr", `*foo`,
-			func(a *TestAST) NodeID {
-				return a.deref(a.ident("foo"))
-			},
-		},
-		{
-			"nested deref expr", "expr", `**foo`,
-			func(a *TestAST) NodeID {
-				return a.deref(a.deref(a.ident("foo")))
-			},
-		},
-		{
-			"ref type", "expr", `fun foo() &Int {}`,
-			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.fun_block())
-			},
+			"ref type",
+			"expr",
+			`fun foo() &Int {}`,
+			func(a *TestAST) NodeID { return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.fun_block()) },
 		},
 		{
 			"nested ref type", "expr", `fun foo() &&Int {}`,
@@ -476,7 +462,11 @@ func (a *TestAST) call(callee NodeID, args ...NodeID) NodeID {
 }
 
 func (a *TestAST) ref(name string) NodeID {
-	return a.NewRef(Name{name, a.span}, a.span)
+	return a.NewRef(Name{name, a.span}, false, a.span)
+}
+
+func (a *TestAST) mut_ref(name string) NodeID {
+	return a.NewRef(Name{name, a.span}, true, a.span)
 }
 
 func (a *TestAST) deref(expr NodeID) NodeID {

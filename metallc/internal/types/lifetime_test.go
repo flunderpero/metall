@@ -49,7 +49,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				mut a = 123
 				mut y = &a
-				mut z = &y
+				mut z = &mut y
 				{
 				  mut c = 456
 				  *z = &c
@@ -72,7 +72,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				mut z = &a
 				{
 					mut b = 456
-					mut y = &z
+					mut y = &mut z
 					{
 						mut c = 789
 						*y = &c
@@ -113,7 +113,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				mut a = 123
 				mut x = &a
-				mut y = &x
+				mut y = &mut x
 				{
 					mut c = 456
 					*y = &c
@@ -498,7 +498,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				mut b = &a
 				{
 					mut c = 456
-					mut b = &c
+					mut b = &mut c
 					*b = 789
 				}
 			}
@@ -638,18 +638,18 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				struct Container { mut values [1]&mut Int }
 				mut a = 123
-				mut foo = Container([&a])
+				mut foo = Container([&mut a])
 				{
 					mut c = 456
-					foo.values[0] = &c
+					foo.values[0] = &mut c
 				}
 			}
 			`, []string{
 			"test.met:8:37: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					    mut c = 456
-					    foo.values[0] = &c
-					                    ^^
+					    foo.values[0] = &mut c
+					                    ^^^^^^
 					}
 					`, "\n"),
 		}},
@@ -659,8 +659,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Container { mut values [1]&mut Int }
 				mut a = 123
 				mut b = 456
-				mut foo = Container([&a])
-				foo.values[0] = &b
+				mut foo = Container([&mut a])
+				foo.values[0] = &mut b
 			}
 			`, []string{}},
 	}

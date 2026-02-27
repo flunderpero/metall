@@ -113,7 +113,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"field write through mut ref param",
-			`{ struct Planet { mut name Str } fun foo(p &mut Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&p) }`,
+			`{ struct Planet { mut name Str } fun foo(p &mut Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&mut p) }`,
 			void,
 			nil,
 		},
@@ -125,7 +125,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"field write through let binding of mut ref",
-			`{ struct Planet { mut name Str } mut earth = Planet("Earth") let p = &earth p.name = "X" }`,
+			`{ struct Planet { mut name Str } mut earth = Planet("Earth") let p = &mut earth p.name = "X" }`,
 			void,
 			nil,
 		},
@@ -136,8 +136,9 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"if w/o else", `{ let a = true if a { 42 } }`, void, nil},
 
 		{"ref", `{ let a = 5 let b = &a b }`, ref_t(Int), nil},
+		{"mut ref", `{ mut a = 5 let b = &mut a b }`, ref_mut_t(Int), nil},
 		{"mut binding of immutable ref", `{ let a = 5 mut b = &a b }`, ref_t(Int), nil},
-		{"mut ref", `{ mut a = 5 mut b = &a b }`, ref_mut_t(Int), nil},
+		{"ref to mut", `{ mut a = 5 mut b = &a b }`, ref_t(Int), nil},
 		{"deref", `{ let a = 5 let b = &a *b }`, Int, nil},
 		{
 			"deref field access",
@@ -145,21 +146,21 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			Str,
 			nil,
 		},
-		{"deref assign", `{ mut a = 1 mut b = &a *b = 321 }`, void, nil},
-		{"nested deref assign", `{ mut a = 1 mut b = &a mut c = &b *b = 123 **c = 321 }`, void, nil},
-		{"mut ref parameter", `{ fun foo(a &mut Int) void { *a = 321 } mut b = 123 foo(&b) }`, void, nil},
+		{"deref assign", `{ mut a = 1 mut b = &mut a *b = 321 }`, void, nil},
+		{"nested deref assign", `{ mut a = 1 mut b = &mut a mut c = &mut b *b = 123 **c = 321 }`, void, nil},
+		{"mut ref parameter", `{ fun foo(a &mut Int) void { *a = 321 } mut b = 123 foo(&mut b) }`, void, nil},
 		{"mut ref coercion", `{ fun foo(a &Int) void {} mut b = 123 foo(&b) }`, void, nil},
 		{"mut ref coercion in struct literal", `{ struct Foo { ptr &Int } mut a = 1 let f = Foo(&a) }`, void, nil},
 		{"ref return", `{ fun foo(a &Int) &Int { a } let b = 123 foo(&b) }`, ref_t(Int), nil},
 		{
 			"write through mut ref struct field",
-			`{ struct Foo { ptr &mut Int } mut a = 1 let f = Foo(&a) *f.ptr = 42 }`,
+			`{ struct Foo { ptr &mut Int } mut a = 1 let f = Foo(&mut a) *f.ptr = 42 }`,
 			void,
 			nil,
 		},
 		{
 			"reassign mut field of mut ref type",
-			`{ struct Foo { mut ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&a) f.ptr = &b *f.ptr = 99 }`,
+			`{ struct Foo { mut ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&mut a) f.ptr = &mut b *f.ptr = 99 }`,
 			void,
 			nil,
 		},
@@ -233,6 +234,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"ref",
 		"mut binding of immutable ref",
 		"mut ref",
+		"ref to mut",
 		"struct ref",
 		"ref return",
 		"alloc",
@@ -409,10 +411,10 @@ func TestTypeCheckErr(t *testing.T) {
 				`                             ^^`,
 		}},
 
-		{"take mutable ref to immutable in assign", `{ mut a = 123 let b = 123 mut c = &a c = &b }`, []string{
-			"test.met:1:42: type mismatch: expected &mut Int, got &Int\n" +
-				`    { mut a = 123 let b = 123 mut c = &a c = &b }` + "\n" +
-				`                                             ^^`,
+		{"take mutable ref to immutable in assign", `{ let a = 123 let b = &mut a }`, []string{
+			"test.met:1:23: cannot take mutable reference to immutable value\n" +
+				`    { let a = 123 let b = &mut a }` + "\n" +
+				`                          ^^^^^^`,
 		}},
 		{
 			"assign to field of immutable struct",
@@ -486,11 +488,11 @@ func TestTypeCheckErr(t *testing.T) {
 		},
 		{
 			"reassign immutable mut-ref field",
-			`{ struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&a) f.ptr = &b }`,
+			`{ struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&mut a) f.ptr = &b }`,
 			[]string{
-				"test.met:1:67: cannot assign to immutable field: ptr\n" +
-					`    { struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&a) f.ptr = &b }` + "\n" +
-					"                                                                      ^^^^^",
+				"test.met:1:71: cannot assign to immutable field: ptr\n" +
+					`    { struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&mut a) f.ptr = &b }` + "\n" +
+					"                                                                          ^^^^^",
 			},
 		},
 		{
