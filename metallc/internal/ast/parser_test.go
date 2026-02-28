@@ -224,11 +224,16 @@ func TestParseOK(t *testing.T) {
 		{"int /", "expr", "1 / 2", func(a *TestAST) NodeID {
 			return a.binary(BinaryOpDiv, a.int_(1), a.int_(2))
 		}},
-		{"operator precedence * before +", "expr", "1 + 2 * 3 + 4", func(a *TestAST) NodeID {
+		{"operator precedence", "expr", "1 + 2 * 3 + 4", func(a *TestAST) NodeID {
 			one := a.int_(1)
 			mul := a.binary(BinaryOpMul, a.int_(2), a.int_(3))
 			add1 := a.binary(BinaryOpAdd, one, mul)
 			return a.binary(BinaryOpAdd, add1, a.int_(4))
+		}},
+		{"grouped expressions", "expr", "(1 + 2) * 3 + 4", func(a *TestAST) NodeID {
+			add := a.binary(BinaryOpAdd, a.int_(1), a.int_(2))
+			mul := a.binary(BinaryOpMul, add, a.int_(3))
+			return a.binary(BinaryOpAdd, mul, a.int_(4))
 		}},
 	}
 

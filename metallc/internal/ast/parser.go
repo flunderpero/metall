@@ -416,6 +416,15 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	}
 	var expr NodeID
 	switch t.Kind { //nolint:exhaustive
+	case token.LParen:
+		p.next()
+		expr, ok = p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		if _, ok := p.expect(token.RParen); !ok {
+			return ParseFailed, false
+		}
 	case token.Amp:
 		ref, ok := p.ParseRefExpr()
 		if !ok {
