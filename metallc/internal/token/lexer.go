@@ -34,6 +34,7 @@ const (
 	LCurly
 	Let
 	LParen
+	Make
 	Minus
 	Mut
 	Neq
@@ -79,6 +80,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	LCurly:            "{",
 	Let:               "<let>",
 	LParen:            "(",
+	Make:              "<make>",
 	Minus:             "-",
 	Mut:               "<mut>",
 	Neq:               "!=",
@@ -126,6 +128,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"fun":      Fun,
 	"if":       If,
 	"let":      Let,
+	"make":     Make,
 	"mut":      Mut,
 	"not":      Not,
 	"new":      New,

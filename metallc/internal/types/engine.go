@@ -68,6 +68,12 @@ type ArrayType struct {
 
 func (ArrayType) isTypeKind() {}
 
+type SliceType struct {
+	Elem TypeID
+}
+
+func (SliceType) isTypeKind() {}
+
 type AllocImpl int
 
 const (
@@ -143,6 +149,7 @@ type Engine struct {
 	types       map[TypeID]*cachedType
 	refTypes    map[refTypeCacheKey]*cachedType
 	arrayTypes  map[arrayTypeCacheKey]*cachedType
+	sliceTypes  map[TypeID]*cachedType
 	nextID      TypeID
 	nextScopeID ScopeID
 	scope       *Scope
@@ -164,6 +171,7 @@ func NewEngine(a *ast.AST) *Engine {
 		types:       map[TypeID]*cachedType{},
 		refTypes:    map[refTypeCacheKey]*cachedType{},
 		arrayTypes:  map[arrayTypeCacheKey]*cachedType{},
+		sliceTypes:  map[TypeID]*cachedType{},
 		nextID:      1,
 		nextScopeID: 1,
 		scope:       rootScope,
@@ -239,6 +247,8 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 		return sb.String()
 	case ArrayType:
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
+	case SliceType:
+		return fmt.Sprintf("[]%s", e.TypeDisplay(kind.Elem))
 	case AllocType:
 		return fmt.Sprintf("alloc(%s)", kind.Impl)
 	default:
@@ -304,6 +314,12 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkAllocation(nodeKind)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
+	case ast.SliceType:
+		typeID, status = e.checkSliceType(nodeID, nodeKind, node.Span)
+	case ast.ArrayAlloc:
+		typeID, status = e.checkArrayAlloc(nodeKind)
+	case ast.MakeSlice:
+		typeID, status = e.checkMakeSlice(nodeKind)
 	case ast.ArrayLiteral:
 		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span)
 	case ast.Index:
@@ -380,6 +396,9 @@ func (e *Engine) WalkType(typeID TypeID, f func(typ *Type, e *Engine)) {
 			f(fieldTyp, e)
 		}
 	case ArrayType:
+		elemTyp := e.Type(kind.Elem)
+		f(elemTyp, e)
+	case SliceType:
 		elemTyp := e.Type(kind.Elem)
 		f(elemTyp, e)
 	case AllocType:
@@ -649,6 +668,49 @@ func (e *Engine) checkArrayType(nodeID ast.NodeID, array ast.ArrayType, span bas
 	return e.buildArrayType(elemTypeID, array.Len, nodeID, span), TypeOK
 }
 
+func (e *Engine) checkSliceType(nodeID ast.NodeID, sliceType ast.SliceType, span base.Span) (TypeID, TypeStatus) {
+	elemTypeID, status := e.Query(sliceType.Elem)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	return e.buildSliceType(elemTypeID, nodeID, span), TypeOK
+}
+
+func (e *Engine) checkArrayAlloc(alloc ast.ArrayAlloc) (TypeID, TypeStatus) {
+	arrTypeID, status := e.Query(alloc.Type)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	return arrTypeID, TypeOK
+}
+
+func (e *Engine) checkMakeSlice(makeSlice ast.MakeSlice) (TypeID, TypeStatus) {
+	allocTypeID, allocStatus := e.Query(makeSlice.Alloc)
+	if allocStatus.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	allocType := e.Type(allocTypeID)
+	if _, ok := allocType.Kind.(AllocType); !ok {
+		allocSpan := e.Node(makeSlice.Alloc).Span
+		e.diag(allocSpan, "expected allocator, got %s", e.TypeDisplay(allocTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	sliceTypeID, status := e.Query(makeSlice.Type)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	lenTypeID, lenStatus := e.Query(makeSlice.Len)
+	if lenStatus.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if lenTypeID != e.intType {
+		lenSpan := e.Node(makeSlice.Len).Span
+		e.diag(lenSpan, "type mismatch: expected Int, got %s", e.TypeDisplay(lenTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	return sliceTypeID, TypeOK
+}
+
 func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, span base.Span) (TypeID, TypeStatus) {
 	if len(array.Elems) == 0 {
 		e.diag(span, "array literal cannot be empty")
@@ -681,10 +743,20 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	arrTyp, ok := e.Type(targetTypeID).Kind.(ArrayType)
-	if !ok {
+	targetTyp := e.Type(targetTypeID)
+	if refTyp, ok := targetTyp.Kind.(RefType); ok {
+		// Auto de-reference one level deep.
+		targetTyp = e.Type(refTyp.Type)
+	}
+	var elemTypeID TypeID
+	switch kind := targetTyp.Kind.(type) {
+	case ArrayType:
+		elemTypeID = kind.Elem
+	case SliceType:
+		elemTypeID = kind.Elem
+	default:
 		targetSpan := e.Node(index.Target).Span
-		e.diag(targetSpan, "not an array: %s", e.TypeDisplay(targetTypeID))
+		e.diag(targetSpan, "not an array or slice: %s", e.TypeDisplay(targetTypeID))
 		return InvalidTypeID, TypeFailed
 	}
 	indexTypeID, status := e.Query(index.Index)
@@ -701,7 +773,7 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 		)
 		return InvalidTypeID, TypeFailed
 	}
-	return arrTyp.Elem, TypeOK
+	return elemTypeID, TypeOK
 }
 
 func (e *Engine) checkAllocation(alloc ast.Allocation) (TypeID, TypeStatus) {
@@ -775,6 +847,13 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 	if refTyp, ok := targetTyp.Kind.(RefType); ok {
 		// Auto de-reference one level deep.
 		targetTyp = e.Type(refTyp.Type)
+	}
+	if _, ok := targetTyp.Kind.(SliceType); ok {
+		if fieldAccess.Field.Name == "len" {
+			return e.intType, TypeOK
+		}
+		e.diag(fieldAccess.Field.Span, "unknown field on slice: %s", fieldAccess.Field.Name)
+		return InvalidTypeID, TypeFailed
 	}
 	struct_, ok := targetTyp.Kind.(StructType)
 	if !ok {
@@ -1185,6 +1264,15 @@ func (e *Engine) buildArrayType(elemTypeID TypeID, length int64, nodeID ast.Node
 	return typeID
 }
 
+func (e *Engine) buildSliceType(elemTypeID TypeID, nodeID ast.NodeID, span base.Span) TypeID {
+	if cached, ok := e.sliceTypes[elemTypeID]; ok {
+		return cached.Type.ID
+	}
+	typeID := e.newType(SliceType{Elem: elemTypeID}, nodeID, span, TypeOK)
+	e.sliceTypes[elemTypeID] = e.types[typeID]
+	return typeID
+}
+
 func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
 	if got == expected {
 		return true
@@ -1272,16 +1360,21 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 			return InvalidTypeID, false
 		}
 		var mut bool
-		if ref, ok := e.Type(targetTypeID).Kind.(RefType); ok {
+		targetTyp := e.Type(targetTypeID)
+		if ref, ok := targetTyp.Kind.(RefType); ok {
 			mut = ref.Mut
+			targetTyp = e.Type(ref.Type)
 		} else {
 			_, mut = e.isPlaceMutable(kind.Target)
 		}
-		arrayTyp, ok := e.TypeOfNode(kind.Target).Kind.(ArrayType)
-		if !ok {
+		switch k := targetTyp.Kind.(type) {
+		case ArrayType:
+			return k.Elem, mut
+		case SliceType:
+			return k.Elem, mut
+		default:
 			return InvalidTypeID, false
 		}
-		return arrayTyp.Elem, mut
 	case ast.FieldAccess:
 		targetTypeID, status := e.Query(kind.Target)
 		if status.Failed() {

@@ -432,6 +432,21 @@ func TestCompile(t *testing.T) {
 				print_int(x[2])
 			}
 			`, "0\n1\n2\n"},
+		{"make slice", `
+			fun main() void {
+				alloc @myalloc = Arena()
+				let size = 3
+				mut x = make @myalloc []Int(size)
+				x[0] = 10
+				x[1] = 20
+				x[2] = 30
+
+				print_int(x[0])
+				print_int(x[1])
+				print_int(x[2])
+				print_int(x.len)
+			}
+			`, "10\n20\n30\n3\n"},
 
 		{"int arithmetic", `
 			fun main() void {

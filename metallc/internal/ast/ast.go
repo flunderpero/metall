@@ -53,6 +53,26 @@ type ArrayType struct {
 
 func (ArrayType) isKind() {}
 
+type SliceType struct {
+	Elem NodeID
+}
+
+func (SliceType) isKind() {}
+
+type ArrayAlloc struct {
+	Type NodeID
+}
+
+func (ArrayAlloc) isKind() {}
+
+type MakeSlice struct {
+	Alloc NodeID
+	Type  NodeID
+	Len   NodeID
+}
+
+func (MakeSlice) isKind() {}
+
 type ArrayLiteral struct {
 	Elems []NodeID
 }
@@ -365,6 +385,18 @@ func (a *AST) NewArrayType(elemType NodeID, len_ int64, span base.Span) NodeID {
 	return a.node(ArrayType{elemType, len_}, span)
 }
 
+func (a *AST) NewSliceType(elemType NodeID, span base.Span) NodeID {
+	return a.node(SliceType{Elem: elemType}, span)
+}
+
+func (a *AST) NewArrayAlloc(typ NodeID, span base.Span) NodeID {
+	return a.node(ArrayAlloc{Type: typ}, span)
+}
+
+func (a *AST) NewMakeSlice(alloc NodeID, typ NodeID, len_ NodeID, span base.Span) NodeID {
+	return a.node(MakeSlice{Alloc: alloc, Type: typ, Len: len_}, span)
+}
+
 func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
 	return a.node(ArrayLiteral{Elems: elems}, span)
 }
@@ -464,6 +496,14 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 	case ArrayType:
 		f(kind.Elem)
+	case SliceType:
+		f(kind.Elem)
+	case ArrayAlloc:
+		f(kind.Type)
+	case MakeSlice:
+		f(kind.Alloc)
+		f(kind.Type)
+		f(kind.Len)
 	case ArrayLiteral:
 		for i := range len(kind.Elems) {
 			f(kind.Elems[i])
@@ -693,6 +733,28 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addAttr("type", nodeIDKind(kind.Elem))
 		} else {
 			addChild("type", kind.Elem)
+		}
+	case SliceType:
+		if !children {
+			addAttr("type", nodeIDKind(kind.Elem))
+		} else {
+			addChild("type", kind.Elem)
+		}
+	case ArrayAlloc:
+		if !children {
+			addAttr("type", nodeIDKind(kind.Type))
+		} else {
+			addChild("type", kind.Type)
+		}
+	case MakeSlice:
+		if !children {
+			addAttr("alloc", nodeIDKind(kind.Alloc))
+			addAttr("type", nodeIDKind(kind.Type))
+			addAttr("len", nodeIDKind(kind.Len))
+		} else {
+			addChild("alloc", kind.Alloc)
+			addChild("type", kind.Type)
+			addChild("len", kind.Len)
 		}
 	case ArrayLiteral:
 		addAttr("len", fmt.Sprintf("%d", len(kind.Elems)))

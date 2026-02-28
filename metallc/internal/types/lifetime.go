@@ -201,6 +201,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeStructLiteral(nodeID, kind)
 	case ast.Allocation:
 		a.analyzeAllocation(nodeID, kind)
+	case ast.MakeSlice:
+		a.analyzeMakeSlice(nodeID, kind)
 	case ast.ArrayLiteral:
 		a.analyzeArrayLiteral(nodeID, kind)
 	case ast.Index:
@@ -292,10 +294,17 @@ func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLi
 	a.flows[nodeID] = merged
 }
 
-// analyzeAllocation: `@alloc Foo(...)` merges the target's flow with the allocator's.
+// analyzeAllocation: `new @alloc Foo(...)` merges the target's flow with the allocator's.
 func (a *LifetimeCheck) analyzeAllocation(nodeID ast.NodeID, alloc ast.Allocation) {
 	merged := a.flow(alloc.Target)
 	merged = merged.Merge(a.flow(alloc.Alloc))
+	a.flows[nodeID] = merged
+}
+
+// analyzeMakeSlice: `make @alloc []T(len)` merges the allocator's flow.
+func (a *LifetimeCheck) analyzeMakeSlice(nodeID ast.NodeID, makeSlice ast.MakeSlice) {
+	merged := a.flow(makeSlice.Alloc)
+	merged = merged.Merge(a.flow(makeSlice.Len))
 	a.flows[nodeID] = merged
 }
 
@@ -421,7 +430,8 @@ func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 	ss := a.scopeState(nodeID)
 	f := a.flow(varNode.Expr)
 	storageTaint := ss.ScopeTaint
-	if _, ok := a.e.Node(varNode.Expr).Kind.(ast.Allocation); ok {
+	switch a.e.Node(varNode.Expr).Kind.(type) {
+	case ast.Allocation, ast.MakeSlice:
 		storageTaint = 0
 	}
 	ss.Vars[varNode.Name.Name] = &VarTaint{nodeID, storageTaint, f}
@@ -466,6 +476,8 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 			}
 		}
 	case ArrayType:
+		return a.typeContainsRefOrAlloc(kind.Elem)
+	case SliceType:
 		return a.typeContainsRefOrAlloc(kind.Elem)
 	}
 	return false

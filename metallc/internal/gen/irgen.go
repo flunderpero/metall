@@ -81,7 +81,7 @@ func NewIRGen(engine *types.Engine, opts IROpts) *IRGen {
 	}
 }
 
-func (g *IRGen) Gen(id ast.NodeID) {
+func (g *IRGen) Gen(id ast.NodeID) { //nolint:funlen
 	node := g.engine.Node(id)
 	switch kind := node.Kind.(type) {
 	case ast.Assign:
@@ -138,6 +138,14 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genRef(id, kind)
 	case ast.RefType:
 		// Types don't generate code
+	case ast.ArrayType:
+		// Types don't generate code
+	case ast.SliceType:
+		// Types don't generate code
+	case ast.ArrayAlloc:
+		// Handled inline in genAllocation
+	case ast.MakeSlice:
+		g.genMakeSlice(id, kind)
 	case ast.AllocInit:
 		g.genAllocInit(id, kind)
 	default:
@@ -202,14 +210,28 @@ func (g *IRGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 	g.Gen(index.Target)
 	g.Gen(index.Index)
-	targetTyp := base.Cast[types.ArrayType](g.engine.TypeOfNode(index.Target).Kind)
-	arrIRType := g.irType(g.engine.TypeOfNode(index.Target).ID)
-	ptrReg := g.reg()
 	indexReg := g.lookupCode(index.Index)
 	targetReg := g.lookupCode(index.Target)
-	g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
-	valReg := g.loadValue(ptrReg, targetTyp.Elem)
-	g.setCode(id, valReg)
+	targetTypeKind := g.engine.TypeOfNode(index.Target).Kind
+	switch kind := targetTypeKind.(type) {
+	case types.ArrayType:
+		arrIRType := g.irType(g.engine.TypeOfNode(index.Target).ID)
+		ptrReg := g.reg()
+		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
+		valReg := g.loadValue(ptrReg, kind.Elem)
+		g.setCode(id, valReg)
+	case types.SliceType:
+		elemIRType := g.irType(kind.Elem)
+		dataPtrReg := g.reg()
+		g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", dataPtrReg, targetReg)
+		g.write("%s = load ptr, ptr %s_field", dataPtrReg, dataPtrReg)
+		ptrReg := g.reg()
+		g.write("%s = getelementptr %s, ptr %s, i32 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
+		valReg := g.loadValue(ptrReg, kind.Elem)
+		g.setCode(id, valReg)
+	default:
+		panic(base.Errorf("genIndex: unsupported target type %T", targetTypeKind))
+	}
 }
 
 func (g *IRGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
@@ -224,12 +246,13 @@ func (g *IRGen) genAllocation(id ast.NodeID, alloc ast.Allocation) {
 	allocReg := g.lookupCode(alloc.Alloc)
 	lit := g.engine.Node(alloc.Target).Kind
 	switch lit := lit.(type) {
-	case ast.ArrayType:
+	case ast.ArrayAlloc:
+		arrType := base.Cast[ast.ArrayType](g.engine.Node(lit.Type).Kind)
 		reg := g.reg()
-		irTyp := g.irTypeOfNode(lit.Elem)
+		irTyp := g.irTypeOfNode(arrType.Elem)
 		g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
 		g.write("%s_elm_size = ptrtoint ptr %s_elm_size_ptr to i64", reg, reg)
-		g.write("%s_size = mul i64 %s_elm_size, %d", reg, reg, lit.Len)
+		g.write("%s_size = mul i64 %s_elm_size, %d", reg, reg, arrType.Len)
 		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
 		g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_size, i1 false)", reg, reg)
 		g.setCode(id, reg)
@@ -243,6 +266,28 @@ func (g *IRGen) genAllocation(id ast.NodeID, alloc ast.Allocation) {
 	default:
 		panic(base.Errorf("unsupported allocation type %T", lit))
 	}
+}
+
+func (g *IRGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
+	g.Gen(makeSlice.Alloc)
+	allocReg := g.lookupCode(makeSlice.Alloc)
+	sliceType := base.Cast[ast.SliceType](g.engine.Node(makeSlice.Type).Kind)
+	reg := g.reg()
+	irTyp := g.irTypeOfNode(sliceType.Elem)
+	g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
+	g.write("%s_elm_size = ptrtoint ptr %s_elm_size_ptr to i64", reg, reg)
+	g.Gen(makeSlice.Len)
+	lenReg := g.lookupCode(makeSlice.Len)
+	g.write("%s_size = mul i64 %s_elm_size, %s", reg, reg, lenReg)
+	g.write("%s_data = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
+	g.write("call void @llvm.memset.p0.i64(ptr %s_data, i8 0, i64 %s_size, i1 false)", reg, reg)
+	// Build the slice {ptr, i64} on the stack.
+	g.write("%s = alloca {ptr, i64}", reg)
+	g.write("%s_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", reg, reg)
+	g.write("store ptr %s_data, ptr %s_ptr_field", reg, reg)
+	g.write("%s_len_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", reg, reg)
+	g.write("store i64 %s, ptr %s_len_field", lenReg, reg)
+	g.setCode(id, reg)
 }
 
 func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, destReg string) {
@@ -263,9 +308,32 @@ func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, des
 }
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	targetType := g.engine.TypeOfNode(fieldAccess.Target)
+	if refTyp, ok := targetType.Kind.(types.RefType); ok {
+		targetType = g.engine.Type(refTyp.Type)
+	}
+	if _, ok := targetType.Kind.(types.SliceType); ok {
+		g.genSliceFieldAccess(id, fieldAccess)
+		return
+	}
 	_, ptrReg := g.genFieldAccessPtr(fieldAccess)
 	valReg := g.loadValue(ptrReg, g.engine.TypeOfNode(id).ID)
 	g.setCode(id, valReg)
+}
+
+func (g *IRGen) genSliceFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	g.Gen(fieldAccess.Target)
+	sliceReg := g.lookupCode(fieldAccess.Target)
+	switch fieldAccess.Field.Name {
+	case "len":
+		ptrReg := g.reg()
+		g.write("%s = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", ptrReg, sliceReg)
+		valReg := g.reg()
+		g.write("%s = load i64, ptr %s", valReg, ptrReg)
+		g.setCode(id, valReg)
+	default:
+		panic(base.Errorf("unknown slice field: %s", fieldAccess.Field.Name))
+	}
 }
 
 func (g *IRGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string, ptrReg string) {
@@ -486,7 +554,7 @@ func (g *IRGen) writeLabel(label Label) {
 	g.write("%s:", label)
 }
 
-func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
+func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 	g.Gen(assign.RHS)
 	rhs := g.lookupCode(assign.RHS)
 	lhsNode := g.engine.Node(assign.LHS)
@@ -518,13 +586,25 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	case ast.Index:
 		g.Gen(lhsKind.Target)
 		g.Gen(lhsKind.Index)
-		arrIRType := g.irType(g.engine.TypeOfNode(lhsKind.Target).ID)
 		targetReg := g.lookupCode(lhsKind.Target)
 		indexReg := g.lookupCode(lhsKind.Index)
 		ptrReg := g.reg()
-		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
-		elemTypeID := base.Cast[types.ArrayType](g.engine.TypeOfNode(lhsKind.Target).Kind).Elem
-		g.storeValue(rhs, ptrReg, elemTypeID)
+		targetTypeKind := g.engine.TypeOfNode(lhsKind.Target).Kind
+		switch kind := targetTypeKind.(type) {
+		case types.ArrayType:
+			arrIRType := g.irType(g.engine.TypeOfNode(lhsKind.Target).ID)
+			g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
+			g.storeValue(rhs, ptrReg, kind.Elem)
+		case types.SliceType:
+			elemIRType := g.irType(kind.Elem)
+			dataPtrReg := g.reg()
+			g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", dataPtrReg, targetReg)
+			g.write("%s = load ptr, ptr %s_field", dataPtrReg, dataPtrReg)
+			g.write("%s = getelementptr %s, ptr %s, i32 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
+			g.storeValue(rhs, ptrReg, kind.Elem)
+		default:
+			panic(base.Errorf("genAssign index: unsupported target type %T", targetTypeKind))
+		}
 	case ast.Deref:
 		g.Gen(assign.LHS)
 		ptr := g.lookupCode(lhsKind.Expr)
@@ -773,6 +853,8 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		return "%" + typeID.String()
 	case types.ArrayType:
 		return fmt.Sprintf("[%d x %s]", kind.Len, g.irType(kind.Elem))
+	case types.SliceType:
+		return "{ptr, i64}"
 	case types.FunType:
 		panic("unexpected fun type")
 	default:
@@ -824,7 +906,7 @@ func (g *IRGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
 
 func (g *IRGen) isAggregateType(typeID types.TypeID) bool {
 	switch g.engine.Type(typeID).Kind.(type) {
-	case types.StructType, types.ArrayType:
+	case types.StructType, types.ArrayType, types.SliceType:
 		return true
 	default:
 		return false

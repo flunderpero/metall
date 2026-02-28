@@ -248,6 +248,51 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			void, nil,
 		},
 		{"heap alloc array", `{ alloc @myalloc = Arena() new @myalloc [5]Int() }`, arr_t(Int, 5), nil},
+		{"make slice", `{ alloc @myalloc = Arena() make @myalloc []Int(5) }`, slice_t(Int), nil},
+		{"slice index read", `{ alloc @myalloc = Arena() let x = make @myalloc []Int(3) x[1] }`, Int, nil},
+		{"slice index write", `{ alloc @myalloc = Arena() mut x = make @myalloc []Int(3) x[1] = 5 }`, void, nil},
+		{"slice len", `{ alloc @myalloc = Arena() let x = make @myalloc []Int(3) x.len }`, Int, nil},
+		{
+			"slice as fun param",
+			`{ alloc @a = Arena() fun foo(s []Int) Int { s[0] } let x = make @a []Int(3) foo(x) }`,
+			Int, nil,
+		},
+		{
+			"slice as fun param and return",
+			`{ alloc @a = Arena() fun foo(s []Int) []Int { s } let x = make @a []Int(3) foo(x) }`,
+			slice_t(Int), nil,
+		},
+		{
+			"struct with slice field",
+			`{ alloc @a = Arena() struct Foo { one []Int } let s = make @a []Int(3) let x = Foo(s) x.one[0] }`,
+			Int, nil,
+		},
+		{
+			"ref to slice",
+			`{ alloc @a = Arena() let x = make @a []Int(3) &x }`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				got := e.TypeOfNode(id)
+				ref, ok := got.Kind.(RefType)
+				assert.Equal(true, ok)
+				assert.Equal("[]Int", e.TypeDisplay(ref.Type))
+			},
+		},
+		{
+			"slice index through ref",
+			`{ alloc @a = Arena() let x = make @a []Int(3) let y = &x y[0] }`,
+			Int, nil,
+		},
+		{
+			"slice len through ref",
+			`{ alloc @a = Arena() let x = make @a []Int(3) let y = &x y.len }`,
+			Int, nil,
+		},
+		{
+			"mut ref slice index write",
+			`{ alloc @a = Arena() mut x = make @a []Int(3) let y = &mut x y[0] = 42 }`,
+			void, nil,
+		},
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let x = [1, 2, 3] x[1] }`, Int, nil},
 		{"index write", `{ mut x = [1, 2, 3] x[1] = 5 }`, void, nil},
@@ -280,6 +325,17 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"fun returns ref",
 		"heap alloc struct",
 		"heap alloc array",
+		"make slice",
+		"slice index read",
+		"slice index write",
+		"slice len",
+		"slice as fun param",
+		"slice as fun param and return",
+		"struct with slice field",
+		"ref to slice",
+		"slice index through ref",
+		"slice len through ref",
+		"mut ref slice index write",
 	}
 
 	assert := base.NewAssert(t)
@@ -558,7 +614,7 @@ func TestTypeCheckErr(t *testing.T) {
 				`                                      ^^^^^^^^`,
 		}},
 		{"index on non-array", `{ let x = 123 x[0] }`, []string{
-			"test.met:1:15: not an array: Int\n" +
+			"test.met:1:15: not an array or slice: Int\n" +
 				"    { let x = 123 x[0] }\n" +
 				"                  ^",
 		}},
@@ -603,6 +659,16 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:3: continue statement outside of loop\n" +
 				`    { continue }` + "\n" +
 				"      ^^^^^^^^",
+		}},
+		{"unknown field on slice", `{ alloc @a = Arena() let x = make @a []Int(3) x.foo }`, []string{
+			"test.met:1:49: unknown field on slice: foo\n" +
+				`    { alloc @a = Arena() let x = make @a []Int(3) x.foo }` + "\n" +
+				"                                                    ^^^",
+		}},
+		{"make slice non-int length", `{ alloc @a = Arena() make @a []Int("hello") }`, []string{
+			"test.met:1:36: type mismatch: expected Int, got Str\n" +
+				`    { alloc @a = Arena() make @a []Int("hello") }` + "\n" +
+				`                                       ^^^^^^^`,
 		}},
 	}
 
@@ -850,6 +916,10 @@ func struct_t(name string, fields ...any) *Type {
 
 func arr_t(typ *Type, size int) *Type {
 	return &Type{Kind: ArrayType{typ.ID, int64(size)}}
+}
+
+func slice_t(typ *Type) *Type {
+	return &Type{Kind: SliceType{typ.ID}}
 }
 
 func fun_t(types ...*Type) *Type {
