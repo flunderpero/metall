@@ -60,7 +60,7 @@ func TestCompile(t *testing.T) {
 
 		{
 			"ref deref",
-			`fun main() void { mut x = 123 mut y = &mut x print_int(*y) *y = 321 print_int(x) }`,
+			`fun main() void { mut x = 123 mut y = &mut x print_int(y.*) y.* = 321 print_int(x) }`,
 			"123\n321\n",
 		},
 		{"nested ref deref", `
@@ -68,16 +68,16 @@ func TestCompile(t *testing.T) {
 				mut x = 123 
 				mut y = &mut x
 				mut z = &mut y
-				print_int(*y)
-				*y = 321 
+				print_int(y.*)
+				y.* = 321 
 				print_int(x)
-				**z = 111
+				z.*.* = 111
 				print_int(x)
 			}`, "123\n321\n111\n"},
 		{"deref assign through &mut param", `
 			fun foo(a &mut Int) void { 
-				print_int(*a)
-				*a = 321 
+				print_int(a.*)
+				a.* = 321 
 			}
 			fun main() void { 
 				mut x = 123 
@@ -220,9 +220,9 @@ func TestCompile(t *testing.T) {
 				mut x = 42
 				let y = Wrapper(1, &x)
 				print_int(y.one)
-				print_int(*y.two)
+				print_int(y.two.*)
 				x = 99
-				print_int(*y.two)
+				print_int(y.two.*)
 			}
 			`, "1\n42\n99\n"},
 
@@ -385,8 +385,8 @@ func TestCompile(t *testing.T) {
 				let w = 1
 				let v = 2
 				let u = [&w, &v]
-				print_int(*u[1])
-				print_int(*u[0])
+				print_int(u[1].*)
+				print_int(u[0].*)
 			}
 			`, "y\nx\n2\n1\n"},
 		{"array index write", `

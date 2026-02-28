@@ -52,15 +52,15 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				mut z = &mut y
 				{
 				  mut w = 456
-				  *z = &w
+				  z.* = &w
 				}
 			}
 			`, []string{
-			"test.met:8:24: reference escaping its allocation scope\n" +
+			"test.met:8:25: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				      mut w = 456
-				      *z = &w
-				           ^^
+				      z.* = &w
+				            ^^
 				    }
 				`, "\n"),
 		}},
@@ -74,16 +74,16 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					mut w = &mut y
 					{
 						mut v = 789
-						*w = &v
+						w.* = &v
 					}
 				}
 			}
 			`, []string{
-			"test.met:10:30: reference escaping its allocation scope\n" +
+			"test.met:10:31: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					        mut v = 789
-					        *w = &v
-					             ^^
+					        w.* = &v
+					              ^^
 					    }
 					`, "\n"),
 		}},
@@ -112,15 +112,15 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				mut z = &mut y
 				{
 					mut w = 456
-					*z = &w
+					z.* = &w
 				}
 			}
 			`, []string{
-			"test.met:8:26: reference escaping its allocation scope\n" +
+			"test.met:8:27: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					    mut w = 456
-					    *z = &w
-					         ^^
+					    z.* = &w
+					          ^^
 					}
 					`, "\n"),
 		}},
@@ -176,7 +176,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					mut z = 456
 					mut w = &z
 					mut v = &w
-					y = *v
+					y = v.*
 				}
 			}
 			`, []string{
@@ -555,7 +555,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				{
 					mut z = 456
 					mut y = &mut z
-					*y = 789
+					y.* = 789
 				}
 			}
 			`, []string{}},
@@ -725,7 +725,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				fun foo(a &Int) &Int {
 					mut x = 1
-					x = *a
+					x = a.*
 					&x
 				}
 				let y = 42
@@ -734,7 +734,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			`, []string{
 			"test.met:6:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        x = *a
+				        x = a.*
 				        &x
 				        ^^
 				    }
@@ -747,7 +747,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				fun foo(a &Foo) &Foo {
 					alloc @youralloc = Arena()
 					mut x = Foo(@youralloc)
-					x = *a
+					x = a.*
 					&x
 				}
 				alloc @myalloc = Arena()
@@ -757,7 +757,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			`, []string{
 			"test.met:8:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        x = *a
+				        x = a.*
 				        &x
 				        ^^
 				    }
@@ -794,7 +794,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					mut z = 99
 					foo(&mut y, &z)
 				}
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:11:33: reference escaping its allocation scope\n" +
@@ -816,7 +816,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let w = identity(&mut y)
 					w.one = &z
 				}
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:10:29: reference escaping its allocation scope\n" +
@@ -838,7 +838,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let w = identity(&mut y)
 					w.one = &z
 				}
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:10:29: reference escaping its allocation scope\n" +
@@ -860,7 +860,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					mut z = 99
 					foo(&mut y, &z)
 				}
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:10:33: reference escaping its allocation scope\n" +
@@ -886,7 +886,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					mut z = 99
 					foo(&mut y, &z)
 				}
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:14:33: reference escaping its allocation scope\n" +
@@ -922,7 +922,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					foo(&mut y, &z)
 				}
 
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:20:33: reference escaping its allocation scope\n" +
@@ -945,7 +945,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					mut z = 99
 					foo(identity(&mut y), &z)
 				}
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:11:43: reference escaping its allocation scope\n" +
@@ -966,9 +966,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				{
 					mut a = 99
 					mut b = Foo(&mut a)
-					**w = b
+					w.*.* = b
 				}
-				print_int(*y.one)
+				print_int(y.one.*)
 			}
 			`, []string{
 			"test.met:10:33: reference escaping its allocation scope\n" +
@@ -976,7 +976,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 						mut a = 99
 						mut b = Foo(&mut a)
 									^^^^^^
-						**w = b
+						w.*.* = b
 				`, "\n"),
 		}},
 		{"deref field ref mutation escapes", `
@@ -987,16 +987,16 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				mut z = Foo(&mut y)
 				{
 					mut w = 99
-					*z.one = &w
+					z.one.* = &w
 				}
-				print_int(**z.one)
+				print_int(z.one.*.*)
 			}
 			`, []string{
-			"test.met:9:30: reference escaping its allocation scope\n" +
+			"test.met:9:31: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					    mut w = 99
-					    *z.one = &w
-					             ^^
+					    z.one.* = &w
+					              ^^
 					}
 					`, "\n"),
 		}},
@@ -1011,7 +1011,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					y.two = &z
 					y.one = "bye"
 				}
-				print_int(*y.two)
+				print_int(y.two.*)
 			}
 			`, []string{
 			"test.met:8:29: reference escaping its allocation scope\n" +

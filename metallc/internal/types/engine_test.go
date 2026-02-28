@@ -141,16 +141,16 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"mut binding of immutable ref", `{ let x = 5 mut y = &x y }`, ref_t(Int), nil},
 		// &x on a mut binding still produces &Int (not &mut), since we didn't write &mut.
 		{"immutable ref to mut", `{ mut x = 5 mut y = &x y }`, ref_t(Int), nil},
-		{"deref", `{ let x = 5 let y = &x *y }`, Int, nil},
+		{"deref", `{ let x = 5 let y = &x y.* }`, Int, nil},
 		{
 			"deref field access",
 			`{ struct Foo{ one Str } let x = Foo("hello") let y = &x x.one }`,
 			Str,
 			nil,
 		},
-		{"deref assign", `{ mut x = 1 mut y = &mut x *y = 321 }`, void, nil},
-		{"nested deref assign", `{ mut x = 1 mut y = &mut x mut z = &mut y *y = 123 **z = 321 }`, void, nil},
-		{"mut ref parameter", `{ fun foo(a &mut Int) void { *a = 321 } mut x = 123 foo(&mut x) }`, void, nil},
+		{"deref assign", `{ mut x = 1 mut y = &mut x y.* = 321 }`, void, nil},
+		{"nested deref assign", `{ mut x = 1 mut y = &mut x mut z = &mut y y.* = 123 z.*.* = 321 }`, void, nil},
+		{"mut ref parameter", `{ fun foo(a &mut Int) void { a.* = 321 } mut x = 123 foo(&mut x) }`, void, nil},
 		// &mut coerces to & when passed to a & param.
 		{"&mut coerces to &ref in call", `{ fun foo(a &Int) void {} mut x = 123 foo(&x) }`, void, nil},
 		// Same coercion but in a struct literal constructor.
@@ -158,13 +158,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"fun returns ref", `{ fun foo(a &Int) &Int { a } let x = 123 foo(&x) }`, ref_t(Int), nil},
 		{
 			"deref assign through &mut struct field",
-			`{ struct Foo { one &mut Int } mut x = 1 let y = Foo(&mut x) *y.one = 42 }`,
+			`{ struct Foo { one &mut Int } mut x = 1 let y = Foo(&mut x) y.one.* = 42 }`,
 			void,
 			nil,
 		},
 		{
 			"reassign mut field of mut ref type",
-			`{ struct Foo { mut one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &mut y *z.one = 99 }`,
+			`{ struct Foo { mut one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &mut y z.one.* = 99 }`,
 			void,
 			nil,
 		},
@@ -417,25 +417,25 @@ func TestTypeCheckErr(t *testing.T) {
 				"                           ^^^^^^^^^^^",
 		}},
 
-		{"deref non-reference", `{ let x = 5 *x }`, []string{
-			"test.met:1:14: dereference: expected reference, got Int\n" +
-				`    { let x = 5 *x }` + "\n" +
-				`                 ^`,
+		{"deref non-reference", `{ let x = 5 x.* }`, []string{
+			"test.met:1:13: dereference: expected reference, got Int\n" +
+				`    { let x = 5 x.* }` + "\n" +
+				`                ^`,
 		}},
-		{"deref assign through immutable ref", `{ let x = 5 let y = &x *y = 321 }`, []string{
+		{"deref assign through immutable ref", `{ let x = 5 let y = &x y.* = 321 }`, []string{
 			"test.met:1:24: cannot assign through dereference: expected mutable reference, got &Int\n" +
-				`    { let x = 5 let y = &x *y = 321 }` + "\n" +
-				`                           ^^`,
+				`    { let x = 5 let y = &x y.* = 321 }` + "\n" +
+				`                           ^^^`,
 		}},
 		{"pass value to &ref param", `{ fun foo(a &Int) void {} let x = 123 foo(x) }`, []string{
 			"test.met:1:43: type mismatch at argument 1: expected &Int, got Int\n" +
 				`    { fun foo(a &Int) void {} let x = 123 foo(x) }` + "\n" +
 				`                                              ^`,
 		}},
-		{"deref assign through immutable ref param", `{ fun foo(a &Int) void { *a = 123 }}`, []string{
+		{"deref assign through immutable ref param", `{ fun foo(a &Int) void { a.* = 123 }}`, []string{
 			"test.met:1:26: cannot assign through dereference: expected mutable reference, got &Int\n" +
-				`    { fun foo(a &Int) void { *a = 123 }}` + "\n" +
-				`                             ^^`,
+				`    { fun foo(a &Int) void { a.* = 123 }}` + "\n" +
+				`                             ^^^`,
 		}},
 
 		{"&mut of let binding", `{ let x = 123 let y = &mut x }`, []string{
@@ -509,11 +509,11 @@ func TestTypeCheckErr(t *testing.T) {
 		},
 		{
 			"deref assign through &ref field",
-			`{ struct Foo { one &Int } let x = 123 let y = Foo(&x) *y.one = 42 }`,
+			`{ struct Foo { one &Int } let x = 123 let y = Foo(&x) y.one.* = 42 }`,
 			[]string{
 				"test.met:1:55: cannot assign through dereference: expected mutable reference, got &Int\n" +
-					`    { struct Foo { one &Int } let x = 123 let y = Foo(&x) *y.one = 42 }` + "\n" +
-					"                                                          ^^^^^^",
+					`    { struct Foo { one &Int } let x = 123 let y = Foo(&x) y.one.* = 42 }` + "\n" +
+					"                                                          ^^^^^^^",
 			},
 		},
 		{

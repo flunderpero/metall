@@ -133,8 +133,8 @@ func TestParseOK(t *testing.T) {
 
 		{"&ref", "expr", `&x`, func(a *TestAST) NodeID { return a.ref("x") }},
 		{"&mut ref", "expr", `&mut x`, func(a *TestAST) NodeID { return a.mut_ref("x") }},
-		{"deref", "expr", `*x`, func(a *TestAST) NodeID { return a.deref(a.ident("x")) }},
-		{"nested deref", "expr", `**x`, func(a *TestAST) NodeID { return a.deref(a.deref(a.ident("x"))) }},
+		{"deref", "expr", `x.*`, func(a *TestAST) NodeID { return a.deref(a.ident("x")) }},
+		{"nested deref", "expr", `x.*.*`, func(a *TestAST) NodeID { return a.deref(a.deref(a.ident("x"))) }},
 		{
 			"ref type",
 			"expr",
@@ -148,13 +148,13 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
-			"deref assign", "expr", `*x = y`,
+			"deref assign", "expr", `x.* = y`,
 			func(a *TestAST) NodeID {
 				return a.assign(a.deref(a.ident("x")), a.ident("y"))
 			},
 		},
 		{
-			"nested deref assign", "expr", `***x = y`,
+			"nested deref assign", "expr", `x.*.*.* = y`,
 			func(a *TestAST) NodeID {
 				return a.assign(a.deref(a.deref(a.deref(a.ident("x")))), a.ident("y"))
 			},

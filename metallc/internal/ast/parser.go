@@ -324,20 +324,9 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 		return ParseFailed, false
 	}
 	span := t.Span
-	var expr NodeID
-	switch t.Kind { //nolint:exhaustive
-	case token.Star:
-		p.next()
-		expr, ok = p.ParseUnaryExpr(minPrecedence)
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = p.NewDeref(expr, span.Combine(p.span()))
-	default:
-		expr, ok = p.ParsePrimaryExpr(minPrecedence)
-		if !ok {
-			return ParseFailed, false
-		}
+	expr, ok := p.ParsePrimaryExpr(minPrecedence)
+	if !ok {
+		return ParseFailed, false
 	}
 	for {
 		t, ok := p.mayPeek()
@@ -366,11 +355,21 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 			continue
 		case token.Dot:
 			p.next()
-			name, ok := p.expect(token.Ident)
+			next, ok := p.mustPeek()
 			if !ok {
 				return ParseFailed, false
 			}
-			expr = p.NewFieldAccess(expr, Name{name.Value, name.Span}, span.Combine(p.span()))
+			if next.Kind == token.Star {
+				p.next()
+				expr = p.NewDeref(expr, span.Combine(p.span()))
+				continue
+			}
+			if next.Kind != token.Ident {
+				p.diagnostic(next.Span, "unexpected token: expected <identifier> or *, got %s", next.Kind)
+				return ParseFailed, false
+			}
+			p.next()
+			expr = p.NewFieldAccess(expr, Name{next.Value, next.Span}, span.Combine(p.span()))
 			continue
 		}
 		break
