@@ -26,21 +26,21 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		want  *Type
 		check func(*Engine, ast.NodeID, base.Assert)
 	}{
-		{"Int", `123`, Int, nil},
-		{"Str", `"hello"`, Str, nil},
+		{"int literal", `123`, Int, nil},
+		{"str literal", `"hello"`, Str, nil},
 		{"block", `{ 123 "hello" }`, Str, nil},
 		{"empty block is void", `{ }`, void, nil},
-		{"let", `let foo = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
+		{"let binding", `let x = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, _, ok := e.Scope().Lookup("foo")
+			b, _, ok := e.Scope().Lookup("x")
 			assert.Equal(true, ok)
 			bindingType := e.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
 			assert.Equal(false, b.Mut)
 		}},
-		{"mut", `mut foo = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
+		{"mut binding", `mut x = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, _, ok := e.Scope().Lookup("foo")
+			b, _, ok := e.Scope().Lookup("x")
 			assert.Equal(true, ok)
 			bindingType := e.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
@@ -48,7 +48,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		}},
 		{
 			"assign is void",
-			`{ mut foo = 321 foo = 123 }`,
+			`{ mut x = 321 x = 123 }`,
 			void,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.Node(id).Kind.(ast.Block)
@@ -58,7 +58,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(void, typ)
 			},
 		},
-		{"fun", `fun foo(a Int, b Str) Int { 123 }`, fun_t(Int, Str, Int), nil},
+		{"fun declaration", `fun foo(a Int, b Str) Int { 123 }`, fun_t(Int, Str, Int), nil},
 		{"fun void return coerces body to void", `fun foo() void { 123 }`, fun_t(void), nil},
 		{"fun params", `fun foo(a Int) Int { a }`, fun_t(Int, Int), nil},
 		{
@@ -67,33 +67,33 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			fun_t(Int, void),
 			nil,
 		},
-		{"call", `{ fun foo(a Int) Int { 123 } foo(321) }`, Int, nil},
+		{"fun call", `{ fun foo(a Int) Int { 123 } foo(321) }`, Int, nil},
 		{"call void fun", `{ fun foo() void { } foo() }`, void, nil},
 		{"builtin print_str", `print_str("hello")`, void, nil},
 		{"builtin print_int", `print_int(123)`, void, nil},
 		{"builtin print_bool", `print_bool(true)`, void, nil},
-		{"shadowing", `{ let foo = { let foo = "hello" print_str(foo) 123 } print_int(foo) }`, void, nil},
+		{"shadowing", `{ let x = { let x = "hello" print_str(x) 123 } print_int(x) }`, void, nil},
 
-		{"struct", `struct Planet { name Str diameter Int }`, struct_t("Planet", "name", Str, "diameter", Int), nil},
+		{"struct declaration", `struct Foo { one Str two Int }`, struct_t("Foo", "one", Str, "two", Int), nil},
 		{
-			"forward declare struct type", `{ fun foo(a Planet) void {} struct Planet { name Str } }`,
-			struct_t("Planet", "name", Str),
+			"forward declare struct type", `{ fun foo(a Foo) void {} struct Foo { one Str } }`,
+			struct_t("Foo", "one", Str),
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
 				funID := block.Exprs[0]
 				typ, ok := e.TypeOfNode(funID).Kind.(FunType)
 				assert.Equal(true, ok, e.TypeOfNode(funID).ID)
-				assert.Equal("struct Planet(name Str)", e.TypeDisplay(typ.Params[0]))
+				assert.Equal("struct Foo(one Str)", e.TypeDisplay(typ.Params[0]))
 			},
 		},
 		{
-			"struct literal", `{ struct Planet { name Str diameter Int } let earth = Planet("Earth", 12500) earth }`,
-			struct_t("Planet", "name", Str, "diameter", Int), nil,
+			"struct literal", `{ struct Foo { one Str two Int } let x = Foo("hello", 123) x }`,
+			struct_t("Foo", "one", Str, "two", Int), nil,
 		},
 		{
 			"struct ref",
-			`{ struct Planet { name Str } let p = Planet("Earth") &p }`,
+			`{ struct Foo { one Str } let x = Foo("hello") &x }`,
 			// Our test strategy does not work for nested types (we zero out all type ids).
 			// That's why we verify in the check function.
 			nil,
@@ -101,66 +101,70 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				got := e.TypeOfNode(id)
 				ref, ok := got.Kind.(RefType)
 				assert.Equal(true, ok)
-				assert.Equal("struct Planet(name Str)", e.TypeDisplay(ref.Type))
+				assert.Equal("struct Foo(one Str)", e.TypeDisplay(ref.Type))
 			},
 		},
-		{"field read access", `{ struct Planet { name Str } let earth = Planet("Earth") earth.name }`, Str, nil},
+		{"field read access", `{ struct Foo { one Str } let x = Foo("hello") x.one }`, Str, nil},
 		{
 			"field write access",
-			`{ struct Planet { mut name Str } mut earth = Planet("Earth") earth.name = "Mother" }`,
+			`{ struct Foo { mut one Str } mut x = Foo("hello") x.one = "bye" }`,
 			void,
 			nil,
 		},
 		{
 			"field write through mut ref param",
-			`{ struct Planet { mut name Str } fun foo(p &mut Planet) void { p.name = "X" } mut p = Planet("Earth") foo(&mut p) }`,
+			`{ struct Foo { mut one Str } fun foo(a &mut Foo) void { a.one = "X" } mut x = Foo("hello") foo(&mut x) }`,
 			void,
 			nil,
 		},
 		{
 			"nested field write on mut struct",
-			`{ struct Inner { mut x Int } struct Outer { mut inner Inner } mut o = Outer(Inner(1)) o.inner.x = 2 }`,
+			`{ struct Foo { mut one Int } struct Bar { mut one Foo } mut x = Bar(Foo(1)) x.one.one = 2 }`,
 			void,
 			nil,
 		},
 		{
 			"field write through let binding of mut ref",
-			`{ struct Planet { mut name Str } mut earth = Planet("Earth") let p = &mut earth p.name = "X" }`,
+			`{ struct Foo { mut one Str } mut x = Foo("hello") let y = &mut x y.one = "X" }`,
 			void,
 			nil,
 		},
 
 		{"bool true", "{ true }", Bool, nil},
 		{"bool false", "{ false }", Bool, nil},
-		{"if then else", `{ let a = true if a { 42 } else { 123 }}`, Int, nil},
-		{"if w/o else", `{ let a = true if a { 42 } }`, void, nil},
+		{"if then else", `{ let x = true if x { 42 } else { 123 }}`, Int, nil},
+		{"if without else", `{ let x = true if x { 42 } }`, void, nil},
 
-		{"ref", `{ let a = 5 let b = &a b }`, ref_t(Int), nil},
-		{"mut ref", `{ mut a = 5 let b = &mut a b }`, ref_mut_t(Int), nil},
-		{"mut binding of immutable ref", `{ let a = 5 mut b = &a b }`, ref_t(Int), nil},
-		{"ref to mut", `{ mut a = 5 mut b = &a b }`, ref_t(Int), nil},
-		{"deref", `{ let a = 5 let b = &a *b }`, Int, nil},
+		{"ref type", `{ let x = 5 let y = &x y }`, ref_t(Int), nil},
+		{"mut ref type", `{ mut x = 5 let y = &mut x y }`, ref_mut_t(Int), nil},
+		// &x on a let binding produces &Int, even if y is mut.
+		{"mut binding of immutable ref", `{ let x = 5 mut y = &x y }`, ref_t(Int), nil},
+		// &x on a mut binding still produces &Int (not &mut), since we didn't write &mut.
+		{"immutable ref to mut", `{ mut x = 5 mut y = &x y }`, ref_t(Int), nil},
+		{"deref", `{ let x = 5 let y = &x *y }`, Int, nil},
 		{
 			"deref field access",
-			`{ struct Planet{ name Str } let p = Planet("Earth") let r = &p r.name }`,
+			`{ struct Foo{ one Str } let x = Foo("hello") let y = &x x.one }`,
 			Str,
 			nil,
 		},
-		{"deref assign", `{ mut a = 1 mut b = &mut a *b = 321 }`, void, nil},
-		{"nested deref assign", `{ mut a = 1 mut b = &mut a mut c = &mut b *b = 123 **c = 321 }`, void, nil},
-		{"mut ref parameter", `{ fun foo(a &mut Int) void { *a = 321 } mut b = 123 foo(&mut b) }`, void, nil},
-		{"mut ref coercion", `{ fun foo(a &Int) void {} mut b = 123 foo(&b) }`, void, nil},
-		{"mut ref coercion in struct literal", `{ struct Foo { ptr &Int } mut a = 1 let f = Foo(&a) }`, void, nil},
-		{"ref return", `{ fun foo(a &Int) &Int { a } let b = 123 foo(&b) }`, ref_t(Int), nil},
+		{"deref assign", `{ mut x = 1 mut y = &mut x *y = 321 }`, void, nil},
+		{"nested deref assign", `{ mut x = 1 mut y = &mut x mut z = &mut y *y = 123 **z = 321 }`, void, nil},
+		{"mut ref parameter", `{ fun foo(a &mut Int) void { *a = 321 } mut x = 123 foo(&mut x) }`, void, nil},
+		// &mut coerces to & when passed to a & param.
+		{"&mut coerces to &ref in call", `{ fun foo(a &Int) void {} mut x = 123 foo(&x) }`, void, nil},
+		// Same coercion but in a struct literal constructor.
+		{"&mut coerces to &ref in struct literal", `{ struct Foo { one &Int } mut x = 1 let y = Foo(&x) }`, void, nil},
+		{"fun returns ref", `{ fun foo(a &Int) &Int { a } let x = 123 foo(&x) }`, ref_t(Int), nil},
 		{
-			"write through mut ref struct field",
-			`{ struct Foo { ptr &mut Int } mut a = 1 let f = Foo(&mut a) *f.ptr = 42 }`,
+			"deref assign through &mut struct field",
+			`{ struct Foo { one &mut Int } mut x = 1 let y = Foo(&mut x) *y.one = 42 }`,
 			void,
 			nil,
 		},
 		{
 			"reassign mut field of mut ref type",
-			`{ struct Foo { mut ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&mut a) f.ptr = &mut b *f.ptr = 99 }`,
+			`{ struct Foo { mut one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &mut y *z.one = 99 }`,
 			void,
 			nil,
 		},
@@ -169,28 +173,28 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"self recursion", `{ fun foo(a Int) Int { foo(a) } foo(1) }`, Int, nil},
 		{"mutual recursion", `{ fun foo(a Int) Int { bar(a) } fun bar(a Int) Int { foo(a) } foo(10) }`, Int, nil},
 
-		{"declare alloc", `alloc @test = Arena()`, void, func(e *Engine, id ast.NodeID, assert base.Assert) {
+		{"alloc declaration", `alloc @myalloc = Arena()`, void, func(e *Engine, id ast.NodeID, assert base.Assert) {
 			scope := e.ScopeGraph.NodeScope(id)
-			b, _, ok := scope.Lookup("@test")
+			b, _, ok := scope.Lookup("@myalloc")
 			assert.Equal(true, ok)
 			typ, ok := e.Type(b.TypeID).Kind.(AllocType)
 			assert.Equal(true, ok)
 			assert.Equal(AllocArena, typ.Impl)
 		}},
 		{
-			"alloc", `{ alloc @test = Arena() struct Planet{name Str} let p = new @test Planet("Earth") p }`, nil,
+			"heap alloc struct", `{ alloc @myalloc = Arena() struct Foo{one Str} let x = new @myalloc Foo("hello") x }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
 				_, ok = e.TypeOfNode(lastExpr).Kind.(StructType)
 				assert.Equal(true, ok)
-				assert.Equal("struct Planet(name Str)", e.TypeDisplay(e.TypeOfNode(lastExpr).ID))
+				assert.Equal("struct Foo(one Str)", e.TypeDisplay(e.TypeOfNode(lastExpr).ID))
 			},
 		},
-		{"pass alloc to fun", `{ fun foo(@alloc Arena) void {} alloc @a = Arena() foo(@a) }`, void, nil},
+		{"pass alloc to fun", `{ fun foo(@myalloc Arena) void {} alloc @myalloc = Arena() foo(@myalloc) }`, void, nil},
 
-		{"array type", `fun foo(arr [5]Int) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
+		{"array type", `fun foo(a [5]Int) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
 			fun, ok := e.TypeOfNode(id).Kind.(FunType)
 			assert.Equal(true, ok)
 			assert.Equal(1, len(fun.Params))
@@ -224,42 +228,42 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"struct with allocator field",
-			`{ struct Holder { @a Arena } alloc @a = Arena() let h = Holder(@a) }`, void,
+			`{ struct Foo { @myalloc Arena } alloc @myalloc = Arena() let x = Foo(@myalloc) }`, void,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.Node(id).Kind)
-				// The `let h = Holder(@a)` is the last expr; its type is void.
-				// Inspect the Holder struct literal inside the var.
+				// The `let x = Foo(@myalloc)` is the last expr; its type is void.
+				// Inspect the Foo struct literal inside the var.
 				varNode := base.Cast[ast.Var](e.Node(block.Exprs[len(block.Exprs)-1]).Kind)
 				st, ok := e.TypeOfNode(varNode.Expr).Kind.(StructType)
 				assert.Equal(true, ok)
 				assert.Equal(1, len(st.Fields))
-				assert.Equal("@a", st.Fields[0].Name)
+				assert.Equal("@myalloc", st.Fields[0].Name)
 				_, ok = e.Type(st.Fields[0].Type).Kind.(AllocType)
 				assert.Equal(true, ok)
 			},
 		},
 		{
-			"alloc from struct field",
-			`{ struct Planet{name Str} struct Holder { @a Arena } alloc @a = Arena() let h = Holder(@a) let p = new h.@a Planet("Earth") }`,
+			"heap alloc from struct field",
+			`{ struct Foo{one Str} struct Bar { @myalloc Arena } alloc @myalloc = Arena() let x = Bar(@myalloc) let y = new x.@myalloc Foo("hello") }`,
 			void, nil,
 		},
-		{"array alloc", `{ alloc @a = Arena() new @a [5]Int() }`, arr_t(Int, 5), nil},
+		{"heap alloc array", `{ alloc @myalloc = Arena() new @myalloc [5]Int() }`, arr_t(Int, 5), nil},
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
-		{"index read", `{ let a = [1, 2, 3] a[1] }`, Int, nil},
-		{"index write", `{ mut a = [1, 2, 3] a[1] = 5 }`, void, nil},
+		{"index read", `{ let x = [1, 2, 3] x[1] }`, Int, nil},
+		{"index write", `{ mut x = [1, 2, 3] x[1] = 5 }`, void, nil},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
 	// violate the lifetime rules, but we still wan to test them in isolation.
 	skipLifetimeCheck := []string{
-		"ref",
+		"ref type",
 		"mut binding of immutable ref",
-		"mut ref",
-		"ref to mut",
+		"mut ref type",
+		"immutable ref to mut",
 		"struct ref",
-		"ref return",
-		"alloc",
-		"array alloc",
+		"fun returns ref",
+		"heap alloc struct",
+		"heap alloc array",
 	}
 
 	assert := base.NewAssert(t)
@@ -319,52 +323,54 @@ func TestTypeCheckErr(t *testing.T) {
 		src  string
 		want []string
 	}{
-		{"not defined", `let bar = foo`, []string{
-			"test.met:1:11: symbol not defined: foo\n" +
-				"    let bar = foo\n" +
-				"              ^^^",
+		{"undefined symbol", `let y = x`, []string{
+			"test.met:1:9: symbol not defined: x\n" +
+				"    let y = x\n" +
+				"            ^",
 		}},
-		{"not defined (var comes later)", `{ print_int(a) let a = 123 }`, []string{
-			"test.met:1:13: symbol not defined: a\n" +
-				`    { print_int(a) let a = 123 }` + "\n" +
+		// Symbol defined later in the same scope is not visible before its declaration.
+		{"undefined symbol forward ref", `{ print_int(x) let x = 123 }`, []string{
+			"test.met:1:13: symbol not defined: x\n" +
+				`    { print_int(x) let x = 123 }` + "\n" +
 				"                ^",
 		}},
-		{"rebind var", `{ let foo = 123 let foo = 321 }`, []string{
-			"test.met:1:21: symbol already defined: foo\n" +
-				`    { let foo = 123 let foo = 321 }` + "\n" +
-				"                        ^^^",
+		{"duplicate var", `{ let x = 123 let x = 321 }`, []string{
+			"test.met:1:19: symbol already defined: x\n" +
+				`    { let x = 123 let x = 321 }` + "\n" +
+				"                      ^",
 		}},
-		{"rebind fun", `{ fun foo() void {} fun foo() void {} }`, []string{
+		{"duplicate fun", `{ fun foo() void {} fun foo() void {} }`, []string{
 			"test.met:1:25: symbol already defined: foo\n" +
 				`    { fun foo() void {} fun foo() void {} }` + "\n" +
 				"                            ^^^",
 		}},
-		{"rebind fun param", `fun foo(bar Int) void { let bar = 123 }`, []string{
-			"test.met:1:29: symbol already defined: bar\n" +
-				`    fun foo(bar Int) void { let bar = 123 }` + "\n" +
-				"                                ^^^",
+		// Body redeclares a name that's already a parameter.
+		{"redeclare param in body", `fun foo(a Int) void { let a = 123 }`, []string{
+			"test.met:1:27: symbol already defined: a\n" +
+				`    fun foo(a Int) void { let a = 123 }` + "\n" +
+				"                              ^",
 		}},
-		{"fun return type mismatch", `fun foo() Str { 123 }`, []string{
+		{"fun return mismatch", `fun foo() Str { 123 }`, []string{
 			"test.met:1:17: return type mismatch: expected Str, got Int\n" +
 				"    fun foo() Str { 123 }\n" +
 				"                    ^^^",
 		}},
-		{"assign mismatch", `{ mut foo = 123 foo = "hello" }`, []string{
-			"test.met:1:23: type mismatch: expected Int, got Str\n" +
-				`    { mut foo = 123 foo = "hello" }` + "\n" +
-				"                          ^^^^^^^",
+		{"assign type mismatch", `{ mut x = 123 x = "hello" }`, []string{
+			"test.met:1:19: type mismatch: expected Int, got Str\n" +
+				`    { mut x = 123 x = "hello" }` + "\n" +
+				"                      ^^^^^^^",
 		}},
-		{"assign to immutable var", `{ let foo = 123 foo = 321 }`, []string{
-			"test.met:1:17: cannot assign to immutable variable: foo\n" +
-				`    { let foo = 123 foo = 321 }` + "\n" +
-				"                    ^^^",
+		{"assign to let binding", `{ let x = 123 x = 321 }`, []string{
+			"test.met:1:15: cannot assign to immutable variable: x\n" +
+				`    { let x = 123 x = 321 }` + "\n" +
+				"                  ^",
 		}},
-		{"call argument count mismatch", `{ fun foo(a Int) Int { 123 } foo(1, 2, "hello") }`, []string{
+		{"call wrong arg count", `{ fun foo(a Int) Int { 123 } foo(1, 2, "hello") }`, []string{
 			"test.met:1:30: argument count mismatch: expected 1, got 3\n" +
 				`    { fun foo(a Int) Int { 123 } foo(1, 2, "hello") }` + "\n" +
 				"                                 ^^^^^^^^^^^^^^^^^^",
 		}},
-		{"call argument type mismatch", `{ fun foo(a Int, b Int) Int { 123 } foo("hello", 2) }`, []string{
+		{"call wrong arg type", `{ fun foo(a Int, b Int) Int { 123 } foo("hello", 2) }`, []string{
 			"test.met:1:41: type mismatch at argument 1: expected Int, got Str\n" +
 				`    { fun foo(a Int, b Int) Int { 123 } foo("hello", 2) }` + "\n" +
 				"                                            ^^^^^^^",
@@ -379,165 +385,170 @@ func TestTypeCheckErr(t *testing.T) {
 				`    fun main() Int { 123 }` + "\n" +
 				`               ^^^`,
 		}},
-		{"main must not have parameters", `fun main(a Int, b Str) void { }`, []string{
+		{"main must not have params", `fun main(a Int, b Str) void { }`, []string{
 			"test.met:1:10: main function cannot take arguments\n" +
 				`    fun main(a Int, b Str) void { }` + "\n" +
 				`             ^^^^^^^^^^^^`,
 		}},
 
-		{"field access on non-struct type", `123.name`, []string{
+		{"field access on non-struct", `123.one`, []string{
 			"test.met:1:1: cannot access field on a non-struct type: Int\n" +
-				`    123.name` + "\n" +
+				`    123.one` + "\n" +
 				`    ^^^`,
 		}},
 		{
-			"field access of non-existing field",
-			`{ struct Planet{name Str} let earth = Planet("Earth") earth.age }`,
+			"field access unknown field",
+			`{ struct Foo{one Str} let x = Foo("hello") x.three }`,
 			[]string{
-				"test.met:1:61: unknown field: Planet.age\n" +
-					`    { struct Planet{name Str} let earth = Planet("Earth") earth.age }` + "\n" +
-					"                                                                ^^^",
+				"test.met:1:46: unknown field: Foo.three\n" +
+					`    { struct Foo{one Str} let x = Foo("hello") x.three }` + "\n" +
+					"                                                 ^^^^^",
 			},
 		},
 
-		{"if cond must be bool", `{ if 123 { } }`, []string{
+		{"if condition must be bool", `{ if 123 { } }`, []string{
 			"test.met:1:6: if condition must evaluate to a boolean value, got Int\n" +
 				`    { if 123 { } }` + "\n" +
 				`         ^^^`,
 		}},
-		{"if then/else must match", `{ if true { 123 } else { "hello" } }`, []string{
+		{"if branches must match", `{ if true { 123 } else { "hello" } }`, []string{
 			"test.met:1:24: if branch type mismatch: expected Int, got Str\n" +
 				`    { if true { 123 } else { "hello" } }` + "\n" +
 				"                           ^^^^^^^^^^^",
 		}},
 
-		{"deref a non-ref", `{ let foo = 5 *foo }`, []string{
-			"test.met:1:16: dereference: expected reference, got Int\n" +
-				`    { let foo = 5 *foo }` + "\n" +
-				`                   ^^^`,
+		{"deref non-reference", `{ let x = 5 *x }`, []string{
+			"test.met:1:14: dereference: expected reference, got Int\n" +
+				`    { let x = 5 *x }` + "\n" +
+				`                 ^`,
 		}},
-		{"assign through immutable deref", `{ let a = 5 let b = &a *b = 321 }`, []string{
+		{"deref assign through immutable ref", `{ let x = 5 let y = &x *y = 321 }`, []string{
 			"test.met:1:24: cannot assign through dereference: expected mutable reference, got &Int\n" +
-				`    { let a = 5 let b = &a *b = 321 }` + "\n" +
+				`    { let x = 5 let y = &x *y = 321 }` + "\n" +
 				`                           ^^`,
 		}},
-		{"calling ref param with value", `{ fun foo(a &Int) void {} let bar = 123 foo(bar) }`, []string{
-			"test.met:1:45: type mismatch at argument 1: expected &Int, got Int\n" +
-				`    { fun foo(a &Int) void {} let bar = 123 foo(bar) }` + "\n" +
-				`                                                ^^^`,
+		{"pass value to &ref param", `{ fun foo(a &Int) void {} let x = 123 foo(x) }`, []string{
+			"test.met:1:43: type mismatch at argument 1: expected &Int, got Int\n" +
+				`    { fun foo(a &Int) void {} let x = 123 foo(x) }` + "\n" +
+				`                                              ^`,
 		}},
-		{"assign through immutable fun param", `{ fun foo(a &Int) void { *a = 123 }}`, []string{
+		{"deref assign through immutable ref param", `{ fun foo(a &Int) void { *a = 123 }}`, []string{
 			"test.met:1:26: cannot assign through dereference: expected mutable reference, got &Int\n" +
 				`    { fun foo(a &Int) void { *a = 123 }}` + "\n" +
 				`                             ^^`,
 		}},
 
-		{"take mutable ref to immutable in assign", `{ let a = 123 let b = &mut a }`, []string{
+		{"&mut of let binding", `{ let x = 123 let y = &mut x }`, []string{
 			"test.met:1:23: cannot take mutable reference to immutable value\n" +
-				`    { let a = 123 let b = &mut a }` + "\n" +
+				`    { let x = 123 let y = &mut x }` + "\n" +
 				`                          ^^^^^^`,
 		}},
 		{
-			"assign to field of immutable struct",
-			`{ struct Planet{mut name Str} let p = Planet("Earth") p.name = "Mother" }`,
+			"field write on let binding",
+			`{ struct Foo{mut one Str} let x = Foo("hello") x.one = "bye" }`,
 			[]string{
-				"test.met:1:55: cannot assign to field of immutable value\n" +
-					`    { struct Planet{mut name Str} let p = Planet("Earth") p.name = "Mother" }` + "\n" +
-					"                                                          ^^^^^^",
+				"test.met:1:48: cannot assign to field of immutable value\n" +
+					`    { struct Foo{mut one Str} let x = Foo("hello") x.one = "bye" }` + "\n" +
+					"                                                   ^^^^^",
 			},
 		},
 		{
-			"assign to nested field of immutable struct",
-			`{ struct Inner{mut x Int} struct Outer{mut inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }`,
+			"nested field write on let binding",
+			`{ struct Foo{mut one Int} struct Bar{mut one Foo} let x = Bar(Foo(1)) x.one.one = 2 }`,
 			[]string{
-				"test.met:1:81: cannot assign to field of immutable value\n" +
-					`    { struct Inner{mut x Int} struct Outer{mut inner Inner} let o = Outer(Inner(1)) o.inner.x = 2 }` + "\n" +
-					"                                                                                    ^^^^^^^^^",
+				"test.met:1:71: cannot assign to field of immutable value\n" +
+					`    { struct Foo{mut one Int} struct Bar{mut one Foo} let x = Bar(Foo(1)) x.one.one = 2 }` + "\n" +
+					"                                                                          ^^^^^^^^^",
 			},
 		},
 		{
-			"assign to nested field through immutable intermediate field",
-			`{ struct Inner{mut x Int} struct Outer{inner Inner} mut o = Outer(Inner(1)) o.inner.x = 2 }`,
+			// Bar.one is not mut, so x.one.one is not writable even though x is mut.
+			"nested field write through non-mut field",
+			`{ struct Foo{mut one Int} struct Bar{one Foo} mut x = Bar(Foo(1)) x.one.one = 2 }`,
 			[]string{
-				"test.met:1:77: cannot assign to field of immutable value\n" +
-					`    { struct Inner{mut x Int} struct Outer{inner Inner} mut o = Outer(Inner(1)) o.inner.x = 2 }` + "\n" +
-					"                                                                                ^^^^^^^^^",
+				"test.met:1:67: cannot assign to field of immutable value\n" +
+					`    { struct Foo{mut one Int} struct Bar{one Foo} mut x = Bar(Foo(1)) x.one.one = 2 }` + "\n" +
+					"                                                                      ^^^^^^^^^",
 			},
 		},
 		{
-			"assign to field through immutable ref",
-			`{ struct Planet{mut name Str} let p = Planet("Earth") let r = &p r.name = "X" }`,
+			"field write through immutable ref",
+			`{ struct Foo{mut one Str} let x = Foo("hello") let y = &x y.one = "X" }`,
 			[]string{
-				"test.met:1:66: cannot assign to field of immutable value\n" +
-					`    { struct Planet{mut name Str} let p = Planet("Earth") let r = &p r.name = "X" }` + "\n" +
-					"                                                                     ^^^^^^",
+				"test.met:1:59: cannot assign to field of immutable value\n" +
+					`    { struct Foo{mut one Str} let x = Foo("hello") let y = &x y.one = "X" }` + "\n" +
+					"                                                              ^^^^^",
 			},
 		},
 		{
-			"assign to field through immutable ref param", `{ struct Planet{mut name Str} fun foo(p &Planet) void { p.name = "X" } }`, []string{
-				"test.met:1:57: cannot assign to field of immutable value\n" +
-					`    { struct Planet{mut name Str} fun foo(p &Planet) void { p.name = "X" } }` + "\n" +
-					"                                                            ^^^^^^",
+			"field write through immutable ref param", `{ struct Foo{mut one Str} fun foo(a &Foo) void { a.one = "X" } }`, []string{
+				"test.met:1:50: cannot assign to field of immutable value\n" +
+					`    { struct Foo{mut one Str} fun foo(a &Foo) void { a.one = "X" } }` + "\n" +
+					"                                                     ^^^^^",
 			},
 		},
 		{
-			"assign to immutable field on mutable struct",
-			`{ struct Foo { name Str } mut f = Foo("hi") f.name = "bye" }`,
+			// Field is not declared mut, so it can't be written even on a mut binding.
+			"field write on non-mut field",
+			`{ struct Foo { one Str } mut x = Foo("hi") x.one = "bye" }`,
 			[]string{
-				"test.met:1:45: cannot assign to immutable field: name\n" +
-					`    { struct Foo { name Str } mut f = Foo("hi") f.name = "bye" }` + "\n" +
-					"                                                ^^^^^^",
+				"test.met:1:44: cannot assign to immutable field: one\n" +
+					`    { struct Foo { one Str } mut x = Foo("hi") x.one = "bye" }` + "\n" +
+					"                                               ^^^^^",
 			},
 		},
 		{
-			"pass immutable ref to mut ref struct field",
-			`{ struct Foo { ptr &mut Int } let a = 123 let f = Foo(&a) }`,
+			// Field expects &mut Int but we pass &Int.
+			"pass &ref where &mut field expected",
+			`{ struct Foo { one &mut Int } let x = 123 let y = Foo(&x) }`,
 			[]string{
 				"test.met:1:55: type mismatch at argument 1: expected &mut Int, got &Int\n" +
-					`    { struct Foo { ptr &mut Int } let a = 123 let f = Foo(&a) }` + "\n" +
+					`    { struct Foo { one &mut Int } let x = 123 let y = Foo(&x) }` + "\n" +
 					"                                                          ^^",
 			},
 		},
 		{
-			"write through immutable ref struct field",
-			`{ struct Foo { ptr &Int } let a = 123 let f = Foo(&a) *f.ptr = 42 }`,
+			"deref assign through &ref field",
+			`{ struct Foo { one &Int } let x = 123 let y = Foo(&x) *y.one = 42 }`,
 			[]string{
 				"test.met:1:55: cannot assign through dereference: expected mutable reference, got &Int\n" +
-					`    { struct Foo { ptr &Int } let a = 123 let f = Foo(&a) *f.ptr = 42 }` + "\n" +
+					`    { struct Foo { one &Int } let x = 123 let y = Foo(&x) *y.one = 42 }` + "\n" +
 					"                                                          ^^^^^^",
 			},
 		},
 		{
-			"reassign immutable mut-ref field",
-			`{ struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&mut a) f.ptr = &b }`,
+			// Field type is &mut Int but field is not declared mut, so it can't be reassigned.
+			"reassign non-mut &mut field",
+			`{ struct Foo { one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &y }`,
 			[]string{
-				"test.met:1:71: cannot assign to immutable field: ptr\n" +
-					`    { struct Foo { ptr &mut Int } mut a = 1 mut b = 2 mut f = Foo(&mut a) f.ptr = &b }` + "\n" +
+				"test.met:1:71: cannot assign to immutable field: one\n" +
+					`    { struct Foo { one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &y }` + "\n" +
 					"                                                                          ^^^^^",
 			},
 		},
 		{
-			"reassign mut ref param",
-			`{ fun foo(p &mut Int) void { mut x = 1 p = &x } }`,
+			// Params are always immutable bindings, so a &mut param can't be reassigned.
+			"reassign &mut param",
+			`{ fun foo(a &mut Int) void { mut x = 1 a = &x } }`,
 			[]string{
-				"test.met:1:40: cannot assign to immutable variable: p\n" +
-					`    { fun foo(p &mut Int) void { mut x = 1 p = &x } }` + "\n" +
+				"test.met:1:40: cannot assign to immutable variable: a\n" +
+					`    { fun foo(a &mut Int) void { mut x = 1 a = &x } }` + "\n" +
 					"                                           ^",
 			},
 		},
-		{"non-existing allocator", `{ struct Planet{name Str} let p = new @test Planet("Earth") }`, []string{
-			"test.met:1:39: symbol not defined: @test\n" +
-				`    { struct Planet{name Str} let p = new @test Planet("Earth") }` + "\n" +
-				`                                          ^^^^^`,
+		{"non-existing allocator", `{ struct Foo{one Str} let x = new @myalloc Foo("hello") }`, []string{
+			"test.met:1:35: symbol not defined: @myalloc\n" +
+				`    { struct Foo{one Str} let x = new @myalloc Foo("hello") }` + "\n" +
+				`                                      ^^^^^^^^`,
 		}},
-		{"index non-array", `{ let a = 123 a[0] }`, []string{
+		{"index on non-array", `{ let x = 123 x[0] }`, []string{
 			"test.met:1:15: not an array: Int\n" +
-				"    { let a = 123 a[0] }\n" +
+				"    { let x = 123 x[0] }\n" +
 				"                  ^",
 		}},
-		{"index with non-int", `{ let a = [1, 2, 3] a["hello"] }`, []string{
+		{"index with non-int", `{ let x = [1, 2, 3] x["hello"] }`, []string{
 			"test.met:1:23: index type mismatch: expected Int, got Str\n" +
-				`    { let a = [1, 2, 3] a["hello"] }` + "\n" +
+				`    { let x = [1, 2, 3] x["hello"] }` + "\n" +
 				`                          ^^^^^^^`,
 		}},
 	}
@@ -586,31 +597,31 @@ func TestScopes(t *testing.T) {
 	}{
 		{
 			name: "simple var",
-			src:  `let a = 1`,
+			src:  `let x = 1`,
 			scopes: `
 				a:-
 			`,
 			nodes: `
 				n1:Int(value=1):a
-				n2:Var(name="a",mut=false,expr=n1:Int):a
+				n2:Var(name="x",mut=false,expr=n1:Int):a
 			`,
 		},
 		{
 			name: "block creates scope",
-			src:  `{ let a = 1 }`,
+			src:  `{ let x = 1 }`,
 			scopes: `
 				a:-
 				b:a
 			`,
 			nodes: `
 				n1:Int(value=1):b
-				n2:Var(name="a",mut=false,expr=n1:Int):b
+				n2:Var(name="x",mut=false,expr=n1:Int):b
 				n3:Block(createScope=true,exprs=[n2:Var]):a
 			`,
 		},
 		{
 			name: "nested blocks",
-			src:  `{ let a = 1 { let b = 2 } }`,
+			src:  `{ let x = 1 { let y = 2 } }`,
 			scopes: `
 				a:-
 				b:a
@@ -618,9 +629,9 @@ func TestScopes(t *testing.T) {
 			`,
 			nodes: `
 				n1:Int(value=1):b
-				n2:Var(name="a",mut=false,expr=n1:Int):b
+				n2:Var(name="x",mut=false,expr=n1:Int):b
 				n3:Int(value=2):c
-				n4:Var(name="b",mut=false,expr=n3:Int):c
+				n4:Var(name="y",mut=false,expr=n3:Int):c
 				n5:Block(createScope=true,exprs=[n4:Var]):b
 				n6:Block(createScope=true,exprs=[n2:Var,n5:Block]):a
 			`,

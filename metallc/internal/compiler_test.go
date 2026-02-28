@@ -17,266 +17,273 @@ func TestCompile(t *testing.T) {
 		src        string
 		wantOutput string
 	}{
-		{"happy path", `fun main() void { print_str("hello") }`, "hello\n"},
-		{"int constant", `fun main() void { print_int(123) }`, "123\n"},
+		{"print str", `fun main() void { print_str("hello") }`, "hello\n"},
+		{"int literal", `fun main() void { print_int(123) }`, "123\n"},
 
-		{"str variable", `fun main() void { let a = "hello" print_str(a) }`, "hello\n"},
-		{"int variable", `fun main() void { let a = 123 print_int(a) }`, "123\n"},
-		{"bool variable", `fun main() void { let a = true print_bool(a) }`, "true\n"},
-		{"mut variable same scope", `fun main() void { mut a = 123 print_int(a) a = 456 print_int(a) }`, "123\n456\n"},
+		{"str var", `fun main() void { let x = "hello" print_str(x) }`, "hello\n"},
+		{"int var", `fun main() void { let x = 123 print_int(x) }`, "123\n"},
+		{"bool var", `fun main() void { let x = true print_bool(x) }`, "true\n"},
+		{"mut var reassign", `fun main() void { mut x = 123 print_int(x) x = 456 print_int(x) }`, "123\n456\n"},
 
-		{"int function", `fun get() Int { 123 } fun main() void { print_int(get()) }`, "123\n"},
-		{"str function", `fun get() Str { "hello" } fun main() void { print_str(get()) }`, "hello\n"},
-		{"bool function", `fun get() Bool { true } fun main() void { print_bool(get()) }`, "true\n"},
-		{"fun int param", `fun foo(a Int) Int { a } fun main() void { print_int(foo(123)) }`, "123\n"},
-		{"fun str param", `fun foo(a Str) Str { a } fun main() void { let s = foo("hello") print_str(s) }`, "hello\n"},
-		{"fun bool param", `fun foo(a Bool) Bool { a } fun main() void { print_bool(foo(true)) }`, "true\n"},
-
-		{"block expr", `fun main() void { let s = { "hello" } print_str(s) }`, "hello\n"},
-		{"var block expr is void", `fun main() void { print_str("hello") let a = 123 }`, "hello\n"},
-		{"assign block expr is void", `fun main() void { print_str("hello") mut a = 123 a = 321 }`, "hello\n"},
-
-		{"if expr", `fun main() void { let a = if true { 123 } else { 321 } print_int(a) }`, "123\n"},
-		{"if expr else", `fun main() void { let a = if false { 123 } else { 321 } print_int(a) }`, "321\n"},
+		{"fun returns int", `fun foo() Int { 123 } fun main() void { print_int(foo()) }`, "123\n"},
+		{"fun returns str", `fun foo() Str { "hello" } fun main() void { print_str(foo()) }`, "hello\n"},
+		{"fun returns bool", `fun foo() Bool { true } fun main() void { print_bool(foo()) }`, "true\n"},
+		{"fun with int param", `fun foo(a Int) Int { a } fun main() void { print_int(foo(123)) }`, "123\n"},
 		{
-			"if expr var",
-			`fun main() void { mut a = 1 if true { a = 123 } else { a = 321 } print_int(a) }`,
+			"fun with str param",
+			`fun foo(a Str) Str { a } fun main() void { let x = foo("hello") print_str(x) }`,
+			"hello\n",
+		},
+		{"fun with bool param", `fun foo(a Bool) Bool { a } fun main() void { print_bool(foo(true)) }`, "true\n"},
+
+		{"block expression", `fun main() void { let x = { "hello" } print_str(x) }`, "hello\n"},
+		{"var expr is void", `fun main() void { print_str("hello") let x = 123 }`, "hello\n"},
+		{"assign expr is void", `fun main() void { print_str("hello") mut x = 123 x = 321 }`, "hello\n"},
+
+		{"if true branch", `fun main() void { let x = if true { 123 } else { 321 } print_int(x) }`, "123\n"},
+		{"if false branch", `fun main() void { let x = if false { 123 } else { 321 } print_int(x) }`, "321\n"},
+		{
+			"if assigns to mut var",
+			`fun main() void { mut x = 1 if true { x = 123 } else { x = 321 } print_int(x) }`,
 			"123\n",
 		},
-		{"nested if exper", `
+		{"nested if", `
 			fun main() void {
-				let a = if true {
+				let x = if true {
 					if false { 1 } else { 123 }
 				} else {
 					2
 				}
-				print_int(a)
+				print_int(x)
 			}
 			`, "123\n"},
 
 		{
-			"ref/deref",
-			`fun main() void { mut a = 123 mut b = &mut a print_int(*b) *b = 321 print_int(a) }`,
+			"ref deref",
+			`fun main() void { mut x = 123 mut y = &mut x print_int(*y) *y = 321 print_int(x) }`,
 			"123\n321\n",
 		},
-		{"nested ref/deref", `
+		{"nested ref deref", `
 			fun main() void { 
-				mut a = 123 
-				mut b = &mut a
-				mut c = &mut b
-				print_int(*b)
-				*b = 321 
-				print_int(a)
-				**c = 111
-				print_int(a)
+				mut x = 123 
+				mut y = &mut x
+				mut z = &mut y
+				print_int(*y)
+				*y = 321 
+				print_int(x)
+				**z = 111
+				print_int(x)
 			}`, "123\n321\n111\n"},
-		{"assign through mut ref parameter", `
+		{"deref assign through &mut param", `
 			fun foo(a &mut Int) void { 
 				print_int(*a)
 				*a = 321 
 			}
 			fun main() void { 
-				mut a = 123 
-				foo(&mut a)
-				print_int(a)
+				mut x = 123 
+				foo(&mut x)
+				print_int(x)
 			}
 			`, "123\n321\n"},
 
-		{"struct", `
-			struct Planet {
-				mut name Str
-				mut diameter Int
+		{"struct field read and write", `
+			struct Foo {
+				mut one Str
+				mut two Int
 			}
 
 			fun main() void {
-				mut earth = Planet("Earth", 12500)
-				print_str(earth.name)
-				print_int(earth.diameter)
+				mut x = Foo("hello", 123)
+				print_str(x.one)
+				print_int(x.two)
 
-				earth.name = "Mother"
-				earth.diameter = 12742
-				print_str(earth.name)
-				print_int(earth.diameter)
+				x.one = "bye"
+				x.two = 456
+				print_str(x.one)
+				print_int(x.two)
 			}
-			`, "Earth\n12500\nMother\n12742\n"},
+			`, "hello\n123\nbye\n456\n"},
 
-		{"struct as value parameter", `
-			struct Planet {
-				name Str
-			}
-
-			fun print_planet(p Planet) void {
-				print_str(p.name)
+		{"struct as value param", `
+			struct Foo {
+				one Str
 			}
 
-			fun main() void {
-				let earth = Planet("Earth")
-				print_planet(earth)
-			}
-			`, "Earth\n"},
-
-		{"struct as ref parameter, struct ref auto-derefence, mut ref coercion", `
-			struct Planet {
-				mut name Str
-			}
-
-			fun print_planet(p &Planet) void {
-				print_str(p.name)
-			}
-
-			fun update(p &mut Planet, new_name Str) void {
-				p.name = new_name
+			fun foo(a Foo) void {
+				print_str(a.one)
 			}
 
 			fun main() void {
-				mut earth = Planet("Earth")
-				print_planet(&earth)
-
-				update(&mut earth, "Mother")
-				print_planet(&earth)
+				let x = Foo("hello")
+				foo(x)
 			}
-			`, "Earth\nMother\n"},
+			`, "hello\n"},
 
-		{"struct as value return", `
-			struct Planet {
-				name Str
+		{"struct &ref and &mut ref params", `
+			struct Foo {
+				mut one Str
 			}
 
-			fun make_earth() Planet {
-				Planet("Earth")
+			fun foo(a &Foo) void {
+				print_str(a.one)
 			}
 
-			fun main() void {
-				let earth = make_earth()
-				print_str(earth.name)
-			}
-			`, "Earth\n"},
-
-		{"nested struct", `
-			struct Planet {
-				mut name Str
-			}
-
-			struct SolarSystem {
-				earth Planet
-				mut mars Planet
+			fun bar(a &mut Foo, b Str) void {
+				a.one = b
 			}
 
 			fun main() void {
-				mut s = SolarSystem(Planet("Earth"), Planet("Mars"))
-				print_str(s.earth.name)
-				print_str(s.mars.name)
-				s.mars.name = "God of War"
-				print_str(s.mars.name)
-			}
-			`, "Earth\nMars\nGod of War\n"},
+				mut x = Foo("hello")
+				foo(&x)
 
-		{"struct copy on assignment", `
-			struct Planet {
-				mut name Str
+				bar(&mut x, "bye")
+				foo(&x)
 			}
+			`, "hello\nbye\n"},
 
-			fun main() void {
-				mut a = Planet("Earth")
-				mut b = a
-				b.name = "Mars"
-				print_str(a.name)
-				print_str(b.name)
-			}
-			`, "Earth\nMars\n"},
-
-		{"assign struct to nested struct field copies value", `
-			struct Inner {
-				mut name Str
+		{"fun returns struct", `
+			struct Foo {
+				one Str
 			}
 
-			struct Outer {
-				mut inner Inner
+			fun foo() Foo {
+				Foo("hello")
 			}
 
 			fun main() void {
-				mut a = Outer(Inner("Earth"))
-				mut replacement = Inner("Mars")
-				a.inner = replacement
-				replacement.name = "Venus"
-				print_str(a.inner.name)
-				print_str(replacement.name)
+				let x = foo()
+				print_str(x.one)
 			}
-			`, "Mars\nVenus\n"},
+			`, "hello\n"},
 
-		{"struct with ref field", `
+		{"nested struct field access", `
+			struct Foo {
+				mut one Str
+			}
+
+			struct Bar {
+				one Foo
+				mut two Foo
+			}
+
+			fun main() void {
+				mut x = Bar(Foo("hello"), Foo("world"))
+				print_str(x.one.one)
+				print_str(x.two.one)
+				x.two.one = "bye"
+				print_str(x.two.one)
+			}
+			`, "hello\nworld\nbye\n"},
+
+		// Assigning a struct to another variable copies by value.
+		{"struct value copy", `
+			struct Foo {
+				mut one Str
+			}
+
+			fun main() void {
+				mut x = Foo("hello")
+				mut y = x
+				y.one = "world"
+				print_str(x.one)
+				print_str(y.one)
+			}
+			`, "hello\nworld\n"},
+
+		// Assigning a struct to a field copies by value.
+		{"nested struct value copy", `
+			struct Foo {
+				mut one Str
+			}
+
+			struct Bar {
+				mut one Foo
+			}
+
+			fun main() void {
+				mut x = Bar(Foo("hello"))
+				mut y = Foo("world")
+				x.one = y
+				y.one = "bye"
+				print_str(x.one.one)
+				print_str(y.one)
+			}
+			`, "world\nbye\n"},
+
+		{"struct with &ref field", `
 			struct Wrapper {
-				value Int
-				ptr &Int
+				one Int
+				two &Int
 			}
 
 			fun main() void {
 				mut x = 42
-				let w = Wrapper(1, &x)
-				print_int(w.value)
-				print_int(*w.ptr)
+				let y = Wrapper(1, &x)
+				print_int(y.one)
+				print_int(*y.two)
 				x = 99
-				print_int(*w.ptr)
+				print_int(*y.two)
 			}
 			`, "1\n42\n99\n"},
 
-		{"struct ref aliases", `
-			struct Planet {
-				mut name Str
+		// Ref alias sees mutations through the original binding.
+		{"struct ref alias sees mutation", `
+			struct Foo {
+				mut one Str
 			}
 
 			fun main() void {
-				mut a = Planet("Earth")
-				let b = &a
-				let c = b
-				a.name = "Mars"
-				print_str(c.name)
+				mut x = Foo("hello")
+				let y = &x
+				let z = y
+				x.one = "world"
+				print_str(z.one)
 			}
-			`, "Mars\n"},
+			`, "world\n"},
 
-		{"struct from if else", `
-			struct Planet {
-				mut name Str
+		{"struct in if else", `
+			struct Foo {
+				mut one Str
 			}
 
 			fun main() void {
-				let p = if true { Planet("Earth") } else { Planet("Mars") }
-				print_str(p.name)
-				mut q = if false { Planet("Earth") } else { Planet("Mars") }
-				print_str(q.name)
-				q.name = "Venus"
-				print_str(q.name)
+				let x = if true { Foo("hello") } else { Foo("world") }
+				print_str(x.one)
+				mut y = if false { Foo("hello") } else { Foo("world") }
+				print_str(y.one)
+				y.one = "bye"
+				print_str(y.one)
 			}
-			`, "Earth\nMars\nVenus\n"},
+			`, "hello\nworld\nbye\n"},
 
 		{"struct reassign from if else", `
-			struct Planet {
-				name Str
+			struct Foo {
+				one Str
 			}
 
 			fun main() void {
-				mut p = Planet("Earth")
-				print_str(p.name)
-				p = if true { Planet("Mars") } else { Planet("Venus") }
-				print_str(p.name)
+				mut x = Foo("hello")
+				print_str(x.one)
+				x = if true { Foo("world") } else { Foo("bye") }
+				print_str(x.one)
 			}
-			`, "Earth\nMars\n"},
+			`, "hello\nworld\n"},
 
-		{"struct block expr as arg", `
-			struct Planet {
-				name Str
+		{"struct from block as arg", `
+			struct Foo {
+				one Str
 			}
 
-			fun print_planet(p Planet) void {
-				print_str(p.name)
+			fun foo(a Foo) void {
+				print_str(a.one)
 			}
 
 			fun main() void {
-				print_planet({ Planet("Earth") })
+				foo({ Foo("hello") })
 			}
-			`, "Earth\n"},
+			`, "hello\n"},
 
-		{"forward declare", `
+		{"forward declared fun", `
 			fun main() void {
 				print_int(foo())
 			}
@@ -287,142 +294,142 @@ func TestCompile(t *testing.T) {
 
 			`, "123\n"},
 
-		{"allocator", `
-			struct Planet {
-				name Str
+		{"heap alloc with arena", `
+			struct Foo {
+				one Str
 			}
 
-			fun make_saturn(@a Arena) &Planet {
-				let p = new @a Planet("Saturn")
-				&p
+			fun foo(@myalloc Arena) &Foo {
+				let x = new @myalloc Foo("hello")
+				&x
 			}
 
 			fun main() void {
-				alloc @a = Arena()
-				let earth = new @a Planet("Earth")
-				let mars = new @a Planet("Mars")
+				alloc @myalloc = Arena()
+				let x = new @myalloc Foo("x")
+				let y = new @myalloc Foo("y")
 				{
-					alloc @b = Arena()
-					let venus = new @b Planet("Venus")
-					print_str(venus.name)
+					alloc @youralloc = Arena()
+					let z = new @youralloc Foo("z")
+					print_str(z.one)
 				}
-				print_str(mars.name)
-				print_str(earth.name)
-				let saturn = make_saturn(@a)
-				print_str(saturn.name)
+				print_str(y.one)
+				print_str(x.one)
+				let w = foo(@myalloc)
+				print_str(w.one)
 			}
-			`, "Venus\nMars\nEarth\nSaturn\n"},
+			`, "z\ny\nx\nhello\n"},
 
 		{"int array", `
 			fun main() void {
-				let number = [1, 2, 3]
-				print_int(number[2])
-				print_int(number[1])
-				print_int(number[0])
+				let x = [1, 2, 3]
+				print_int(x[2])
+				print_int(x[1])
+				print_int(x[0])
 			}
 			`, "3\n2\n1\n"},
 
 		{"struct array", `
-			struct Planet {
-				name Str
+			struct Foo {
+				one Str
 			}
 
 			fun main() void {
-				let planets = [
-					Planet("Earth"),
-					Planet("Mars"),
-					Planet("Venus"),
+				let x = [
+					Foo("x"),
+					Foo("y"),
+					Foo("z"),
 				]
-				print_str(planets[2].name)
-				print_str(planets[1].name)
-				print_str(planets[0].name)
+				print_str(x[2].one)
+				print_str(x[1].one)
+				print_str(x[0].one)
 			}
-			`, "Venus\nMars\nEarth\n"},
+			`, "z\ny\nx\n"},
 		{"nested array", `
 			fun main() void {
-				let nested = [
+				let x = [
 					[1, 2],
 					[3, 4],
 					[5, 6],
 				]
-				let first = nested[0]
-				print_int(first[1])
-				let second = nested[1]
-				print_int(second[0])
-				let third = nested[2]
-				print_int(third[1])
+				let y = x[0]
+				print_int(y[1])
+				let z = x[1]
+				print_int(z[0])
+				let w = x[2]
+				print_int(w[1])
 			}
 			`, "2\n3\n6\n"},
 		{"array in struct", `
-			struct Numbers {
-				values [3]Int
+			struct Foo {
+				one [3]Int
 			}
 
 			fun main() void {
-				let n = Numbers([1, 2, 3])
-				print_int(n.values[1])
+				let x = Foo([1, 2, 3])
+				print_int(x.one[1])
 			}
 			`, "2\n"},
 		{"array with refs", `
-			struct Planet {
-			 	name Str
+			struct Foo {
+			 	one Str
 			}
 
 			fun main() void {
-				let earth = Planet("Earth")
-				let mars = Planet("Mars")
-				let planets = [earth, mars]
-				print_str(planets[1].name)
-				print_str(planets[0].name)
+				let x = Foo("x")
+				let y = Foo("y")
+				let z = [x, y]
+				print_str(z[1].one)
+				print_str(z[0].one)
 
-				let one = 1
-				let two = 2
-				let nums = [&one, &two]
-				print_int(*nums[1])
-				print_int(*nums[0])
+				let w = 1
+				let v = 2
+				let u = [&w, &v]
+				print_int(*u[1])
+				print_int(*u[0])
 			}
-			`, "Mars\nEarth\n2\n1\n"},
-		{"assign to array index", `
+			`, "y\nx\n2\n1\n"},
+		{"array index write", `
 			fun main() void {
-				mut a = [1, 2, 3]
-				print_int(a[1])
-				a[1] = 4
-				print_int(a[1])
+				mut x = [1, 2, 3]
+				print_int(x[1])
+				x[1] = 4
+				print_int(x[1])
 			}
 			`, "2\n4\n"},
-		{"assign struct to array index", `
-			struct Planet { name Str }
+		{"array struct index write", `
+			struct Foo { one Str }
 
 			fun main() void {
-				mut planets = [Planet("Earth"), Planet("Mars")]
-				print_str(planets[0].name)
-				planets[0] = Planet("Venus")
-				print_str(planets[0].name)
+				mut x = [Foo("x"), Foo("y")]
+				print_str(x[0].one)
+				x[0] = Foo("z")
+				print_str(x[0].one)
 			}
-			`, "Earth\nVenus\n"},
-		{"assign ref struct to array index", `
-			struct Planet { name Str }
+			`, "x\nz\n"},
+		{"array of refs index write", `
+			struct Foo { one Str }
 
 			fun main() void {
-				let earth = Planet("Earth")
-				let mars = Planet("Mars")
-				let venus = Planet("Venus")
-				mut planets = [&earth, &mars]
-				print_str(planets[0].name)
-				planets[0] = &venus
-				print_str(planets[0].name)
+				let x = Foo("x")
+				let y = Foo("y")
+				let z = Foo("z")
+				mut w = [&x, &y]
+				print_str(w[0].one)
+				w[0] = &z
+				print_str(w[0].one)
 			}
-			`, "Earth\nVenus\n"},
-		{"array alloc", `
+			`, "x\nz\n"},
+		{"heap alloc array", `
 			fun main() void {
-				alloc @a = Arena()
-				mut numbers = new @a [5]Int()
-				numbers[1] = 1
-				numbers[2] = 2
+				alloc @myalloc = Arena()
+				mut x = new @myalloc [5]Int()
+				x[1] = 1
+				x[2] = 2
 
-				print_int(numbers[0])
-				print_int(numbers[1])
-				print_int(numbers[2])
+				print_int(x[0])
+				print_int(x[1])
+				print_int(x[2])
 			}
 			`, "0\n1\n2\n"},
 	}

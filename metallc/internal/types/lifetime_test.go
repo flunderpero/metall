@@ -15,24 +15,24 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		src  string
 		want []string
 	}{
-		{"stack alloc escapes block", `let foo = { let bar = 123 &bar }`, []string{
-			"test.met:1:27: reference escaping its allocation scope\n" +
-				`    let foo = { let bar = 123 &bar }` + "\n" +
-				"                              ^^^^",
+		{"stack ref escapes", `let x = { let y = 123 &y }`, []string{
+			"test.met:1:23: reference escaping its allocation scope\n" +
+				`    let x = { let y = 123 &y }` + "\n" +
+				"                          ^^",
 		}},
-		{"assign ref to outer", `{ mut a = 123 mut b = &a { mut c = 123 b = &c } }`, []string{
+		{"assign ref to outer", `{ mut x = 123 mut y = &x { mut z = 123 y = &z } }`, []string{
 			"test.met:1:44: reference escaping its allocation scope\n" +
-				`    { mut a = 123 mut b = &a { mut c = 123 b = &c } }` + "\n" +
+				`    { mut x = 123 mut y = &x { mut z = 123 y = &z } }` + "\n" +
 				"                                               ^^",
 		}},
-		{"nested", `
+		{"nested block escape", `
 			{
-				mut a = 123
-				mut b = &a
+				mut x = 123
+				mut y = &x
 				{
-					mut c = 123
+					mut z = 123
 					{
-						b = &c
+						y = &z
 					}
 			    }
 			}
@@ -40,128 +40,121 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:8:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
 					    {
-						    b = &c
+						    y = &z
 						        ^^
 					    }
 					`, "\n"),
 		}},
-		{"deref assign", `
+		{"deref assign escapes", `
 			{
-				mut a = 123
-				mut y = &a
+				mut x = 123
+				mut y = &x
 				mut z = &mut y
 				{
-				  mut c = 456
-				  *z = &c
+				  mut w = 456
+				  *z = &w
 				}
 			}
 			`, []string{
 			"test.met:8:24: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				      mut c = 456
-				      *z = &c
+				      mut w = 456
+				      *z = &w
 				           ^^
 				    }
 				`, "\n"),
 		}},
-		// Deref assign through multiple nested scopes - z is in outermost,
-		// y is in middle, c is in innermost. *y = &c should error.
-		{"deref assign multi-level", `
+		// Deref assign through multiple nested scopes.
+		{"deref assign multi-level escape", `
 			{
-				mut a = 123
-				mut z = &a
+				mut x = 123
+				mut y = &x
 				{
-					mut b = 456
-					mut y = &mut z
+					mut z = 456
+					mut w = &mut y
 					{
-						mut c = 789
-						*y = &c
+						mut v = 789
+						*w = &v
 					}
 				}
 			}
 			`, []string{
 			"test.met:10:30: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					        mut c = 789
-					        *y = &c
+					        mut v = 789
+					        *w = &v
 					             ^^
 					    }
 					`, "\n"),
 		}},
-		// Valid: ref doesn't escape - assigning ref from same or outer scope
 		{"valid same scope ref", `
 			{
-				mut a = 123
-				mut b = &a
-				mut c = 456
-				b = &c
+				mut x = 123
+				mut y = &x
+				mut z = 456
+				y = &z
 			}
 			`, []string{}},
-		// Valid: ref from outer scope assigned to inner variable
-		{"valid outer ref to inner var", `
+		{"valid outer ref to inner", `
 			{
-				mut a = 123
+				mut x = 123
 				{
-					mut b = &a
-					b
+					mut y = &x
+					y
 				}
 			}
 			`, []string{}},
-		// Chain of refs: x -> y (ref to x) -> z (ref to y)
-		// Assigning through *z should affect x, and if we assign &c where c is local, it should error
-		{"ref chain deref", `
+		// Chain of refs: x -> y -> z. Deref assign through z escapes.
+		{"deref assign through ref chain escapes", `
 			{
-				mut a = 123
-				mut x = &a
-				mut y = &mut x
+				mut x = 123
+				mut y = &x
+				mut z = &mut y
 				{
-					mut c = 456
-					*y = &c
+					mut w = 456
+					*z = &w
 				}
 			}
 			`, []string{
 			"test.met:8:26: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					    mut c = 456
-					    *y = &c
+					    mut w = 456
+					    *z = &w
 					         ^^
 					}
 					`, "\n"),
 		}},
-		// Field write: assigning a local ref to a struct field that escapes the block.
 		{"field write escapes", `
 			{
-				struct Foo { mut ptr &Int }
-				mut a = 123
-				mut foo = Foo(&a)
+				struct Foo { mut one &Int }
+				mut x = 123
+				mut y = Foo(&x)
 				{
-					mut c = 456
-					foo.ptr = &c
+					mut z = 456
+					y.one = &z
 				}
 			}
 			`, []string{
-			"test.met:8:31: reference escaping its allocation scope\n" +
+			"test.met:8:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					    mut c = 456
-					    foo.ptr = &c
-					              ^^
+					    mut z = 456
+					    y.one = &z
+					            ^^
 					}
 					`, "\n"),
 		}},
-		// Field write: ref stays in same scope, no escape.
-		{"valid field write same scope", `
+		{"valid field write", `
 			{
-				struct Foo { mut ptr &Int }
-				mut a = 123
-				mut b = 456
-				mut foo = Foo(&a)
-				foo.ptr = &b
+				struct Foo { mut one &Int }
+				mut x = 123
+				mut y = 456
+				mut z = Foo(&x)
+				z.one = &y
 			}
 			`, []string{}},
-		// Function returning a ref to a local variable.
-		{"return ref to local from function", `
+		{"return ref to local", `
 			{
-				fun bad() &Int {
+				fun foo() &Int {
 					mut x = 42
 					&x
 				}
@@ -175,867 +168,858 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
-		// Deref on RHS: b = *x where x points to a ref to local c
-		// The ref that *x evaluates to should not escape
-		{"deref rhs escapes", `
+		{"deref on rhs escapes", `
 			{
-				mut b = 0
-				mut bRef = &b
+				mut x = 0
+				mut y = &x
 				{
-					mut c = 456
-					mut cRef = &c
-					mut x = &cRef
-					bRef = *x
+					mut z = 456
+					mut w = &z
+					mut v = &w
+					y = *v
 				}
-			}
-			`, []string{
-			"test.met:7:32: reference escaping its allocation scope\n" +
-				strings.Trim(`
-						mut c = 456
-					    mut cRef = &c
-								   ^^
-					    mut x = &cRef
-					`, "\n"),
-		}},
-		// Ref escapes through a function call - x's ref is returned by
-		// identity and escapes the block.
-		{"call return ref escape", `
-			{
-				fun identity(a &Int) &Int { a }
-				let r = {
-					let x = 42
-					identity(&x)
-				}
-				r
-			}
-			`, []string{
-			"test.met:6:30: reference escaping its allocation scope\n" +
-				strings.Trim(`
-				        let x = 42
-				        identity(&x)
-				                 ^^
-				    }
-				`, "\n"),
-		}},
-		// Transitive: function calls another function, propagating ref through.
-		{"call transitive ref escape", `
-			{
-				fun identity(a &Int) &Int { a }
-				fun wrapper(a &Int) &Int { identity(a) }
-				let r = {
-					let x = 42
-					wrapper(&x)
-				}
-				r
 			}
 			`, []string{
 			"test.met:7:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let x = 42
-				        wrapper(&x)
+						mut z = 456
+					    mut w = &z
+								^^
+					    mut v = &w
+					`, "\n"),
+		}},
+		{"call returns ref to local", `
+			{
+				fun identity(a &Int) &Int { a }
+				let x = {
+					let y = 42
+					identity(&y)
+				}
+				x
+			}
+			`, []string{
+			"test.met:6:30: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let y = 42
+				        identity(&y)
+				                 ^^
+				    }
+				`, "\n"),
+		}},
+		{"transitive call returns ref to local", `
+			{
+				fun identity(a &Int) &Int { a }
+				fun foo(a &Int) &Int { identity(a) }
+				let x = {
+					let y = 42
+					foo(&y)
+				}
+				x
+			}
+			`, []string{
+			"test.met:7:25: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let y = 42
+				        foo(&y)
+				            ^^
+				    }
+				`, "\n"),
+		}},
+		{"valid transitive call", `
+			{
+				fun identity(a &Int) &Int { a }
+				fun foo(a &Int) &Int { identity(a) }
+				let x = 42
+				let y = foo(&x)
+				y
+			}
+			`, []string{}},
+		{"call returns struct with ref to local", `
+			{
+				struct Wrapper { one &Int }
+				fun foo(a &Int) Wrapper { Wrapper(a) }
+				let x = {
+					let y = 42
+					foo(&y)
+				}
+				x
+			}
+			`, []string{
+			"test.met:7:25: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let y = 42
+				        foo(&y)
+				            ^^
+				    }
+				`, "\n"),
+		}},
+		{"nested struct literal ref escapes", `
+			{
+				struct Foo { one &Int }
+				struct Bar { one Foo }
+				let x = {
+					let y = 42
+					Bar(Foo(&y))
+				}
+				x
+			}
+			`, []string{
+			"test.met:7:29: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let y = 42
+				        Bar(Foo(&y))
 				                ^^
 				    }
 				`, "\n"),
 		}},
-		// Valid: transitive call where the ref does not escape.
-		{"valid call transitive no escape", `
+		{"field read propagates ref escape", `
 			{
-				fun identity(a &Int) &Int { a }
-				fun wrapper(a &Int) &Int { identity(a) }
-				let x = 42
-				let r = wrapper(&x)
-				r
-			}
-			`, []string{}},
-		// Function returns a struct by value with a ref field set to a param.
-		{"call return struct with ref field", `
-			{
-				struct Wrapper { ptr &Int }
-				fun wrap(a &Int) Wrapper { Wrapper(a) }
-				let w = {
-					let x = 42
-					wrap(&x)
+				struct Wrapper { one &Int }
+				let x = {
+					let y = 42
+					let z = Wrapper(&y)
+					z.one
 				}
-				w
-			}
-			`, []string{
-			"test.met:7:26: reference escaping its allocation scope\n" +
-				strings.Trim(`
-				        let x = 42
-				        wrap(&x)
-				             ^^
-				    }
-				`, "\n"),
-		}},
-		// Nested structs: Outer contains Inner which has a ref field.
-		{"nested struct ref field escape", `
-			{
-				struct Inner { ptr &Int }
-				struct Outer { inner Inner }
-				let o = {
-					let x = 42
-					Outer(Inner(&x))
-				}
-				o
-			}
-			`, []string{
-			"test.met:7:33: reference escaping its allocation scope\n" +
-				strings.Trim(`
-				        let x = 42
-				        Outer(Inner(&x))
-				                    ^^
-				    }
-				`, "\n"),
-		}},
-		// Field read: reading a ref field from a struct should propagate taints.
-		{"field read ref escape", `
-			{
-				struct Wrapper { ptr &Int }
-				let r = {
-					let x = 42
-					let w = Wrapper(&x)
-					w.ptr
-				}
-				r
+				x
 			}
 			`, []string{
 			"test.met:6:37: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let x = 42
-				        let w = Wrapper(&x)
+				        let y = 42
+				        let z = Wrapper(&y)
 				                        ^^
-				        w.ptr
+				        z.one
 				`, "\n"),
 		}},
-		// Field read through a ref to a struct with a ref field.
-		{"field read through ref escape", `
+		{"field read through ref propagates escape", `
 			{
-				struct Wrapper { ptr &Int }
-				let r = {
-					let x = 42
-					let w = Wrapper(&x)
-					let rw = &w
-					rw.ptr
+				struct Wrapper { one &Int }
+				let x = {
+					let y = 42
+					let z = Wrapper(&y)
+					let w = &z
+					w.one
 				}
-				r
+				x
 			}
 			`, []string{
 			"test.met:6:37: reference escaping its allocation scope\n" +
 				strings.Trim(`
-						let x = 42
-				        let w = Wrapper(&x)
+						let y = 42
+				        let z = Wrapper(&y)
 									    ^^
-				        let rw = &w
+				        let w = &z
 				`, "\n"),
 		}},
-		// Nested field access through a ref: r.inner.ptr where r is &Outer.
-		{"nested field read through ref escape", `
+		{"nested field read propagates escape", `
 			{
-				struct Inner { ptr &Int }
-				struct Outer { inner Inner }
-				let r = {
-					let x = 42
-					let o = Outer(Inner(&x))
-					let ro = &o
-					ro.inner.ptr
+				struct Foo { one &Int }
+				struct Bar { one Foo }
+				let x = {
+					let y = 42
+					let z = Bar(Foo(&y))
+					let w = &z
+					w.one.one
 				}
-				r
+				x
 			}
 			`, []string{
-			"test.met:7:41: reference escaping its allocation scope\n" +
+			"test.met:7:37: reference escaping its allocation scope\n" +
 				strings.Trim(`
-						let x = 42
-				        let o = Outer(Inner(&x))
-										    ^^
-				        let ro = &o
+						let y = 42
+				        let z = Bar(Foo(&y))
+										^^
+				        let w = &z
 				`, "\n"),
 		}},
-		// Struct reassignment: w is reassigned to carry a local ref, then w.ptr escapes.
-		{"field read after struct reassign escape", `
+		{"field read after reassign escapes", `
 			{
-				struct Wrapper { ptr &Int }
-				let a = 1
-				mut w = Wrapper(&a)
-				let r = {
-					let x = 42
-					w = Wrapper(&x)
-					w.ptr
+				struct Wrapper { one &Int }
+				let x = 1
+				mut y = Wrapper(&x)
+				let z = {
+					let w = 42
+					y = Wrapper(&w)
+					y.one
 				}
-				r
+				z
 			}
 			`, []string{
 			"test.met:8:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let x = 42
-				        w = Wrapper(&x)
+				        let w = 42
+				        y = Wrapper(&w)
 				                    ^^
-				        w.ptr
+				        y.one
 				`, "\n"),
 		}},
-		// Arena-allocated struct escapes the block where the allocator lives.
-		{"arena alloc escapes block", `
+		// Heap-allocated struct escapes the block where the allocator lives.
+		{"heap alloc escapes", `
 			{
-				struct Planet { name Str }
-				let p = {
-					alloc @a = Arena()
-					new @a Planet("Earth")
+				struct Foo { one Str }
+				let x = {
+					alloc @myalloc = Arena()
+					new @myalloc Foo("hello")
 				}
-				p
+				x
 			}
 			`, []string{
 			"test.met:6:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        alloc @a = Arena()
-				        new @a Planet("Earth")
-				        ^^^^^^^^^^^^^^^^^^^^^^
+				        alloc @myalloc = Arena()
+				        new @myalloc Foo("hello")
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
-		// Arena-allocated array escapes the block where the allocator lives.
-		{"arena array alloc escapes block", `
+		// Heap-allocated array escapes the block where the allocator lives.
+		{"heap alloc array escapes", `
 			{
-				let p = {
-					alloc @a = Arena()
-					new @a [5]Int()
+				let x = {
+					alloc @myalloc = Arena()
+					new @myalloc [5]Int()
 				}
-				p
+				x
 			}
 			`, []string{
 			"test.met:5:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        alloc @a = Arena()
-				        new @a [5]Int()
-				        ^^^^^^^^^^^^^^^
+				        alloc @myalloc = Arena()
+				        new @myalloc [5]Int()
+				        ^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
-		// Valid: arena-allocated struct used within the allocator's scope.
-		{"valid arena alloc same scope", `
+		{"valid heap alloc", `
 			{
-				struct Planet { name Str }
-				alloc @a = Arena()
-				let p = new @a Planet("Earth")
-				p
+				struct Foo { one Str }
+				alloc @myalloc = Arena()
+				let x = new @myalloc Foo("hello")
+				x
 			}
 			`, []string{}},
 		// Valid: allocator passed as param, result used in caller's scope.
-		{"valid arena alloc via param", `
+		{"valid heap alloc through param", `
 			{
-				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = new @a Planet("Earth") &p }
-				alloc @a = Arena()
-				let p = make(@a)
-				p
+				struct Foo { one Str }
+				fun foo(@myalloc Arena) &Foo { let x = new @myalloc Foo("hello") &x }
+				alloc @myalloc = Arena()
+				let x = foo(@myalloc)
+				x
 			}
 			`, []string{}},
-		// Arena-allocated struct escapes through a nested block result.
-		{"arena alloc escapes nested block", `
+		// Heap-allocated struct escapes through a nested block result.
+		{"heap alloc nested escape", `
 			{
-				struct Planet { name Str }
-				alloc @outer = Arena()
-				let p = {
-					alloc @a = Arena()
-					new @a Planet("Earth")
+				struct Foo { one Str }
+				alloc @youralloc = Arena()
+				let x = {
+					alloc @myalloc = Arena()
+					new @myalloc Foo("hello")
 				}
-				p
+				x
 			}
 			`, []string{
 			"test.met:7:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        alloc @a = Arena()
-				        new @a Planet("Earth")
-				        ^^^^^^^^^^^^^^^^^^^^^^
+				        alloc @myalloc = Arena()
+				        new @myalloc Foo("hello")
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
-		// Arena ref assigned to another variable and passed to a function still escapes.
-		{"arena ref propagates through assignment and call", `
+		// Heap alloc ref assigned to another variable and passed to a function still escapes.
+		{"heap alloc ref assignment escapes", `
 			{
-				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = new @a Planet("Earth") &p }
-				fun identity(p &Planet) &Planet { p }
-				let r = {
-					alloc @a = Arena()
-					let p = make(@a)
-					let q = p
-					identity(q)
+				struct Foo { one Str }
+				fun foo(@myalloc Arena) &Foo { let x = new @myalloc Foo("hello") &x }
+				fun identity(a &Foo) &Foo { a }
+				let x = {
+					alloc @myalloc = Arena()
+					let y = foo(@myalloc)
+					let z = y
+					identity(z)
 				}
-				r
+				x
 			}
 			`, []string{
 			"test.met:10:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let q = p
-				        identity(q)
+				        let z = y
+				        identity(z)
 				        ^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
-		// Arena-allocated struct escapes through a function call with a local allocator.
-		{"arena alloc escapes via function call", `
+		// Heap-allocated struct escapes through a function call with a local allocator.
+		{"heap alloc call escape", `
 			{
-				struct Planet { name Str }
-				fun make(@a Arena) &Planet { let p = new @a Planet("Earth") &p }
-				let p = {
-					alloc @inner = Arena()
-					make(@inner)
+				struct Foo { one Str }
+				fun foo(@myalloc Arena) &Foo { let x = new @myalloc Foo("hello") &x }
+				let x = {
+					alloc @youralloc = Arena()
+					foo(@youralloc)
 				}
-				p
+				x
 			}
 			`, []string{
 			"test.met:7:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        alloc @inner = Arena()
-				        make(@inner)
-				        ^^^^^^^^^^^^
+				        alloc @youralloc = Arena()
+				        foo(@youralloc)
+				        ^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
-		{"allocator in struct escapes via function", `
+		{"allocator field escape", `
 			{
-				struct Planet { name Str }
-				struct Holder { @a Arena }
-				fun make_planet(h Holder) &Planet {
-					let p = new h.@a Planet("Earth")
-					&p
+				struct Foo { one Str }
+				struct Bar { @myalloc Arena }
+				fun foo(a Bar) &Foo {
+					let x = new a.@myalloc Foo("hello")
+					&x
 				}
-				let result = {
-					alloc @a = Arena()
-					let h = Holder(@a)
-					make_planet(h)
+				let x = {
+					alloc @myalloc = Arena()
+					let y = Bar(@myalloc)
+					foo(y)
 				}
-				result
+				x
 			}
 			`, []string{
 			"test.met:12:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let h = Holder(@a)
-				        make_planet(h)
-				        ^^^^^^^^^^^^^^
+				        let y = Bar(@myalloc)
+				        foo(y)
+				        ^^^^^^
 				    }
 				`, "\n"),
 		}},
 
-		// Valid: function takes a Holder but doesn't use its allocator in return value.
-		{"valid allocator in struct not used in return", `
+		// Valid: function takes a Bar but doesn't use its allocator in return value.
+		{"valid allocator field", `
 			{
-				struct Planet { name Str }
-				struct Holder { @a Arena }
-				fun ignore_holder(h Holder, p &Planet) &Planet { p }
-				alloc @a = Arena()
-				let h = Holder(@a)
-				let p = new @a Planet("Earth")
-				ignore_holder(h, &p)
+				struct Foo { one Str }
+				struct Bar { @myalloc Arena }
+				fun foo(a Bar, b &Foo) &Foo { b }
+				alloc @myalloc = Arena()
+				let x = Bar(@myalloc)
+				let y = new @myalloc Foo("hello")
+				foo(x, &y)
 			}
 			`, []string{}},
 
 		// Valid: struct with allocator used within same scope.
-		{"valid struct with allocator same scope", `
+		{"valid struct allocator", `
 			{
-				struct Planet { name Str }
-				struct Holder { @a Arena }
-				alloc @a = Arena()
-				let h = Holder(@a)
-				let p = new h.@a Planet("Earth")
+				struct Foo { one Str }
+				struct Bar { @myalloc Arena }
+				alloc @myalloc = Arena()
+				let x = Bar(@myalloc)
+				let y = new x.@myalloc Foo("hello")
 			}
 			`, []string{}},
 
 		// Nested struct: allocator buried two levels deep.
-		{"allocator in nested struct escapes", `
+		{"nested allocator escape", `
 			{
-				struct Planet { name Str }
-				struct Inner { @a Arena }
-				struct Outer { inner Inner }
-				fun make_planet(o Outer) &Planet {
-					let p = new o.inner.@a Planet("Earth")
-					&p
+				struct Foo { one Str }
+				struct Bar { @myalloc Arena }
+				struct Baz { one Bar }
+				fun foo(a Baz) &Foo {
+					let x = new a.one.@myalloc Foo("hello")
+					&x
 				}
-				let result = {
-					alloc @a = Arena()
-					let o = Outer(Inner(@a))
-					make_planet(o)
+				let x = {
+					alloc @myalloc = Arena()
+					let y = Baz(Bar(@myalloc))
+					foo(y)
 				}
-				result
+				x
 			}
 			`, []string{
 			"test.met:13:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let o = Outer(Inner(@a))
-				        make_planet(o)
-				        ^^^^^^^^^^^^^^
+				        let y = Baz(Bar(@myalloc))
+				        foo(y)
+				        ^^^^^^
 				    }
 				`, "\n"),
 		}},
 
 		// Valid: shadowed variable with ref should not trigger false positive.
-		{"valid shadowed ref no escape", `
+		{"valid shadowed ref", `
 			{
-				mut a = 123
-				mut b = &a
+				mut x = 123
+				mut y = &x
 				{
-					mut c = 456
-					mut b = &mut c
-					*b = 789
+					mut z = 456
+					mut y = &mut z
+					*y = 789
 				}
 			}
 			`, []string{}},
 		// If/else: ref to a local escapes through one branch.
-		{"if ref escape", `
+		{"if branch ref escapes", `
 			{
-				let a = 1
-				let r = {
-					let x = 42
-					if true { &x } else { &a }
+				let x = 1
+				let y = {
+					let z = 42
+					if true { &z } else { &x }
 				}
-				r
+				y
 			}
 			`, []string{
 			"test.met:6:31: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let x = 42
-				        if true { &x } else { &a }
+				        let z = 42
+				        if true { &z } else { &x }
 				                  ^^
 				    }
 				`, "\n"),
 		}},
 		// Two refs from different scopes passed to a function that could
-		// return either — result carries both taints, should fail.
-		{"two refs different scopes pick escapes", `
+		// return either - result carries both taints, should fail.
+		{"call with mixed-scope refs escapes", `
 			{
-				fun pick(a &Int, b &Int) &Int { if true { a } else { b } }
+				fun foo(a &Int, b &Int) &Int { if true { a } else { b } }
 				let x = 42
-				let r = {
-					let y = 99
-					pick(&x, &y)
+				let y = {
+					let z = 99
+					foo(&x, &z)
 				}
-				r
+				y
 			}
 			`, []string{
-			"test.met:7:30: reference escaping its allocation scope\n" +
+			"test.met:7:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let y = 99
-				        pick(&x, &y)
-				                 ^^
+				        let z = 99
+				        foo(&x, &z)
+				                ^^
 				    }
 				`, "\n"),
 		}},
-		// Valid: both refs from same scope, pick result doesn't escape.
-		{"valid two refs same scope pick", `
+		// Valid: both refs from same scope, result doesn't escape.
+		{"valid call with same-scope refs", `
 			{
-				fun pick(a &Int, b &Int) &Int { if true { a } else { b } }
+				fun foo(a &Int, b &Int) &Int { if true { a } else { b } }
 				let x = 42
 				let y = 99
-				let r = pick(&x, &y)
-				r
+				let z = foo(&x, &y)
+				z
 			}
 			`, []string{}},
 
-		// Struct literal containing a ref to a local — ref escapes via intermediate binding.
-		{"struct literal ref escape via binding", `
+		// Struct literal containing a ref to a local - ref escapes via intermediate binding.
+		{"struct literal ref escapes", `
 			{
-				struct Wrapper { ptr &Int }
-				let r = {
-					let x = 42
-					let w = Wrapper(&x)
-					w
+				struct Wrapper { one &Int }
+				let x = {
+					let y = 42
+					let z = Wrapper(&y)
+					z
 				}
-				r
+				x
 			}
 			`, []string{
 			"test.met:6:37: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let x = 42
-				        let w = Wrapper(&x)
+				        let y = 42
+				        let z = Wrapper(&y)
 				                        ^^
-				        w
+				        z
 				`, "\n"),
 		}},
-		// Array literal containing a ref to a local — ref escapes via intermediate binding.
-		{"array literal ref escape via binding", `
+		// Array literal containing a ref to a local - ref escapes via intermediate binding.
+		{"array literal ref escapes", `
 			{
-				let r = {
-					let x = 42
-					let arr = [&x]
-					arr
+				let x = {
+					let y = 42
+					let z = [&y]
+					z
 				}
-				r
+				x
 			}
 			`, []string{
-			"test.met:5:32: reference escaping its allocation scope\n" +
+			"test.met:5:30: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        let x = 42
-				        let arr = [&x]
-				                   ^^
-				        arr
+				        let y = 42
+				        let z = [&y]
+				                 ^^
+				        z
 				`, "\n"),
 		}},
 		// Valid: array of refs where the refs don't escape.
-		{"valid array literal ref no escape", `
+		{"valid array literal ref", `
 			{
 				let x = 42
-				let arr = [&x]
-				arr
+				let y = [&x]
+				y
 			}
 			`, []string{}},
 
-		// Field assign through index: arr[0].ptr = &c where c is local and arr escapes.
-		{"field assign through index escapes", `
+		// Field assign through index: y[0].one = &z where z is local and y escapes.
+		{"index field write escapes", `
 			{
-				struct Wrapper { mut ptr &Int }
-				mut a = 123
-				mut arr = [Wrapper(&a)]
+				struct Wrapper { mut one &Int }
+				mut x = 123
+				mut y = [Wrapper(&x)]
 				{
-					mut c = 456
-					arr[0].ptr = &c
+					mut z = 456
+					y[0].one = &z
 				}
 			}
 			`, []string{
-			"test.met:8:34: reference escaping its allocation scope\n" +
+			"test.met:8:32: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					    mut c = 456
-					    arr[0].ptr = &c
-					                 ^^
+					    mut z = 456
+					    y[0].one = &z
+					               ^^
 					}
 					`, "\n"),
 		}},
 		// Valid: field assign through index where ref doesn't escape.
-		{"valid field assign through index no escape", `
+		{"valid index field write", `
 			{
-				struct Wrapper { mut ptr &Int }
-				mut a = 123
-				mut b = 456
-				mut arr = [Wrapper(&a)]
-				arr[0].ptr = &b
+				struct Wrapper { mut one &Int }
+				mut x = 123
+				mut y = 456
+				mut z = [Wrapper(&x)]
+				z[0].one = &y
 			}
 			`, []string{}},
 
-		// Index assign: foo.arr[0] = &c where c is local and foo escapes.
-		{"index assign through field escapes", `
+		// Index assign: y.one[0] = &mut z where z is local and y escapes.
+		{"field index write escape", `
 			{
-				struct Container { mut values [1]&mut Int }
-				mut a = 123
-				mut foo = Container([&mut a])
+				struct Foo { mut one [1]&mut Int }
+				mut x = 123
+				mut y = Foo([&mut x])
 				{
-					mut c = 456
-					foo.values[0] = &mut c
+					mut z = 456
+					y.one[0] = &mut z
 				}
 			}
 			`, []string{
-			"test.met:8:37: reference escaping its allocation scope\n" +
+			"test.met:8:32: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					    mut c = 456
-					    foo.values[0] = &mut c
-					                    ^^^^^^
+					    mut z = 456
+					    y.one[0] = &mut z
+					               ^^^^^^
 					}
 					`, "\n"),
 		}},
 		// Valid: index assign through field where ref doesn't escape.
-		{"valid index assign through field no escape", `
+		{"valid field index write", `
 			{
-				struct Container { mut values [1]&mut Int }
-				mut a = 123
-				mut b = 456
-				mut foo = Container([&mut a])
-				foo.values[0] = &mut b
+				struct Foo { mut one [1]&mut Int }
+				mut x = 123
+				mut y = 456
+				mut z = Foo([&mut x])
+				z.one[0] = &mut y
 			}
 			`, []string{}},
 
-		{"function reassign then return ref escapes", `
+		// Function returns ref to a local that was reassigned from a deref.
+		{"return ref to reassigned local", `
 			{
-				fun bad(src &Int) &Int {
+				fun foo(a &Int) &Int {
 					mut x = 1
-					x = *src
+					x = *a
 					&x
 				}
-				let a = 42
-				bad(&a)
+				let y = 42
+				foo(&y)
 			}
 			`, []string{
 			"test.met:6:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        x = *src
+				        x = *a
 				        &x
 				        ^^
 				    }
 				`, "\n"),
 		}},
-		{"allocator field function reassign then return ref escapes", `
+		// Same as above but the local is a heap-allocated struct.
+		{"return ref to reassigned heap alloc local", `
 			{
-				struct Holder { @a Arena }
-				fun bad(src &Holder) &Holder {
-					alloc @tmp = Arena()
-					mut h = Holder(@tmp)
-					h = *src
-					&h
+				struct Foo { @myalloc Arena }
+				fun foo(a &Foo) &Foo {
+					alloc @youralloc = Arena()
+					mut x = Foo(@youralloc)
+					x = *a
+					&x
 				}
-				alloc @a = Arena()
-				let src = Holder(@a)
-				bad(&src)
+				alloc @myalloc = Arena()
+				let x = Foo(@myalloc)
+				foo(&x)
 			}
 			`, []string{
 			"test.met:8:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        h = *src
-				        &h
-				        ^^
-				    }
-				`, "\n"),
-		}},
-		{"reassign then ref escapes", `
-			{
-				let r = {
-					mut x = 1
-					x = 2
-					&x
-				}
-				r
-			}
-			`, []string{
-			"test.met:6:21: reference escaping its allocation scope\n" +
-				strings.Trim(`
-				        x = 2
+				        x = *a
 				        &x
 				        ^^
 				    }
 				`, "\n"),
 		}},
-		{"leak through field mutation bypass", `
+		// Ref to local still escapes even after the local is reassigned.
+		{"ref to local after reassign escapes", `
 			{
-				struct S { mut r &Int }
-				fun store(s &mut S, p &Int) void {
-					s.r = p
+				let x = {
+					mut y = 1
+					y = 2
+					&y
+				}
+				x
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        y = 2
+				        &y
+				        ^^
+				    }
+				`, "\n"),
+		}},
+		{"field mutation bypass", `
+			{
+				struct Foo { mut one &Int }
+				fun foo(a &mut Foo, b &Int) void {
+					a.one = b
 				}
 				mut x = 42
-				mut s = S(&mut x)
+				mut y = Foo(&mut x)
 				{
-					mut y = 99
-					store(&mut s, &y)
+					mut z = 99
+					foo(&mut y, &z)
 				}
-				print_int(*s.r)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:11:35: reference escaping its allocation scope\n" +
+			"test.met:11:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
-						mut y = 99
-						store(&mut s, &y)
-								      ^^
+						mut z = 99
+						foo(&mut y, &z)
+								    ^^
 					}
 				`, "\n"),
 		}},
-		{"leak through transitive mutation bypass", `
+		{"transitive mutation bypass", `
 			{
-				struct S { mut r &Int }
-				fun identity(s &mut S) &mut S { s }
+				struct Foo { mut one &Int }
+				fun identity(a &mut Foo) &mut Foo { a }
 				mut x = 42
-				mut s = S(&mut x)
+				mut y = Foo(&mut x)
 				{
-					mut y = 99
-					let s2 = identity(&mut s)
-					s2.r = &y
+					mut z = 99
+					let w = identity(&mut y)
+					w.one = &z
 				}
-				print_int(*s.r)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:10:28: reference escaping its allocation scope\n" +
+			"test.met:10:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
-						let s2 = identity(&mut s)
-						s2.r = &y
-							   ^^
+						let w = identity(&mut y)
+						w.one = &z
+							    ^^
 					}
 				`, "\n"),
 		}},
-		{"leak through returned ref bypass", `
+		{"returned ref bypass", `
 			{
-				struct Planet { mut diameter &Int }
-				fun identity(p &mut Planet) &mut Planet { p }
-				mut initial_diameter = 12742
-				mut earth = Planet(&mut initial_diameter)
+				struct Foo { mut one &Int }
+				fun identity(a &mut Foo) &mut Foo { a }
+				mut x = 12742
+				mut y = Foo(&mut x)
 				{
-					mut local_diameter = 99
-					let earth_ref = identity(&mut earth)
-					earth_ref.diameter = &local_diameter
+					mut z = 99
+					let w = identity(&mut y)
+					w.one = &z
 				}
-				print_int(*earth.diameter)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:10:42: reference escaping its allocation scope\n" +
+			"test.met:10:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					    let earth_ref = identity(&mut earth)
-						earth_ref.diameter = &local_diameter
-											 ^^^^^^^^^^^^^^^
+					    let w = identity(&mut y)
+						w.one = &z
+								^^
 					}
 				`, "\n"),
 		}},
-		{"leak stack-ref into arena-allocated struct", `
+		{"heap alloc stack-ref bypass", `
 			{
-				struct S { mut r &Int }
-				fun store(s &mut S, p &Int) void { s.r = p }
-				alloc @a = Arena()
+				struct Foo { mut one &Int }
+				fun foo(a &mut Foo, b &Int) void { a.one = b }
+				alloc @myalloc = Arena()
 				mut x = 1
-				mut s = new @a S(&mut x)
+				mut y = new @myalloc Foo(&mut x)
 				{
-					mut y = 99
-					store(&mut s, &y)
+					mut z = 99
+					foo(&mut y, &z)
 				}
-				print_int(*s.r)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:10:35: reference escaping its allocation scope\n" +
+			"test.met:10:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        mut y = 99
-				        store(&mut s, &y)
-				                      ^^
+				        mut z = 99
+				        foo(&mut y, &z)
+				                    ^^
 				    }
 				`, "\n"),
 		}},
-		{"leak through forward declare bypass", `
+		{"forward declare bypass", `
 			{
-				struct S { mut r &Int }
-				fun f1(s &mut S, p &Int) void {
-					f2(s, p)
+				struct Foo { mut one &Int }
+				fun foo(a &mut Foo, b &Int) void {
+					bar(a, b)
 				}
-				fun f2(s &mut S, p &Int) void {
-					s.r = p
+				fun bar(a &mut Foo, b &Int) void {
+					a.one = b
 				}
 				mut x = 42
-				mut s = S(&mut x)
+				mut y = Foo(&mut x)
 				{
-					mut y = 99
-					f1(&mut s, &y)
+					mut z = 99
+					foo(&mut y, &z)
 				}
-				print_int(*s.r)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:14:32: reference escaping its allocation scope\n" +
+			"test.met:14:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        mut y = 99
-				        f1(&mut s, &y)
-				                   ^^
+				        mut z = 99
+				        foo(&mut y, &z)
+				                    ^^
 				    }
 				`, "\n"),
 		}},
-		// mutual recursion (perform_task -> delegate_work -> perform_task). The analyzer detects the cycle
+		// mutual recursion (foo -> bar -> foo). The analyzer detects the cycle
 		// during on-demand analysis and applies a pessimistic "worst-case" effect (assuming all parameters
 		// could be mutated/returned). This is sound but overzealous, as it flags safe code like this as a leak.
-		{"pessimistic mutual recursion (overzealous)", `
+		{"mutual recursion bypass", `
 			{
-				struct Worker {
-					mut current_task &Int
+				struct Foo {
+					mut one &Int
 				}
 
-				fun perform_task(worker &mut Worker, task &Int) void {
-					delegate_work(worker, task)
+				fun foo(a &mut Foo, b &Int) void {
+					bar(a, b)
 				}
 
-				fun delegate_work(worker &mut Worker, task &Int) void {
-					perform_task(worker, task)
+				fun bar(a &mut Foo, b &Int) void {
+					foo(a, b)
 				}
 
-				mut default_task = 0
-				mut primary_worker = Worker(&mut default_task)
+				mut x = 0
+				mut y = Foo(&mut x)
 
 				{
-					mut local_task = 99
-					perform_task(&mut primary_worker, &local_task)
+					mut z = 99
+					foo(&mut y, &z)
 				}
 
-				print_int(*primary_worker.current_task)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:20:55: reference escaping its allocation scope\n" +
+			"test.met:20:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
-						mut local_task = 99
-						perform_task(&mut primary_worker, &local_task)
-                                                          ^^^^^^^^^^^
+						mut z = 99
+						foo(&mut y, &z)
+                                    ^^
 					}
 				`, "\n"),
 		}},
-		{"leak through side-effect on returned reference argument", `
+		{"side-effect bypass", `
 			{
-				struct Planet { mut diameter &Int }
-				fun identity(p &mut Planet) &mut Planet { p }
-				fun update_diameter(p &mut Planet, new_diameter &Int) void { p.diameter = new_diameter }
+				struct Foo { mut one &Int }
+				fun identity(a &mut Foo) &mut Foo { a }
+				fun foo(a &mut Foo, b &Int) void { a.one = b }
 
-				mut initial_diameter = 12742
-				mut earth = Planet(&mut initial_diameter)
+				mut x = 12742
+				mut y = Foo(&mut x)
 				{
-					mut local_diameter = 99
-					update_diameter(identity(&mut earth), &local_diameter)
+					mut z = 99
+					foo(identity(&mut y), &z)
 				}
-				print_int(*earth.diameter)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:11:59: reference escaping its allocation scope\n" +
+			"test.met:11:43: reference escaping its allocation scope\n" +
 				strings.Trim(`
-				        mut local_diameter = 99
-				        update_diameter(identity(&mut earth), &local_diameter)
-				                                              ^^^^^^^^^^^^^^^
+				        mut z = 99
+				        foo(identity(&mut y), &z)
+				                              ^^
 				    }
 				`, "\n"),
 		}},
-		{"bypass: multi-level pointer mutation", `
+		{"multi-level deref mutation escapes", `
 			{
-				struct Planet { mut diameter &Int }
-				mut initial_diameter = 12742
-				mut earth = Planet(&mut initial_diameter)
-				mut earth_ptr = &mut earth
-				mut earth_ptr_ptr = &mut earth_ptr
+				struct Foo { mut one &Int }
+				mut x = 12742
+				mut y = Foo(&mut x)
+				mut z = &mut y
+				mut w = &mut z
 				{
-					mut local_diameter = 99
-					mut local_earth = Planet(&mut local_diameter)
-					**earth_ptr_ptr = local_earth
+					mut a = 99
+					mut b = Foo(&mut a)
+					**w = b
 				}
-				print_int(*earth.diameter)
+				print_int(*y.one)
 			}
 			`, []string{
-			"test.met:10:46: reference escaping its allocation scope\n" +
+			"test.met:10:33: reference escaping its allocation scope\n" +
 				strings.Trim(`
-						mut local_diameter = 99
-						mut local_earth = Planet(&mut local_diameter)
-												 ^^^^^^^^^^^^^^^^^^^
-						**earth_ptr_ptr = local_earth
+						mut a = 99
+						mut b = Foo(&mut a)
+									^^^^^^
+						**w = b
 				`, "\n"),
 		}},
-		{"bypass: mutation through field reference", `
+		{"deref field ref mutation escapes", `
 			{
-				struct Planet { mut diameter_ref &mut &Int }
-				mut initial_diameter = 12742
-				mut initial_diameter_ptr = &initial_diameter
-				mut earth = Planet(&mut initial_diameter_ptr)
+				struct Foo { mut one &mut &Int }
+				mut x = 12742
+				mut y = &x
+				mut z = Foo(&mut y)
 				{
-					mut local_diameter = 99
-					*earth.diameter_ref = &local_diameter
+					mut w = 99
+					*z.one = &w
 				}
-				print_int(**earth.diameter_ref)
+				print_int(**z.one)
 			}
 			`, []string{
-			"test.met:9:43: reference escaping its allocation scope\n" +
+			"test.met:9:30: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					    mut local_diameter = 99
-					    *earth.diameter_ref = &local_diameter
-					                          ^^^^^^^^^^^^^^^
+					    mut w = 99
+					    *z.one = &w
+					             ^^
 					}
 					`, "\n"),
 		}},
-		{"bypass: multiple field assignments overwrite leak", `
+		// Writing to one field must not clear escape taint on another field.
+		{"field overwrite doesn't mask escape", `
 			{
-				struct Planet { mut name Str  mut diameter &Int }
-				mut initial_diameter = 12742
-				mut earth = Planet("Earth", &initial_diameter)
+				struct Foo { mut one Str  mut two &Int }
+				mut x = 12742
+				mut y = Foo("hello", &x)
 				{
-					mut local_diameter = 99
-					earth.diameter = &local_diameter
-					earth.name = "New Earth"
+					mut z = 99
+					y.two = &z
+					y.one = "bye"
 				}
-				print_int(*earth.diameter)
+				print_int(*y.two)
 			}
 			`, []string{
-			"test.met:8:38: reference escaping its allocation scope\n" +
+			"test.met:8:29: reference escaping its allocation scope\n" +
 				strings.Trim(`
-					    mut local_diameter = 99
-					    earth.diameter = &local_diameter
-					                     ^^^^^^^^^^^^^^^
-					    earth.name = "New Earth"
+					    mut z = 99
+					    y.two = &z
+					            ^^
+					    y.one = "bye"
 					`, "\n"),
 		}},
 	}

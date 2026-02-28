@@ -17,7 +17,7 @@ func TestParseOK(t *testing.T) {
 		want func(*TestAST) NodeID
 	}{
 		{
-			"happy path", "file", `fun foo() Str { "hello" 123 } `,
+			"file with fun", "file", `fun foo() Str { "hello" 123 } `,
 			func(a *TestAST) NodeID {
 				return a.file(
 					a.fun("foo", nil, a.str_typ(), a.fun_block(a.string_("hello"), a.int_(123))),
@@ -25,25 +25,25 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
-			"assign expr", "expr", `foo = 123`,
+			"assign", "expr", `x = 123`,
 			func(a *TestAST) NodeID {
-				return a.assign(a.ident("foo"), a.int_(123))
+				return a.assign(a.ident("x"), a.int_(123))
 			},
 		},
 		{
-			"var expr", "expr", `let foo = 123`,
+			"let binding", "expr", `let x = 123`,
 			func(a *TestAST) NodeID {
-				return a.var_("foo", a.int_(123))
+				return a.var_("x", a.int_(123))
 			},
 		},
 		{
-			"mut expr", "expr", `mut foo = 123`,
+			"mut binding", "expr", `mut x = 123`,
 			func(a *TestAST) NodeID {
-				return a.mut_var("foo", a.int_(123))
+				return a.mut_var("x", a.int_(123))
 			},
 		},
 		{
-			"block expr", "expr", `{ 0 "hello" }`,
+			"block", "expr", `{ 0 "hello" }`,
 			func(a *TestAST) NodeID {
 				return a.block(a.int_(0), a.string_("hello"))
 			},
@@ -65,7 +65,7 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
-			"fun inside block", "expr", `{ fun foo() Str { "hello" 123 } }`,
+			"fun in block", "expr", `{ fun foo() Str { "hello" 123 } }`,
 			func(a *TestAST) NodeID {
 				return a.block(
 					a.fun("foo", nil, a.str_typ(), a.fun_block(a.string_("hello"), a.int_(123))),
@@ -79,26 +79,26 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
-			"call", "expr", `foo(123, "hello")`,
+			"fun call", "expr", `foo(123, "hello")`,
 			func(a *TestAST) NodeID {
 				return a.call(a.ident("foo"), a.int_(123), a.string_("hello"))
 			},
 		},
 		{
-			"call w/o args", "expr", `foo()`,
+			"call no args", "expr", `foo()`,
 			func(a *TestAST) NodeID {
 				return a.call(a.ident("foo"))
 			},
 		},
 		{
-			"chained calls", "expr", `foo()()`,
+			"chained call", "expr", `foo()()`,
 			func(a *TestAST) NodeID {
 				return a.call(a.call(a.ident("foo")))
 			},
 		},
 
-		{"true", "expr", "true", func(a *TestAST) NodeID { return a.bool_(true) }},
-		{"false", "expr", "false", func(a *TestAST) NodeID { return a.bool_(false) }},
+		{"bool true", "expr", "true", func(a *TestAST) NodeID { return a.bool_(true) }},
+		{"bool false", "expr", "false", func(a *TestAST) NodeID { return a.bool_(false) }},
 		{
 			"if then else", "expr", `if a { 42 } else { 123 }`,
 			func(a *TestAST) NodeID {
@@ -109,32 +109,32 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 
-		{"struct", "expr", "struct Planet { name Str mut diameter Int }", func(a *TestAST) NodeID {
-			return a.struct_("Planet", a.struct_field("name", a.str_typ()), a.mut_struct_field("diameter", a.int_typ()))
+		{"struct declaration", "expr", "struct Foo { one Str mut two Int }", func(a *TestAST) NodeID {
+			return a.struct_("Foo", a.struct_field("one", a.str_typ()), a.mut_struct_field("two", a.int_typ()))
 		}},
-		{"struct with allocator field", "expr", "struct Holder { @a Arena }", func(a *TestAST) NodeID {
-			return a.struct_("Holder", a.struct_field("@a", a.typ("Arena")))
+		{"struct with allocator field", "expr", "struct Foo { @myalloc Arena }", func(a *TestAST) NodeID {
+			return a.struct_("Foo", a.struct_field("@myalloc", a.typ("Arena")))
 		}},
-		{"struct literal", "expr", "Planet(\"Earth\", 12500)", func(a *TestAST) NodeID {
-			return a.struct_lit(a.ident("Planet"), a.string_("Earth"), a.int_(12500))
+		{"struct literal", "expr", "Foo(\"hello\", 123)", func(a *TestAST) NodeID {
+			return a.struct_lit(a.ident("Foo"), a.string_("hello"), a.int_(123))
 		}},
-		{"field read access", "expr", "earth.name", func(a *TestAST) NodeID {
-			return a.field_access(a.ident("earth"), "name")
+		{"field read", "expr", "x.one", func(a *TestAST) NodeID {
+			return a.field_access(a.ident("x"), "one")
 		}},
-		{"field write access", "expr", "earth.name = \"Mother\"", func(a *TestAST) NodeID {
-			return a.assign(a.field_access(a.ident("earth"), "name"), a.string_("Mother"))
+		{"field write", "expr", "x.one = \"hello\"", func(a *TestAST) NodeID {
+			return a.assign(a.field_access(a.ident("x"), "one"), a.string_("hello"))
 		}},
-		{"chained field access", "expr", "earth.info.name", func(a *TestAST) NodeID {
-			return a.field_access(a.field_access(a.ident("earth"), "info"), "name")
+		{"chained field access", "expr", "x.one.two", func(a *TestAST) NodeID {
+			return a.field_access(a.field_access(a.ident("x"), "one"), "two")
 		}},
-		{"field access call", "expr", "earth.info.name()", func(a *TestAST) NodeID {
-			return a.call(a.field_access(a.field_access(a.ident("earth"), "info"), "name"))
+		{"call through field access", "expr", "x.one.two()", func(a *TestAST) NodeID {
+			return a.call(a.field_access(a.field_access(a.ident("x"), "one"), "two"))
 		}},
 
-		{"ref ident expr", "expr", `&foo`, func(a *TestAST) NodeID { return a.ref("foo") }},
-		{"mut ref ident expr", "expr", `&mut foo`, func(a *TestAST) NodeID { return a.mut_ref("foo") }},
-		{"deref expr", "expr", `*foo`, func(a *TestAST) NodeID { return a.deref(a.ident("foo")) }},
-		{"nested deref expr", "expr", `**foo`, func(a *TestAST) NodeID { return a.deref(a.deref(a.ident("foo"))) }},
+		{"&ref", "expr", `&x`, func(a *TestAST) NodeID { return a.ref("x") }},
+		{"&mut ref", "expr", `&mut x`, func(a *TestAST) NodeID { return a.mut_ref("x") }},
+		{"deref", "expr", `*x`, func(a *TestAST) NodeID { return a.deref(a.ident("x")) }},
+		{"nested deref", "expr", `**x`, func(a *TestAST) NodeID { return a.deref(a.deref(a.ident("x"))) }},
 		{
 			"ref type",
 			"expr",
@@ -148,48 +148,48 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
-			"deref assign", "expr", `*foo = bar`,
+			"deref assign", "expr", `*x = y`,
 			func(a *TestAST) NodeID {
-				return a.assign(a.deref(a.ident("foo")), a.ident("bar"))
+				return a.assign(a.deref(a.ident("x")), a.ident("y"))
 			},
 		},
 		{
-			"nested deref assign", "expr", `***foo = bar`,
+			"nested deref assign", "expr", `***x = y`,
 			func(a *TestAST) NodeID {
-				return a.assign(a.deref(a.deref(a.deref(a.ident("foo")))), a.ident("bar"))
+				return a.assign(a.deref(a.deref(a.deref(a.ident("x")))), a.ident("y"))
 			},
 		},
 		{
-			"ref param", "expr", `{ fun foo(a &Int) void {} let b = 123 foo(&b) }`,
+			"call with &ref arg", "expr", `{ fun foo(a &Int) void {} let x = 123 foo(&x) }`,
 			func(a *TestAST) NodeID {
 				return a.block(
 					a.fun("foo", []NodeID{a.fun_param("a", a.ref_typ(a.int_typ()))}, a.void_typ(), a.fun_block()),
-					a.var_("b", a.int_(123)),
-					a.call(a.ident("foo"), a.ref("b")),
+					a.var_("x", a.int_(123)),
+					a.call(a.ident("foo"), a.ref("x")),
 				)
 			},
 		},
 
-		{"declare allocator", "expr", "alloc @test = Arena(123)", func(a *TestAST) NodeID {
-			return a.alloc_init("@test", "Arena", a.int_(123))
+		{"alloc declaration", "expr", "alloc @myalloc = Arena(123)", func(a *TestAST) NodeID {
+			return a.alloc_init("@myalloc", "Arena", a.int_(123))
 		}},
-		{"alloc", "expr", `new @test Planet()`, func(a *TestAST) NodeID {
-			return a.alloc(a.ident("@test"), a.struct_lit(a.ident("Planet")))
+		{"heap alloc", "expr", `new @myalloc Foo()`, func(a *TestAST) NodeID {
+			return a.alloc(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
 		}},
 		{
-			"alloc as fun param", "expr", "fun foo(@alloc Arena, name Str, @alloc2 Arena) void {}",
+			"alloc fun param", "expr", "fun foo(@myalloc Arena, x Str, @youralloc Arena) void {}",
 			func(a *TestAST) NodeID {
 				return a.fun("foo", []NodeID{
-					a.fun_param("@alloc", a.typ("Arena")),
-					a.fun_param("name", a.str_typ()),
-					a.fun_param("@alloc2", a.typ("Arena")),
+					a.fun_param("@myalloc", a.typ("Arena")),
+					a.fun_param("x", a.str_typ()),
+					a.fun_param("@youralloc", a.typ("Arena")),
 				}, a.void_typ(), a.fun_block())
 			},
 		},
 		{
-			"alloc in call", "expr", "foo(@a)",
+			"pass alloc in call", "expr", "foo(@myalloc)",
 			func(a *TestAST) NodeID {
-				return a.call(a.ident("foo"), a.ident("@a"))
+				return a.call(a.ident("foo"), a.ident("@myalloc"))
 			},
 		},
 
@@ -199,17 +199,17 @@ func TestParseOK(t *testing.T) {
 		{"array literal", "expr", `[1, 2, 3]`, func(a *TestAST) NodeID {
 			return a.arr_lit(a.int_(1), a.int_(2), a.int_(3))
 		}},
-		{"index read", "expr", `a[1]`, func(a *TestAST) NodeID {
-			return a.index(a.ident("a"), a.int_(1))
+		{"index read", "expr", `x[1]`, func(a *TestAST) NodeID {
+			return a.index(a.ident("x"), a.int_(1))
 		}},
-		{"index write", "expr", `a[1] = 2`, func(a *TestAST) NodeID {
-			return a.assign(a.index(a.ident("a"), a.int_(1)), a.int_(2))
+		{"index write", "expr", `x[1] = 2`, func(a *TestAST) NodeID {
+			return a.assign(a.index(a.ident("x"), a.int_(1)), a.int_(2))
 		}},
-		{"alloc from struct field", "expr", `new holder.@a Planet("Earth")`, func(a *TestAST) NodeID {
-			return a.alloc(a.field_access(a.ident("holder"), "@a"), a.struct_lit(a.ident("Planet"), a.string_("Earth")))
+		{"heap alloc from field", "expr", `new x.@myalloc Foo("hello")`, func(a *TestAST) NodeID {
+			return a.alloc(a.field_access(a.ident("x"), "@myalloc"), a.struct_lit(a.ident("Foo"), a.string_("hello")))
 		}},
-		{"alloc array", "expr", `new @a [5]Int()`, func(a *TestAST) NodeID {
-			return a.alloc(a.ident("@a"), a.arr_typ(a.int_typ(), 5))
+		{"heap alloc array", "expr", `new @myalloc [5]Int()`, func(a *TestAST) NodeID {
+			return a.alloc(a.ident("@myalloc"), a.arr_typ(a.int_typ(), 5))
 		}},
 	}
 
@@ -261,31 +261,33 @@ func TestParseErr(t *testing.T) {
 				`    =` + "\n" +
 				"    ^",
 		}},
-		{"assign to type", `{ Str = "hello" }`, []string{
+		// Type names can't appear on the left side of an assignment.
+		{"assign to type name", `{ Str = "hello" }`, []string{
 			"test.met:1:7: unexpected token: expected (, got =\n" +
 				`    { Str = "hello" }` + "\n" +
 				"          ^",
 		}},
-		{"nested ref expr", `{ &&foo }`, []string{
+		// &&x is not valid syntax - use a let binding for nested refs.
+		{"nested &ref", `{ &&x }`, []string{
 			"test.met:1:4: unexpected token: expected <identifier>, got &\n" +
-				`    { &&foo }` + "\n" +
+				`    { &&x }` + "\n" +
 				"       ^",
 		}},
-		{"ref to literal", `{ &123 }`, []string{
+		{"&ref of literal", `{ &123 }`, []string{
 			"test.met:1:4: unexpected token: expected <identifier>, got <number>\n" +
 				`    { &123 }` + "\n" +
 				"       ^^^",
 		}},
 
-		{"Arena is a reserved work", `struct Arena{name Str}`, []string{
+		{"reserved word Arena", `struct Arena{one Str}`, []string{
 			"test.met:1:8: reserved word: Arena\n" +
-				`    struct Arena{name Str}` + "\n" +
+				`    struct Arena{one Str}` + "\n" +
 				"           ^^^^^",
 		}},
-		{"alloc without target", `new @test`, []string{
+		{"heap alloc without target", `new @myalloc`, []string{
 			"test.met:1:5: unexpected end of file\n" +
-				`    new @test` + "\n" +
-				"        ^^^^^",
+				`    new @myalloc` + "\n" +
+				"        ^^^^^^^^",
 		}},
 	}
 
