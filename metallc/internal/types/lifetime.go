@@ -195,12 +195,12 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeDeref(nodeID, kind)
 	case ast.FieldAccess:
 		a.analyzeFieldAccess(nodeID, kind)
-	case ast.AllocInit:
-		a.analyzeAllocInit(nodeID, kind)
+	case ast.AllocatorDecl:
+		a.analyzeAllocatorDecl(nodeID, kind)
 	case ast.StructLiteral:
 		a.analyzeStructLiteral(nodeID, kind)
-	case ast.Allocation:
-		a.analyzeAllocation(nodeID, kind)
+	case ast.New:
+		a.analyzeNew(nodeID, kind)
 	case ast.MakeSlice:
 		a.analyzeMakeSlice(nodeID, kind)
 	case ast.ArrayLiteral:
@@ -277,7 +277,7 @@ func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess
 	a.flows[nodeID] = a.flow(fa.Target)
 }
 
-func (a *LifetimeCheck) analyzeAllocInit(nodeID ast.NodeID, alloc ast.AllocInit) {
+func (a *LifetimeCheck) analyzeAllocatorDecl(nodeID ast.NodeID, alloc ast.AllocatorDecl) {
 	ss := a.scopeState(nodeID)
 	ss.Vars[alloc.Name.Name] = &VarTaint{
 		nodeID, ss.ScopeTaint,
@@ -294,16 +294,16 @@ func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLi
 	a.flows[nodeID] = merged
 }
 
-// analyzeAllocation: `new @alloc Foo(...)` merges the target's flow with the allocator's.
-func (a *LifetimeCheck) analyzeAllocation(nodeID ast.NodeID, alloc ast.Allocation) {
+// analyzeNew: `new @alloc Foo(...)` merges the target's flow with the allocator's.
+func (a *LifetimeCheck) analyzeNew(nodeID ast.NodeID, alloc ast.New) {
 	merged := a.flow(alloc.Target)
-	merged = merged.Merge(a.flow(alloc.Alloc))
+	merged = merged.Merge(a.flow(alloc.Allocator))
 	a.flows[nodeID] = merged
 }
 
 // analyzeMakeSlice: `make @alloc []T(len)` merges the allocator's flow.
 func (a *LifetimeCheck) analyzeMakeSlice(nodeID ast.NodeID, makeSlice ast.MakeSlice) {
-	merged := a.flow(makeSlice.Alloc)
+	merged := a.flow(makeSlice.Allocator)
 	merged = merged.Merge(a.flow(makeSlice.Len))
 	a.flows[nodeID] = merged
 }
@@ -431,7 +431,7 @@ func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 	f := a.flow(varNode.Expr)
 	storageTaint := ss.ScopeTaint
 	switch a.e.Node(varNode.Expr).Kind.(type) {
-	case ast.Allocation, ast.MakeSlice:
+	case ast.New, ast.MakeSlice:
 		storageTaint = 0
 	}
 	ss.Vars[varNode.Name.Name] = &VarTaint{nodeID, storageTaint, f}
@@ -457,7 +457,7 @@ func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, param ast.FunParam) {
 }
 
 // typeContainsRefOrAlloc returns true if the type is, or recursively contains,
-// a RefType or AllocType. Used to decide whether a param needs a caller taint.
+// a RefType or AllocatorType. Used to decide whether a param needs a caller taint.
 //   - `Int` --> false
 //   - `&Int` --> true
 //   - `struct Foo { ptr &Int }` --> true
@@ -467,7 +467,7 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 	}
 	typ := a.e.Type(typeID)
 	switch kind := typ.Kind.(type) {
-	case RefType, AllocType:
+	case RefType, AllocatorType:
 		return true
 	case StructType:
 		for _, field := range kind.Fields {

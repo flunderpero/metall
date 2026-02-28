@@ -112,8 +112,8 @@ func (g *IRGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genStruct(id, kind)
 	case ast.StructLiteral:
 		g.genStructLiteralOnStack(id, kind)
-	case ast.Allocation:
-		g.genAllocation(id, kind)
+	case ast.New:
+		g.genNew(id, kind)
 	case ast.ArrayLiteral:
 		g.genArrayLiteral(id, kind)
 	case ast.Index:
@@ -142,12 +142,12 @@ func (g *IRGen) Gen(id ast.NodeID) { //nolint:funlen
 		// Types don't generate code
 	case ast.SliceType:
 		// Types don't generate code
-	case ast.ArrayAlloc:
-		// Handled inline in genAllocation
+	case ast.NewArray:
+		// Handled inline in genNew
 	case ast.MakeSlice:
 		g.genMakeSlice(id, kind)
-	case ast.AllocInit:
-		g.genAllocInit(id, kind)
+	case ast.AllocatorDecl:
+		g.genAllocatorDecl(id, kind)
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -241,12 +241,12 @@ func (g *IRGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
 	g.genStructLiteralFields(id, lit, reg)
 }
 
-func (g *IRGen) genAllocation(id ast.NodeID, alloc ast.Allocation) {
-	g.Gen(alloc.Alloc)
-	allocReg := g.lookupCode(alloc.Alloc)
+func (g *IRGen) genNew(id ast.NodeID, alloc ast.New) {
+	g.Gen(alloc.Allocator)
+	allocReg := g.lookupCode(alloc.Allocator)
 	lit := g.engine.Node(alloc.Target).Kind
 	switch lit := lit.(type) {
-	case ast.ArrayAlloc:
+	case ast.NewArray:
 		arrType := base.Cast[ast.ArrayType](g.engine.Node(lit.Type).Kind)
 		reg := g.reg()
 		irTyp := g.irTypeOfNode(arrType.Elem)
@@ -269,8 +269,8 @@ func (g *IRGen) genAllocation(id ast.NodeID, alloc ast.Allocation) {
 }
 
 func (g *IRGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
-	g.Gen(makeSlice.Alloc)
-	allocReg := g.lookupCode(makeSlice.Alloc)
+	g.Gen(makeSlice.Allocator)
+	allocReg := g.lookupCode(makeSlice.Allocator)
 	sliceType := base.Cast[ast.SliceType](g.engine.Node(makeSlice.Type).Kind)
 	reg := g.reg()
 	irTyp := g.irTypeOfNode(sliceType.Elem)
@@ -391,7 +391,7 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 		preg := g.reg()
 		paramTyp := g.engine.TypeOfNode(paramNodeID)
 		paramIRTyp := g.irTypeOfNode(paramNodeID)
-		if _, ok := paramTyp.Kind.(types.AllocType); ok {
+		if _, ok := paramTyp.Kind.(types.AllocatorType); ok {
 			// Allocator param: passed as a raw ptr, no alloca wrapping.
 			params.WriteString("ptr ")
 			params.WriteString(preg)
@@ -723,8 +723,8 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 func (g *IRGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
 		identType := g.engine.TypeOfNode(id)
-		if _, ok := identType.Kind.(types.AllocType); ok || g.isAggregateType(identType.ID) {
-			// Aggregate/Alloc: symbol.Reg is already the raw ptr (single indirection, no alloca).
+		if _, ok := identType.Kind.(types.AllocatorType); ok || g.isAggregateType(identType.ID) {
+			// Aggregate/Allocator: symbol.Reg is already the raw ptr (single indirection, no alloca).
 			g.setCode(id, symbol.Reg)
 			return
 		}
@@ -780,7 +780,7 @@ func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 	g.setCode(id, valReg)
 }
 
-func (g *IRGen) genAllocInit(id ast.NodeID, alloc ast.AllocInit) {
+func (g *IRGen) genAllocatorDecl(id ast.NodeID, alloc ast.AllocatorDecl) {
 	reg := g.reg()
 	g.write("%s = call ptr @arena_create(i64 4096)", reg)
 	g.blockAllocatorRegs = append(g.blockAllocatorRegs, reg)
@@ -795,7 +795,7 @@ func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	if g.isAggregateType(exprType.ID) {
 		exprNode := g.engine.Node(v.Expr)
 		switch exprNode.Kind.(type) {
-		case ast.StructLiteral, ast.Allocation, ast.ArrayLiteral, ast.Call:
+		case ast.StructLiteral, ast.New, ast.ArrayLiteral, ast.Call:
 			// The result value is already a copy.
 			g.setCode(id, exprReg)
 			g.setSymbol(id, v.Name.Name, exprReg, "ptr")
@@ -847,7 +847,7 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		default:
 			panic(base.Errorf("unknown builtin type: %s", kind.Name))
 		}
-	case types.RefType, types.AllocType:
+	case types.RefType, types.AllocatorType:
 		return "ptr"
 	case types.StructType:
 		return "%" + typeID.String()

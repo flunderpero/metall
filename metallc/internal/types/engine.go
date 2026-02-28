@@ -74,26 +74,26 @@ type SliceType struct {
 
 func (SliceType) isTypeKind() {}
 
-type AllocImpl int
+type AllocatorImpl int
 
 const (
-	AllocArena AllocImpl = iota + 1
+	AllocatorArena AllocatorImpl = iota + 1
 )
 
-func (a AllocImpl) String() string {
+func (a AllocatorImpl) String() string {
 	switch a {
-	case AllocArena:
+	case AllocatorArena:
 		return "Arena"
 	default:
-		panic(base.Errorf("unknown alloc impl: %d", a))
+		panic(base.Errorf("unknown allocator impl: %d", a))
 	}
 }
 
-type AllocType struct {
-	Impl AllocImpl
+type AllocatorType struct {
+	Impl AllocatorImpl
 }
 
-func (AllocType) isTypeKind() {}
+func (AllocatorType) isTypeKind() {}
 
 const mutableRefFlag = 1 << 62
 
@@ -181,7 +181,7 @@ func NewEngine(a *ast.AST) *Engine {
 	intType := e.newType(BuiltInType{"Int"}, 0, span, TypeOK)
 	strType := e.newType(BuiltInType{"Str"}, 0, span, TypeOK)
 	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
-	arenaType := e.newType(AllocType{AllocArena}, 0, span, TypeOK)
+	arenaType := e.newType(AllocatorType{AllocatorArena}, 0, span, TypeOK)
 	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
 	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
 	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
@@ -249,7 +249,7 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case SliceType:
 		return fmt.Sprintf("[]%s", e.TypeDisplay(kind.Elem))
-	case AllocType:
+	case AllocatorType:
 		return fmt.Sprintf("alloc(%s)", kind.Impl)
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
@@ -310,22 +310,22 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkStructField(nodeID, nodeKind, node.Span)
 	case ast.StructLiteral:
 		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
-	case ast.Allocation:
-		typeID, status = e.checkAllocation(nodeKind)
+	case ast.New:
+		typeID, status = e.checkNew(nodeKind)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.SliceType:
 		typeID, status = e.checkSliceType(nodeID, nodeKind, node.Span)
-	case ast.ArrayAlloc:
-		typeID, status = e.checkArrayAlloc(nodeKind)
+	case ast.NewArray:
+		typeID, status = e.checkNewArray(nodeKind)
 	case ast.MakeSlice:
 		typeID, status = e.checkMakeSlice(nodeKind)
 	case ast.ArrayLiteral:
 		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span)
 	case ast.Index:
 		typeID, status = e.checkIndex(nodeKind)
-	case ast.AllocInit:
-		typeID, status = e.checkAllocInit(nodeID, nodeKind, node.Span)
+	case ast.AllocatorDecl:
+		typeID, status = e.checkAllocatorDecl(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
 		typeID, status = e.checkFieldAccess(nodeKind)
 	case ast.Ident:
@@ -401,7 +401,7 @@ func (e *Engine) WalkType(typeID TypeID, f func(typ *Type, e *Engine)) {
 	case SliceType:
 		elemTyp := e.Type(kind.Elem)
 		f(elemTyp, e)
-	case AllocType:
+	case AllocatorType:
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
 	}
@@ -647,7 +647,7 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	return thenType, TypeOK
 }
 
-func (e *Engine) checkAllocInit(nodeID ast.NodeID, alloc ast.AllocInit, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkAllocatorDecl(nodeID ast.NodeID, alloc ast.AllocatorDecl, span base.Span) (TypeID, TypeStatus) {
 	if alloc.Allocator.Name != "Arena" {
 		e.diag(alloc.Allocator.Span, "unknown allocator type: %s", alloc.Allocator.Name)
 		return InvalidTypeID, TypeFailed
@@ -676,7 +676,7 @@ func (e *Engine) checkSliceType(nodeID ast.NodeID, sliceType ast.SliceType, span
 	return e.buildSliceType(elemTypeID, nodeID, span), TypeOK
 }
 
-func (e *Engine) checkArrayAlloc(alloc ast.ArrayAlloc) (TypeID, TypeStatus) {
+func (e *Engine) checkNewArray(alloc ast.NewArray) (TypeID, TypeStatus) {
 	arrTypeID, status := e.Query(alloc.Type)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -685,13 +685,13 @@ func (e *Engine) checkArrayAlloc(alloc ast.ArrayAlloc) (TypeID, TypeStatus) {
 }
 
 func (e *Engine) checkMakeSlice(makeSlice ast.MakeSlice) (TypeID, TypeStatus) {
-	allocTypeID, allocStatus := e.Query(makeSlice.Alloc)
+	allocTypeID, allocStatus := e.Query(makeSlice.Allocator)
 	if allocStatus.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
 	allocType := e.Type(allocTypeID)
-	if _, ok := allocType.Kind.(AllocType); !ok {
-		allocSpan := e.Node(makeSlice.Alloc).Span
+	if _, ok := allocType.Kind.(AllocatorType); !ok {
+		allocSpan := e.Node(makeSlice.Allocator).Span
 		e.diag(allocSpan, "expected allocator, got %s", e.TypeDisplay(allocTypeID))
 		return InvalidTypeID, TypeFailed
 	}
@@ -776,14 +776,14 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 	return elemTypeID, TypeOK
 }
 
-func (e *Engine) checkAllocation(alloc ast.Allocation) (TypeID, TypeStatus) {
-	allocTypeID, allocStatus := e.Query(alloc.Alloc)
+func (e *Engine) checkNew(alloc ast.New) (TypeID, TypeStatus) {
+	allocTypeID, allocStatus := e.Query(alloc.Allocator)
 	if allocStatus.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
 	allocType := e.Type(allocTypeID)
-	if _, ok := allocType.Kind.(AllocType); !ok {
-		allocSpan := e.Node(alloc.Alloc).Span
+	if _, ok := allocType.Kind.(AllocatorType); !ok {
+		allocSpan := e.Node(alloc.Allocator).Span
 		e.diag(allocSpan, "expected allocator, got %s", e.TypeDisplay(allocTypeID))
 		return InvalidTypeID, TypeFailed
 	}

@@ -59,16 +59,16 @@ type SliceType struct {
 
 func (SliceType) isKind() {}
 
-type ArrayAlloc struct {
+type NewArray struct {
 	Type NodeID
 }
 
-func (ArrayAlloc) isKind() {}
+func (NewArray) isKind() {}
 
 type MakeSlice struct {
-	Alloc NodeID
-	Type  NodeID
-	Len   NodeID
+	Allocator NodeID
+	Type      NodeID
+	Len       NodeID
 }
 
 func (MakeSlice) isKind() {}
@@ -199,13 +199,13 @@ type Var struct {
 
 func (Var) isKind() {}
 
-type AllocInit struct {
+type AllocatorDecl struct {
 	Name      Name
 	Allocator Name
 	Args      []NodeID
 }
 
-func (AllocInit) isKind() {}
+func (AllocatorDecl) isKind() {}
 
 type Block struct {
 	Exprs       []NodeID
@@ -251,12 +251,12 @@ type StructLiteral struct {
 
 func (StructLiteral) isKind() {}
 
-type Allocation struct {
-	Alloc  NodeID
-	Target NodeID
+type New struct {
+	Allocator NodeID
+	Target    NodeID
 }
 
-func (Allocation) isKind() {}
+func (New) isKind() {}
 
 type Ref struct {
 	Name Name
@@ -317,8 +317,8 @@ func (a *AST) NewStructLiteral(target NodeID, args []NodeID, span base.Span) Nod
 	return a.node(StructLiteral{Target: target, Args: args}, span)
 }
 
-func (a *AST) NewAllocation(alloc NodeID, target NodeID, span base.Span) NodeID {
-	return a.node(Allocation{Alloc: alloc, Target: target}, span)
+func (a *AST) NewNew(alloc NodeID, target NodeID, span base.Span) NodeID {
+	return a.node(New{Allocator: alloc, Target: target}, span)
 }
 
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
@@ -361,8 +361,8 @@ func (a *AST) NewIdent(name string, span base.Span) NodeID {
 	return a.node(Ident{Name: name}, span)
 }
 
-func (a *AST) NewAllocInit(name Name, allocator Name, args []NodeID, span base.Span) NodeID {
-	return a.node(AllocInit{Name: name, Allocator: allocator, Args: args}, span)
+func (a *AST) NewAllocatorDecl(name Name, allocator Name, args []NodeID, span base.Span) NodeID {
+	return a.node(AllocatorDecl{Name: name, Allocator: allocator, Args: args}, span)
 }
 
 func (a *AST) NewInt(value int64, span base.Span) NodeID {
@@ -389,12 +389,12 @@ func (a *AST) NewSliceType(elemType NodeID, span base.Span) NodeID {
 	return a.node(SliceType{Elem: elemType}, span)
 }
 
-func (a *AST) NewArrayAlloc(typ NodeID, span base.Span) NodeID {
-	return a.node(ArrayAlloc{Type: typ}, span)
+func (a *AST) NewNewArray(typ NodeID, span base.Span) NodeID {
+	return a.node(NewArray{Type: typ}, span)
 }
 
 func (a *AST) NewMakeSlice(alloc NodeID, typ NodeID, len_ NodeID, span base.Span) NodeID {
-	return a.node(MakeSlice{Alloc: alloc, Type: typ, Len: len_}, span)
+	return a.node(MakeSlice{Allocator: alloc, Type: typ, Len: len_}, span)
 }
 
 func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
@@ -487,10 +487,10 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
 		}
-	case Allocation:
-		f(kind.Alloc)
+	case New:
+		f(kind.Allocator)
 		f(kind.Target)
-	case AllocInit:
+	case AllocatorDecl:
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
 		}
@@ -498,10 +498,10 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Elem)
 	case SliceType:
 		f(kind.Elem)
-	case ArrayAlloc:
+	case NewArray:
 		f(kind.Type)
 	case MakeSlice:
-		f(kind.Alloc)
+		f(kind.Allocator)
 		f(kind.Type)
 		f(kind.Len)
 	case ArrayLiteral:
@@ -687,15 +687,15 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("target", kind.Target)
 			addChild("args", kind.Args...)
 		}
-	case Allocation:
+	case New:
 		if !children {
-			addAttr("alloc", nodeIDKind(kind.Alloc))
+			addAttr("allocator", nodeIDKind(kind.Allocator))
 			addAttr("target", nodeIDKind(kind.Target))
 		} else {
-			addChild("alloc", kind.Alloc)
+			addChild("allocator", kind.Allocator)
 			addChild("target", kind.Target)
 		}
-	case AllocInit:
+	case AllocatorDecl:
 		addAttr("name", kind.Name.Name)
 		addAttr("allocator", kind.Allocator.Name)
 		if !children {
@@ -740,7 +740,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		} else {
 			addChild("type", kind.Elem)
 		}
-	case ArrayAlloc:
+	case NewArray:
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {
@@ -748,11 +748,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		}
 	case MakeSlice:
 		if !children {
-			addAttr("alloc", nodeIDKind(kind.Alloc))
+			addAttr("allocator", nodeIDKind(kind.Allocator))
 			addAttr("type", nodeIDKind(kind.Type))
 			addAttr("len", nodeIDKind(kind.Len))
 		} else {
-			addChild("alloc", kind.Alloc)
+			addChild("allocator", kind.Allocator)
 			addChild("type", kind.Type)
 			addChild("len", kind.Len)
 		}

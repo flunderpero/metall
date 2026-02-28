@@ -12,7 +12,7 @@ type TokenKind int
 
 const (
 	Alloc TokenKind = iota + 1
-	AllocIdent
+	AllocatorIdent
 	Amp
 	And
 	Break
@@ -28,7 +28,7 @@ const (
 	Fun
 	Ident
 	If
-	InvalidAllocIdent
+	InvalidAllocatorIdent
 	LBracket
 	LBracketIndex
 	LCurly
@@ -57,49 +57,49 @@ const (
 )
 
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
-	Alloc:             "<alloc>",
-	AllocIdent:        "<allocator identifier>",
-	Amp:               "&",
-	And:               "<and>",
-	Break:             "<break>",
-	Comma:             ",",
-	Continue:          "<continue>",
-	Dot:               ".",
-	Else:              "<else>",
-	EOF:               "<EOF>",
-	Eq:                "=",
-	EqEq:              "==",
-	False:             "false",
-	For:               "<for>",
-	Fun:               "<fun>",
-	Ident:             "<identifier>",
-	If:                "<if>",
-	InvalidAllocIdent: "<invalid allocation identifier>",
-	LBracket:          "[",
-	LBracketIndex:     "<[index>",
-	LCurly:            "{",
-	Let:               "<let>",
-	LParen:            "(",
-	Make:              "<make>",
-	Minus:             "-",
-	Mut:               "<mut>",
-	Neq:               "!=",
-	New:               "<new>",
-	Not:               "<not>",
-	Number:            "<number>",
-	Or:                "<or>",
-	Plus:              "+",
-	RBracket:          "]",
-	RCurly:            "}",
-	RParen:            ")",
-	Slash:             "/",
-	Star:              "*",
-	String:            "<string>",
-	Struct:            "<struct>",
-	True:              "true",
-	TypeIdent:         "<type identifier>",
-	Unknown:           "<unknown>",
-	Void:              "<void>",
+	Alloc:                 "<alloc>",
+	AllocatorIdent:        "<allocator identifier>",
+	Amp:                   "&",
+	And:                   "<and>",
+	Break:                 "<break>",
+	Comma:                 ",",
+	Continue:              "<continue>",
+	Dot:                   ".",
+	Else:                  "<else>",
+	EOF:                   "<EOF>",
+	Eq:                    "=",
+	EqEq:                  "==",
+	False:                 "false",
+	For:                   "<for>",
+	Fun:                   "<fun>",
+	Ident:                 "<identifier>",
+	If:                    "<if>",
+	InvalidAllocatorIdent: "<invalid allocation identifier>",
+	LBracket:              "[",
+	LBracketIndex:         "<[index>",
+	LCurly:                "{",
+	Let:                   "<let>",
+	LParen:                "(",
+	Make:                  "<make>",
+	Minus:                 "-",
+	Mut:                   "<mut>",
+	Neq:                   "!=",
+	New:                   "<new>",
+	Not:                   "<not>",
+	Number:                "<number>",
+	Or:                    "<or>",
+	Plus:                  "+",
+	RBracket:              "]",
+	RCurly:                "}",
+	RParen:                ")",
+	Slash:                 "/",
+	Star:                  "*",
+	String:                "<string>",
+	Struct:                "<struct>",
+	True:                  "true",
+	TypeIdent:             "<type identifier>",
+	Unknown:               "<unknown>",
+	Void:                  "<void>",
 }
 
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
@@ -232,9 +232,9 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		kind := TypeIdent
 		if c == '@' {
-			kind = AllocIdent
+			kind = AllocatorIdent
 			if len(value) < 2 || !unicode.IsLower(value[1]) {
-				kind = InvalidAllocIdent
+				kind = InvalidAllocatorIdent
 			}
 		} else if unicode.IsLower(c) {
 			kind = Ident

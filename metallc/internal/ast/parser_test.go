@@ -171,10 +171,10 @@ func TestParseOK(t *testing.T) {
 		},
 
 		{"alloc declaration", "expr", "alloc @myalloc = Arena(123)", func(a *TestAST) NodeID {
-			return a.alloc_init("@myalloc", "Arena", a.int_(123))
+			return a.allocator_decl("@myalloc", "Arena", a.int_(123))
 		}},
 		{"heap alloc", "expr", `new @myalloc Foo()`, func(a *TestAST) NodeID {
-			return a.alloc(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
+			return a.new_(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
 		}},
 		{
 			"alloc fun param", "expr", "fun foo(@myalloc Arena, x Str, @youralloc Arena) void {}",
@@ -206,10 +206,10 @@ func TestParseOK(t *testing.T) {
 			return a.assign(a.index(a.ident("x"), a.int_(1)), a.int_(2))
 		}},
 		{"heap alloc from field", "expr", `new x.@myalloc Foo("hello")`, func(a *TestAST) NodeID {
-			return a.alloc(a.field_access(a.ident("x"), "@myalloc"), a.struct_lit(a.ident("Foo"), a.string_("hello")))
+			return a.new_(a.field_access(a.ident("x"), "@myalloc"), a.struct_lit(a.ident("Foo"), a.string_("hello")))
 		}},
 		{"heap alloc array", "expr", `new @myalloc [5]Int()`, func(a *TestAST) NodeID {
-			return a.alloc(a.ident("@myalloc"), a.arr_alloc(a.arr_typ(a.int_typ(), 5)))
+			return a.new_(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5)))
 		}},
 		{"make slice", "expr", `make @myalloc []Int(n)`, func(a *TestAST) NodeID {
 			allocIdent := a.ident("@myalloc")
@@ -431,8 +431,8 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 	return a.NewStructLiteral(struct_, args, a.span)
 }
 
-func (a *TestAST) alloc(alloc NodeID, target NodeID) NodeID {
-	return a.NewAllocation(alloc, target, a.span)
+func (a *TestAST) new_(alloc NodeID, target NodeID) NodeID {
+	return a.NewNew(alloc, target, a.span)
 }
 
 func (a *TestAST) binary(op BinaryOp, lhs NodeID, rhs NodeID) NodeID {
@@ -509,8 +509,8 @@ func (a *TestAST) slice_typ(typ NodeID) NodeID {
 	return a.NewSliceType(typ, a.span)
 }
 
-func (a *TestAST) arr_alloc(arrType NodeID) NodeID {
-	return a.NewArrayAlloc(arrType, a.span)
+func (a *TestAST) new_array(arrType NodeID) NodeID {
+	return a.NewNewArray(arrType, a.span)
 }
 
 func (a *TestAST) make_slice(alloc NodeID, sliceType NodeID, len_ NodeID) NodeID {
@@ -540,11 +540,11 @@ func (a *TestAST) ident(name string) NodeID {
 	return a.NewIdent(name, a.span)
 }
 
-func (a *TestAST) alloc_init(name string, allocator string, args ...NodeID) NodeID {
+func (a *TestAST) allocator_decl(name string, allocator string, args ...NodeID) NodeID {
 	if args == nil {
 		args = []NodeID{}
 	}
-	return a.NewAllocInit(Name{name, a.span}, Name{allocator, a.span}, args, a.span)
+	return a.NewAllocatorDecl(Name{name, a.span}, Name{allocator, a.span}, args, a.span)
 }
 
 func (a *TestAST) assign(lhs NodeID, rhs NodeID) NodeID {
@@ -610,9 +610,9 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			node.Kind = kind
 		case StructLiteral:
 			node.Kind = kind
-		case Allocation:
+		case New:
 			node.Kind = kind
-		case AllocInit:
+		case AllocatorDecl:
 			kind.Name.Span = base.Span{}
 			kind.Allocator.Span = base.Span{}
 			node.Kind = kind

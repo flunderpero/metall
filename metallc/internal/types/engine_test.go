@@ -177,9 +177,9 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			scope := e.ScopeGraph.NodeScope(id)
 			b, _, ok := scope.Lookup("@myalloc")
 			assert.Equal(true, ok)
-			typ, ok := e.Type(b.TypeID).Kind.(AllocType)
+			typ, ok := e.Type(b.TypeID).Kind.(AllocatorType)
 			assert.Equal(true, ok)
-			assert.Equal(AllocArena, typ.Impl)
+			assert.Equal(AllocatorArena, typ.Impl)
 		}},
 		{
 			"heap alloc struct", `{ alloc @myalloc = Arena() struct Foo{one Str} let x = new @myalloc Foo("hello") x }`, nil,
@@ -238,7 +238,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(true, ok)
 				assert.Equal(1, len(st.Fields))
 				assert.Equal("@myalloc", st.Fields[0].Name)
-				_, ok = e.Type(st.Fields[0].Type).Kind.(AllocType)
+				_, ok = e.Type(st.Fields[0].Type).Kind.(AllocatorType)
 				assert.Equal(true, ok)
 			},
 		},
