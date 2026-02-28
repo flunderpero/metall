@@ -263,6 +263,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"!= on bool", `true != true`, Bool, nil},
 
 		{"and, not, or", `true and false or not true`, Bool, nil},
+
+		{"conditional for loop", `for true { 1 }`, void, nil},
+		{"unconditional for loop", `for { 1 }`, void, nil},
+		{"for body must be scoped", `{ let a = 1 for { let a = "hello" }}`, void, nil},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -583,6 +587,22 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:5: type mismatch: expected Bool, got Int\n" +
 				`    not 123` + "\n" +
 				"        ^^^",
+		}},
+
+		{"non-boolean condition in for loop", `for 123 {}`, []string{
+			"test.met:1:5: type mismatch: expected Bool, got Int\n" +
+				`    for 123 {}` + "\n" +
+				"        ^^^",
+		}},
+		{"break outside loop", `{ break }`, []string{
+			"test.met:1:3: break statement outside of loop\n" +
+				`    { break }` + "\n" +
+				"      ^^^^^",
+		}},
+		{"continue outside loop", `{ continue }`, []string{
+			"test.met:1:3: continue statement outside of loop\n" +
+				`    { continue }` + "\n" +
+				"      ^^^^^^^^",
 		}},
 	}
 

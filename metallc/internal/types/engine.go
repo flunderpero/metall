@@ -146,6 +146,7 @@ type Engine struct {
 	nextID      TypeID
 	nextScopeID ScopeID
 	scope       *Scope
+	loopStack   []ast.NodeID
 	builtins    map[string]TypeID
 	voidType    TypeID
 	boolType    TypeID
@@ -277,6 +278,12 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkFile(nodeKind)
 	case ast.If:
 		typeID, status = e.checkIf(nodeKind)
+	case ast.For:
+		typeID, status = e.checkFor(nodeID, nodeKind)
+	case ast.Break:
+		typeID, status = e.checkBreak(node.Span)
+	case ast.Continue:
+		typeID, status = e.checkContinue(node.Span)
 	case ast.Fun, ast.Struct:
 		cachedType, ok := e.nodes[nodeID]
 		if !ok {
@@ -544,6 +551,47 @@ func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {
 		return InvalidTypeID, TypeDepFailed
 	}
 	return lastExprTypeID, TypeOK
+}
+
+func (e *Engine) checkContinue(span base.Span) (TypeID, TypeStatus) {
+	if len(e.loopStack) == 0 {
+		e.diag(span, "continue statement outside of loop")
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidType, TypeOK
+}
+
+func (e *Engine) checkBreak(span base.Span) (TypeID, TypeStatus) {
+	if len(e.loopStack) == 0 {
+		e.diag(span, "break statement outside of loop")
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidType, TypeOK
+}
+
+func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) {
+	if for_.Cond != nil {
+		condType, status := e.Query(*for_.Cond)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if condType != e.boolType {
+			condSpan := e.Node(*for_.Cond).Span
+			e.diag(condSpan, "type mismatch: expected Bool, got %s", e.TypeDisplay(condType))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	e.loopStack = append(e.loopStack, nodeID)
+	defer func() { e.loopStack = e.loopStack[:len(e.loopStack)-1] }()
+	e.enterScope()
+	defer e.leaveScope()
+	_, status := e.Query(for_.Body)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	// We always coerce the body to `void`.
+	// todo: we don't want to ever coerce to `void` (we do this in function bodies to)
+	return e.voidType, TypeOK
 }
 
 func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {

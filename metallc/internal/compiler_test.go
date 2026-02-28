@@ -456,6 +456,31 @@ func TestCompile(t *testing.T) {
 				print_bool(not true)
 			}
 			`, "false\ntrue\nfalse\ntrue\nfalse\ntrue\nfalse\n"},
+
+		{"conditional for loop", `
+			fun main() void {
+				mut x = 0
+				for x != 3 {
+					print_int(x)
+					x = x + 1
+				}
+			}
+			`, "0\n1\n2\n"},
+		{"unconditional for loop", `
+			fun main() void {
+				mut x = 0
+				for {
+					x = x + 1
+					if x == 4 {
+						break
+					}
+					if x == 2 {
+						continue
+					}
+					print_int(x)
+				}
+			}
+			`, "1\n3\n"},
 	}
 
 	assert := base.NewAssert(t)

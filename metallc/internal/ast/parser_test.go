@@ -20,7 +20,7 @@ func TestParseOK(t *testing.T) {
 			"file with fun", "file", `fun foo() Str { "hello" 123 } `,
 			func(a *TestAST) NodeID {
 				return a.file(
-					a.fun("foo", nil, a.str_typ(), a.fun_block(a.string_("hello"), a.int_(123))),
+					a.fun("foo", nil, a.str_typ(), a.block_no_scope(a.string_("hello"), a.int_(123))),
 				)
 			},
 		},
@@ -60,7 +60,7 @@ func TestParseOK(t *testing.T) {
 				return a.fun("foo",
 					[]NodeID{a.fun_param("a", a.int_typ()), a.fun_param("b", a.mut_ref_typ(a.str_typ()))},
 					a.int_typ(),
-					a.fun_block(a.int_(123)),
+					a.block_no_scope(a.int_(123)),
 				)
 			},
 		},
@@ -68,14 +68,14 @@ func TestParseOK(t *testing.T) {
 			"fun in block", "expr", `{ fun foo() Str { "hello" 123 } }`,
 			func(a *TestAST) NodeID {
 				return a.block(
-					a.fun("foo", nil, a.str_typ(), a.fun_block(a.string_("hello"), a.int_(123))),
+					a.fun("foo", nil, a.str_typ(), a.block_no_scope(a.string_("hello"), a.int_(123))),
 				)
 			},
 		},
 		{
 			"void fun", "expr", `fun foo() void {}`,
 			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.void_typ(), a.fun_block())
+				return a.fun("foo", nil, a.void_typ(), a.block_no_scope())
 			},
 		},
 		{
@@ -139,12 +139,12 @@ func TestParseOK(t *testing.T) {
 			"ref type",
 			"expr",
 			`fun foo() &Int {}`,
-			func(a *TestAST) NodeID { return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.fun_block()) },
+			func(a *TestAST) NodeID { return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.block_no_scope()) },
 		},
 		{
 			"nested ref type", "expr", `fun foo() &&Int {}`,
 			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.ref_typ(a.ref_typ(a.int_typ())), a.fun_block())
+				return a.fun("foo", nil, a.ref_typ(a.ref_typ(a.int_typ())), a.block_no_scope())
 			},
 		},
 		{
@@ -163,7 +163,7 @@ func TestParseOK(t *testing.T) {
 			"call with &ref arg", "expr", `{ fun foo(a &Int) void {} let x = 123 foo(&x) }`,
 			func(a *TestAST) NodeID {
 				return a.block(
-					a.fun("foo", []NodeID{a.fun_param("a", a.ref_typ(a.int_typ()))}, a.void_typ(), a.fun_block()),
+					a.fun("foo", []NodeID{a.fun_param("a", a.ref_typ(a.int_typ()))}, a.void_typ(), a.block_no_scope()),
 					a.var_("x", a.int_(123)),
 					a.call(a.ident("foo"), a.ref("x")),
 				)
@@ -183,7 +183,7 @@ func TestParseOK(t *testing.T) {
 					a.fun_param("@myalloc", a.typ("Arena")),
 					a.fun_param("x", a.str_typ()),
 					a.fun_param("@youralloc", a.typ("Arena")),
-				}, a.void_typ(), a.fun_block())
+				}, a.void_typ(), a.block_no_scope())
 			},
 		},
 		{
@@ -194,7 +194,7 @@ func TestParseOK(t *testing.T) {
 		},
 
 		{"array type", "expr", `fun foo(a [5]Int) void {}}`, func(a *TestAST) NodeID {
-			return a.fun("foo", []NodeID{a.fun_param("a", a.arr_typ(a.int_typ(), 5))}, a.void_typ(), a.fun_block())
+			return a.fun("foo", []NodeID{a.fun_param("a", a.arr_typ(a.int_typ(), 5))}, a.void_typ(), a.block_no_scope())
 		}},
 		{"array literal", "expr", `[1, 2, 3]`, func(a *TestAST) NodeID {
 			return a.arr_lit(a.int_(1), a.int_(2), a.int_(3))
@@ -252,6 +252,19 @@ func TestParseOK(t *testing.T) {
 			add := a.binary(BinaryOpAdd, a.int_(1), a.int_(2))
 			mul := a.binary(BinaryOpMul, add, a.int_(3))
 			return a.binary(BinaryOpAdd, mul, a.int_(4))
+		}},
+
+		{"conditional for loop", "expr", "for true { 1 } ", func(a *TestAST) NodeID {
+			return a.for_cond(a.bool_(true), a.block_no_scope(a.int_(1)))
+		}},
+		{"unconditional for loop", "expr", "for { 1 } ", func(a *TestAST) NodeID {
+			return a.for_(a.block_no_scope(a.int_(1)))
+		}},
+		{"break", "expr", "break", func(a *TestAST) NodeID {
+			return a.break_()
+		}},
+		{"continue", "expr", "continue", func(a *TestAST) NodeID {
+			return a.continue_()
 		}},
 	}
 
@@ -432,6 +445,22 @@ func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {
 	return a.NewIf(cond, then, else_, a.span)
 }
 
+func (a *TestAST) for_(block NodeID) NodeID {
+	return a.NewFor(nil, block, a.span)
+}
+
+func (a *TestAST) for_cond(cond NodeID, block NodeID) NodeID {
+	return a.NewFor(&cond, block, a.span)
+}
+
+func (a *TestAST) break_() NodeID {
+	return a.NewBreak(a.span)
+}
+
+func (a *TestAST) continue_() NodeID {
+	return a.NewContinue(a.span)
+}
+
 func (a *TestAST) bool_(value bool) NodeID {
 	return a.NewBool(value, a.span)
 }
@@ -451,7 +480,7 @@ func (a *TestAST) block(exprs ...NodeID) NodeID {
 	return a.NewBlock(exprs, true, a.span)
 }
 
-func (a *TestAST) fun_block(exprs ...NodeID) NodeID {
+func (a *TestAST) block_no_scope(exprs ...NodeID) NodeID {
 	if exprs == nil {
 		exprs = []NodeID{}
 	}

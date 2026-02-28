@@ -15,13 +15,16 @@ const (
 	AllocIdent
 	Amp
 	And
+	Break
 	Comma
+	Continue
 	Dot
 	Else
 	EOF
 	Eq
 	EqEq
 	False
+	For
 	Fun
 	Ident
 	If
@@ -57,13 +60,16 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AllocIdent:        "<allocator identifier>",
 	Amp:               "&",
 	And:               "<and>",
+	Break:             "<break>",
 	Comma:             ",",
+	Continue:          "<continue>",
 	Dot:               ".",
 	Else:              "<else>",
 	EOF:               "<EOF>",
 	Eq:                "=",
 	EqEq:              "==",
 	False:             "false",
+	For:               "<for>",
 	Fun:               "<fun>",
 	Ident:             "<identifier>",
 	If:                "<if>",
@@ -110,20 +116,23 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
-	"alloc":  Alloc,
-	"and":    And,
-	"else":   Else,
-	"false":  False,
-	"fun":    Fun,
-	"if":     If,
-	"let":    Let,
-	"mut":    Mut,
-	"not":    Not,
-	"new":    New,
-	"or":     Or,
-	"struct": Struct,
-	"true":   True,
-	"void":   Void,
+	"alloc":    Alloc,
+	"and":      And,
+	"break":    Break,
+	"continue": Continue,
+	"else":     Else,
+	"false":    False,
+	"for":      For,
+	"fun":      Fun,
+	"if":       If,
+	"let":      Let,
+	"mut":      Mut,
+	"not":      Not,
+	"new":      New,
+	"or":       Or,
+	"struct":   Struct,
+	"true":     True,
+	"void":     Void,
 }
 
 func (k TokenKind) String() string {

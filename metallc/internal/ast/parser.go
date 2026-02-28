@@ -464,6 +464,18 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = if_
+	case token.For:
+		for_, ok := p.ParseFor()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = for_
+	case token.Break:
+		p.next()
+		expr = p.NewBreak(t.Span)
+	case token.Continue:
+		p.next()
+		expr = p.NewContinue(t.Span)
 	case token.Ident:
 		ident, ok := p.ParseIdent()
 		if !ok {
@@ -734,6 +746,31 @@ func (p *Parser) ParseType() (NodeID, bool) {
 		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
 		return ParseFailed, false
 	}
+}
+
+func (p *Parser) ParseFor() (NodeID, bool) {
+	t, ok := p.expect(token.For)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	t, ok = p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	var cond *NodeID
+	if t.Kind != token.LCurly {
+		expr, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		cond = &expr
+	}
+	body, ok := p.parseBlock(false)
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewFor(cond, body, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseIf() (NodeID, bool) {

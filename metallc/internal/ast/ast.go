@@ -200,6 +200,21 @@ type If struct {
 
 func (If) isKind() {}
 
+type For struct {
+	Cond *NodeID
+	Body NodeID
+}
+
+func (For) isKind() {}
+
+type Break struct{}
+
+func (Break) isKind() {}
+
+type Continue struct{}
+
+func (Continue) isKind() {}
+
 func (Block) isKind() {}
 
 type Call struct {
@@ -252,6 +267,18 @@ func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
 
 func (a *AST) NewIf(cond NodeID, then NodeID, else_ *NodeID, span base.Span) NodeID {
 	return a.node(If{Cond: cond, Then: then, Else: else_}, span)
+}
+
+func (a *AST) NewFor(cond *NodeID, body NodeID, span base.Span) NodeID {
+	return a.node(For{Cond: cond, Body: body}, span)
+}
+
+func (a *AST) NewBreak(span base.Span) NodeID {
+	return a.node(Break{}, span)
+}
+
+func (a *AST) NewContinue(span base.Span) NodeID {
+	return a.node(Continue{}, span)
 }
 
 func (a *AST) NewBool(value bool, span base.Span) NodeID {
@@ -402,6 +429,11 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		if kind.Else != nil {
 			f(*kind.Else)
 		}
+	case For:
+		if kind.Cond != nil {
+			f(*kind.Cond)
+		}
+		f(kind.Body)
 	case Fun:
 		for i := range len(kind.Params) {
 			f(kind.Params[i])
@@ -439,6 +471,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Index:
 		f(kind.Target)
 		f(kind.Index)
+	case Break:
+	case Continue:
 	case Ident:
 	case Int:
 	case Bool:
@@ -553,6 +587,19 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 				addChild("else", *kind.Else)
 			}
 		}
+	case For:
+		if !children {
+			if kind.Cond != nil {
+				addAttr("cond", nodeIDKind(*kind.Cond))
+			}
+			addAttr("body", nodeIDKind(kind.Body))
+		} else {
+			if kind.Cond != nil {
+				addChild("cond", *kind.Cond)
+			}
+			addChild("body", kind.Body)
+		}
+	case Break, Continue:
 	case File:
 		if !children {
 			addAttr("decls", nodeIDList(kind.Decls))

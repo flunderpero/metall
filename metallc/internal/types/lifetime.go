@@ -207,6 +207,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeIndex(nodeID, kind)
 	case ast.Call:
 		a.analyzeCall(nodeID, kind)
+	case ast.For:
+		a.analyzeFor(nodeID, kind)
 	case ast.If:
 		a.analyzeIf(nodeID, kind)
 	case ast.Var:
@@ -384,6 +386,33 @@ func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 		merged = merged.Merge(a.flow(*ifNode.Else))
 	}
 	a.flows[nodeID] = merged
+}
+
+// analyzeFor: `for cond { body }`.
+// The type checker creates a scope for the loop body (the body block has
+// CreateScope=false). We check for mutations to outer-scope variables
+// that carry the body-scope's taint, just like analyzeBlock does for
+// CreateScope=true blocks. For-loops are always void, so there is no
+// result flow to check.
+func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
+	outerScope := a.e.ScopeGraph.NodeScope(nodeID)
+	ss := a.scopeState(forNode.Body)
+	parentState := a.scopeByID(outerScope.ID)
+
+	innerScope := a.e.ScopeGraph.NodeScope(forNode.Body)
+	for name, vt := range ss.Vars {
+		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
+			continue
+		}
+		if vt.Flow.Taints.ContainsAny(ss.LocalTaints) {
+			a.diagEscape(vt.DiagNode, vt.Flow.Taints, ss)
+		}
+		if pvt, ok := parentState.Vars[name]; ok {
+			pvt.Flow = pvt.Flow.Merge(vt.Flow)
+		} else {
+			parentState.Vars[name] = &VarTaint{vt.DiagNode, 0, vt.Flow}
+		}
+	}
 }
 
 // analyzeVar: `let x = expr` or `mut x = expr`.

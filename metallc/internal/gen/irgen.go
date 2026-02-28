@@ -46,6 +46,11 @@ type Symbol struct {
 	Type string
 }
 
+type LoopLabels struct {
+	continue_ Label
+	break_    Label
+}
+
 type IRGen struct {
 	CodeWriter
 	engine             *types.Engine
@@ -57,6 +62,7 @@ type IRGen struct {
 	lastLabel          Label
 	opts               IROpts
 	blockAllocatorRegs []string
+	loopStack          []LoopLabels
 }
 
 func NewIRGen(engine *types.Engine, opts IROpts) *IRGen {
@@ -71,6 +77,7 @@ func NewIRGen(engine *types.Engine, opts IROpts) *IRGen {
 		lastLabel:          "",
 		opts:               opts,
 		blockAllocatorRegs: nil,
+		loopStack:          []LoopLabels{},
 	}
 }
 
@@ -91,6 +98,12 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genDeref(id, kind)
 	case ast.If:
 		g.genIf(id, kind)
+	case ast.For:
+		g.genFor(id, kind)
+	case ast.Break:
+		g.genBreak(id)
+	case ast.Continue:
+		g.genContinue(id)
 	case ast.File:
 		g.genFile(kind, node.Span)
 	case ast.Fun:
@@ -383,6 +396,38 @@ func (g *IRGen) genBlock(id ast.NodeID, block ast.Block) {
 		code = g.lookupCode(block.Exprs[len(block.Exprs)-1])
 	}
 	g.setCode(id, code)
+}
+
+func (g *IRGen) genFor(id ast.NodeID, forNode ast.For) {
+	labelStart := g.label("for", id)
+	labelBody := g.label("body", id)
+	labelEnd := g.label("endfor", id)
+	g.write("br label %%%s", labelStart)
+	g.writeLabel(labelStart)
+	if forNode.Cond != nil {
+		g.Gen(*forNode.Cond)
+		cond := g.lookupCode(*forNode.Cond)
+		g.write("br i1 %s, label %%%s, label %%%s", cond, labelBody, labelEnd)
+		g.writeLabel(labelBody)
+	}
+	g.loopStack = append(g.loopStack, LoopLabels{labelStart, labelEnd})
+	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
+	g.Gen(forNode.Body)
+	g.write("br label %%%s", labelStart)
+	g.writeLabel(labelEnd)
+	g.setCode(id, "void")
+}
+
+func (g *IRGen) genBreak(id ast.NodeID) {
+	loopLabel := g.loopStack[len(g.loopStack)-1]
+	g.write("br label %%%s", loopLabel.break_)
+	g.setCode(id, "void")
+}
+
+func (g *IRGen) genContinue(id ast.NodeID) {
+	loopLabel := g.loopStack[len(g.loopStack)-1]
+	g.write("br label %%%s", loopLabel.continue_)
+	g.setCode(id, "void")
 }
 
 func (g *IRGen) genIf(id ast.NodeID, ifNode ast.If) {

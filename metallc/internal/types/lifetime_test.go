@@ -1022,6 +1022,27 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					    y.one = "bye"
 					`, "\n"),
 		}},
+		// For-loop: reference to a local declared inside the loop body escapes
+		// to an outer-scope variable.
+		{"for loop ref escapes", `
+			{
+				mut x = 0
+				mut y = &x
+				for {
+					mut z = 99
+					y = &z
+					break
+				}
+			}
+			`, []string{
+			"test.met:7:25: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        mut z = 99
+				        y = &z
+				            ^^
+				        break
+				`, "\n"),
+		}},
 	}
 	assert := base.NewAssert(t)
 	hasOnly := false
