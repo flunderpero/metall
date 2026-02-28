@@ -136,13 +136,18 @@ type Assign struct {
 
 func (Assign) isKind() {}
 
-type BinaryOp rune
+type BinaryOp string
 
 const (
-	BinaryOpAdd BinaryOp = '+'
-	BinaryOpSub BinaryOp = '-'
-	BinaryOpDiv BinaryOp = '/'
-	BinaryOpMul BinaryOp = '*'
+	BinaryOpAdd BinaryOp = "+"
+	BinaryOpSub BinaryOp = "-"
+	BinaryOpDiv BinaryOp = "/"
+	BinaryOpMul BinaryOp = "*"
+
+	BinaryOpEq  BinaryOp = "=="
+	BinaryOpNeq BinaryOp = "!="
+	BinaryOpAnd BinaryOp = "and"
+	BinaryOpOr  BinaryOp = "or"
 )
 
 type Binary struct {
@@ -152,6 +157,19 @@ type Binary struct {
 }
 
 func (Binary) isKind() {}
+
+type UnaryOp string
+
+const (
+	UnaryOpNot UnaryOp = "not"
+)
+
+type Unary struct {
+	Expr NodeID
+	Op   UnaryOp
+}
+
+func (Unary) isKind() {}
 
 type Var struct {
 	Name Name
@@ -264,6 +282,10 @@ func (a *AST) NewBinary(op BinaryOp, lhs NodeID, rhs NodeID, span base.Span) Nod
 	return a.node(Binary{LHS: lhs, RHS: rhs, Op: op}, span)
 }
 
+func (a *AST) NewUnary(op UnaryOp, expr NodeID, span base.Span) NodeID {
+	return a.node(Unary{Expr: expr, Op: op}, span)
+}
+
 func (a *AST) NewFile(decls []NodeID, span base.Span) NodeID {
 	return a.node(File{Decls: decls}, span)
 }
@@ -357,6 +379,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Binary:
 		f(kind.LHS)
 		f(kind.RHS)
+	case Unary:
+		f(kind.Expr)
 	case Block:
 		for i := range len(kind.Exprs) {
 			f(kind.Exprs[i])
@@ -477,6 +501,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		} else {
 			addChild("lhs", kind.LHS)
 			addChild("rhs", kind.RHS)
+		}
+	case Unary:
+		addAttr("op", fmt.Sprint(kind.Op))
+		if !children {
+			addAttr("expr", nodeIDKind(kind.Expr))
+		} else {
+			addChild("expr", kind.Expr)
 		}
 	case Binary:
 		addAttr("op", fmt.Sprint(kind.Op))

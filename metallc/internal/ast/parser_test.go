@@ -224,12 +224,30 @@ func TestParseOK(t *testing.T) {
 		{"int /", "expr", "1 / 2", func(a *TestAST) NodeID {
 			return a.binary(BinaryOpDiv, a.int_(1), a.int_(2))
 		}},
-		{"operator precedence", "expr", "1 + 2 * 3 + 4", func(a *TestAST) NodeID {
+		{"arithmetic operator precedence", "expr", "1 + 2 * 3 + 4", func(a *TestAST) NodeID {
 			one := a.int_(1)
 			mul := a.binary(BinaryOpMul, a.int_(2), a.int_(3))
 			add1 := a.binary(BinaryOpAdd, one, mul)
 			return a.binary(BinaryOpAdd, add1, a.int_(4))
 		}},
+
+		{"==", "expr", "1 == 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpEq, a.int_(1), a.int_(2))
+		}},
+		{"!=", "expr", "1 != 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpNeq, a.int_(1), a.int_(2))
+		}},
+		{"logical and, or, not", "expr", "true and false or not true", func(a *TestAST) NodeID {
+			and := a.binary(BinaryOpAnd, a.bool_(true), a.bool_(false))
+			not := a.unary(UnaryOpNot, a.bool_(true))
+			return a.binary(BinaryOpOr, and, not)
+		}},
+		{"and binds tighter than or", "expr", "true or false and true", func(a *TestAST) NodeID {
+			t := a.bool_(true)
+			and := a.binary(BinaryOpAnd, a.bool_(false), a.bool_(true))
+			return a.binary(BinaryOpOr, t, and)
+		}},
+
 		{"grouped expressions", "expr", "(1 + 2) * 3 + 4", func(a *TestAST) NodeID {
 			add := a.binary(BinaryOpAdd, a.int_(1), a.int_(2))
 			mul := a.binary(BinaryOpMul, add, a.int_(3))
@@ -400,6 +418,10 @@ func (a *TestAST) alloc(alloc NodeID, target NodeID) NodeID {
 
 func (a *TestAST) binary(op BinaryOp, lhs NodeID, rhs NodeID) NodeID {
 	return a.NewBinary(op, lhs, rhs, a.span)
+}
+
+func (a *TestAST) unary(op UnaryOp, expr NodeID) NodeID {
+	return a.NewUnary(op, expr, a.span)
 }
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {

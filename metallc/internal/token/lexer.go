@@ -14,11 +14,13 @@ const (
 	Alloc TokenKind = iota + 1
 	AllocIdent
 	Amp
+	And
 	Comma
 	Dot
 	Else
 	EOF
 	Eq
+	EqEq
 	False
 	Fun
 	Ident
@@ -31,8 +33,11 @@ const (
 	LParen
 	Minus
 	Mut
+	Neq
 	New
+	Not
 	Number
+	Or
 	Plus
 	RBracket
 	RCurly
@@ -51,11 +56,13 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Alloc:             "<alloc>",
 	AllocIdent:        "<allocator identifier>",
 	Amp:               "&",
+	And:               "<and>",
 	Comma:             ",",
 	Dot:               ".",
 	Else:              "<else>",
 	EOF:               "<EOF>",
 	Eq:                "=",
+	EqEq:              "==",
 	False:             "false",
 	Fun:               "<fun>",
 	Ident:             "<identifier>",
@@ -68,8 +75,11 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	LParen:            "(",
 	Minus:             "-",
 	Mut:               "<mut>",
+	Neq:               "!=",
 	New:               "<new>",
+	Not:               "<not>",
 	Number:            "<number>",
+	Or:                "<or>",
 	Plus:              "+",
 	RBracket:          "]",
 	RCurly:            "}",
@@ -88,7 +98,6 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'&': Amp,
 	',': Comma,
 	'.': Dot,
-	'=': Eq,
 	'{': LCurly,
 	'(': LParen,
 	'-': Minus,
@@ -102,13 +111,16 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"alloc":  Alloc,
+	"and":    And,
 	"else":   Else,
 	"false":  False,
 	"fun":    Fun,
 	"if":     If,
 	"let":    Let,
 	"mut":    Mut,
+	"not":    Not,
 	"new":    New,
+	"or":     Or,
 	"struct": Struct,
 	"true":   True,
 	"void":   Void,
@@ -171,6 +183,18 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			value = append(value, c)
 		}
 		return Token{EOF, "", span}
+	case c == '=':
+		kind := Eq
+		if idx < len(source.Content) && source.Content[idx] == '=' {
+			kind = EqEq
+			span = base.NewSpan(source, start, idx)
+		}
+		return Token{Kind: kind, Value: "", Span: span}
+	case c == '!':
+		if idx < len(source.Content) && source.Content[idx] == '=' {
+			return Token{Kind: Neq, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Unknown, Value: fmt.Sprint(c), Span: span}
 	case c == '[':
 		kind := LBracket
 		if idx > 1 {

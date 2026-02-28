@@ -256,6 +256,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"int -", `1 - 2`, Int, nil},
 		{"int *", `1 * 2`, Int, nil},
 		{"int /", `1 / 2`, Int, nil},
+
+		{"== on int", `1 == 2`, Bool, nil},
+		{"!= on int", `1 != 2`, Bool, nil},
+		{"== on bool", `true == true`, Bool, nil},
+		{"!= on bool", `true != true`, Bool, nil},
+
+		{"and, not, or", `true and false or not true`, Bool, nil},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -561,6 +568,21 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:5: type mismatch: expected type of LHS: Int, got Str\n" +
 				`    1 + "hello"` + "\n" +
 				"        ^^^^^^^",
+		}},
+		{"== with invalid type", `"hello" == "world"`, []string{
+			"test.met:1:1: type mismatch: binary operation '==' expects Int or Bool, got Str\n" +
+				`    "hello" == "world"` + "\n" +
+				"    ^^^^^^^",
+		}},
+		{"`and` with invalid type", `true and 123`, []string{
+			"test.met:1:10: type mismatch: expected type of LHS: Bool, got Int\n" +
+				`    true and 123` + "\n" +
+				"             ^^^",
+		}},
+		{"`not` on invalid type", `not 123`, []string{
+			"test.met:1:5: type mismatch: expected Bool, got Int\n" +
+				`    not 123` + "\n" +
+				"        ^^^",
 		}},
 	}
 

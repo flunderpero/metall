@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -264,6 +265,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkAssign(nodeKind)
 	case ast.Binary:
 		typeID, status = e.checkBinary(nodeKind)
+	case ast.Unary:
+		typeID, status = e.checkUnary(nodeKind)
 	case ast.Block:
 		typeID, status = e.checkBlock(nodeKind)
 	case ast.Call:
@@ -444,18 +447,57 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	return e.voidType, TypeOK
 }
 
+func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
+	exprTypeID, status := e.Query(unary.Expr)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	switch unary.Op {
+	case ast.UnaryOpNot:
+		if exprTypeID != e.boolType {
+			span := e.Node(unary.Expr).Span
+			e.diag(span, "type mismatch: expected %s, got %s", e.TypeDisplay(e.boolType), e.TypeDisplay(exprTypeID))
+			return InvalidTypeID, TypeDepFailed
+		}
+		return e.boolType, TypeOK
+	default:
+		panic(base.Errorf("unknown unary operator: %s", unary.Op))
+	}
+}
+
 func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	lhsTypeID, status := e.Query(binary.LHS)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if lhsTypeID != e.intType {
+	expected_lhs_types := []TypeID{}
+	switch binary.Op {
+	case ast.BinaryOpEq, ast.BinaryOpNeq:
+		expected_lhs_types = append(expected_lhs_types, e.intType)
+		expected_lhs_types = append(expected_lhs_types, e.boolType)
+	case ast.BinaryOpOr, ast.BinaryOpAnd:
+		expected_lhs_types = append(expected_lhs_types, e.boolType)
+	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv:
+		expected_lhs_types = append(expected_lhs_types, e.intType)
+	default:
+		panic(base.Errorf("unknown binary operator: %s", binary.Op))
+	}
+
+	// todo: we can only ever compare Int with == and != at the moment.
+	if !slices.Contains(expected_lhs_types, lhsTypeID) {
+		expected_str := ""
+		for _, typ := range expected_lhs_types {
+			if len(expected_str) > 0 {
+				expected_str += " or "
+			}
+			expected_str += e.TypeDisplay(typ)
+		}
 		span := e.Node(binary.LHS).Span
 		e.diag(
 			span,
-			"type mismatch: binary operation '%c' expects %s, got %s",
+			"type mismatch: binary operation '%s' expects %s, got %s",
 			binary.Op,
-			e.TypeDisplay(e.intType),
+			expected_str,
 			e.TypeDisplay(lhsTypeID),
 		)
 		return InvalidTypeID, TypeDepFailed
@@ -473,6 +515,9 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 			e.TypeDisplay(rhsTypeID),
 		)
 		return InvalidTypeID, TypeDepFailed
+	}
+	if binary.Op == ast.BinaryOpEq || binary.Op == ast.BinaryOpNeq {
+		return e.boolType, TypeOK
 	}
 	return lhsTypeID, TypeOK
 }

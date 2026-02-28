@@ -293,13 +293,21 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 	return p.parseBlock(true)
 }
 
-func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) {
+func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
+	if t.Kind == token.Not {
+		p.next()
+		expr, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewUnary(UnaryOpNot, expr, t.Span.Combine(p.span())), true
+	}
 	span := t.Span
-	lhs, ok := p.ParseUnaryExpr(0)
+	lhs, ok := p.ParsePostfixExpr(0)
 	if !ok {
 		return ParseFailed, false
 	}
@@ -320,37 +328,44 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) {
 		if !ok {
 			return lhs, true
 		}
-		switch t.Kind { //nolint:exhaustive
-		case token.Plus, token.Minus, token.Star, token.Slash:
-			op := map[token.TokenKind]BinaryOp{
-				token.Plus:  BinaryOpAdd,
-				token.Minus: BinaryOpSub,
-				token.Star:  BinaryOpMul,
-				token.Slash: BinaryOpDiv,
-			}[t.Kind]
-			precedence := map[BinaryOp]int{
-				BinaryOpAdd: 1,
-				BinaryOpSub: 1,
-				BinaryOpMul: 2,
-				BinaryOpDiv: 2,
-			}[op]
-			if precedence < minPrecedence {
-				return lhs, true
-			}
-			p.next()
-			rhs, ok := p.ParseExpr(precedence + 1)
-			if !ok {
-				return ParseFailed, false
-			}
-			span = span.Combine(p.span())
-			lhs = p.NewBinary(op, lhs, rhs, span)
-		default:
+		op, ok := map[token.TokenKind]BinaryOp{
+			token.Plus:  BinaryOpAdd,
+			token.Minus: BinaryOpSub,
+			token.Star:  BinaryOpMul,
+			token.Slash: BinaryOpDiv,
+
+			token.EqEq: BinaryOpEq,
+			token.Neq:  BinaryOpNeq,
+			token.And:  BinaryOpAnd,
+			token.Or:   BinaryOpOr,
+		}[t.Kind]
+		if !ok {
 			return lhs, true
 		}
+		precedence := map[BinaryOp]int{
+			BinaryOpOr:  0,
+			BinaryOpAnd: 1,
+			BinaryOpEq:  2,
+			BinaryOpNeq: 2,
+			BinaryOpAdd: 3,
+			BinaryOpSub: 3,
+			BinaryOpMul: 4,
+			BinaryOpDiv: 4,
+		}[op]
+		if precedence < minPrecedence {
+			return lhs, true
+		}
+		p.next()
+		rhs, ok := p.ParseExpr(precedence + 1)
+		if !ok {
+			return ParseFailed, false
+		}
+		span = span.Combine(p.span())
+		lhs = p.NewBinary(op, lhs, rhs, span)
 	}
 }
 
-func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
+func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
 	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false

@@ -442,6 +442,20 @@ func TestCompile(t *testing.T) {
 			}
 
 			`, "123\n42\n9\n3\n"},
+
+		{"bool operators", `
+			fun main() void {
+				print_bool(1 == 2)
+				print_bool(1 != 2)
+				print_bool(true == false)
+				print_bool(true != false)
+
+				print_bool(1 == 2 and 3 == 3)
+				print_bool(1 == 2 or 3 == 3)
+
+				print_bool(not true)
+			}
+			`, "false\ntrue\nfalse\ntrue\nfalse\ntrue\nfalse\n"},
 	}
 
 	assert := base.NewAssert(t)

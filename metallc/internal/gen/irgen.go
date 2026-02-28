@@ -81,6 +81,8 @@ func (g *IRGen) Gen(id ast.NodeID) {
 		g.genAssign(id, kind)
 	case ast.Binary:
 		g.genBinary(id, kind)
+	case ast.Unary:
+		g.genUnary(id, kind)
 	case ast.Block:
 		g.genBlock(id, kind)
 	case ast.Call:
@@ -496,11 +498,25 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.setCode(id, "void")
 }
 
+func (g *IRGen) genUnary(id ast.NodeID, unary ast.Unary) {
+	g.Gen(unary.Expr)
+	expr := g.lookupCode(unary.Expr)
+	reg := g.reg()
+	switch unary.Op {
+	case ast.UnaryOpNot:
+		g.write("%s = xor i1 %s, 1", reg, expr)
+	default:
+		panic(base.Errorf("unknown unary operator: %s", unary.Op))
+	}
+	g.setCode(id, reg)
+}
+
 func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	g.Gen(binary.LHS)
 	g.Gen(binary.RHS)
 	lhs := g.lookupCode(binary.LHS)
 	rhs := g.lookupCode(binary.RHS)
+	irTyp := g.irTypeOfNode(binary.LHS)
 	reg := g.reg()
 	switch binary.Op {
 	case ast.BinaryOpAdd:
@@ -510,10 +526,17 @@ func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	case ast.BinaryOpMul:
 		g.write("%s = mul %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
 	case ast.BinaryOpDiv:
-		irTyp := g.irTypeOfNode(binary.LHS)
 		g.write("%s = call %s @__safe_sdiv_%s(%s %s, %s %s)", reg, irTyp, irTyp, irTyp, lhs, irTyp, rhs)
+	case ast.BinaryOpEq:
+		g.write("%s = icmp eq %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpNeq:
+		g.write("%s = icmp ne %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpAnd:
+		g.write("%s = and %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpOr:
+		g.write("%s = or %s %s, %s", reg, irTyp, lhs, rhs)
 	default:
-		panic(base.Errorf("unknown binary operator: %c", binary.Op))
+		panic(base.Errorf("unknown binary operator: %s", binary.Op))
 	}
 	g.setCode(id, reg)
 }
