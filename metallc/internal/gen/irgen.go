@@ -79,6 +79,8 @@ func (g *IRGen) Gen(id ast.NodeID) {
 	switch kind := node.Kind.(type) {
 	case ast.Assign:
 		g.genAssign(id, kind)
+	case ast.Binary:
+		g.genBinary(id, kind)
 	case ast.Block:
 		g.genBlock(id, kind)
 	case ast.Call:
@@ -494,6 +496,28 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.setCode(id, "void")
 }
 
+func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
+	g.Gen(binary.LHS)
+	g.Gen(binary.RHS)
+	lhs := g.lookupCode(binary.LHS)
+	rhs := g.lookupCode(binary.RHS)
+	reg := g.reg()
+	switch binary.Op {
+	case ast.BinaryOpAdd:
+		g.write("%s = add %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
+	case ast.BinaryOpSub:
+		g.write("%s = sub %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
+	case ast.BinaryOpMul:
+		g.write("%s = mul %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
+	case ast.BinaryOpDiv:
+		irTyp := g.irTypeOfNode(binary.LHS)
+		g.write("%s = call %s @__safe_sdiv_%s(%s %s, %s %s)", reg, irTyp, irTyp, irTyp, lhs, irTyp, rhs)
+	default:
+		panic(base.Errorf("unknown binary operator: %c", binary.Op))
+	}
+	g.setCode(id, reg)
+}
+
 func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	g.Gen(call.Callee)
 	for _, arg := range call.Args {
@@ -785,10 +809,24 @@ const builtins = `
 ; >>> Runtime
 
 ;     External functions.
+
 declare i32 @puts(ptr)
 declare i32 @printf(ptr, ...)
 
 ;      Builtin functions.
+
+define internal i64 @__safe_sdiv_i64(i64 %a, i64 %b) alwaysinline {
+  	%is_zero = icmp eq i64 %b, 0
+  	br i1 %is_zero, label %panic, label %ok
+panic:
+	; todo: panic
+  	call void @llvm.trap()
+  	unreachable
+ok:
+  	%result = sdiv i64 %a, %b
+  	ret i64 %result
+}
+
 define internal void @print_str(ptr %s) {
     call i32 @puts(ptr %s)
     ret void

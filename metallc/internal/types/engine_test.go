@@ -251,6 +251,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let x = [1, 2, 3] x[1] }`, Int, nil},
 		{"index write", `{ mut x = [1, 2, 3] x[1] = 5 }`, void, nil},
+
+		{"int +", `1 + 2`, Int, nil},
+		{"int -", `1 - 2`, Int, nil},
+		{"int *", `1 * 2`, Int, nil},
+		{"int /", `1 / 2`, Int, nil},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -550,6 +555,12 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:23: index type mismatch: expected Int, got Str\n" +
 				`    { let x = [1, 2, 3] x["hello"] }` + "\n" +
 				`                          ^^^^^^^`,
+		}},
+
+		{"add with non-int", `1 + "hello"`, []string{
+			"test.met:1:5: type mismatch: expected type of LHS: Int, got Str\n" +
+				`    1 + "hello"` + "\n" +
+				"        ^^^^^^^",
 		}},
 	}
 

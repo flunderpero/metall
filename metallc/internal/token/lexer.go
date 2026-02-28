@@ -29,12 +29,15 @@ const (
 	LCurly
 	Let
 	LParen
+	Minus
 	Mut
 	New
 	Number
+	Plus
 	RBracket
 	RCurly
 	RParen
+	Slash
 	Star
 	String
 	Struct
@@ -63,12 +66,15 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	LCurly:            "{",
 	Let:               "<let>",
 	LParen:            "(",
+	Minus:             "-",
 	Mut:               "<mut>",
 	New:               "<new>",
 	Number:            "<number>",
+	Plus:              "+",
 	RBracket:          "]",
 	RCurly:            "}",
 	RParen:            ")",
+	Slash:             "/",
 	Star:              "*",
 	String:            "<string>",
 	Struct:            "<struct>",
@@ -85,9 +91,12 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'=': Eq,
 	'{': LCurly,
 	'(': LParen,
+	'-': Minus,
+	'+': Plus,
 	']': RBracket,
 	'}': RCurly,
 	')': RParen,
+	'/': Slash,
 	'*': Star,
 }
 

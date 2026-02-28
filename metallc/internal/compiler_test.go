@@ -432,6 +432,16 @@ func TestCompile(t *testing.T) {
 				print_int(x[2])
 			}
 			`, "0\n1\n2\n"},
+
+		{"int arithmetic", `
+			fun main() void {
+				print_int(120 + 3)
+				print_int(44 - 2)
+				print_int(3 * 3)
+				print_int(9 / 3)
+			}
+
+			`, "123\n42\n9\n3\n"},
 	}
 
 	assert := base.NewAssert(t)
@@ -442,7 +452,6 @@ func TestCompile(t *testing.T) {
 			break
 		}
 	}
-	_ = os.RemoveAll(".build")
 	if err := os.MkdirAll(".build", 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -467,6 +476,55 @@ func TestCompile(t *testing.T) {
 			assert.NoError(err)
 			assert.Equal(0, exitCode)
 			assert.Equal(tt.wantOutput, output)
+		})
+	}
+}
+
+func TestCompilePanic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"int divide by zero", `
+			fun main() void {
+				1 / 0
+			}
+		`},
+	}
+
+	assert := base.NewAssert(t)
+	hasOnly := false
+	for _, tt := range tests {
+		if strings.HasPrefix(tt.name, "!"+"only") {
+			hasOnly = true
+			break
+		}
+	}
+	if err := os.MkdirAll(".build", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range tests {
+		if hasOnly && !strings.HasPrefix(tt.name, "!"+"only") {
+			continue
+		}
+		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := base.NewSource("test.met", []rune(tt.src))
+			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
+			opts := CompileOpts{
+				Listener:         nil,
+				Output:           outputPath,
+				KeepIR:           true,
+				LLVMPasses:       "verify," + DefaultLLVMPasses,
+				AddressSanitizer: true,
+			}
+			exitCode, _, err := CompileAndRun(t.Context(), source, opts)
+			assert.NoError(err)
+			assert.NotEqual(0, exitCode, "expected non-zero exit code (trap)")
 		})
 	}
 }

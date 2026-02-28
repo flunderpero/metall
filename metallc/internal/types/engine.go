@@ -262,6 +262,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	switch nodeKind := node.Kind.(type) {
 	case ast.Assign:
 		typeID, status = e.checkAssign(nodeKind)
+	case ast.Binary:
+		typeID, status = e.checkBinary(nodeKind)
 	case ast.Block:
 		typeID, status = e.checkBlock(nodeKind)
 	case ast.Call:
@@ -435,11 +437,44 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 		return InvalidTypeID, TypeDepFailed
 	}
 	if !e.isAssignableTo(rhsTypeID, lhsTypeID) {
-		rhsSpan := e.Node(assign.RHS).Span
-		e.diag(rhsSpan, "type mismatch: expected %s, got %s", e.TypeDisplay(lhsTypeID), e.TypeDisplay(rhsTypeID))
+		span := e.Node(assign.RHS).Span
+		e.diag(span, "type mismatch: expected %s, got %s", e.TypeDisplay(lhsTypeID), e.TypeDisplay(rhsTypeID))
 		return InvalidTypeID, TypeDepFailed
 	}
 	return e.voidType, TypeOK
+}
+
+func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
+	lhsTypeID, status := e.Query(binary.LHS)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if lhsTypeID != e.intType {
+		span := e.Node(binary.LHS).Span
+		e.diag(
+			span,
+			"type mismatch: binary operation '%c' expects %s, got %s",
+			binary.Op,
+			e.TypeDisplay(e.intType),
+			e.TypeDisplay(lhsTypeID),
+		)
+		return InvalidTypeID, TypeDepFailed
+	}
+	rhsTypeID, status := e.Query(binary.RHS)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if rhsTypeID != lhsTypeID {
+		span := e.Node(binary.RHS).Span
+		e.diag(
+			span,
+			"type mismatch: expected type of LHS: %s, got %s",
+			e.TypeDisplay(lhsTypeID),
+			e.TypeDisplay(rhsTypeID),
+		)
+		return InvalidTypeID, TypeDepFailed
+	}
+	return lhsTypeID, TypeOK
 }
 
 func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {

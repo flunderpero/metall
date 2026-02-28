@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +153,10 @@ func CompileAndRun(
 	}
 	cmdOutput, err := cmd.CombinedOutput()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode(), string(cmdOutput), nil
+		}
 		return 0, "", base.WrapErrorf(err, "run failed\n%s", string(cmdOutput))
 	}
 	return cmd.ProcessState.ExitCode(), string(cmdOutput), nil

@@ -136,6 +136,23 @@ type Assign struct {
 
 func (Assign) isKind() {}
 
+type BinaryOp rune
+
+const (
+	BinaryOpAdd BinaryOp = '+'
+	BinaryOpSub BinaryOp = '-'
+	BinaryOpDiv BinaryOp = '/'
+	BinaryOpMul BinaryOp = '*'
+)
+
+type Binary struct {
+	LHS NodeID
+	RHS NodeID
+	Op  BinaryOp
+}
+
+func (Binary) isKind() {}
+
 type Var struct {
 	Name Name
 	Expr NodeID
@@ -243,6 +260,10 @@ func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
 	return a.node(Deref{Expr: expr}, span)
 }
 
+func (a *AST) NewBinary(op BinaryOp, lhs NodeID, rhs NodeID, span base.Span) NodeID {
+	return a.node(Binary{LHS: lhs, RHS: rhs, Op: op}, span)
+}
+
 func (a *AST) NewFile(decls []NodeID, span base.Span) NodeID {
 	return a.node(File{Decls: decls}, span)
 }
@@ -331,6 +352,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	node := a.Node(id)
 	switch kind := node.Kind.(type) {
 	case Assign:
+		f(kind.LHS)
+		f(kind.RHS)
+	case Binary:
 		f(kind.LHS)
 		f(kind.RHS)
 	case Block:
@@ -447,6 +471,15 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	}
 	switch kind := node.Kind.(type) {
 	case Assign:
+		if !children {
+			addAttr("lhs", nodeIDKind(kind.LHS))
+			addAttr("rhs", nodeIDKind(kind.RHS))
+		} else {
+			addChild("lhs", kind.LHS)
+			addChild("rhs", kind.RHS)
+		}
+	case Binary:
+		addAttr("op", fmt.Sprint(kind.Op))
 		if !children {
 			addAttr("lhs", nodeIDKind(kind.LHS))
 			addAttr("rhs", nodeIDKind(kind.RHS))

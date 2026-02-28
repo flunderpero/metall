@@ -211,6 +211,19 @@ func TestParseOK(t *testing.T) {
 		{"heap alloc array", "expr", `new @myalloc [5]Int()`, func(a *TestAST) NodeID {
 			return a.alloc(a.ident("@myalloc"), a.arr_typ(a.int_typ(), 5))
 		}},
+
+		{"int +", "expr", "1 + 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpAdd, a.int_(1), a.int_(2))
+		}},
+		{"int -", "expr", "1 - 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpSub, a.int_(1), a.int_(2))
+		}},
+		{"int *", "expr", "1 * 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpMul, a.int_(1), a.int_(2))
+		}},
+		{"int /", "expr", "1 / 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpDiv, a.int_(1), a.int_(2))
+		}},
 	}
 
 	hasOnly := false
@@ -372,6 +385,10 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 
 func (a *TestAST) alloc(alloc NodeID, target NodeID) NodeID {
 	return a.NewAllocation(alloc, target, a.span)
+}
+
+func (a *TestAST) binary(op BinaryOp, lhs NodeID, rhs NodeID) NodeID {
+	return a.NewBinary(op, lhs, rhs, a.span)
 }
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {

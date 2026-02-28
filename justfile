@@ -21,7 +21,7 @@ fmt:
     go tool golangci-lint fmt ./metallc/...
 
 test:
-    go test ./metallc/...
+    go test ./metallc/... -count 1
 
 examples:
     #!/usr/bin/env bash

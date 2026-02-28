@@ -303,16 +303,31 @@ func (p *Parser) ParseExpr() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	switch t, ok := p.mayPeek(); {
-	case !ok:
+	t, ok = p.mayPeek()
+	if !ok {
 		return lhs, true
-	case t.Kind == token.Eq:
+	}
+	switch t.Kind { //nolint:exhaustive
+	case token.Eq:
 		p.next()
 		rhs, ok := p.ParseExpr()
 		if !ok {
 			return ParseFailed, false
 		}
 		return p.NewAssign(lhs, rhs, span.Combine(p.span())), true
+	case token.Plus, token.Minus, token.Star, token.Slash:
+		p.next()
+		rhs, ok := p.ParseExpr()
+		if !ok {
+			return ParseFailed, false
+		}
+		op := map[token.TokenKind]BinaryOp{
+			token.Plus:  BinaryOpAdd,
+			token.Minus: BinaryOpSub,
+			token.Star:  BinaryOpMul,
+			token.Slash: BinaryOpDiv,
+		}[t.Kind]
+		return p.NewBinary(op, lhs, rhs, span.Combine(p.span())), true
 	default:
 		return lhs, true
 	}
