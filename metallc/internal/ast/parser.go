@@ -264,7 +264,7 @@ func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
 			p.next()
 			break
 		}
-		expr, ok := p.ParseExpr()
+		expr, ok := p.ParseExpr(0)
 		if !ok {
 			return ParseFailed, false
 		}
@@ -293,7 +293,7 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 	return p.parseBlock(true)
 }
 
-func (p *Parser) ParseExpr() (NodeID, bool) {
+func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) {
 	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
@@ -307,29 +307,46 @@ func (p *Parser) ParseExpr() (NodeID, bool) {
 	if !ok {
 		return lhs, true
 	}
-	switch t.Kind { //nolint:exhaustive
-	case token.Eq:
+	if t.Kind == token.Eq {
 		p.next()
-		rhs, ok := p.ParseExpr()
+		rhs, ok := p.ParseExpr(0)
 		if !ok {
 			return ParseFailed, false
 		}
 		return p.NewAssign(lhs, rhs, span.Combine(p.span())), true
-	case token.Plus, token.Minus, token.Star, token.Slash:
-		p.next()
-		rhs, ok := p.ParseExpr()
+	}
+	for {
+		t, ok = p.mayPeek()
 		if !ok {
-			return ParseFailed, false
+			return lhs, true
 		}
-		op := map[token.TokenKind]BinaryOp{
-			token.Plus:  BinaryOpAdd,
-			token.Minus: BinaryOpSub,
-			token.Star:  BinaryOpMul,
-			token.Slash: BinaryOpDiv,
-		}[t.Kind]
-		return p.NewBinary(op, lhs, rhs, span.Combine(p.span())), true
-	default:
-		return lhs, true
+		switch t.Kind { //nolint:exhaustive
+		case token.Plus, token.Minus, token.Star, token.Slash:
+			op := map[token.TokenKind]BinaryOp{
+				token.Plus:  BinaryOpAdd,
+				token.Minus: BinaryOpSub,
+				token.Star:  BinaryOpMul,
+				token.Slash: BinaryOpDiv,
+			}[t.Kind]
+			precedence := map[BinaryOp]int{
+				BinaryOpAdd: 1,
+				BinaryOpSub: 1,
+				BinaryOpMul: 2,
+				BinaryOpDiv: 2,
+			}[op]
+			if precedence < minPrecedence {
+				return lhs, true
+			}
+			p.next()
+			rhs, ok := p.ParseExpr(precedence + 1)
+			if !ok {
+				return ParseFailed, false
+			}
+			span = span.Combine(p.span())
+			lhs = p.NewBinary(op, lhs, rhs, span)
+		default:
+			return lhs, true
+		}
 	}
 }
 
@@ -359,7 +376,7 @@ func (p *Parser) ParseUnaryExpr(minPrecedence int) (NodeID, bool) {
 			continue
 		case token.LBracketIndex:
 			p.next()
-			index, ok := p.ParseExpr()
+			index, ok := p.ParseExpr(minPrecedence)
 			if !ok {
 				return ParseFailed, false
 			}
@@ -529,7 +546,7 @@ func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
 			p.next()
 			expr = p.NewIdent(t.Value, t.Span)
 		} else {
-			expr, ok = p.ParseExpr()
+			expr, ok = p.ParseExpr(0)
 			if !ok {
 				return args, false
 			}
@@ -602,7 +619,7 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 	if _, ok := p.expect(token.Eq); !ok {
 		return ParseFailed, false
 	}
-	init, ok := p.ParseExpr()
+	init, ok := p.ParseExpr(0)
 	if !ok {
 		return ParseFailed, false
 	}
@@ -700,7 +717,7 @@ func (p *Parser) ParseIf() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	cond, ok := p.ParseExpr()
+	cond, ok := p.ParseExpr(0)
 	if !ok {
 		return ParseFailed, false
 	}
@@ -755,7 +772,7 @@ func (p *Parser) parseBlock(createScope bool) (NodeID, bool) {
 			p.next()
 			break
 		}
-		expr, ok := p.ParseExpr()
+		expr, ok := p.ParseExpr(0)
 		if !ok {
 			return ParseFailed, false
 		}

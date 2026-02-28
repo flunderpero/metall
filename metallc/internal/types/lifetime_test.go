@@ -1039,7 +1039,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			source := base.NewSource("test.met", []rune(strings.ReplaceAll(tt.src, "\t", "    ")))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
-			exprID, parseOK := parser.ParseExpr()
+			exprID, parseOK := parser.ParseExpr(0)
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK)
 			e := NewEngine(parser.AST)
