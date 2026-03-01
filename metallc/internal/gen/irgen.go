@@ -238,10 +238,38 @@ func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 }
 
 func (g *IRGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
-	irTyp := g.irType(g.engine.TypeOfNode(lit.Target).ID)
+	targetTyp := g.engine.TypeOfNode(lit.Target)
+	if _, ok := targetTyp.Kind.(types.BuiltInType); ok {
+		g.genTypeConstructor(id, lit)
+		return
+	}
+	irTyp := g.irType(targetTyp.ID)
 	reg := g.reg()
 	g.write("%s = alloca %s", reg, irTyp)
 	g.genStructLiteralFields(id, lit, reg)
+}
+
+func (g *IRGen) genTypeConstructor(id ast.NodeID, lit ast.StructLiteral) {
+	g.Gen(lit.Target)
+	g.Gen(lit.Args[0])
+	argReg := g.lookupCode(lit.Args[0])
+	targetTyp := g.engine.TypeOfNode(lit.Target)
+	argTyp := g.engine.TypeOfNode(lit.Args[0])
+	target := base.Cast[types.BuiltInType](targetTyp.Kind)
+	arg := base.Cast[types.BuiltInType](argTyp.Kind)
+	if target.Name == arg.Name {
+		// Identity conversion: Int(Int), U8(U8), or U8(int_literal) after re-typing.
+		g.setCode(id, argReg)
+		return
+	}
+	// Int(U8) — zero-extend i8 to i64.
+	if target.Name == "Int" && arg.Name == "U8" {
+		reg := g.reg()
+		g.write("%s = zext i8 %s to i64", reg, argReg)
+		g.setCode(id, reg)
+		return
+	}
+	panic(base.Errorf("unsupported type constructor: %s -> %s", arg.Name, target.Name))
 }
 
 func (g *IRGen) genNew(id ast.NodeID, alloc ast.New) {
@@ -728,7 +756,13 @@ func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	case ast.BinaryOpMul:
 		g.write("%s = mul %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
 	case ast.BinaryOpDiv:
-		g.write("%s = call %s @__safe_sdiv_%s(%s %s, %s %s)", reg, irTyp, irTyp, irTyp, lhs, irTyp, rhs)
+		lhsTyp := g.engine.TypeOfNode(binary.LHS)
+		builtin := base.Cast[types.BuiltInType](lhsTyp.Kind)
+		if builtin.Name == "U8" {
+			g.write("%s = call %s @__safe_udiv_%s(%s %s, %s %s)", reg, irTyp, irTyp, irTyp, lhs, irTyp, rhs)
+		} else {
+			g.write("%s = call %s @__safe_sdiv_%s(%s %s, %s %s)", reg, irTyp, irTyp, irTyp, lhs, irTyp, rhs)
+		}
 	case ast.BinaryOpEq:
 		g.write("%s = icmp eq %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpNeq:
@@ -917,6 +951,8 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 			return "i1"
 		case "Int":
 			return "i64"
+		case "U8":
+			return "i8"
 		case "Str":
 			return "ptr"
 		case "void":
@@ -942,6 +978,8 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 func irScalarSize(irType string) int64 {
 	switch irType {
 	case "i1":
+		return 1
+	case "i8":
 		return 1
 	case "i64":
 		return 8
@@ -1040,9 +1078,53 @@ func GenIR(fileID ast.NodeID, engine *types.Engine, opts IROpts) (string, error)
 	g := NewIRGen(engine, opts)
 	g.Gen(fileID)
 	g.write(builtins)
+	g.write(builtinSafeDiv("i64", "sdiv"))
+	g.write(builtinSafeDiv("i8", "udiv"))
+	g.write(builtinFill("i64"))
+	g.write(builtinFill("i8"))
+	g.write(builtinFill("i1"))
 	g.write("; >>> Arena runtime")
 	g.write(arenaRuntime)
 	return g.sb.String(), nil
+}
+
+func builtinSafeDiv(irType string, op string) string {
+	return fmt.Sprintf(`define internal %[1]s @__safe_%[2]s_%[1]s(%[1]s %%a, %[1]s %%b) alwaysinline {
+    %%is_zero = icmp eq %[1]s %%b, 0
+    br i1 %%is_zero, label %%panic, label %%ok
+panic:
+    call void @llvm.trap()
+    unreachable
+ok:
+    %%result = %[2]s %[1]s %%a, %%b
+    ret %[1]s %%result
+}
+`, irType, op)
+}
+
+func builtinFill(irType string) string {
+	// For i1 (Bool), LLVM stores require i8 values, so the fill value
+	// parameter and store use i8 while the GEP stride uses i1.
+	valType := irType
+	if irType == "i1" {
+		valType = "i8"
+	}
+	return fmt.Sprintf(`define internal void @__fill_%[1]s(ptr %%dst, %[2]s %%val, i64 %%count) {
+entry:
+    br label %%loop
+loop:
+    %%i = phi i64 [ 0, %%entry ], [ %%next, %%body ]
+    %%done = icmp sge i64 %%i, %%count
+    br i1 %%done, label %%exit, label %%body
+body:
+    %%ptr = getelementptr %[1]s, ptr %%dst, i64 %%i
+    store %[2]s %%val, ptr %%ptr
+    %%next = add i64 %%i, 1
+    br label %%loop
+exit:
+    ret void
+}
+`, irType, valType)
 }
 
 const builtins = `
@@ -1055,18 +1137,6 @@ declare i32 @printf(ptr, ...)
 
 ;      Builtin functions.
 
-define internal i64 @__safe_sdiv_i64(i64 %a, i64 %b) alwaysinline {
-  	%is_zero = icmp eq i64 %b, 0
-  	br i1 %is_zero, label %panic, label %ok
-panic:
-	; todo: panic
-  	call void @llvm.trap()
-  	unreachable
-ok:
-  	%result = sdiv i64 %a, %b
-  	ret i64 %result
-}
-
 define internal void @print_str(ptr %s) {
     call i32 @puts(ptr %s)
     ret void
@@ -1075,6 +1145,13 @@ define internal void @print_str(ptr %s) {
 @fmt_int = private constant [4 x i8] c"%d\0A\00"
 define internal void @print_int(i64 %n) {
     call i32 (ptr, ...) @printf(ptr @fmt_int, i64 %n)
+    ret void
+}
+
+@fmt_u8 = private constant [4 x i8] c"%u\0A\00"
+define internal void @print_u8(i8 %n) {
+    %ext = zext i8 %n to i32
+    call i32 (ptr, ...) @printf(ptr @fmt_u8, i32 %ext)
     ret void
 }
 
@@ -1088,40 +1165,6 @@ define internal void @print_bool(i1 %n) {
 	false:
 		call i32 @puts(ptr @str_false)
 		ret void
-}
-
-;     Memory fill functions.
-
-define internal void @__fill_i64(ptr %dst, i64 %val, i64 %count) {
-entry:
-	br label %loop
-loop:
-	%i = phi i64 [ 0, %entry ], [ %next, %body ]
-	%done = icmp sge i64 %i, %count
-	br i1 %done, label %exit, label %body
-body:
-	%ptr = getelementptr i64, ptr %dst, i64 %i
-	store i64 %val, ptr %ptr
-	%next = add i64 %i, 1
-	br label %loop
-exit:
-	ret void
-}
-
-define internal void @__fill_i1(ptr %dst, i8 %val, i64 %count) {
-entry:
-	br label %loop
-loop:
-	%i = phi i64 [ 0, %entry ], [ %next, %body ]
-	%done = icmp sge i64 %i, %count
-	br i1 %done, label %exit, label %body
-body:
-	%ptr = getelementptr i1, ptr %dst, i64 %i
-	store i8 %val, ptr %ptr
-	%next = add i64 %i, 1
-	br label %loop
-exit:
-	ret void
 }
 
 define internal void @__fill_cpy(ptr %dst, ptr %val, i64 %elem_size, i64 %count) {

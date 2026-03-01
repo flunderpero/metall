@@ -154,11 +154,13 @@ type Engine struct {
 	nextScopeID ScopeID
 	scope       *Scope
 	loopStack   []ast.NodeID
+	typeHint    *TypeID
 	builtins    map[string]TypeID
 	voidType    TypeID
 	boolType    TypeID
 	arenaType   TypeID
 	intType     TypeID
+	u8Type      TypeID
 }
 
 func NewEngine(a *ast.AST) *Engine {
@@ -181,24 +183,29 @@ func NewEngine(a *ast.AST) *Engine {
 	intType := e.newType(BuiltInType{"Int"}, 0, span, TypeOK)
 	strType := e.newType(BuiltInType{"Str"}, 0, span, TypeOK)
 	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
+	u8Type := e.newType(BuiltInType{"U8"}, 0, span, TypeOK)
 	arenaType := e.newType(AllocatorType{AllocatorArena}, 0, span, TypeOK)
 	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
 	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
 	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
+	printU8Fun := e.newType(FunType{[]TypeID{u8Type}, voidType}, 0, span, TypeOK)
 
 	e.voidType = voidType
 	e.boolType = boolType
 	e.arenaType = arenaType
 	e.intType = intType
+	e.u8Type = u8Type
 	e.builtins = map[string]TypeID{
 		"Int":        intType,
 		"Str":        strType,
 		"Bool":       boolType,
+		"U8":         u8Type,
 		"Arena":      arenaType,
 		"void":       e.voidType,
 		"print_str":  printStrFun,
 		"print_int":  printIntFun,
 		"print_bool": printBoolFun,
+		"print_u8":   printU8Fun,
 	}
 	return e
 }
@@ -263,6 +270,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		}
 		return cached.Type.ID, cached.Status
 	}
+	// Consume the type hint so it doesn't leak into recursive queries.
+	typeHint := e.typeHint
+	e.typeHint = nil
 	nodeDebug := e.AST.Debug(nodeID, false, 0)
 	debugDedent := e.Debug.Print(1, "query start %s", nodeDebug).Indent()
 	defer debugDedent()
@@ -336,7 +346,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Bool:
 		typeID, status = e.checkBool()
 	case ast.Int:
-		typeID, status = e.checkInt()
+		typeID, status = e.checkInt(nodeKind, node.Span, typeHint)
 	case ast.Ref:
 		typeID, status = e.checkRef(nodeID, nodeKind, node.Span)
 	case ast.RefType:
@@ -422,6 +432,16 @@ func (e *Engine) Scope() *Scope {
 	return e.scope
 }
 
+// queryWithHint sets a type hint before querying a node. Int literals use the
+// hint to materialize as the expected integer type (e.g. U8 instead of Int).
+func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint TypeID) (TypeID, TypeStatus) {
+	saved := e.typeHint
+	e.typeHint = &typeHint
+	typeID, status := e.Query(nodeID)
+	e.typeHint = saved
+	return typeID, status
+}
+
 func (e *Engine) updateCachedType(node *ast.Node, typeID TypeID, status TypeStatus) (TypeID, TypeStatus) {
 	if typeID == InvalidTypeID {
 		if !status.Failed() {
@@ -464,7 +484,7 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	rhsTypeID, status := e.Query(assign.RHS)
+	rhsTypeID, status := e.queryWithHint(assign.RHS, lhsTypeID)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -503,11 +523,13 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	switch binary.Op {
 	case ast.BinaryOpEq, ast.BinaryOpNeq:
 		expected_lhs_types = append(expected_lhs_types, e.intType)
+		expected_lhs_types = append(expected_lhs_types, e.u8Type)
 		expected_lhs_types = append(expected_lhs_types, e.boolType)
 	case ast.BinaryOpOr, ast.BinaryOpAnd:
 		expected_lhs_types = append(expected_lhs_types, e.boolType)
 	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv:
 		expected_lhs_types = append(expected_lhs_types, e.intType)
+		expected_lhs_types = append(expected_lhs_types, e.u8Type)
 	default:
 		panic(base.Errorf("unknown binary operator: %s", binary.Op))
 	}
@@ -531,7 +553,7 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 		)
 		return InvalidTypeID, TypeDepFailed
 	}
-	rhsTypeID, status := e.Query(binary.RHS)
+	rhsTypeID, status := e.queryWithHint(binary.RHS, lhsTypeID)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -686,7 +708,7 @@ func (e *Engine) checkNewArray(alloc ast.NewArray) (TypeID, TypeStatus) {
 	}
 	arrType := base.Cast[ArrayType](e.Type(arrTypeID).Kind)
 	if alloc.DefaultValue != nil {
-		defTypeID, defStatus := e.Query(*alloc.DefaultValue)
+		defTypeID, defStatus := e.queryWithHint(*alloc.DefaultValue, arrType.Elem)
 		if defStatus.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -731,7 +753,7 @@ func (e *Engine) checkMakeSlice(makeSlice ast.MakeSlice) (TypeID, TypeStatus) {
 	}
 	sliceType := base.Cast[SliceType](e.Type(sliceTypeID).Kind)
 	if makeSlice.DefaultValue != nil {
-		defTypeID, defStatus := e.Query(*makeSlice.DefaultValue)
+		defTypeID, defStatus := e.queryWithHint(*makeSlice.DefaultValue, sliceType.Elem)
 		if defStatus.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -760,7 +782,7 @@ func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, sp
 		return InvalidTypeID, TypeDepFailed
 	}
 	for _, elemNodeID := range array.Elems[1:] {
-		elemTyp2, status := e.Query(elemNodeID)
+		elemTyp2, status := e.queryWithHint(elemNodeID, elemTyp)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -847,6 +869,9 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 		return InvalidTypeID, TypeDepFailed
 	}
 	structTyp := e.Type(structTypeID)
+	if builtin, ok := structTyp.Kind.(BuiltInType); ok {
+		return e.checkTypeConstructor(builtin, structTypeID, lit, span)
+	}
 	struct_, ok := structTyp.Kind.(StructType)
 	if !ok {
 		calleeSpan := e.Node(lit.Target).Span
@@ -859,7 +884,7 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 	}
 	for i, argNodeID := range lit.Args {
 		argNode := e.Node(argNodeID)
-		argTypeID, status := e.Query(argNodeID)
+		argTypeID, status := e.queryWithHint(argNodeID, struct_.Fields[i].Type)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -875,6 +900,47 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 		}
 	}
 	return structTypeID, TypeOK
+}
+
+// checkTypeConstructor handles type constructor syntax like Int(x) and U8(x).
+// These look like struct literals in the parser but the target is a builtin numeric type.
+func (e *Engine) checkTypeConstructor(
+	builtin BuiltInType, targetTypeID TypeID, lit ast.StructLiteral, span base.Span,
+) (TypeID, TypeStatus) {
+	switch builtin.Name {
+	case "Int", "U8":
+	default:
+		calleeSpan := e.Node(lit.Target).Span
+		e.diag(calleeSpan, "not a struct: %s", builtin.Name)
+		return InvalidTypeID, TypeFailed
+	}
+	if len(lit.Args) != 1 {
+		e.diag(span, "%s() takes exactly 1 argument, got %d", builtin.Name, len(lit.Args))
+		return InvalidTypeID, TypeFailed
+	}
+	argNodeID := lit.Args[0]
+	// Query with a hint so int literals materialize as the target type.
+	argTypeID, status := e.queryWithHint(argNodeID, targetTypeID)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	argSpan := e.Node(argNodeID).Span
+	switch builtin.Name {
+	case "Int":
+		// Int(Int) is identity, Int(U8) is widening conversion.
+		if argTypeID != e.intType && argTypeID != e.u8Type {
+			e.diag(argSpan, "cannot convert %s to Int", e.TypeDisplay(argTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	case "U8":
+		// U8(U8) is identity (including int literals that materialized as U8 via the hint).
+		// Anything else (e.g. Int variable, Str) is rejected.
+		if argTypeID != e.u8Type {
+			e.diag(argSpan, "cannot convert %s to U8", e.TypeDisplay(argTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	return targetTypeID, TypeOK
 }
 
 func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
@@ -932,7 +998,7 @@ func (e *Engine) checkCall(call ast.Call, span base.Span) (TypeID, TypeStatus) {
 	}
 	for i, argNodeID := range call.Args {
 		argNode := e.Node(argNodeID)
-		argTypeID, status := e.Query(argNodeID)
+		argTypeID, status := e.queryWithHint(argNodeID, fun.Params[i])
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -1206,12 +1272,15 @@ func (e *Engine) checkBool() (TypeID, TypeStatus) {
 	return typeID, TypeOK
 }
 
-func (e *Engine) checkInt() (TypeID, TypeStatus) {
-	typeID, ok := e.builtins["Int"]
-	if !ok {
-		panic(base.Errorf("builtin type Int not found"))
+func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
+	if typeHint != nil && *typeHint == e.u8Type {
+		if intNode.Value < 0 || intNode.Value > 255 {
+			e.diag(span, "value %d out of range for U8 (0..255)", intNode.Value)
+			return InvalidTypeID, TypeFailed
+		}
+		return e.u8Type, TypeOK
 	}
-	return typeID, TypeOK
+	return e.intType, TypeOK
 }
 
 func (e *Engine) checkRef(
@@ -1331,7 +1400,7 @@ func (e *Engine) isSafeUninitialized(typeID TypeID) bool {
 	typ := e.Type(typeID)
 	switch kind := typ.Kind.(type) {
 	case BuiltInType:
-		return kind.Name == "Int"
+		return kind.Name == "Int" || kind.Name == "U8"
 	case StructType:
 		for _, field := range kind.Fields {
 			if !e.isSafeUninitialized(field.Type) {

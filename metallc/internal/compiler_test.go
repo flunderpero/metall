@@ -702,6 +702,22 @@ func TestCompile(t *testing.T) {
 				}
 			}
 			`, "1\n3\n"},
+
+		{"U8", `
+			fun main() void {
+				let @a = Arena()
+				mut buf = make(@a, []U8(4, U8(0)))
+				buf[0] = U8(72)
+				buf[1] = U8(101)
+				buf[2] = U8(42)
+				buf[3] = U8(255)
+				print_u8(buf[0])
+				print_u8(buf[1])
+				print_u8(buf[2])
+				print_u8(buf[3])
+				print_int(Int(buf[0]))
+			}
+			`, "72\n101\n42\n255\n72\n"},
 	}
 
 	assert := base.NewAssert(t)

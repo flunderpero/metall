@@ -118,6 +118,13 @@ func TestParseOK(t *testing.T) {
 		{"struct literal", "expr", "Foo(\"hello\", 123)", func(a *TestAST) NodeID {
 			return a.struct_lit(a.ident("Foo"), a.string_("hello"), a.int_(123))
 		}},
+		// Type constructors parse as struct literals — the type checker distinguishes them.
+		{"type constructor U8", "expr", "U8(42)", func(a *TestAST) NodeID {
+			return a.struct_lit(a.ident("U8"), a.int_(42))
+		}},
+		{"type constructor Int", "expr", "Int(123)", func(a *TestAST) NodeID {
+			return a.struct_lit(a.ident("Int"), a.int_(123))
+		}},
 		{"field read", "expr", "x.one", func(a *TestAST) NodeID {
 			return a.field_access(a.ident("x"), "one")
 		}},

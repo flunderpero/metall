@@ -19,6 +19,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	Int := &Type{2, 0, span, BuiltInType{"Int"}}
 	Str := &Type{3, 0, span, BuiltInType{"Str"}}
 	Bool := &Type{4, 0, span, BuiltInType{"Bool"}}
+	U8 := &Type{5, 0, span, BuiltInType{"U8"}}
 
 	tests := []struct {
 		name  string
@@ -379,6 +380,19 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 
 		{"and, not, or", `true and false or not true`, Bool, nil},
 
+		// Type constructors and U8 type.
+		{"U8 constructor", `U8(42)`, U8, nil},
+		{"Int constructor from U8", `Int(U8(1))`, Int, nil},
+		{"U8 +", `U8(1) + U8(2)`, U8, nil},
+		{"== on U8", `U8(1) == U8(2)`, Bool, nil},
+		// Int literal materializes as U8 via type hint in various contexts.
+		{"U8 binary hint", `U8(1) + 2`, U8, nil},
+		{"U8 call arg hint", `{ fun foo(a U8) U8 { a } foo(42) }`, U8, nil},
+		{"U8 array literal hint", `[U8(1), 2, 3]`, arr_t(U8, 3), nil},
+		{"U8 struct literal hint", `{ struct Foo { one U8 two U8 } let x = Foo(1, 2) }`, void, nil},
+		// U8 is safe uninitialized.
+		{"new array U8 no default", `{ let @a = Arena() let x = new(@a, [5]U8()) }`, void, nil},
+
 		{"conditional for loop", `for true { 1 }`, void, nil},
 		{"unconditional for loop", `for { 1 }`, void, nil},
 		{"for body must be scoped", `{ let a = 1 for { let a = "hello" }}`, void, nil},
@@ -415,6 +429,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"slice index through ref",
 		"slice len through ref",
 		"mut ref slice index write",
+		"new array U8 no default",
 	}
 
 	assert := base.NewAssert(t)
@@ -709,7 +724,7 @@ func TestTypeCheckErr(t *testing.T) {
 				"        ^^^^^^^",
 		}},
 		{"== with invalid type", `"hello" == "world"`, []string{
-			"test.met:1:1: type mismatch: binary operation '==' expects Int or Bool, got Str\n" +
+			"test.met:1:1: type mismatch: binary operation '==' expects Int or U8 or Bool, got Str\n" +
 				`    "hello" == "world"` + "\n" +
 				"    ^^^^^^^",
 		}},
@@ -797,6 +812,48 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:11: cannot return an allocator from a function\n" +
 				`    fun foo() Arena { }` + "\n" +
 				"              ^^^^^",
+		}},
+
+		// Type constructor errors.
+		{"U8 out of range positive", `U8(256)`, []string{
+			"test.met:1:4: value 256 out of range for U8 (0..255)\n" +
+				"    U8(256)\n" +
+				"       ^^^",
+		}},
+		{"U8 out of range negative", `U8(0 - 1)`, []string{
+			"test.met:1:4: cannot convert Int to U8\n" +
+				"    U8(0 - 1)\n" +
+				"       ^^^^^",
+		}},
+		{"U8 from str", `U8("hello")`, []string{
+			"test.met:1:4: cannot convert Str to U8\n" +
+				`    U8("hello")` + "\n" +
+				"       ^^^^^^^",
+		}},
+		{"Int from str", `Int("hello")`, []string{
+			"test.met:1:5: cannot convert Str to Int\n" +
+				`    Int("hello")` + "\n" +
+				"        ^^^^^^^",
+		}},
+		{"U8 wrong arg count", `U8(1, 2)`, []string{
+			"test.met:1:1: U8() takes exactly 1 argument, got 2\n" +
+				"    U8(1, 2)\n" +
+				"    ^^^^^^^^",
+		}},
+		{"Bool is not a type constructor", `Bool(true)`, []string{
+			"test.met:1:1: not a struct: Bool\n" +
+				"    Bool(true)\n" +
+				"    ^^^^",
+		}},
+		{"U8 from Int variable", `{ let x = 123 U8(x) }`, []string{
+			"test.met:1:18: cannot convert Int to U8\n" +
+				"    { let x = 123 U8(x) }\n" +
+				"                     ^",
+		}},
+		{"U8 + Int type mismatch", `{ let x = 123 U8(1) + x }`, []string{
+			"test.met:1:23: type mismatch: expected type of LHS: U8, got Int\n" +
+				"    { let x = 123 U8(1) + x }\n" +
+				"                          ^",
 		}},
 	}
 
