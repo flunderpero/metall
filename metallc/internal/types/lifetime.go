@@ -6,7 +6,7 @@
 //
 //   - Each scope gets a unique TaintID (its "ScopeTaint").
 //   - Taking `&x` produces a ref that carries x's ScopeTaint.
-//   - Heap-allocated values (e.g. `new @myalloc Foo()`) don't carry a
+//   - Heap-allocated values (e.g. `new(@myalloc, Foo())`) don't carry a
 //     ScopeTaint because they outlive their declaring scope. Instead
 //     they carry the allocator's taint, so a ref to a heap value can
 //     escape the declaring function but not the allocator's scope.
@@ -294,14 +294,14 @@ func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLi
 	a.flows[nodeID] = merged
 }
 
-// analyzeNew: `new @alloc Foo(...)` merges the target's flow with the allocator's.
+// analyzeNew: `new(@alloc, Foo(...))` merges the target's flow with the allocator's.
 func (a *LifetimeCheck) analyzeNew(nodeID ast.NodeID, alloc ast.New) {
 	merged := a.flow(alloc.Target)
 	merged = merged.Merge(a.flow(alloc.Allocator))
 	a.flows[nodeID] = merged
 }
 
-// analyzeMakeSlice: `make @alloc []T(len)` merges the allocator's flow.
+// analyzeMakeSlice: `make(@alloc, []T(len))` merges the allocator's flow.
 func (a *LifetimeCheck) analyzeMakeSlice(nodeID ast.NodeID, makeSlice ast.MakeSlice) {
 	merged := a.flow(makeSlice.Allocator)
 	merged = merged.Merge(a.flow(makeSlice.Len))

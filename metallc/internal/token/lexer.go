@@ -38,6 +38,7 @@ const (
 	Mut
 	Neq
 	New
+	NewMut
 	Not
 	Number
 	Or
@@ -83,6 +84,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Mut:                   "<mut>",
 	Neq:                   "!=",
 	New:                   "<new>",
+	NewMut:                "<new_mut>",
 	Not:                   "<not>",
 	Number:                "<number>",
 	Or:                    "<or>",
@@ -127,8 +129,9 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"let":      Let,
 	"make":     Make,
 	"mut":      Mut,
-	"not":      Not,
 	"new":      New,
+	"new_mut":  NewMut,
+	"not":      Not,
 	"or":       Or,
 	"struct":   Struct,
 	"true":     True,

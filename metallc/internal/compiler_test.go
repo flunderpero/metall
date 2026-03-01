@@ -300,16 +300,16 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun foo(@myalloc Arena) &Foo {
-				new @myalloc Foo("hello")
+				new(@myalloc, Foo("hello"))
 			}
 
 			fun main() void {
 				let @myalloc = Arena()
-				let x = new @myalloc Foo("x")
-				let y = new @myalloc Foo("y")
+				let x = new(@myalloc, Foo("x"))
+				let y = new(@myalloc, Foo("y"))
 				{
 					let @youralloc = Arena()
-					let z = new @youralloc Foo("z")
+					let z = new(@youralloc, Foo("z"))
 					print_str(z.one)
 				}
 				print_str(y.one)
@@ -422,7 +422,7 @@ func TestCompile(t *testing.T) {
 		{"heap alloc array", `
 			fun main() void {
 				let @myalloc = Arena()
-				mut x = new @myalloc mut [5]Int()
+				mut x = new_mut(@myalloc, [5]Int())
 				x[1] = 1
 				x[2] = 2
 
@@ -431,7 +431,7 @@ func TestCompile(t *testing.T) {
 				print_int(x[2])
 			}
 			`, "0\n1\n2\n"},
-		// `new` returns a reference. Assigning `let y = x` where `x = new @a mut Foo(...)` copies
+		// `new` returns a reference. Assigning `let y = x` where `x = new_mut(@a, Foo(...))` copies
 		// the reference, not the underlying data — both variables alias the same heap memory.
 		{"heap alloc struct is ref aliased", `
 			struct Foo {
@@ -440,7 +440,7 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				mut x = new @a mut Foo("hello")
+				mut x = new_mut(@a, Foo("hello"))
 				mut y = x
 				y.one = "world"
 				print_str(x.one)
@@ -453,7 +453,7 @@ func TestCompile(t *testing.T) {
 		{"heap alloc array is ref aliased", `
 			fun main() void {
 				let @a = Arena()
-				mut x = new @a mut [3]Int()
+				mut x = new_mut(@a, [3]Int())
 				x[0] = 42
 				mut y = x
 				y[0] = 99
@@ -470,12 +470,12 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				let x = new @a Foo("hello")
+				let x = new(@a, Foo("hello"))
 				print_str(x.one)
 			}
 			`, "hello\n"},
 
-		// `new @a mut` returns a mutable reference — can pass to fun taking &mut.
+		// `new_mut(@a, ...)` returns a mutable reference — can pass to fun taking &mut.
 		{"heap alloc mut struct as param", `
 			struct Foo {
 				mut one Str
@@ -487,7 +487,7 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				let x = new @a mut Foo("hello")
+				let x = new_mut(@a, Foo("hello"))
 				set(x, "world")
 				print_str(x.one)
 			}
@@ -497,9 +497,9 @@ func TestCompile(t *testing.T) {
 		{"heap alloc immutable array read", `
 			fun main() void {
 				let @a = Arena()
-				let x = new @a mut [3]Int()
+				let x = new_mut(@a, [3]Int())
 				x[0] = 42
-				let y = new @a [3]Int()
+				let y = new(@a, [3]Int())
 				print_int(x[0])
 			}
 			`, "42\n"},
@@ -509,7 +509,7 @@ func TestCompile(t *testing.T) {
 		{"slice copy aliases underlying data", `
 			fun main() void {
 				let @a = Arena()
-				mut x = make @a []Int(3)
+				mut x = make(@a, []Int(3))
 				x[0] = 42
 				mut y = x
 				y[0] = 99
@@ -522,7 +522,7 @@ func TestCompile(t *testing.T) {
 			fun main() void {
 				let @myalloc = Arena()
 				let size = 3
-				mut x = make @myalloc []Int(size)
+				mut x = make(@myalloc, []Int(size))
 				x[0] = 10
 				x[1] = 20
 				x[2] = 30

@@ -168,20 +168,26 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseNew() (NodeID, bool) {
-	newToken, ok := p.expect(token.New)
+func (p *Parser) ParseNew(mut bool) (NodeID, bool) {
+	var newToken *token.Token
+	var ok bool
+	if mut {
+		newToken, ok = p.expect(token.NewMut)
+	} else {
+		newToken, ok = p.expect(token.New)
+	}
 	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.LParen); !ok {
 		return ParseFailed, false
 	}
 	alloc, ok := p.parseAllocator()
 	if !ok {
 		return ParseFailed, false
 	}
-	// Parse optional `mut` keyword for mutable reference.
-	mut := false
-	if t, ok := p.mayPeek(); ok && t.Kind == token.Mut {
-		p.pos++
-		mut = true
+	if _, ok := p.expect(token.Comma); !ok {
+		return ParseFailed, false
 	}
 	// Parse the target: struct literal or array alloc.
 	t, ok := p.mustPeek()
@@ -220,6 +226,9 @@ func (p *Parser) ParseNew() (NodeID, bool) {
 		)
 		return ParseFailed, false
 	}
+	if _, ok := p.expect(token.RParen); !ok {
+		return ParseFailed, false
+	}
 	return p.NewNew(alloc, target, mut, newToken.Span.Combine(p.span())), true
 }
 
@@ -228,8 +237,14 @@ func (p *Parser) ParseMakeSlice() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	if _, ok := p.expect(token.LParen); !ok {
+		return ParseFailed, false
+	}
 	alloc, ok := p.parseAllocator()
 	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.Comma); !ok {
 		return ParseFailed, false
 	}
 	sliceType, ok := p.ParseArrayOrSliceType()
@@ -245,6 +260,9 @@ func (p *Parser) ParseMakeSlice() (NodeID, bool) {
 	}
 	lenExpr, ok := p.ParseExpr(0)
 	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.RParen); !ok {
 		return ParseFailed, false
 	}
 	if _, ok := p.expect(token.RParen); !ok {
@@ -494,7 +512,13 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = struct_literal
 	case token.New:
-		allocation, ok := p.ParseNew()
+		allocation, ok := p.ParseNew(false)
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = allocation
+	case token.NewMut:
+		allocation, ok := p.ParseNew(true)
 		if !ok {
 			return ParseFailed, false
 		}

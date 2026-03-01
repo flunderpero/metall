@@ -173,7 +173,7 @@ func TestParseOK(t *testing.T) {
 		{"allocator var", "expr", "let @myalloc = Arena(123)", func(a *TestAST) NodeID {
 			return a.allocator_var("@myalloc", "Arena", a.int_(123))
 		}},
-		{"heap alloc", "expr", `new @myalloc Foo()`, func(a *TestAST) NodeID {
+		{"heap alloc", "expr", `new(@myalloc, Foo())`, func(a *TestAST) NodeID {
 			return a.new_(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
 		}},
 		{
@@ -205,19 +205,19 @@ func TestParseOK(t *testing.T) {
 		{"index write", "expr", `x[1] = 2`, func(a *TestAST) NodeID {
 			return a.assign(a.index(a.ident("x"), a.int_(1)), a.int_(2))
 		}},
-		{"heap alloc from field", "expr", `new x.@myalloc Foo("hello")`, func(a *TestAST) NodeID {
+		{"heap alloc from field", "expr", `new(x.@myalloc, Foo("hello"))`, func(a *TestAST) NodeID {
 			return a.new_(a.field_access(a.ident("x"), "@myalloc"), a.struct_lit(a.ident("Foo"), a.string_("hello")))
 		}},
-		{"heap alloc array", "expr", `new @myalloc [5]Int()`, func(a *TestAST) NodeID {
+		{"heap alloc array", "expr", `new(@myalloc, [5]Int())`, func(a *TestAST) NodeID {
 			return a.new_(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5)))
 		}},
-		{"heap alloc mut struct", "expr", `new @myalloc mut Foo()`, func(a *TestAST) NodeID {
+		{"heap alloc mut struct", "expr", `new_mut(@myalloc, Foo())`, func(a *TestAST) NodeID {
 			return a.new_mut(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
 		}},
-		{"heap alloc mut array", "expr", `new @myalloc mut [5]Int()`, func(a *TestAST) NodeID {
+		{"heap alloc mut array", "expr", `new_mut(@myalloc, [5]Int())`, func(a *TestAST) NodeID {
 			return a.new_mut(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5)))
 		}},
-		{"make slice", "expr", `make @myalloc []Int(n)`, func(a *TestAST) NodeID {
+		{"make slice", "expr", `make(@myalloc, []Int(n))`, func(a *TestAST) NodeID {
 			allocIdent := a.ident("@myalloc")
 			sliceType := a.slice_typ(a.int_typ())
 			n := a.ident("n")
@@ -356,10 +356,10 @@ func TestParseErr(t *testing.T) {
 				`    mut @a = Arena()` + "\n" +
 				"        ^^",
 		}},
-		{"heap alloc without target", `new @myalloc`, []string{
-			"test.met:1:5: unexpected end of file\n" +
-				`    new @myalloc` + "\n" +
-				"        ^^^^^^^^",
+		{"heap alloc without target", `new(@myalloc)`, []string{
+			"test.met:1:13: unexpected token: expected ,, got )\n" +
+				`    new(@myalloc)` + "\n" +
+				"                ^",
 		}},
 	}
 

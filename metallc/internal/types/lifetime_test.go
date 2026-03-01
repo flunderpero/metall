@@ -359,7 +359,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Foo { one Str }
 				let x = {
 					let @myalloc = Arena()
-					new @myalloc Foo("hello")
+					new(@myalloc, Foo("hello"))
 				}
 				x
 			}
@@ -367,8 +367,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:6:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
-				        new @myalloc Foo("hello")
-				        ^^^^^^^^^^^^^^^^^^^^^^^^^
+				        new(@myalloc, Foo("hello"))
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -377,7 +377,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				let x = {
 					let @myalloc = Arena()
-					new @myalloc [5]Int()
+					new(@myalloc, [5]Int())
 				}
 				x
 			}
@@ -385,8 +385,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:5:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
-				        new @myalloc [5]Int()
-				        ^^^^^^^^^^^^^^^^^^^^^
+				        new(@myalloc, [5]Int())
+				        ^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -394,7 +394,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				struct Foo { one Str }
 				let @myalloc = Arena()
-				let x = new @myalloc Foo("hello")
+				let x = new(@myalloc, Foo("hello"))
 				x
 			}
 			`, []string{}},
@@ -402,7 +402,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"valid heap alloc through param", `
 			{
 				struct Foo { one Str }
-				fun foo(@myalloc Arena) &Foo { new @myalloc Foo("hello") }
+				fun foo(@myalloc Arena) &Foo { new(@myalloc, Foo("hello")) }
 				let @myalloc = Arena()
 				let x = foo(@myalloc)
 				x
@@ -415,7 +415,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				let @youralloc = Arena()
 				let x = {
 					let @myalloc = Arena()
-					new @myalloc Foo("hello")
+					new(@myalloc, Foo("hello"))
 				}
 				x
 			}
@@ -423,8 +423,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:7:21: reference escaping its allocation scope\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
-				        new @myalloc Foo("hello")
-				        ^^^^^^^^^^^^^^^^^^^^^^^^^
+				        new(@myalloc, Foo("hello"))
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -432,7 +432,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"heap alloc ref assignment escapes", `
 			{
 				struct Foo { one Str }
-				fun foo(@myalloc Arena) &Foo { new @myalloc Foo("hello") }
+				fun foo(@myalloc Arena) &Foo { new(@myalloc, Foo("hello")) }
 				fun identity(a &Foo) &Foo { a }
 				let x = {
 					let @myalloc = Arena()
@@ -455,7 +455,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"heap alloc call escape", `
 			{
 				struct Foo { one Str }
-				fun foo(@myalloc Arena) &Foo { new @myalloc Foo("hello") }
+				fun foo(@myalloc Arena) &Foo { new(@myalloc, Foo("hello")) }
 				let x = {
 					let @youralloc = Arena()
 					foo(@youralloc)
@@ -476,7 +476,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Foo { one Str }
 				struct Bar { @myalloc Arena }
 				fun foo(a Bar) &Foo {
-					new a.@myalloc Foo("hello")
+					new(a.@myalloc, Foo("hello"))
 				}
 				let x = {
 					let @myalloc = Arena()
@@ -503,7 +503,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				fun foo(a Bar, b &Foo) &Foo { b }
 				let @myalloc = Arena()
 				let x = Bar(@myalloc)
-				let y = new @myalloc Foo("hello")
+				let y = new(@myalloc, Foo("hello"))
 				foo(x, y)
 			}
 			`, []string{}},
@@ -515,7 +515,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Bar { @myalloc Arena }
 				let @myalloc = Arena()
 				let x = Bar(@myalloc)
-				let y = new x.@myalloc Foo("hello")
+				let y = new(x.@myalloc, Foo("hello"))
 			}
 			`, []string{}},
 
@@ -526,7 +526,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Bar { @myalloc Arena }
 				struct Baz { one Bar }
 				fun foo(a Baz) &Foo {
-					new a.one.@myalloc Foo("hello")
+					new(a.one.@myalloc, Foo("hello"))
 				}
 				let x = {
 					let @myalloc = Arena()
@@ -853,7 +853,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				fun foo(a &mut Foo, b &Int) void { a.one = b }
 				let @myalloc = Arena()
 				mut x = 1
-				let y = new @myalloc mut Foo(&mut x)
+				let y = new_mut(@myalloc, Foo(&mut x))
 				{
 					mut z = 99
 					foo(y, &z)

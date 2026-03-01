@@ -182,7 +182,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			assert.Equal(AllocatorArena, typ.Impl)
 		}},
 		{
-			"heap alloc struct", `{ let @myalloc = Arena() struct Foo{one Str} let x = new @myalloc Foo("hello") x }`, nil,
+			"heap alloc struct", `{ let @myalloc = Arena() struct Foo{one Str} let x = new(@myalloc, Foo("hello")) x }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
@@ -198,7 +198,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"pass alloc to fun", `{ fun foo(@myalloc Arena) void {} let @myalloc = Arena() foo(@myalloc) }`, void, nil},
 		{
 			"heap alloc mut struct",
-			`{ let @a = Arena() struct Bar{one Str} new @a mut Bar("hello") }`, nil,
+			`{ let @a = Arena() struct Bar{one Str} new_mut(@a, Bar("hello")) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
@@ -212,7 +212,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"heap alloc mut array",
-			`{ let @a = Arena() new @a mut [5]Int() }`, nil,
+			`{ let @a = Arena() new_mut(@a, [5]Int()) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
@@ -275,12 +275,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"heap alloc from struct field",
-			`{ struct Foo{one Str} struct Bar { @myalloc Arena } let @myalloc = Arena() let x = Bar(@myalloc) let y = new x.@myalloc Foo("hello") }`,
+			`{ struct Foo{one Str} struct Bar { @myalloc Arena } let @myalloc = Arena() let x = Bar(@myalloc) let y = new(x.@myalloc, Foo("hello")) }`,
 			void, nil,
 		},
 		{
 			"heap alloc array",
-			`{ let @myalloc = Arena() new @myalloc [5]Int() }`, nil,
+			`{ let @myalloc = Arena() new(@myalloc, [5]Int()) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
@@ -292,28 +292,28 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(int64(5), arr.Len)
 			},
 		},
-		{"make slice", `{ let @myalloc = Arena() make @myalloc []Int(5) }`, slice_t(Int), nil},
-		{"slice index read", `{ let @myalloc = Arena() let x = make @myalloc []Int(3) x[1] }`, Int, nil},
-		{"slice index write", `{ let @myalloc = Arena() mut x = make @myalloc []Int(3) x[1] = 5 }`, void, nil},
-		{"slice len", `{ let @myalloc = Arena() let x = make @myalloc []Int(3) x.len }`, Int, nil},
+		{"make slice", `{ let @myalloc = Arena() make(@myalloc, []Int(5)) }`, slice_t(Int), nil},
+		{"slice index read", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x[1] }`, Int, nil},
+		{"slice index write", `{ let @myalloc = Arena() mut x = make(@myalloc, []Int(3)) x[1] = 5 }`, void, nil},
+		{"slice len", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x.len }`, Int, nil},
 		{
 			"slice as fun param",
-			`{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = make @a []Int(3) foo(x) }`,
+			`{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = make(@a, []Int(3)) foo(x) }`,
 			Int, nil,
 		},
 		{
 			"slice as fun param and return",
-			`{ let @a = Arena() fun foo(s []Int) []Int { s } let x = make @a []Int(3) foo(x) }`,
+			`{ let @a = Arena() fun foo(s []Int) []Int { s } let x = make(@a, []Int(3)) foo(x) }`,
 			slice_t(Int), nil,
 		},
 		{
 			"struct with slice field",
-			`{ let @a = Arena() struct Foo { one []Int } let s = make @a []Int(3) let x = Foo(s) x.one[0] }`,
+			`{ let @a = Arena() struct Foo { one []Int } let s = make(@a, []Int(3)) let x = Foo(s) x.one[0] }`,
 			Int, nil,
 		},
 		{
 			"ref to slice",
-			`{ let @a = Arena() let x = make @a []Int(3) &x }`,
+			`{ let @a = Arena() let x = make(@a, []Int(3)) &x }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				got := e.TypeOfNode(id)
@@ -324,17 +324,17 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"slice index through ref",
-			`{ let @a = Arena() let x = make @a []Int(3) let y = &x y[0] }`,
+			`{ let @a = Arena() let x = make(@a, []Int(3)) let y = &x y[0] }`,
 			Int, nil,
 		},
 		{
 			"slice len through ref",
-			`{ let @a = Arena() let x = make @a []Int(3) let y = &x y.len }`,
+			`{ let @a = Arena() let x = make(@a, []Int(3)) let y = &x y.len }`,
 			Int, nil,
 		},
 		{
 			"mut ref slice index write",
-			`{ let @a = Arena() mut x = make @a []Int(3) let y = &mut x y[0] = 42 }`,
+			`{ let @a = Arena() mut x = make(@a, []Int(3)) let y = &mut x y[0] = 42 }`,
 			void, nil,
 		},
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
@@ -654,9 +654,9 @@ func TestTypeCheckErr(t *testing.T) {
 					"                                           ^",
 			},
 		},
-		{"non-existing allocator", `{ struct Foo{one Str} let x = new @myalloc Foo("hello") }`, []string{
+		{"non-existing allocator", `{ struct Foo{one Str} let x = new(@myalloc, Foo("hello")) }`, []string{
 			"test.met:1:35: symbol not defined: @myalloc\n" +
-				`    { struct Foo{one Str} let x = new @myalloc Foo("hello") }` + "\n" +
+				`    { struct Foo{one Str} let x = new(@myalloc, Foo("hello")) }` + "\n" +
 				`                                      ^^^^^^^^`,
 		}},
 		{"index on non-array", `{ let x = 123 x[0] }`, []string{
@@ -706,15 +706,15 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { continue }` + "\n" +
 				"      ^^^^^^^^",
 		}},
-		{"unknown field on slice", `{ let @a = Arena() let x = make @a []Int(3) x.foo }`, []string{
-			"test.met:1:47: unknown field on slice: foo\n" +
-				`    { let @a = Arena() let x = make @a []Int(3) x.foo }` + "\n" +
-				"                                                  ^^^",
+		{"unknown field on slice", `{ let @a = Arena() let x = make(@a, []Int(3)) x.foo }`, []string{
+			"test.met:1:49: unknown field on slice: foo\n" +
+				`    { let @a = Arena() let x = make(@a, []Int(3)) x.foo }` + "\n" +
+				"                                                    ^^^",
 		}},
-		{"make slice non-int length", `{ let @a = Arena() make @a []Int("hello") }`, []string{
-			"test.met:1:34: type mismatch: expected Int, got Str\n" +
-				`    { let @a = Arena() make @a []Int("hello") }` + "\n" +
-				`                                     ^^^^^^^`,
+		{"make slice non-int length", `{ let @a = Arena() make(@a, []Int("hello")) }`, []string{
+			"test.met:1:35: type mismatch: expected Int, got Str\n" +
+				`    { let @a = Arena() make(@a, []Int("hello")) }` + "\n" +
+				`                                      ^^^^^^^`,
 		}},
 		{"cannot return allocator from fun", `fun foo() Arena { }`, []string{
 			"test.met:1:11: cannot return an allocator from a function\n" +
