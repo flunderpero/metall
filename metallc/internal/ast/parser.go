@@ -177,6 +177,12 @@ func (p *Parser) ParseNew() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	// Parse optional `mut` keyword for mutable reference.
+	mut := false
+	if t, ok := p.mayPeek(); ok && t.Kind == token.Mut {
+		p.pos++
+		mut = true
+	}
 	// Parse the target: struct literal or array alloc.
 	t, ok := p.mustPeek()
 	if !ok {
@@ -214,7 +220,7 @@ func (p *Parser) ParseNew() (NodeID, bool) {
 		)
 		return ParseFailed, false
 	}
-	return p.NewNew(alloc, target, newToken.Span.Combine(p.span())), true
+	return p.NewNew(alloc, target, mut, newToken.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseMakeSlice() (NodeID, bool) {

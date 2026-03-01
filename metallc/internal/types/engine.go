@@ -311,7 +311,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.StructLiteral:
 		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
 	case ast.New:
-		typeID, status = e.checkNew(nodeKind)
+		typeID, status = e.checkNew(nodeID, nodeKind, node.Span)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.SliceType:
@@ -776,7 +776,7 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 	return elemTypeID, TypeOK
 }
 
-func (e *Engine) checkNew(alloc ast.New) (TypeID, TypeStatus) {
+func (e *Engine) checkNew(nodeID ast.NodeID, alloc ast.New, span base.Span) (TypeID, TypeStatus) {
 	allocTypeID, allocStatus := e.Query(alloc.Allocator)
 	if allocStatus.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -799,7 +799,7 @@ func (e *Engine) checkNew(alloc ast.New) (TypeID, TypeStatus) {
 		e.diag(targetSpan, "only structs and arrays can be allocated, got %s", e.TypeDisplay(typeID))
 		return InvalidTypeID, TypeFailed
 	}
-	return typeID, TypeOK
+	return e.buildRefType(nodeID, typeID, alloc.Mut, span), TypeOK
 }
 
 func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {

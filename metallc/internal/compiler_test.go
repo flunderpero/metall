@@ -300,8 +300,7 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun foo(@myalloc Arena) &Foo {
-				let x = new @myalloc Foo("hello")
-				&x
+				new @myalloc Foo("hello")
 			}
 
 			fun main() void {
@@ -423,7 +422,7 @@ func TestCompile(t *testing.T) {
 		{"heap alloc array", `
 			fun main() void {
 				alloc @myalloc = Arena()
-				mut x = new @myalloc [5]Int()
+				mut x = new @myalloc mut [5]Int()
 				x[1] = 1
 				x[2] = 2
 
@@ -432,6 +431,93 @@ func TestCompile(t *testing.T) {
 				print_int(x[2])
 			}
 			`, "0\n1\n2\n"},
+		// `new` returns a reference. Assigning `let y = x` where `x = new @a mut Foo(...)` copies
+		// the reference, not the underlying data — both variables alias the same heap memory.
+		{"heap alloc struct is ref aliased", `
+			struct Foo {
+				mut one Str
+			}
+
+			fun main() void {
+				alloc @a = Arena()
+				mut x = new @a mut Foo("hello")
+				mut y = x
+				y.one = "world"
+				print_str(x.one)
+				print_str(y.one)
+			}
+			`, "world\nworld\n"},
+
+		// Heap-allocated fixed-size array via `new` returns a reference.
+		// Copying only copies the pointer — both variables alias the same heap data.
+		{"heap alloc array is ref aliased", `
+			fun main() void {
+				alloc @a = Arena()
+				mut x = new @a mut [3]Int()
+				x[0] = 42
+				mut y = x
+				y[0] = 99
+				print_int(x[0])
+				print_int(y[0])
+			}
+			`, "99\n99\n"},
+
+		// `new` without `mut` returns an immutable reference — field reads work via auto-deref.
+		{"heap alloc immutable struct read", `
+			struct Foo {
+				one Str
+			}
+
+			fun main() void {
+				alloc @a = Arena()
+				let x = new @a Foo("hello")
+				print_str(x.one)
+			}
+			`, "hello\n"},
+
+		// `new @a mut` returns a mutable reference — can pass to fun taking &mut.
+		{"heap alloc mut struct as param", `
+			struct Foo {
+				mut one Str
+			}
+
+			fun set(a &mut Foo, b Str) void {
+				a.one = b
+			}
+
+			fun main() void {
+				alloc @a = Arena()
+				let x = new @a mut Foo("hello")
+				set(x, "world")
+				print_str(x.one)
+			}
+			`, "world\n"},
+
+		// Heap-allocated immutable array: index reads work via auto-deref.
+		{"heap alloc immutable array read", `
+			fun main() void {
+				alloc @a = Arena()
+				let x = new @a mut [3]Int()
+				x[0] = 42
+				let y = new @a [3]Int()
+				print_int(x[0])
+			}
+			`, "42\n"},
+
+		// Slice is a fat pointer {ptr, len}. Copying a slice only copies the fat pointer,
+		// so both slices point to the same underlying data.
+		{"slice copy aliases underlying data", `
+			fun main() void {
+				alloc @a = Arena()
+				mut x = make @a []Int(3)
+				x[0] = 42
+				mut y = x
+				y[0] = 99
+				print_int(x[0])
+				print_int(y[0])
+			}
+			`, "99\n99\n"},
+
 		{"make slice", `
 			fun main() void {
 				alloc @myalloc = Arena()

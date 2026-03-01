@@ -187,12 +187,43 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				block, ok := e.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				_, ok = e.TypeOfNode(lastExpr).Kind.(StructType)
+				ref, ok := e.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
-				assert.Equal("struct Foo(one Str)", e.TypeDisplay(e.TypeOfNode(lastExpr).ID))
+				assert.Equal(false, ref.Mut)
+				_, ok = e.Type(ref.Type).Kind.(StructType)
+				assert.Equal(true, ok)
+				assert.Equal("&struct Foo(one Str)", e.TypeDisplay(e.TypeOfNode(lastExpr).ID))
 			},
 		},
 		{"pass alloc to fun", `{ fun foo(@myalloc Arena) void {} alloc @myalloc = Arena() foo(@myalloc) }`, void, nil},
+		{
+			"heap alloc mut struct",
+			`{ alloc @a = Arena() struct Bar{one Str} new @a mut Bar("hello") }`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				lastExpr := block.Exprs[len(block.Exprs)-1]
+				ref, ok := e.TypeOfNode(lastExpr).Kind.(RefType)
+				assert.Equal(true, ok)
+				assert.Equal(true, ref.Mut)
+				_, ok = e.Type(ref.Type).Kind.(StructType)
+				assert.Equal(true, ok)
+				assert.Equal("&mut struct Bar(one Str)", e.TypeDisplay(e.TypeOfNode(lastExpr).ID))
+			},
+		},
+		{
+			"heap alloc mut array",
+			`{ alloc @a = Arena() new @a mut [5]Int() }`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				lastExpr := block.Exprs[len(block.Exprs)-1]
+				ref, ok := e.TypeOfNode(lastExpr).Kind.(RefType)
+				assert.Equal(true, ok)
+				assert.Equal(true, ref.Mut)
+				arr, ok := e.Type(ref.Type).Kind.(ArrayType)
+				assert.Equal(true, ok)
+				assert.Equal(int64(5), arr.Len)
+			},
+		},
 
 		{"array type", `fun foo(a [5]Int) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
 			fun, ok := e.TypeOfNode(id).Kind.(FunType)
@@ -247,7 +278,20 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ struct Foo{one Str} struct Bar { @myalloc Arena } alloc @myalloc = Arena() let x = Bar(@myalloc) let y = new x.@myalloc Foo("hello") }`,
 			void, nil,
 		},
-		{"heap alloc array", `{ alloc @myalloc = Arena() new @myalloc [5]Int() }`, arr_t(Int, 5), nil},
+		{
+			"heap alloc array",
+			`{ alloc @myalloc = Arena() new @myalloc [5]Int() }`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				lastExpr := block.Exprs[len(block.Exprs)-1]
+				ref, ok := e.TypeOfNode(lastExpr).Kind.(RefType)
+				assert.Equal(true, ok)
+				assert.Equal(false, ref.Mut)
+				arr, ok := e.Type(ref.Type).Kind.(ArrayType)
+				assert.Equal(true, ok)
+				assert.Equal(int64(5), arr.Len)
+			},
+		},
 		{"make slice", `{ alloc @myalloc = Arena() make @myalloc []Int(5) }`, slice_t(Int), nil},
 		{"slice index read", `{ alloc @myalloc = Arena() let x = make @myalloc []Int(3) x[1] }`, Int, nil},
 		{"slice index write", `{ alloc @myalloc = Arena() mut x = make @myalloc []Int(3) x[1] = 5 }`, void, nil},
@@ -324,7 +368,9 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"struct ref",
 		"fun returns ref",
 		"heap alloc struct",
+		"heap alloc mut struct",
 		"heap alloc array",
+		"heap alloc mut array",
 		"make slice",
 		"slice index read",
 		"slice index write",

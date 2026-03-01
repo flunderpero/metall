@@ -254,6 +254,7 @@ func (StructLiteral) isKind() {}
 type New struct {
 	Allocator NodeID
 	Target    NodeID
+	Mut       bool
 }
 
 func (New) isKind() {}
@@ -317,8 +318,8 @@ func (a *AST) NewStructLiteral(target NodeID, args []NodeID, span base.Span) Nod
 	return a.node(StructLiteral{Target: target, Args: args}, span)
 }
 
-func (a *AST) NewNew(alloc NodeID, target NodeID, span base.Span) NodeID {
-	return a.node(New{Allocator: alloc, Target: target}, span)
+func (a *AST) NewNew(alloc NodeID, target NodeID, mut bool, span base.Span) NodeID {
+	return a.node(New{Allocator: alloc, Target: target, Mut: mut}, span)
 }
 
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
@@ -688,6 +689,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("args", kind.Args...)
 		}
 	case New:
+		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 		if !children {
 			addAttr("allocator", nodeIDKind(kind.Allocator))
 			addAttr("target", nodeIDKind(kind.Target))

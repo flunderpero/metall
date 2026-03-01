@@ -212,10 +212,13 @@ func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 	g.Gen(index.Index)
 	indexReg := g.lookupCode(index.Index)
 	targetReg := g.lookupCode(index.Target)
-	targetTypeKind := g.engine.TypeOfNode(index.Target).Kind
-	switch kind := targetTypeKind.(type) {
+	targetType := g.engine.TypeOfNode(index.Target)
+	if refTyp, ok := targetType.Kind.(types.RefType); ok {
+		targetType = g.engine.Type(refTyp.Type)
+	}
+	switch kind := targetType.Kind.(type) {
 	case types.ArrayType:
-		arrIRType := g.irType(g.engine.TypeOfNode(index.Target).ID)
+		arrIRType := g.irType(targetType.ID)
 		ptrReg := g.reg()
 		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
 		valReg := g.loadValue(ptrReg, kind.Elem)
@@ -230,7 +233,7 @@ func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 		valReg := g.loadValue(ptrReg, kind.Elem)
 		g.setCode(id, valReg)
 	default:
-		panic(base.Errorf("genIndex: unsupported target type %T", targetTypeKind))
+		panic(base.Errorf("genIndex: unsupported target type %T", targetType.Kind))
 	}
 }
 
@@ -589,10 +592,13 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 		targetReg := g.lookupCode(lhsKind.Target)
 		indexReg := g.lookupCode(lhsKind.Index)
 		ptrReg := g.reg()
-		targetTypeKind := g.engine.TypeOfNode(lhsKind.Target).Kind
-		switch kind := targetTypeKind.(type) {
+		targetType := g.engine.TypeOfNode(lhsKind.Target)
+		if refTyp, ok := targetType.Kind.(types.RefType); ok {
+			targetType = g.engine.Type(refTyp.Type)
+		}
+		switch kind := targetType.Kind.(type) {
 		case types.ArrayType:
-			arrIRType := g.irType(g.engine.TypeOfNode(lhsKind.Target).ID)
+			arrIRType := g.irType(targetType.ID)
 			g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
 			g.storeValue(rhs, ptrReg, kind.Elem)
 		case types.SliceType:
@@ -603,7 +609,7 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 			g.write("%s = getelementptr %s, ptr %s, i32 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
 			g.storeValue(rhs, ptrReg, kind.Elem)
 		default:
-			panic(base.Errorf("genAssign index: unsupported target type %T", targetTypeKind))
+			panic(base.Errorf("genAssign index: unsupported target type %T", targetType.Kind))
 		}
 	case ast.Deref:
 		g.Gen(assign.LHS)
@@ -795,7 +801,7 @@ func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	if g.isAggregateType(exprType.ID) {
 		exprNode := g.engine.Node(v.Expr)
 		switch exprNode.Kind.(type) {
-		case ast.StructLiteral, ast.New, ast.ArrayLiteral, ast.Call:
+		case ast.StructLiteral, ast.ArrayLiteral, ast.MakeSlice, ast.Call:
 			// The result value is already a copy.
 			g.setCode(id, exprReg)
 			g.setSymbol(id, v.Name.Name, exprReg, "ptr")

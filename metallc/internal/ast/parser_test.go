@@ -211,6 +211,12 @@ func TestParseOK(t *testing.T) {
 		{"heap alloc array", "expr", `new @myalloc [5]Int()`, func(a *TestAST) NodeID {
 			return a.new_(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5)))
 		}},
+		{"heap alloc mut struct", "expr", `new @myalloc mut Foo()`, func(a *TestAST) NodeID {
+			return a.new_mut(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
+		}},
+		{"heap alloc mut array", "expr", `new @myalloc mut [5]Int()`, func(a *TestAST) NodeID {
+			return a.new_mut(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5)))
+		}},
 		{"make slice", "expr", `make @myalloc []Int(n)`, func(a *TestAST) NodeID {
 			allocIdent := a.ident("@myalloc")
 			sliceType := a.slice_typ(a.int_typ())
@@ -432,7 +438,11 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 }
 
 func (a *TestAST) new_(alloc NodeID, target NodeID) NodeID {
-	return a.NewNew(alloc, target, a.span)
+	return a.NewNew(alloc, target, false, a.span)
+}
+
+func (a *TestAST) new_mut(alloc NodeID, target NodeID) NodeID {
+	return a.NewNew(alloc, target, true, a.span)
 }
 
 func (a *TestAST) binary(op BinaryOp, lhs NodeID, rhs NodeID) NodeID {
