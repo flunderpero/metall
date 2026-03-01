@@ -298,13 +298,19 @@ func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLi
 func (a *LifetimeCheck) analyzeNew(nodeID ast.NodeID, alloc ast.New) {
 	merged := a.flow(alloc.Target)
 	merged = merged.Merge(a.flow(alloc.Allocator))
+	if newArr, ok := a.e.Node(alloc.Target).Kind.(ast.NewArray); ok && newArr.DefaultValue != nil {
+		merged = merged.Merge(a.flow(*newArr.DefaultValue))
+	}
 	a.flows[nodeID] = merged
 }
 
-// analyzeMakeSlice: `make(@alloc, []T(len))` merges the allocator's flow.
+// analyzeMakeSlice: `make(@alloc, []T(len))` or `make(@alloc, []T(len, default))` merges the allocator's flow.
 func (a *LifetimeCheck) analyzeMakeSlice(nodeID ast.NodeID, makeSlice ast.MakeSlice) {
 	merged := a.flow(makeSlice.Allocator)
 	merged = merged.Merge(a.flow(makeSlice.Len))
+	if makeSlice.DefaultValue != nil {
+		merged = merged.Merge(a.flow(*makeSlice.DefaultValue))
+	}
 	a.flows[nodeID] = merged
 }
 

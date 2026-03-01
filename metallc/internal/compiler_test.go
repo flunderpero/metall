@@ -422,7 +422,7 @@ func TestCompile(t *testing.T) {
 		{"heap alloc array", `
 			fun main() void {
 				let @myalloc = Arena()
-				mut x = new_mut(@myalloc, [5]Int())
+				mut x = new_mut(@myalloc, [5]Int(0))
 				x[1] = 1
 				x[2] = 2
 
@@ -533,6 +533,126 @@ func TestCompile(t *testing.T) {
 				print_int(x.len)
 			}
 			`, "10\n20\n30\n3\n"},
+
+		// Default value fills all elements of a heap-allocated array.
+		{"new array with default value", `
+			fun main() void {
+				let @a = Arena()
+				mut x = new_mut(@a, [100]Int(77))
+				print_int(x[0])
+				print_int(x[50])
+				print_int(x[99])
+			}
+			`, "77\n77\n77\n"},
+
+		// Default value fills all elements of a heap-allocated slice.
+		{"make slice with default value", `
+			fun main() void {
+				let @a = Arena()
+				mut x = make(@a, []Int(100, 77))
+				print_int(x[0])
+				print_int(x[50])
+				print_int(x[99])
+			}
+			`, "77\n77\n77\n"},
+
+		// Without a default value, memory is uninitialized. Writing then reading works.
+		{"new array no default then write", `
+			fun main() void {
+				let @a = Arena()
+				mut x = new_mut(@a, [100]Int())
+				x[99] = 42
+				print_int(x[99])
+			}
+			`, "42\n"},
+
+		// Without a default value on slice, writing then reading works.
+		{"make slice no default then write", `
+			fun main() void {
+				let @a = Arena()
+				mut x = make(@a, []Int(100))
+				x[99] = 42
+				print_int(x[99])
+			}
+			`, "42\n"},
+
+		// Struct array with default value fills all 100 elements.
+		{"new struct array with default value", `
+			struct Foo {
+				one Int
+				two Str
+			}
+
+			fun main() void {
+				let @a = Arena()
+				mut x = new_mut(@a, [100]Foo(Foo(42, "hello")))
+				print_int(x[0].one)
+				print_str(x[0].two)
+				print_int(x[50].one)
+				print_str(x[50].two)
+				print_int(x[99].one)
+				print_str(x[99].two)
+			}
+			`, "42\nhello\n42\nhello\n42\nhello\n"},
+
+		// Struct slice with default value fills all 100 elements.
+		{"make struct slice with default value", `
+			struct Foo {
+				one Int
+				two Str
+			}
+
+			fun main() void {
+				let @a = Arena()
+				mut x = make(@a, []Foo(100, Foo(42, "hello")))
+				print_int(x[0].one)
+				print_str(x[0].two)
+				print_int(x[50].one)
+				print_str(x[50].two)
+				print_int(x[99].one)
+				print_str(x[99].two)
+			}
+			`, "42\nhello\n42\nhello\n42\nhello\n"},
+
+		// Array of mutable references with default value. All elements alias the
+		// same heap struct, so mutating through one is visible through the others.
+		{"new ref array with default value", `
+			struct Foo {
+				mut one Int
+				two Str
+			}
+
+			fun main() void {
+				let @a = Arena()
+				let def = new_mut(@a, Foo(42, "hello"))
+				mut x = new_mut(@a, [3]&mut Foo(def))
+				print_int(x[0].one)
+				print_int(x[2].one)
+				x[0].one = 99
+				print_int(x[1].one)
+				print_int(x[2].one)
+			}
+			`, "42\n42\n99\n99\n"},
+
+		// Slice of mutable references with default value. All elements alias the
+		// same heap struct, so mutating through one is visible through the others.
+		{"make ref slice with default value", `
+			struct Foo {
+				mut one Int
+				two Str
+			}
+
+			fun main() void {
+				let @a = Arena()
+				let def = new_mut(@a, Foo(42, "hello"))
+				mut x = make(@a, []&mut Foo(3, def))
+				print_int(x[0].one)
+				print_int(x[2].one)
+				x[0].one = 99
+				print_int(x[1].one)
+				print_int(x[2].one)
+			}
+			`, "42\n42\n99\n99\n"},
 
 		{"int arithmetic", `
 			fun main() void {

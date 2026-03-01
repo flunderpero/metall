@@ -209,19 +209,32 @@ func TestParseOK(t *testing.T) {
 			return a.new_(a.field_access(a.ident("x"), "@myalloc"), a.struct_lit(a.ident("Foo"), a.string_("hello")))
 		}},
 		{"heap alloc array", "expr", `new(@myalloc, [5]Int())`, func(a *TestAST) NodeID {
-			return a.new_(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5)))
+			return a.new_(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5), nil))
+		}},
+		{"heap alloc array default", "expr", `new(@myalloc, [5]Int(42))`, func(a *TestAST) NodeID {
+			alloc := a.ident("@myalloc")
+			arrType := a.arr_typ(a.int_typ(), 5)
+			v := a.int_(42)
+			return a.new_(alloc, a.new_array(arrType, &v))
 		}},
 		{"heap alloc mut struct", "expr", `new_mut(@myalloc, Foo())`, func(a *TestAST) NodeID {
 			return a.new_mut(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
 		}},
 		{"heap alloc mut array", "expr", `new_mut(@myalloc, [5]Int())`, func(a *TestAST) NodeID {
-			return a.new_mut(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5)))
+			return a.new_mut(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5), nil))
 		}},
 		{"make slice", "expr", `make(@myalloc, []Int(n))`, func(a *TestAST) NodeID {
 			allocIdent := a.ident("@myalloc")
 			sliceType := a.slice_typ(a.int_typ())
 			n := a.ident("n")
-			return a.make_slice(allocIdent, sliceType, n)
+			return a.make_slice(allocIdent, sliceType, n, nil)
+		}},
+		{"make slice default", "expr", `make(@myalloc, []Int(n, 42))`, func(a *TestAST) NodeID {
+			allocIdent := a.ident("@myalloc")
+			sliceType := a.slice_typ(a.int_typ())
+			n := a.ident("n")
+			v := a.int_(42)
+			return a.make_slice(allocIdent, sliceType, n, &v)
 		}},
 
 		{"int +", "expr", "1 + 2", func(a *TestAST) NodeID {
@@ -524,12 +537,12 @@ func (a *TestAST) slice_typ(typ NodeID) NodeID {
 	return a.NewSliceType(typ, a.span)
 }
 
-func (a *TestAST) new_array(arrType NodeID) NodeID {
-	return a.NewNewArray(arrType, a.span)
+func (a *TestAST) new_array(arrType NodeID, defaultValue *NodeID) NodeID {
+	return a.NewNewArray(arrType, defaultValue, a.span)
 }
 
-func (a *TestAST) make_slice(alloc NodeID, sliceType NodeID, len_ NodeID) NodeID {
-	return a.NewMakeSlice(alloc, sliceType, len_, a.span)
+func (a *TestAST) make_slice(alloc NodeID, sliceType NodeID, len_ NodeID, defaultValue *NodeID) NodeID {
+	return a.NewMakeSlice(alloc, sliceType, len_, defaultValue, a.span)
 }
 
 func (a *TestAST) arr_lit(elems ...NodeID) NodeID {

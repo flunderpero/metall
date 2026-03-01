@@ -60,15 +60,17 @@ type SliceType struct {
 func (SliceType) isKind() {}
 
 type NewArray struct {
-	Type NodeID
+	Type         NodeID
+	DefaultValue *NodeID
 }
 
 func (NewArray) isKind() {}
 
 type MakeSlice struct {
-	Allocator NodeID
-	Type      NodeID
-	Len       NodeID
+	Allocator    NodeID
+	Type         NodeID
+	Len          NodeID
+	DefaultValue *NodeID
 }
 
 func (MakeSlice) isKind() {}
@@ -390,12 +392,12 @@ func (a *AST) NewSliceType(elemType NodeID, span base.Span) NodeID {
 	return a.node(SliceType{Elem: elemType}, span)
 }
 
-func (a *AST) NewNewArray(typ NodeID, span base.Span) NodeID {
-	return a.node(NewArray{Type: typ}, span)
+func (a *AST) NewNewArray(typ NodeID, defaultValue *NodeID, span base.Span) NodeID {
+	return a.node(NewArray{Type: typ, DefaultValue: defaultValue}, span)
 }
 
-func (a *AST) NewMakeSlice(alloc NodeID, typ NodeID, len_ NodeID, span base.Span) NodeID {
-	return a.node(MakeSlice{Allocator: alloc, Type: typ, Len: len_}, span)
+func (a *AST) NewMakeSlice(alloc NodeID, typ NodeID, len_ NodeID, defaultValue *NodeID, span base.Span) NodeID {
+	return a.node(MakeSlice{Allocator: alloc, Type: typ, Len: len_, DefaultValue: defaultValue}, span)
 }
 
 func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
@@ -501,10 +503,16 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Elem)
 	case NewArray:
 		f(kind.Type)
+		if kind.DefaultValue != nil {
+			f(*kind.DefaultValue)
+		}
 	case MakeSlice:
 		f(kind.Allocator)
 		f(kind.Type)
 		f(kind.Len)
+		if kind.DefaultValue != nil {
+			f(*kind.DefaultValue)
+		}
 	case ArrayLiteral:
 		for i := range len(kind.Elems) {
 			f(kind.Elems[i])
@@ -745,18 +753,29 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	case NewArray:
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))
+			if kind.DefaultValue != nil {
+				addAttr("default", nodeIDKind(*kind.DefaultValue))
+			}
 		} else {
 			addChild("type", kind.Type)
+			if kind.DefaultValue != nil {
+				addChild("default", *kind.DefaultValue)
+			}
 		}
 	case MakeSlice:
+		addAttr("len", nodeIDKind(kind.Len))
 		if !children {
 			addAttr("allocator", nodeIDKind(kind.Allocator))
 			addAttr("type", nodeIDKind(kind.Type))
-			addAttr("len", nodeIDKind(kind.Len))
+			if kind.DefaultValue != nil {
+				addAttr("default", nodeIDKind(*kind.DefaultValue))
+			}
 		} else {
 			addChild("allocator", kind.Allocator)
 			addChild("type", kind.Type)
-			addChild("len", kind.Len)
+			if kind.DefaultValue != nil {
+				addChild("default", *kind.DefaultValue)
+			}
 		}
 	case ArrayLiteral:
 		addAttr("len", fmt.Sprintf("%d", len(kind.Elems)))

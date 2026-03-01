@@ -684,6 +684,19 @@ func (e *Engine) checkNewArray(alloc ast.NewArray) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
+	if alloc.DefaultValue != nil {
+		defTypeID, defStatus := e.Query(*alloc.DefaultValue)
+		if defStatus.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		arrType := base.Cast[ArrayType](e.Type(arrTypeID).Kind)
+		if !e.isAssignableTo(defTypeID, arrType.Elem) {
+			defSpan := e.Node(*alloc.DefaultValue).Span
+			e.diag(defSpan, "type mismatch: expected %s, got %s",
+				e.TypeDisplay(arrType.Elem), e.TypeDisplay(defTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	}
 	return arrTypeID, TypeOK
 }
 
@@ -710,6 +723,19 @@ func (e *Engine) checkMakeSlice(makeSlice ast.MakeSlice) (TypeID, TypeStatus) {
 		lenSpan := e.Node(makeSlice.Len).Span
 		e.diag(lenSpan, "type mismatch: expected Int, got %s", e.TypeDisplay(lenTypeID))
 		return InvalidTypeID, TypeFailed
+	}
+	if makeSlice.DefaultValue != nil {
+		defTypeID, defStatus := e.Query(*makeSlice.DefaultValue)
+		if defStatus.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		sliceType := base.Cast[SliceType](e.Type(sliceTypeID).Kind)
+		if !e.isAssignableTo(defTypeID, sliceType.Elem) {
+			defSpan := e.Node(*makeSlice.DefaultValue).Span
+			e.diag(defSpan, "type mismatch: expected %s, got %s",
+				e.TypeDisplay(sliceType.Elem), e.TypeDisplay(defTypeID))
+			return InvalidTypeID, TypeFailed
+		}
 	}
 	return sliceTypeID, TypeOK
 }

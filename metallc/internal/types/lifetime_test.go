@@ -545,6 +545,86 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				`, "\n"),
 		}},
 
+		// Default value in new-array carries a ref that escapes the inner scope.
+		{"new array default ref escapes", `
+			{
+				struct Wrapper { one &Int }
+				let @a = Arena()
+				let x = {
+					let local = 123
+					new_mut(@a, [3]Wrapper(Wrapper(&local)))
+				}
+				x
+			}
+			`, []string{
+			"test.met:7:52: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let local = 123
+				        new_mut(@a, [3]Wrapper(Wrapper(&local)))
+				                                       ^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Default value in make-slice carries a ref that escapes the inner scope.
+		{"make slice default ref escapes", `
+			{
+				struct Wrapper { one &Int }
+				let @a = Arena()
+				let x = {
+					let local = 123
+					make(@a, []Wrapper(3, Wrapper(&local)))
+				}
+				x
+			}
+			`, []string{
+			"test.met:7:51: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let local = 123
+				        make(@a, []Wrapper(3, Wrapper(&local)))
+				                                      ^^^^^^
+				    }
+				`, "\n"),
+		}},
+
+		// Ref array: default value is a reference to a stack local that escapes.
+		{"new ref array default escapes", `
+			{
+				let @a = Arena()
+				let x = {
+					let local = 123
+					new_mut(@a, [3]&Int(&local))
+				}
+				x
+			}
+			`, []string{
+			"test.met:6:41: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let local = 123
+				        new_mut(@a, [3]&Int(&local))
+				                            ^^^^^^
+				    }
+				`, "\n"),
+		}},
+		// Ref slice: default value is a reference to a stack local that escapes.
+		{"make ref slice default escapes", `
+			{
+				let @a = Arena()
+				let x = {
+					let local = 123
+					make(@a, []&Int(3, &local))
+				}
+				x
+			}
+			`, []string{
+			"test.met:6:40: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let local = 123
+				        make(@a, []&Int(3, &local))
+				                           ^^^^^^
+				    }
+				`, "\n"),
+		}},
+
 		// Valid: shadowed variable with ref should not trigger false positive.
 		{"valid shadowed ref", `
 			{

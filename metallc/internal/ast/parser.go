@@ -168,7 +168,7 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseNew(mut bool) (NodeID, bool) {
+func (p *Parser) ParseNew(mut bool) (NodeID, bool) { //nolint:funlen
 	var newToken *token.Token
 	var ok bool
 	if mut {
@@ -208,10 +208,18 @@ func (p *Parser) ParseNew(mut bool) (NodeID, bool) {
 		if _, ok := p.expect(token.LParen); !ok {
 			return ParseFailed, false
 		}
+		var defaultValue *NodeID
+		if next, ok := p.mayPeek(); ok && next.Kind != token.RParen {
+			val, ok := p.ParseExpr(0)
+			if !ok {
+				return ParseFailed, false
+			}
+			defaultValue = &val
+		}
 		if _, ok := p.expect(token.RParen); !ok {
 			return ParseFailed, false
 		}
-		target = p.NewNewArray(arrType, t.Span.Combine(p.span()))
+		target = p.NewNewArray(arrType, defaultValue, t.Span.Combine(p.span()))
 	case token.TypeIdent:
 		target, ok = p.ParseStructLiteral()
 		if !ok {
@@ -262,13 +270,22 @@ func (p *Parser) ParseMakeSlice() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	if _, ok := p.expect(token.RParen); !ok {
-		return ParseFailed, false
+	var defaultValue *NodeID
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Comma {
+		p.next()
+		val, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		defaultValue = &val
 	}
 	if _, ok := p.expect(token.RParen); !ok {
 		return ParseFailed, false
 	}
-	return p.NewMakeSlice(alloc, sliceType, lenExpr, makeToken.Span.Combine(p.span())), true
+	if _, ok := p.expect(token.RParen); !ok {
+		return ParseFailed, false
+	}
+	return p.NewMakeSlice(alloc, sliceType, lenExpr, defaultValue, makeToken.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseArrayLiteral() (NodeID, bool) {

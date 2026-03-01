@@ -292,7 +292,20 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(int64(5), arr.Len)
 			},
 		},
+		{
+			"new array default", `{ let @myalloc = Arena() new(@myalloc, [5]Int(42)) }`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				lastExpr := block.Exprs[len(block.Exprs)-1]
+				ref, ok := e.TypeOfNode(lastExpr).Kind.(RefType)
+				assert.Equal(true, ok)
+				arr, ok := e.Type(ref.Type).Kind.(ArrayType)
+				assert.Equal(true, ok)
+				assert.Equal(int64(5), arr.Len)
+			},
+		},
 		{"make slice", `{ let @myalloc = Arena() make(@myalloc, []Int(5)) }`, slice_t(Int), nil},
+		{"make slice default", `{ let @myalloc = Arena() make(@myalloc, []Int(5, 42)) }`, slice_t(Int), nil},
 		{"slice index read", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x[1] }`, Int, nil},
 		{"slice index write", `{ let @myalloc = Arena() mut x = make(@myalloc, []Int(3)) x[1] = 5 }`, void, nil},
 		{"slice len", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x.len }`, Int, nil},
@@ -370,8 +383,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"heap alloc struct",
 		"heap alloc mut struct",
 		"heap alloc array",
+		"new array default",
 		"heap alloc mut array",
 		"make slice",
+		"make slice default",
 		"slice index read",
 		"slice index write",
 		"slice len",
@@ -715,6 +730,16 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:35: type mismatch: expected Int, got Str\n" +
 				`    { let @a = Arena() make(@a, []Int("hello")) }` + "\n" +
 				`                                      ^^^^^^^`,
+		}},
+		{"new array wrong default type", `{ let @a = Arena() new(@a, [5]Int("hello")) }`, []string{
+			"test.met:1:35: type mismatch: expected Int, got Str\n" +
+				`    { let @a = Arena() new(@a, [5]Int("hello")) }` + "\n" +
+				`                                      ^^^^^^^`,
+		}},
+		{"make slice wrong default type", `{ let @a = Arena() make(@a, []Int(3, "hello")) }`, []string{
+			"test.met:1:38: type mismatch: expected Int, got Str\n" +
+				`    { let @a = Arena() make(@a, []Int(3, "hello")) }` + "\n" +
+				`                                         ^^^^^^^`,
 		}},
 		{"cannot return allocator from fun", `fun foo() Arena { }`, []string{
 			"test.met:1:11: cannot return an allocator from a function\n" +

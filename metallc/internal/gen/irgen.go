@@ -257,7 +257,13 @@ func (g *IRGen) genNew(id ast.NodeID, alloc ast.New) {
 		g.write("%s_elm_size = ptrtoint ptr %s_elm_size_ptr to i64", reg, reg)
 		g.write("%s_size = mul i64 %s_elm_size, %d", reg, reg, arrType.Len)
 		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
-		g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_size, i1 false)", reg, reg)
+		if lit.DefaultValue != nil {
+			g.Gen(*lit.DefaultValue)
+			valReg := g.lookupCode(*lit.DefaultValue)
+			elemTypeID := g.engine.TypeOfNode(arrType.Elem).ID
+			count := arrType.Len
+			g.genInitializeMemory(reg, irTyp, valReg, elemTypeID, fmt.Sprintf("%d", count), &count)
+		}
 		g.setCode(id, reg)
 	case ast.StructLiteral:
 		irTyp := g.irTypeOfNode(lit.Target)
@@ -283,7 +289,12 @@ func (g *IRGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
 	lenReg := g.lookupCode(makeSlice.Len)
 	g.write("%s_size = mul i64 %s_elm_size, %s", reg, reg, lenReg)
 	g.write("%s_data = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
-	g.write("call void @llvm.memset.p0.i64(ptr %s_data, i8 0, i64 %s_size, i1 false)", reg, reg)
+	if makeSlice.DefaultValue != nil {
+		g.Gen(*makeSlice.DefaultValue)
+		valReg := g.lookupCode(*makeSlice.DefaultValue)
+		elemTypeID := g.engine.TypeOfNode(sliceType.Elem).ID
+		g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, elemTypeID, lenReg, nil)
+	}
 	// Build the slice {ptr, i64} on the stack.
 	g.write("%s = alloca {ptr, i64}", reg)
 	g.write("%s_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", reg, reg)
@@ -291,6 +302,66 @@ func (g *IRGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
 	g.write("%s_len_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", reg, reg)
 	g.write("store i64 %s, ptr %s_len_field", lenReg, reg)
 	g.setCode(id, reg)
+}
+
+func (g *IRGen) genInitializeMemory(
+	dataReg string,
+	irElemType string,
+	valReg string,
+	elemTypeID types.TypeID,
+	countReg string,
+	compileTimeCount *int64,
+) {
+	typ := g.engine.Type(elemTypeID)
+	switch typ.Kind.(type) {
+	case types.StructType:
+		g.genInitializeMemoryStruct(dataReg, irElemType, valReg, countReg)
+	default:
+		g.genInitializeMemoryScalar(dataReg, irElemType, valReg, countReg, compileTimeCount)
+	}
+}
+
+func (g *IRGen) genInitializeMemoryScalar(
+	dataReg string,
+	irElemType string,
+	valReg string,
+	countReg string,
+	compileTimeCount *int64,
+) {
+	// Check if the value is the constant 0.
+	if valReg == "0" {
+		if compileTimeCount != nil {
+			totalBytes := *compileTimeCount * irScalarSize(irElemType)
+			g.write("call void @llvm.memset.inline.p0.i64(ptr %s, i8 0, i64 %d, i1 false)", dataReg, totalBytes)
+		} else {
+			sizeReg := g.reg()
+			g.write("%s_elm = mul i64 %s, %d", sizeReg, countReg, irScalarSize(irElemType))
+			g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_elm, i1 false)", dataReg, sizeReg)
+		}
+		return
+	}
+	// Non-zero: use a prelude fill function.
+	fillValReg := valReg
+	fillIRType := irElemType
+	if irElemType == "ptr" {
+		fillIRType = "i64"
+		fillValReg = g.reg()
+		g.write("%s = ptrtoint ptr %s to i64", fillValReg, valReg)
+	}
+	fillFn := fmt.Sprintf("@__fill_%s", fillIRType)
+	g.write("call void %s(ptr %s, %s %s, i64 %s)", fillFn, dataReg, fillIRType, fillValReg, countReg)
+}
+
+func (g *IRGen) genInitializeMemoryStruct(
+	dataReg string,
+	irElemType string,
+	valReg string,
+	countReg string,
+) {
+	elemSizeReg := g.reg()
+	g.write("%s_ptr = getelementptr %s, ptr null, i32 1", elemSizeReg, irElemType)
+	g.write("%s = ptrtoint ptr %s_ptr to i64", elemSizeReg, elemSizeReg)
+	g.write("call void @__fill_cpy(ptr %s, ptr %s, i64 %s, i64 %s)", dataReg, valReg, elemSizeReg, countReg)
 }
 
 func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, destReg string) {
@@ -868,6 +939,19 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 	}
 }
 
+func irScalarSize(irType string) int64 {
+	switch irType {
+	case "i1":
+		return 1
+	case "i64":
+		return 8
+	case "ptr":
+		return 8
+	default:
+		panic(base.Errorf("unknown scalar IR type: %s", irType))
+	}
+}
+
 func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {
 	if _, ok := g.astCode[astID]; ok {
 		panic(base.Errorf("code already set for %s", g.engine.AST.Debug(astID, false, 0)))
@@ -1004,5 +1088,56 @@ define internal void @print_bool(i1 %n) {
 	false:
 		call i32 @puts(ptr @str_false)
 		ret void
+}
+
+;     Memory fill functions.
+
+define internal void @__fill_i64(ptr %dst, i64 %val, i64 %count) {
+entry:
+	br label %loop
+loop:
+	%i = phi i64 [ 0, %entry ], [ %next, %body ]
+	%done = icmp sge i64 %i, %count
+	br i1 %done, label %exit, label %body
+body:
+	%ptr = getelementptr i64, ptr %dst, i64 %i
+	store i64 %val, ptr %ptr
+	%next = add i64 %i, 1
+	br label %loop
+exit:
+	ret void
+}
+
+define internal void @__fill_i1(ptr %dst, i8 %val, i64 %count) {
+entry:
+	br label %loop
+loop:
+	%i = phi i64 [ 0, %entry ], [ %next, %body ]
+	%done = icmp sge i64 %i, %count
+	br i1 %done, label %exit, label %body
+body:
+	%ptr = getelementptr i1, ptr %dst, i64 %i
+	store i8 %val, ptr %ptr
+	%next = add i64 %i, 1
+	br label %loop
+exit:
+	ret void
+}
+
+define internal void @__fill_cpy(ptr %dst, ptr %val, i64 %elem_size, i64 %count) {
+entry:
+    br label %loop
+loop:
+    %i = phi i64 [ 0, %entry ], [ %next_i, %body ]
+    %curr_ptr = phi ptr [ %dst, %entry ], [ %next_ptr, %body ] 
+    %done = icmp sge i64 %i, %count
+    br i1 %done, label %exit, label %body
+body:
+    call void @llvm.memcpy.p0.p0.i64(ptr %curr_ptr, ptr %val, i64 %elem_size, i1 false)
+    %next_i = add i64 %i, 1
+    %next_ptr = getelementptr i8, ptr %curr_ptr, i64 %elem_size
+    br label %loop
+exit:
+    ret void
 }
 `
