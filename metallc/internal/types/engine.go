@@ -684,18 +684,23 @@ func (e *Engine) checkNewArray(alloc ast.NewArray) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
+	arrType := base.Cast[ArrayType](e.Type(arrTypeID).Kind)
 	if alloc.DefaultValue != nil {
 		defTypeID, defStatus := e.Query(*alloc.DefaultValue)
 		if defStatus.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		arrType := base.Cast[ArrayType](e.Type(arrTypeID).Kind)
 		if !e.isAssignableTo(defTypeID, arrType.Elem) {
 			defSpan := e.Node(*alloc.DefaultValue).Span
 			e.diag(defSpan, "type mismatch: expected %s, got %s",
 				e.TypeDisplay(arrType.Elem), e.TypeDisplay(defTypeID))
 			return InvalidTypeID, TypeFailed
 		}
+	} else if !e.isSafeUninitialized(arrType.Elem) {
+		typeSpan := e.Node(alloc.Type).Span
+		e.diag(typeSpan, "%s is not safe to leave uninitialized, provide a default value",
+			e.TypeDisplay(arrType.Elem))
+		return InvalidTypeID, TypeFailed
 	}
 	return arrTypeID, TypeOK
 }
@@ -724,18 +729,23 @@ func (e *Engine) checkMakeSlice(makeSlice ast.MakeSlice) (TypeID, TypeStatus) {
 		e.diag(lenSpan, "type mismatch: expected Int, got %s", e.TypeDisplay(lenTypeID))
 		return InvalidTypeID, TypeFailed
 	}
+	sliceType := base.Cast[SliceType](e.Type(sliceTypeID).Kind)
 	if makeSlice.DefaultValue != nil {
 		defTypeID, defStatus := e.Query(*makeSlice.DefaultValue)
 		if defStatus.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		sliceType := base.Cast[SliceType](e.Type(sliceTypeID).Kind)
 		if !e.isAssignableTo(defTypeID, sliceType.Elem) {
 			defSpan := e.Node(*makeSlice.DefaultValue).Span
 			e.diag(defSpan, "type mismatch: expected %s, got %s",
 				e.TypeDisplay(sliceType.Elem), e.TypeDisplay(defTypeID))
 			return InvalidTypeID, TypeFailed
 		}
+	} else if !e.isSafeUninitialized(sliceType.Elem) {
+		typeSpan := e.Node(makeSlice.Type).Span
+		e.diag(typeSpan, "%s is not safe to leave uninitialized, provide a default value",
+			e.TypeDisplay(sliceType.Elem))
+		return InvalidTypeID, TypeFailed
 	}
 	return sliceTypeID, TypeOK
 }
@@ -1312,6 +1322,28 @@ func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
 	}
 	// A &mut T is assignable to &T (coerce by masking off the mutable flag).
 	return got&mutableRefFlag != 0 && got&^mutableRefFlag == expected
+}
+
+// isSafeUninitialized reports whether a type is safe to use on uninitialized memory.
+// Int is safe (any bit pattern is valid), but Bool (must be 0 or 1), Str, references,
+// slices, and allocators are not. Structs are safe only if all their fields are safe.
+func (e *Engine) isSafeUninitialized(typeID TypeID) bool {
+	typ := e.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case BuiltInType:
+		return kind.Name == "Int"
+	case StructType:
+		for _, field := range kind.Fields {
+			if !e.isSafeUninitialized(field.Type) {
+				return false
+			}
+		}
+		return true
+	case ArrayType:
+		return e.isSafeUninitialized(kind.Elem)
+	default:
+		return false
+	}
 }
 
 func (e *Engine) verifyMain(fun ast.Fun) {

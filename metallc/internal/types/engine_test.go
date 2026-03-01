@@ -306,6 +306,19 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{"make slice", `{ let @myalloc = Arena() make(@myalloc, []Int(5)) }`, slice_t(Int), nil},
 		{"make slice default", `{ let @myalloc = Arena() make(@myalloc, []Int(5, 42)) }`, slice_t(Int), nil},
+		// Int is safe uninitialized — no default required.
+		{"new array Int no default", `{ let @a = Arena() let x = new(@a, [5]Int()) }`, void, nil},
+		{"make slice Int no default", `{ let @a = Arena() let x = make(@a, []Int(5)) }`, void, nil},
+		// Struct with only Int fields is safe uninitialized.
+		{
+			"new array safe struct no default",
+			`{ struct Foo{one Int two Int} let @a = Arena() let x = new(@a, [3]Foo()) }`,
+			void,
+			nil,
+		},
+		// Bool is unsafe, but providing a default makes it OK.
+		{"new array Bool with default", `{ let @a = Arena() let x = new(@a, [5]Bool(false)) }`, void, nil},
+		{"make slice Bool with default", `{ let @a = Arena() let x = make(@a, []Bool(5, false)) }`, void, nil},
 		{"slice index read", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x[1] }`, Int, nil},
 		{"slice index write", `{ let @myalloc = Arena() mut x = make(@myalloc, []Int(3)) x[1] = 5 }`, void, nil},
 		{"slice len", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x.len }`, Int, nil},
@@ -387,6 +400,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"heap alloc mut array",
 		"make slice",
 		"make slice default",
+		"new array Int no default",
+		"make slice Int no default",
+		"new array safe struct no default",
+		"new array Bool with default",
+		"make slice Bool with default",
 		"slice index read",
 		"slice index write",
 		"slice len",
@@ -740,6 +758,40 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:38: type mismatch: expected Int, got Str\n" +
 				`    { let @a = Arena() make(@a, []Int(3, "hello")) }` + "\n" +
 				`                                         ^^^^^^^`,
+		}},
+		{"new array Bool uninitialized", `{ let @a = Arena() new(@a, [5]Bool()) }`, []string{
+			"test.met:1:28: Bool is not safe to leave uninitialized, provide a default value\n" +
+				`    { let @a = Arena() new(@a, [5]Bool()) }` + "\n" +
+				`                               ^^^^^^^`,
+		}},
+		{"new array Str uninitialized", `{ let @a = Arena() new(@a, [5]Str()) }`, []string{
+			"test.met:1:28: Str is not safe to leave uninitialized, provide a default value\n" +
+				`    { let @a = Arena() new(@a, [5]Str()) }` + "\n" +
+				`                               ^^^^^^`,
+		}},
+		{"new array ref uninitialized", `{ struct Foo{one Int} let @a = Arena() new(@a, [5]&Foo()) }`, []string{
+			"test.met:1:48: &struct Foo(one Int) is not safe to leave uninitialized, provide a default value\n" +
+				`    { struct Foo{one Int} let @a = Arena() new(@a, [5]&Foo()) }` + "\n" +
+				`                                                   ^^^^^^^`,
+		}},
+		{
+			"new array struct with ref field uninitialized",
+			`{ struct Foo{one &Int} let @a = Arena() new(@a, [5]Foo()) }`,
+			[]string{
+				"test.met:1:49: struct Foo(one &Int) is not safe to leave uninitialized, provide a default value\n" +
+					`    { struct Foo{one &Int} let @a = Arena() new(@a, [5]Foo()) }` + "\n" +
+					`                                                    ^^^^^^`,
+			},
+		},
+		{"make slice Bool uninitialized", `{ let @a = Arena() make(@a, []Bool(3)) }`, []string{
+			"test.met:1:29: Bool is not safe to leave uninitialized, provide a default value\n" +
+				`    { let @a = Arena() make(@a, []Bool(3)) }` + "\n" +
+				`                                ^^^^^^`,
+		}},
+		{"make slice ref uninitialized", `{ struct Foo{one Int} let @a = Arena() make(@a, []&Foo(3)) }`, []string{
+			"test.met:1:49: &struct Foo(one Int) is not safe to leave uninitialized, provide a default value\n" +
+				`    { struct Foo{one Int} let @a = Arena() make(@a, []&Foo(3)) }` + "\n" +
+				`                                                    ^^^^^^`,
 		}},
 		{"cannot return allocator from fun", `fun foo() Arena { }`, []string{
 			"test.met:1:11: cannot return an allocator from a function\n" +
