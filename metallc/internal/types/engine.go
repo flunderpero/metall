@@ -327,8 +327,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span)
 	case ast.Index:
 		typeID, status = e.checkIndex(nodeKind)
-	case ast.AllocatorDecl:
-		typeID, status = e.checkAllocatorDecl(nodeID, nodeKind, node.Span)
+	case ast.AllocatorVar:
+		typeID, status = e.checkAllocatorVar(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
 		typeID, status = e.checkFieldAccess(nodeKind)
 	case ast.Ident:
@@ -650,7 +650,7 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	return thenType, TypeOK
 }
 
-func (e *Engine) checkAllocatorDecl(nodeID ast.NodeID, alloc ast.AllocatorDecl, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, span base.Span) (TypeID, TypeStatus) {
 	if alloc.Allocator.Name != "Arena" {
 		e.diag(alloc.Allocator.Span, "unknown allocator type: %s", alloc.Allocator.Name)
 		return InvalidTypeID, TypeFailed

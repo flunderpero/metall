@@ -538,12 +538,6 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = var_
-	case token.Alloc:
-		alloc, ok := p.ParseAllocatorDecl()
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = alloc
 	default:
 		p.diagnostic(t.Span, "unexpected token: expected start of an expression, got %s", t.Kind)
 		return ParseFailed, false
@@ -614,12 +608,7 @@ func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
 	}
 }
 
-func (p *Parser) ParseAllocatorDecl() (NodeID, bool) {
-	t, ok := p.expect(token.Alloc)
-	if !ok {
-		return ParseFailed, false
-	}
-	span := t.Span
+func (p *Parser) ParseAllocatorVar(span base.Span) (NodeID, bool) {
 	name, ok := p.expect(token.AllocatorIdent)
 	if !ok {
 		return ParseFailed, false
@@ -636,7 +625,7 @@ func (p *Parser) ParseAllocatorDecl() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewAllocatorDecl(
+	return p.NewAllocatorVar(
 		Name{Name: name.Value, Span: name.Span},
 		Name{Name: allocator.Value, Span: allocator.Span},
 		args,
@@ -658,6 +647,18 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 		}
 	}
 	span := t.Span
+	// Check for allocator variable: `let @name = Arena(...)`.
+	next, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	if next.Kind == token.AllocatorIdent {
+		if mut {
+			p.diagnostic(next.Span, "allocator variables cannot be mutable")
+			return ParseFailed, false
+		}
+		return p.ParseAllocatorVar(span)
+	}
 	nameToken, ok := p.expect(token.Ident)
 	name := Name{nameToken.Value, nameToken.Span}
 	if !ok {

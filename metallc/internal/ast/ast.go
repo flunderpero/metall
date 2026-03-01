@@ -199,13 +199,13 @@ type Var struct {
 
 func (Var) isKind() {}
 
-type AllocatorDecl struct {
+type AllocatorVar struct {
 	Name      Name
 	Allocator Name
 	Args      []NodeID
 }
 
-func (AllocatorDecl) isKind() {}
+func (AllocatorVar) isKind() {}
 
 type Block struct {
 	Exprs       []NodeID
@@ -362,8 +362,8 @@ func (a *AST) NewIdent(name string, span base.Span) NodeID {
 	return a.node(Ident{Name: name}, span)
 }
 
-func (a *AST) NewAllocatorDecl(name Name, allocator Name, args []NodeID, span base.Span) NodeID {
-	return a.node(AllocatorDecl{Name: name, Allocator: allocator, Args: args}, span)
+func (a *AST) NewAllocatorVar(name Name, allocator Name, args []NodeID, span base.Span) NodeID {
+	return a.node(AllocatorVar{Name: name, Allocator: allocator, Args: args}, span)
 }
 
 func (a *AST) NewInt(value int64, span base.Span) NodeID {
@@ -491,7 +491,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case New:
 		f(kind.Allocator)
 		f(kind.Target)
-	case AllocatorDecl:
+	case AllocatorVar:
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
 		}
@@ -697,7 +697,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("allocator", kind.Allocator)
 			addChild("target", kind.Target)
 		}
-	case AllocatorDecl:
+	case AllocatorVar:
 		addAttr("name", kind.Name.Name)
 		addAttr("allocator", kind.Allocator.Name)
 		if !children {

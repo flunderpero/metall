@@ -11,8 +11,7 @@ import (
 type TokenKind int
 
 const (
-	Alloc TokenKind = iota + 1
-	AllocatorIdent
+	AllocatorIdent TokenKind = iota + 1
 	Amp
 	And
 	Break
@@ -57,7 +56,6 @@ const (
 )
 
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
-	Alloc:                 "<alloc>",
 	AllocatorIdent:        "<allocator identifier>",
 	Amp:                   "&",
 	And:                   "<and>",
@@ -118,7 +116,6 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
-	"alloc":    Alloc,
 	"and":      And,
 	"break":    Break,
 	"continue": Continue,

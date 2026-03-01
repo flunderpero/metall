@@ -195,8 +195,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeDeref(nodeID, kind)
 	case ast.FieldAccess:
 		a.analyzeFieldAccess(nodeID, kind)
-	case ast.AllocatorDecl:
-		a.analyzeAllocatorDecl(nodeID, kind)
+	case ast.AllocatorVar:
+		a.analyzeAllocatorVar(nodeID, kind)
 	case ast.StructLiteral:
 		a.analyzeStructLiteral(nodeID, kind)
 	case ast.New:
@@ -277,7 +277,7 @@ func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess
 	a.flows[nodeID] = a.flow(fa.Target)
 }
 
-func (a *LifetimeCheck) analyzeAllocatorDecl(nodeID ast.NodeID, alloc ast.AllocatorDecl) {
+func (a *LifetimeCheck) analyzeAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar) {
 	ss := a.scopeState(nodeID)
 	ss.Vars[alloc.Name.Name] = &VarTaint{
 		nodeID, ss.ScopeTaint,

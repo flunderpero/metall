@@ -67,7 +67,6 @@ func TestLexer(t *testing.T) {
 		{"true", "true", []want{{True, "", "1:1-1:4"}}},
 		{"false", "false", []want{{False, "", "1:1-1:5"}}},
 		{"void", `void`, []want{{Void, "", "1:1-1:4"}}},
-		{"alloc", "alloc", []want{{Alloc, "", "1:1-1:5"}}},
 		{"mut", `mut`, []want{{Mut, "", "1:1-1:3"}}},
 		{"let", `let`, []want{{Let, "", "1:1-1:3"}}},
 		{"struct", `struct`, []want{{Struct, "", "1:1-1:6"}}},

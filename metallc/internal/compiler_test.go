@@ -304,11 +304,11 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun main() void {
-				alloc @myalloc = Arena()
+				let @myalloc = Arena()
 				let x = new @myalloc Foo("x")
 				let y = new @myalloc Foo("y")
 				{
-					alloc @youralloc = Arena()
+					let @youralloc = Arena()
 					let z = new @youralloc Foo("z")
 					print_str(z.one)
 				}
@@ -421,7 +421,7 @@ func TestCompile(t *testing.T) {
 			`, "x\nz\n"},
 		{"heap alloc array", `
 			fun main() void {
-				alloc @myalloc = Arena()
+				let @myalloc = Arena()
 				mut x = new @myalloc mut [5]Int()
 				x[1] = 1
 				x[2] = 2
@@ -439,7 +439,7 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun main() void {
-				alloc @a = Arena()
+				let @a = Arena()
 				mut x = new @a mut Foo("hello")
 				mut y = x
 				y.one = "world"
@@ -452,7 +452,7 @@ func TestCompile(t *testing.T) {
 		// Copying only copies the pointer — both variables alias the same heap data.
 		{"heap alloc array is ref aliased", `
 			fun main() void {
-				alloc @a = Arena()
+				let @a = Arena()
 				mut x = new @a mut [3]Int()
 				x[0] = 42
 				mut y = x
@@ -469,7 +469,7 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun main() void {
-				alloc @a = Arena()
+				let @a = Arena()
 				let x = new @a Foo("hello")
 				print_str(x.one)
 			}
@@ -486,7 +486,7 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun main() void {
-				alloc @a = Arena()
+				let @a = Arena()
 				let x = new @a mut Foo("hello")
 				set(x, "world")
 				print_str(x.one)
@@ -496,7 +496,7 @@ func TestCompile(t *testing.T) {
 		// Heap-allocated immutable array: index reads work via auto-deref.
 		{"heap alloc immutable array read", `
 			fun main() void {
-				alloc @a = Arena()
+				let @a = Arena()
 				let x = new @a mut [3]Int()
 				x[0] = 42
 				let y = new @a [3]Int()
@@ -508,7 +508,7 @@ func TestCompile(t *testing.T) {
 		// so both slices point to the same underlying data.
 		{"slice copy aliases underlying data", `
 			fun main() void {
-				alloc @a = Arena()
+				let @a = Arena()
 				mut x = make @a []Int(3)
 				x[0] = 42
 				mut y = x
@@ -520,7 +520,7 @@ func TestCompile(t *testing.T) {
 
 		{"make slice", `
 			fun main() void {
-				alloc @myalloc = Arena()
+				let @myalloc = Arena()
 				let size = 3
 				mut x = make @myalloc []Int(size)
 				x[0] = 10

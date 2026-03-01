@@ -170,8 +170,8 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 
-		{"alloc declaration", "expr", "alloc @myalloc = Arena(123)", func(a *TestAST) NodeID {
-			return a.allocator_decl("@myalloc", "Arena", a.int_(123))
+		{"allocator var", "expr", "let @myalloc = Arena(123)", func(a *TestAST) NodeID {
+			return a.allocator_var("@myalloc", "Arena", a.int_(123))
 		}},
 		{"heap alloc", "expr", `new @myalloc Foo()`, func(a *TestAST) NodeID {
 			return a.new_(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
@@ -350,6 +350,11 @@ func TestParseErr(t *testing.T) {
 			"test.met:1:8: reserved word: Arena\n" +
 				`    struct Arena{one Str}` + "\n" +
 				"           ^^^^^",
+		}},
+		{"mut allocator var", `mut @a = Arena()`, []string{
+			"test.met:1:5: allocator variables cannot be mutable\n" +
+				`    mut @a = Arena()` + "\n" +
+				"        ^^",
 		}},
 		{"heap alloc without target", `new @myalloc`, []string{
 			"test.met:1:5: unexpected end of file\n" +
@@ -550,11 +555,11 @@ func (a *TestAST) ident(name string) NodeID {
 	return a.NewIdent(name, a.span)
 }
 
-func (a *TestAST) allocator_decl(name string, allocator string, args ...NodeID) NodeID {
+func (a *TestAST) allocator_var(name string, allocator string, args ...NodeID) NodeID {
 	if args == nil {
 		args = []NodeID{}
 	}
-	return a.NewAllocatorDecl(Name{name, a.span}, Name{allocator, a.span}, args, a.span)
+	return a.NewAllocatorVar(Name{name, a.span}, Name{allocator, a.span}, args, a.span)
 }
 
 func (a *TestAST) assign(lhs NodeID, rhs NodeID) NodeID {
@@ -622,7 +627,7 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			node.Kind = kind
 		case New:
 			node.Kind = kind
-		case AllocatorDecl:
+		case AllocatorVar:
 			kind.Name.Span = base.Span{}
 			kind.Allocator.Span = base.Span{}
 			node.Kind = kind

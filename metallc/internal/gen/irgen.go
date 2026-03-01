@@ -146,8 +146,8 @@ func (g *IRGen) Gen(id ast.NodeID) { //nolint:funlen
 		// Handled inline in genNew
 	case ast.MakeSlice:
 		g.genMakeSlice(id, kind)
-	case ast.AllocatorDecl:
-		g.genAllocatorDecl(id, kind)
+	case ast.AllocatorVar:
+		g.genAllocatorVar(id, kind)
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -786,7 +786,7 @@ func (g *IRGen) genDeref(id ast.NodeID, deref ast.Deref) {
 	g.setCode(id, valReg)
 }
 
-func (g *IRGen) genAllocatorDecl(id ast.NodeID, alloc ast.AllocatorDecl) {
+func (g *IRGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 	reg := g.reg()
 	g.write("%s = call ptr @arena_create(i64 4096)", reg)
 	g.blockAllocatorRegs = append(g.blockAllocatorRegs, reg)
