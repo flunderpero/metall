@@ -303,6 +303,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 				return InvalidTypeID, TypeFailed
 			}
 		}
+		if cachedType.Type == nil {
+			return InvalidTypeID, cachedType.Status
+		}
 		return cachedType.Type.ID, cachedType.Status
 	case ast.FunParam:
 		typeID, status = e.checkFunParam(nodeID, nodeKind, node.Span)
@@ -1041,6 +1044,10 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 	retTypeID, status := e.Query(fun.ReturnType)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
+	}
+	if _, ok := e.Type(retTypeID).Kind.(AllocatorType); ok {
+		e.diag(e.Node(fun.ReturnType).Span, "cannot return an allocator from a function")
+		return InvalidTypeID, TypeFailed
 	}
 	funTypeID := e.newType(FunType{[]TypeID{}, retTypeID}, node.ID, node.Span, TypeInProgress)
 	if !e.bind(fun.Name.Name, false, node.ID, funTypeID, fun.Name.Span) {

@@ -716,6 +716,11 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { alloc @a = Arena() make @a []Int("hello") }` + "\n" +
 				`                                       ^^^^^^^`,
 		}},
+		{"cannot return allocator from fun", `fun foo() Arena { }`, []string{
+			"test.met:1:11: cannot return an allocator from a function\n" +
+				`    fun foo() Arena { }` + "\n" +
+				"              ^^^^^",
+		}},
 	}
 
 	assert := base.NewAssert(t)
