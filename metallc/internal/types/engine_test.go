@@ -920,6 +920,24 @@ func TestTypeCheckErr(t *testing.T) {
 					"                             ^^^^^^^^",
 			},
 		},
+		{
+			"method call receiver ref mismatch", `
+            {
+                struct Foo { one Int }
+                fun Foo.get(f Foo) Int { f.one }
+                let x = Foo(42)
+                let y = &x
+                y.get()
+            }`,
+			[]string{
+				"test.met:7:17: type mismatch at receiver: expected struct Foo(one Int), got &struct Foo(one Int)\n" +
+					strings.Trim(`
+                    let y = &x
+                    y.get()
+                    ^
+                }`, "\n") + "\n",
+			},
+		},
 	}
 
 	assert := base.NewAssert(t)

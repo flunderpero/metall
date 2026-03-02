@@ -906,7 +906,7 @@ func TestCompile(t *testing.T) {
 			`, "42\n"},
 		{"method call on &ref", `
 			struct Foo { x Int }
-			fun Foo.get_x(self Foo) Int { self.x }
+			fun Foo.get_x(self &Foo) Int { self.x }
 			fun main() void {
 				let f = Foo(42)
 				let r = &f

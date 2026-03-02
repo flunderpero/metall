@@ -1082,14 +1082,6 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		// Auto-deref receiver: if param expects a value type but receiver is a ref, deref it.
-		if i == 0 && isMethod {
-			if _, paramIsRef := e.Type(paramTypeID).Kind.(RefType); !paramIsRef {
-				if refTyp, ok := e.Type(argTypeID).Kind.(RefType); ok {
-					argTypeID = refTyp.Type
-				}
-			}
-		}
 		if !e.isAssignableTo(argTypeID, paramTypeID) {
 			argNode := e.Node(argNodeID)
 			if i == 0 && isMethod {
