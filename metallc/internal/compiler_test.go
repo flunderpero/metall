@@ -928,6 +928,25 @@ func TestCompile(t *testing.T) {
 				print_int(x.double())
 			}
 			`, "42\n"},
+		{"Str.byte_len method", `
+			fun Str.byte_len(self Str) Int { self.data.len }
+			fun main() void {
+				let s = "hello"
+				print_int(s.byte_len())
+				print_int("".byte_len())
+				print_int("abc".byte_len())
+			}
+			`, "5\n0\n3\n"},
+		{"Str from []U8 slice", `
+			fun Str.byte_len(self Str) Int { self.data.len }
+			fun main() void {
+				let @a = Arena()
+				let data = make(@a, []U8(3, U8(65)))
+				let s = Str(data)
+				print_str(s)
+				print_int(s.byte_len())
+			}
+			`, "AAA\n3\n"},
 	}
 
 	assert := base.NewAssert(t)

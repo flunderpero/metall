@@ -181,6 +181,7 @@ type Engine struct {
 	builtins           map[string]TypeID
 	voidType           TypeID
 	boolType           TypeID
+	strType            TypeID
 	arenaType          TypeID
 	intType            TypeID
 	intTypes           map[string]TypeID
@@ -206,7 +207,6 @@ func NewEngine(a *ast.AST) *Engine {
 	}
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
-	strType := e.newType(BuiltInType{"Str"}, 0, span, TypeOK)
 	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
 	arenaType := e.newType(AllocatorType{AllocatorArena}, 0, span, TypeOK)
 
@@ -217,8 +217,15 @@ func NewEngine(a *ast.AST) *Engine {
 	}
 	intType := e.intTypes["Int"]
 
+	u8SliceType := e.buildSliceType(e.intTypes["U8"], 0, span)
+	strType := e.newType(StructType{
+		Name:   "Str",
+		Fields: []StructField{{Name: "data", Type: u8SliceType, Mut: false}},
+	}, 0, span, TypeOK)
+
 	e.voidType = voidType
 	e.boolType = boolType
+	e.strType = strType
 	e.arenaType = arenaType
 	e.intType = intType
 	e.builtins = map[string]TypeID{
@@ -290,6 +297,11 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 		sb.WriteString(e.TypeDisplay(kind.Return))
 		return sb.String()
 	case StructType:
+		// todo: This is just a hack to get a nicer output. We should only print type names in most
+		// 		 diagnostics messages.
+		if typeID == e.strType {
+			return "Str"
+		}
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "struct %s(", kind.Name)
 		for i, field := range kind.Fields {
@@ -1036,7 +1048,7 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", struct_.Name, fieldAccess.Field.Name)
 		return InvalidTypeID, TypeFailed
 	}
-	// Method lookup on built-in types (Int, Str, Bool, etc.).
+	// Method lookup on built-in types (Int, Bool, etc.).
 	if builtin, ok := targetTyp.Kind.(BuiltInType); ok {
 		methodName := builtin.Name + "." + fieldAccess.Field.Name
 		if binding, _, ok := e.scope.Lookup(methodName); ok {

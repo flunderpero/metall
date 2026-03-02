@@ -158,6 +158,8 @@ func (g *IRGen) genFile(file ast.File, span base.Span) {
 	g.write("")
 	g.write(`source_filename = "%s"`, span.Source.Name)
 	g.write("")
+	// Emit the Str type definition (built-in struct, no AST node).
+	g.write("%Str = type { {ptr, i64} }\n")
 	for _, decl := range file.Decls {
 		g.Gen(decl)
 	}
@@ -168,7 +170,9 @@ func (g *IRGen) genFile(file ast.File, span base.Span) {
 		consts[id] = value
 	}
 	for id, value := range consts {
-		g.write(`@%d = private constant [%d x i8] c"%s"`, id, len(value)+1, value+`\00`)
+		n := len(value)
+		g.write(`@str.%d.data = private constant [%d x i8] c"%s"`, id, n, value)
+		g.write(`@str.%d = private constant %%Str { {ptr, i64} { ptr @str.%d.data, i64 %d } }`, id, id, n)
 	}
 }
 
@@ -880,9 +884,7 @@ func (g *IRGen) genString(id ast.NodeID, str ast.String) {
 		g.constCounter++
 		g.strConsts[str.Value] = cid
 	}
-	reg := g.reg()
-	g.write("%s = getelementptr [%d x i8], ptr @%d, i32 0, i32 0", reg, len(str.Value)+1, cid)
-	g.setCode(id, reg)
+	g.setCode(id, "@str.%d", cid)
 }
 
 func (g *IRGen) genRef(id ast.NodeID, ref ast.Ref) {
@@ -966,8 +968,6 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		switch kind.Name {
 		case "Bool":
 			return "i1"
-		case "Str":
-			return "ptr"
 		case "void":
 			return "void"
 		default:
@@ -976,6 +976,9 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 	case types.RefType, types.AllocatorType:
 		return "ptr"
 	case types.StructType:
+		if kind.Name == "Str" {
+			return "%Str"
+		}
 		return "%" + typeID.String()
 	case types.ArrayType:
 		return fmt.Sprintf("[%d x %s]", kind.Len, g.irType(kind.Elem))
@@ -1091,6 +1094,7 @@ func GenIR(fileID ast.NodeID, engine *types.Engine, opts IROpts) (string, error)
 	g := NewIRGen(engine, opts)
 	g.Gen(fileID)
 	g.write(builtins)
+	g.write(builtinPrintStr)
 	for _, bits := range []int{8, 16, 32, 64} {
 		irType := fmt.Sprintf("i%d", bits)
 		g.write(builtinSafeDiv(irType, "sdiv"))
@@ -1142,6 +1146,19 @@ exit:
 `, irType, valType)
 }
 
+const builtinPrintStr = `
+@fmt_str = private constant [6 x i8] c"%.*s\0A\00"
+define internal void @print_str(ptr byval(%Str) %s) {
+    %data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
+    %data = load ptr, ptr %data_field
+    %len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
+    %len = load i64, ptr %len_field
+    %len32 = trunc i64 %len to i32
+    call i32 (ptr, ...) @printf(ptr @fmt_str, i32 %len32, ptr %data)
+    ret void
+}
+`
+
 const builtins = `
 ; >>> Runtime
 
@@ -1151,11 +1168,6 @@ declare i32 @puts(ptr)
 declare i32 @printf(ptr, ...)
 
 ;      Builtin functions.
-
-define internal void @print_str(ptr %s) {
-    call i32 @puts(ptr %s)
-    ret void
-}
 
 @fmt_int = private constant [6 x i8] c"%lld\0A\00"
 define internal void @print_int(i64 %n) {

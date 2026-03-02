@@ -15,16 +15,15 @@ import (
 
 func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	// TypeIDs for builtin types are stable, so we can do this.
-	// Registration order: void, Str, Bool, Arena, I8, I16, I32, Int, U8, U16, U32, U64.
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	void := &Type{1, 0, span, BuiltInType{"void"}}
-	Str := &Type{2, 0, span, BuiltInType{"Str"}}
-	Bool := &Type{3, 0, span, BuiltInType{"Bool"}}
-	// Arena = 4
-	// I8=5, I16=6, I32=7
-	Int := &Type{8, 0, span, BuiltInType{"Int"}}
-	U8 := &Type{9, 0, span, BuiltInType{"U8"}}
-	// U16=10, U32=11, U64=12
+	Bool := &Type{2, 0, span, BuiltInType{"Bool"}}
+	Int := &Type{7, 0, span, BuiltInType{"Int"}}
+	U8 := &Type{8, 0, span, BuiltInType{"U8"}}
+	Str := &Type{13, 0, span, StructType{
+		Name:   "Str",
+		Fields: []StructField{{Name: "data", Type: TypeID(12), Mut: false}},
+	}}
 
 	tests := []struct {
 		name  string
@@ -1153,6 +1152,10 @@ func parseSnapshot(s string) string {
 
 func zeroIDAndSpan(typ *Type, status TypeStatus) bool {
 	if _, ok := typ.Kind.(BuiltInType); ok {
+		return true
+	}
+	// Keep Str's ID stable — it's a built-in struct with a well-known TypeID.
+	if s, ok := typ.Kind.(StructType); ok && s.Name == "Str" {
 		return true
 	}
 	typ.ID = TypeID(0)
