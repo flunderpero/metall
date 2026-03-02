@@ -1,8 +1,8 @@
 package ast
 
 import (
+	"math/big"
 	"slices"
-	"strconv"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -760,10 +760,15 @@ func (p *Parser) ParseArrayOrSliceType() (NodeID, bool) {
 	span := t.Span
 	var len_ *int64
 	if next, ok := p.mayPeek(); ok && next.Kind == token.Number {
-		v, ok := p.expectInt()
+		n, ok := p.expectNumber()
 		if !ok {
 			return ParseFailed, false
 		}
+		if !n.IsInt64() || n.Int64() <= 0 {
+			p.diagnostic(span, "invalid array length: %s", n)
+			return ParseFailed, false
+		}
+		v := n.Int64()
 		len_ = &v
 	}
 	if _, ok := p.expect(token.RBracket); !ok {
@@ -871,11 +876,11 @@ func (p *Parser) ParseIdent() (NodeID, bool) {
 }
 
 func (p *Parser) ParseNumber() (NodeID, bool) {
-	i, ok := p.expectInt()
+	n, ok := p.expectNumber()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewInt(i, p.span()), true
+	return p.NewInt(n, p.span()), true
 }
 
 // parseAllocator parses `@a` or a field access chain ending in an
@@ -991,17 +996,17 @@ func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {
 	return t, true
 }
 
-func (p *Parser) expectInt() (int64, bool) {
+func (p *Parser) expectNumber() (*big.Int, bool) {
 	t, ok := p.expect(token.Number)
 	if !ok {
-		return 0, false
+		return nil, false
 	}
-	number, err := strconv.ParseInt(t.Value, 10, 64)
-	if err != nil {
+	n, valid := new(big.Int).SetString(t.Value, 10)
+	if !valid {
 		p.diagnostic(t.Span, "invalid number: %s", t.Value)
-		return 0, false
+		return nil, false
 	}
-	return number, true
+	return n, true
 }
 
 func (p *Parser) span() base.Span {

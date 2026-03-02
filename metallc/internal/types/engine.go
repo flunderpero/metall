@@ -2,7 +2,8 @@ package types
 
 import (
 	"fmt"
-	"slices"
+	"maps"
+	"math/big"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -33,6 +34,30 @@ type BuiltInType struct {
 }
 
 func (BuiltInType) isTypeKind() {}
+
+// IntTypeInfo describes a built-in integer type.
+type IntTypeInfo struct {
+	Name   string   // e.g. "I32", "U8"
+	Signed bool     // true for I8..I64, false for U8..U64
+	Bits   int      // 8, 16, 32, 64
+	Min    *big.Int // inclusive lower bound
+	Max    *big.Int // inclusive upper bound
+}
+
+// intTypeInfos is the single source of truth for all integer types.
+// "Int" is an alias for "I64" and is NOT listed here — it shares the I64 TypeID.
+//
+//nolint:gochecknoglobals
+var intTypeInfos = map[string]IntTypeInfo{
+	"I8":  {"I8", true, 8, big.NewInt(-128), big.NewInt(127)},
+	"I16": {"I16", true, 16, big.NewInt(-32768), big.NewInt(32767)},
+	"I32": {"I32", true, 32, big.NewInt(-2147483648), big.NewInt(2147483647)},
+	"I64": {"I64", true, 64, big.NewInt(-9223372036854775808), big.NewInt(9223372036854775807)},
+	"U8":  {"U8", false, 8, big.NewInt(0), big.NewInt(255)},
+	"U16": {"U16", false, 16, big.NewInt(0), big.NewInt(65535)},
+	"U32": {"U32", false, 32, big.NewInt(0), big.NewInt(4294967295)},
+	"U64": {"U64", false, 64, big.NewInt(0), new(big.Int).SetUint64(18446744073709551615)},
+}
 
 type RefType struct {
 	Type TypeID
@@ -159,8 +184,8 @@ type Engine struct {
 	voidType    TypeID
 	boolType    TypeID
 	arenaType   TypeID
-	intType     TypeID
-	u8Type      TypeID
+	intType     TypeID            // alias for I64 — kept for convenience since it is used everywhere
+	intTypes    map[string]TypeID // "I8".."I64", "U8".."U64" (not "Int" — use intType)
 }
 
 func NewEngine(a *ast.AST) *Engine {
@@ -177,37 +202,63 @@ func NewEngine(a *ast.AST) *Engine {
 		nextID:      1,
 		nextScopeID: 1,
 		scope:       rootScope,
+		intTypes:    map[string]TypeID{},
 	}
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
-	intType := e.newType(BuiltInType{"Int"}, 0, span, TypeOK)
 	strType := e.newType(BuiltInType{"Str"}, 0, span, TypeOK)
 	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
-	u8Type := e.newType(BuiltInType{"U8"}, 0, span, TypeOK)
 	arenaType := e.newType(AllocatorType{AllocatorArena}, 0, span, TypeOK)
-	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
-	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
-	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
-	printU8Fun := e.newType(FunType{[]TypeID{u8Type}, voidType}, 0, span, TypeOK)
+
+	// Register all integer types. "Int" is an alias for I64 — they share the same TypeID.
+	// Registration order: I8, I16, I32, I64, U8, U16, U32, U64.
+	intTypeNames := []string{"I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64"}
+	for _, name := range intTypeNames {
+		typeID := e.newType(BuiltInType{name}, 0, span, TypeOK)
+		e.intTypes[name] = typeID
+	}
+	intType := e.intTypes["I64"]
 
 	e.voidType = voidType
 	e.boolType = boolType
 	e.arenaType = arenaType
 	e.intType = intType
-	e.u8Type = u8Type
 	e.builtins = map[string]TypeID{
-		"Int":        intType,
-		"Str":        strType,
-		"Bool":       boolType,
-		"U8":         u8Type,
-		"Arena":      arenaType,
-		"void":       e.voidType,
-		"print_str":  printStrFun,
-		"print_int":  printIntFun,
-		"print_bool": printBoolFun,
-		"print_u8":   printU8Fun,
+		"Int":   intType, // alias for I64
+		"Str":   strType,
+		"Bool":  boolType,
+		"Arena": arenaType,
+		"void":  e.voidType,
 	}
+	// Register all integer type names (I8..U64) as builtins.
+	maps.Copy(e.builtins, e.intTypes)
+
+	// Register print functions.
+	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
+	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
+	printUintFun := e.newType(FunType{[]TypeID{e.intTypes["U64"]}, voidType}, 0, span, TypeOK)
+	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
+	e.builtins["print_str"] = printStrFun
+	e.builtins["print_int"] = printIntFun
+	e.builtins["print_uint"] = printUintFun
+	e.builtins["print_bool"] = printBoolFun
+
 	return e
+}
+
+// IntTypeInfo returns the IntTypeInfo for a BuiltInType, and whether typeID is an integer type.
+func (e *Engine) IntTypeInfo(typeID TypeID) (IntTypeInfo, bool) {
+	typ := e.Type(typeID)
+	builtin, ok := typ.Kind.(BuiltInType)
+	if !ok {
+		return IntTypeInfo{}, false
+	}
+	name := builtin.Name
+	if name == "Int" {
+		name = "I64"
+	}
+	info, ok := intTypeInfos[name]
+	return info, ok
 }
 
 func (e *Engine) TypeDisplay(typeID TypeID) string {
@@ -223,6 +274,10 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 	}
 	switch kind := cached.Type.Kind.(type) {
 	case BuiltInType:
+		// todo: I64 and Int share the same type id. This "hack" works, but is it really elegant?
+		if kind.Name == "I64" {
+			return "Int"
+		}
 		return kind.Name
 	case RefType:
 		if kind.Mut {
@@ -432,6 +487,12 @@ func (e *Engine) Scope() *Scope {
 	return e.scope
 }
 
+// isIntType reports whether typeID is any integer type (I8..I64, U8..U64, or Int).
+func (e *Engine) isIntType(typeID TypeID) bool {
+	_, ok := e.IntTypeInfo(typeID)
+	return ok
+}
+
 // queryWithHint sets a type hint before querying a node. Int literals use the
 // hint to materialize as the expected integer type (e.g. U8 instead of Int).
 func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint TypeID) (TypeID, TypeStatus) {
@@ -519,36 +580,27 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	expected_lhs_types := []TypeID{}
+	var valid bool
+	var expected string
 	switch binary.Op {
 	case ast.BinaryOpEq, ast.BinaryOpNeq:
-		expected_lhs_types = append(expected_lhs_types, e.intType)
-		expected_lhs_types = append(expected_lhs_types, e.u8Type)
-		expected_lhs_types = append(expected_lhs_types, e.boolType)
+		valid = e.isIntType(lhsTypeID) || lhsTypeID == e.boolType
+		expected = "an integer or Bool"
 	case ast.BinaryOpOr, ast.BinaryOpAnd:
-		expected_lhs_types = append(expected_lhs_types, e.boolType)
+		valid = lhsTypeID == e.boolType
+		expected = "Bool"
 	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv:
-		expected_lhs_types = append(expected_lhs_types, e.intType)
-		expected_lhs_types = append(expected_lhs_types, e.u8Type)
+		valid = e.isIntType(lhsTypeID)
+		expected = "an integer"
 	default:
 		panic(base.Errorf("unknown binary operator: %s", binary.Op))
 	}
-
-	// todo: we can only ever compare Int with == and != at the moment.
-	if !slices.Contains(expected_lhs_types, lhsTypeID) {
-		expected_str := ""
-		for _, typ := range expected_lhs_types {
-			if len(expected_str) > 0 {
-				expected_str += " or "
-			}
-			expected_str += e.TypeDisplay(typ)
-		}
-		span := e.Node(binary.LHS).Span
+	if !valid {
 		e.diag(
-			span,
+			e.Node(binary.LHS).Span,
 			"type mismatch: binary operation '%s' expects %s, got %s",
 			binary.Op,
-			expected_str,
+			expected,
 			e.TypeDisplay(lhsTypeID),
 		)
 		return InvalidTypeID, TypeDepFailed
@@ -902,14 +954,19 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 	return structTypeID, TypeOK
 }
 
-// checkTypeConstructor handles type constructor syntax like Int(x) and U8(x).
-// These look like struct literals in the parser but the target is a builtin numeric type.
+// checkTypeConstructor handles type constructor syntax like I32(x), U8(x), Int(x).
+// These look like struct literals in the parser but the target is a builtin integer type.
+// The argument must itself be an integer type; non-integer types (Str, Bool, etc.) are rejected.
+//
+// Conversion rules (for non-literal arguments):
+//   - Same signedness: target bits >= source bits (widening, identity).
+//   - Unsigned to signed: target bits > source bits (need the extra bit for sign).
+//   - Signed to unsigned: always rejected.
 func (e *Engine) checkTypeConstructor(
 	builtin BuiltInType, targetTypeID TypeID, lit ast.StructLiteral, span base.Span,
 ) (TypeID, TypeStatus) {
-	switch builtin.Name {
-	case "Int", "U8":
-	default:
+	targetInfo, isIntTarget := e.IntTypeInfo(targetTypeID)
+	if !isIntTarget {
 		calleeSpan := e.Node(lit.Target).Span
 		e.diag(calleeSpan, "not a struct: %s", builtin.Name)
 		return InvalidTypeID, TypeFailed
@@ -919,26 +976,37 @@ func (e *Engine) checkTypeConstructor(
 		return InvalidTypeID, TypeFailed
 	}
 	argNodeID := lit.Args[0]
-	// Query with a hint so int literals materialize as the target type.
+	// Query with a hint so int literals materialize as the target type directly.
 	argTypeID, status := e.queryWithHint(argNodeID, targetTypeID)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	argSpan := e.Node(argNodeID).Span
-	switch builtin.Name {
-	case "Int":
-		// Int(Int) is identity, Int(U8) is widening conversion.
-		if argTypeID != e.intType && argTypeID != e.u8Type {
-			e.diag(argSpan, "cannot convert %s to Int", e.TypeDisplay(argTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-	case "U8":
-		// U8(U8) is identity (including int literals that materialized as U8 via the hint).
-		// Anything else (e.g. Int variable, Str) is rejected.
-		if argTypeID != e.u8Type {
-			e.diag(argSpan, "cannot convert %s to U8", e.TypeDisplay(argTypeID))
-			return InvalidTypeID, TypeFailed
-		}
+	// If the literal materialized as the target type, no conversion needed.
+	if argTypeID == targetTypeID {
+		return targetTypeID, TypeOK
+	}
+	argInfo, isIntArg := e.IntTypeInfo(argTypeID)
+	if !isIntArg {
+		argSpan := e.Node(argNodeID).Span
+		e.diag(argSpan, "cannot convert %s to %s", e.TypeDisplay(argTypeID), e.TypeDisplay(targetTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	// Check conversion rules.
+	allowed := false
+	switch {
+	case argInfo.Signed == targetInfo.Signed:
+		allowed = targetInfo.Bits >= argInfo.Bits
+	case !argInfo.Signed && targetInfo.Signed:
+		// Unsigned to signed: need strictly more bits for the sign bit.
+		allowed = targetInfo.Bits > argInfo.Bits
+	case argInfo.Signed && !targetInfo.Signed:
+		// Signed to unsigned: always rejected.
+		allowed = false
+	}
+	if !allowed {
+		argSpan := e.Node(argNodeID).Span
+		e.diag(argSpan, "cannot convert %s to %s", e.TypeDisplay(argTypeID), e.TypeDisplay(targetTypeID))
+		return InvalidTypeID, TypeFailed
 	}
 	return targetTypeID, TypeOK
 }
@@ -1273,13 +1341,17 @@ func (e *Engine) checkBool() (TypeID, TypeStatus) {
 }
 
 func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
-	if typeHint != nil && *typeHint == e.u8Type {
-		if intNode.Value < 0 || intNode.Value > 255 {
-			e.diag(span, "value %d out of range for U8 (0..255)", intNode.Value)
-			return InvalidTypeID, TypeFailed
+	if typeHint != nil {
+		if info, ok := e.IntTypeInfo(*typeHint); ok {
+			if intNode.Value.Cmp(info.Min) < 0 || intNode.Value.Cmp(info.Max) > 0 {
+				e.diag(span, "value %s out of range for %s (%s..%s)",
+					intNode.Value, info.Name, info.Min, info.Max)
+				return InvalidTypeID, TypeFailed
+			}
+			return *typeHint, TypeOK
 		}
-		return e.u8Type, TypeOK
 	}
+	// Default: bare integer literal is Int (I64).
 	return e.intType, TypeOK
 }
 
@@ -1394,13 +1466,14 @@ func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
 }
 
 // isSafeUninitialized reports whether a type is safe to use on uninitialized memory.
-// Int is safe (any bit pattern is valid), but Bool (must be 0 or 1), Str, references,
-// slices, and allocators are not. Structs are safe only if all their fields are safe.
+// All integer types are safe (any bit pattern is valid), but Bool (must be 0 or 1), Str,
+// references, slices, and allocators are not. Structs are safe only if all their fields are safe.
 func (e *Engine) isSafeUninitialized(typeID TypeID) bool {
+	if e.isIntType(typeID) {
+		return true
+	}
 	typ := e.Type(typeID)
 	switch kind := typ.Kind.(type) {
-	case BuiltInType:
-		return kind.Name == "Int" || kind.Name == "U8"
 	case StructType:
 		for _, field := range kind.Fields {
 			if !e.isSafeUninitialized(field.Type) {

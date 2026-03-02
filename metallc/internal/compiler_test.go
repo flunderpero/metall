@@ -703,21 +703,107 @@ func TestCompile(t *testing.T) {
 			}
 			`, "1\n3\n"},
 
+		// Integer types: I8, I16, I32, U8, U16, U32, U64.
+		{"I8", `
+			fun main() void {
+				let x = I8(127)
+				let y = I8(0) - I8(1)
+				print_int(Int(x))
+				print_int(Int(y))
+			}
+			`, "127\n-1\n"},
+		{"I16", `
+			fun main() void {
+				let x = I16(32767)
+				let y = I16(0) - I16(1)
+				print_int(Int(x))
+				print_int(Int(y))
+			}
+			`, "32767\n-1\n"},
+		{"I32", `
+			fun main() void {
+				let x = I32(2147483647)
+				let y = I32(0) - I32(1)
+				print_int(Int(x))
+				print_int(Int(y))
+			}
+			`, "2147483647\n-1\n"},
 		{"U8", `
 			fun main() void {
-				let @a = Arena()
-				mut buf = make(@a, []U8(4, U8(0)))
-				buf[0] = U8(72)
-				buf[1] = U8(101)
-				buf[2] = U8(42)
-				buf[3] = U8(255)
-				print_u8(buf[0])
-				print_u8(buf[1])
-				print_u8(buf[2])
-				print_u8(buf[3])
-				print_int(Int(buf[0]))
+				let x = U8(255)
+				let y = U8(0)
+				print_int(Int(x))
+				print_int(Int(y))
 			}
-			`, "72\n101\n42\n255\n72\n"},
+			`, "255\n0\n"},
+		{"U16", `
+			fun main() void {
+				let x = U16(65535)
+				let y = U16(0)
+				print_int(Int(x))
+				print_int(Int(y))
+			}
+			`, "65535\n0\n"},
+		{"U32", `
+			fun main() void {
+				let x = U32(4294967295)
+				let y = U32(0)
+				print_int(Int(x))
+				print_int(Int(y))
+			}
+			`, "4294967295\n0\n"},
+		{"U64", `
+			fun main() void {
+				let x = U64(18446744073709551615)
+				let y = U64(0)
+				print_uint(x)
+				print_uint(y)
+			}
+			`, "18446744073709551615\n0\n"},
+		{"I64 is Int alias", `
+			fun main() void {
+				let x = I64(42)
+				print_int(x)
+			}
+			`, "42\n"},
+
+		// Integer type conversions.
+		{"widening U8 to I32", `
+			fun main() void {
+				let x = U8(200)
+				let y = I32(x)
+				print_int(Int(y))
+			}
+			`, "200\n"},
+		{"widening I8 to I32", `
+			fun main() void {
+				let x = I8(42)
+				let y = I32(x)
+				print_int(Int(y))
+			}
+			`, "42\n"},
+		{"sign-extend I8 to I32", `
+			fun main() void {
+				let x = I8(0) - I8(1)
+				let y = I32(x)
+				print_int(Int(y))
+			}
+			`, "-1\n"},
+
+		// Arithmetic on integer types.
+		{"I32 arithmetic", `
+			fun main() void {
+				print_int(Int(I32(10) + I32(20)))
+				print_int(Int(I32(50) - I32(8)))
+				print_int(Int(I32(6) * I32(7)))
+				print_int(Int(I32(100) / I32(3)))
+			}
+			`, "30\n42\n42\n33\n"},
+		{"U8 division is unsigned", `
+			fun main() void {
+				print_int(Int(U8(255) / U8(2)))
+			}
+			`, "127\n"},
 	}
 
 	assert := base.NewAssert(t)

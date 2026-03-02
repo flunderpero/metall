@@ -3,6 +3,7 @@ package types
 
 import (
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
 	"testing"
@@ -14,12 +15,16 @@ import (
 
 func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	// TypeIDs for builtin types are stable, so we can do this.
+	// Registration order: void, Str, Bool, Arena, I8..I64, U8..U64.
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	void := &Type{1, 0, span, BuiltInType{"void"}}
-	Int := &Type{2, 0, span, BuiltInType{"Int"}}
-	Str := &Type{3, 0, span, BuiltInType{"Str"}}
-	Bool := &Type{4, 0, span, BuiltInType{"Bool"}}
-	U8 := &Type{5, 0, span, BuiltInType{"U8"}}
+	Str := &Type{2, 0, span, BuiltInType{"Str"}}
+	Bool := &Type{3, 0, span, BuiltInType{"Bool"}}
+	// Arena = 4
+	// I8=5, I16=6, I32=7
+	Int := &Type{8, 0, span, BuiltInType{"I64"}}
+	U8 := &Type{9, 0, span, BuiltInType{"U8"}}
+	// U16=10, U32=11, U64=12
 
 	tests := []struct {
 		name  string
@@ -380,18 +385,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 
 		{"and, not, or", `true and false or not true`, Bool, nil},
 
-		// Type constructors and U8 type.
-		{"U8 constructor", `U8(42)`, U8, nil},
-		{"Int constructor from U8", `Int(U8(1))`, Int, nil},
-		{"U8 +", `U8(1) + U8(2)`, U8, nil},
-		{"== on U8", `U8(1) == U8(2)`, Bool, nil},
-		// Int literal materializes as U8 via type hint in various contexts.
-		{"U8 binary hint", `U8(1) + 2`, U8, nil},
-		{"U8 call arg hint", `{ fun foo(a U8) U8 { a } foo(42) }`, U8, nil},
-		{"U8 array literal hint", `[U8(1), 2, 3]`, arr_t(U8, 3), nil},
-		{"U8 struct literal hint", `{ struct Foo { one U8 two U8 } let x = Foo(1, 2) }`, void, nil},
-		// U8 is safe uninitialized.
-		{"new array U8 no default", `{ let @a = Arena() let x = new(@a, [5]U8()) }`, void, nil},
+		{"type constructor", `U8(42)`, U8, nil},
+		// Int literal materializes as the target type via type hint in various contexts.
+		{"int materialization binary", `U8(1) + 2`, U8, nil},
+		{"int materialization call arg", `{ fun foo(a U8) U8 { a } foo(42) }`, U8, nil},
+		{"int materialization array literal", `[U8(1), 2, 3]`, arr_t(U8, 3), nil},
+		{"int materialization struct literal", `{ struct Foo { one U8 two U8 } let x = Foo(1, 2) }`, void, nil},
 
 		{"conditional for loop", `for true { 1 }`, void, nil},
 		{"unconditional for loop", `for { 1 }`, void, nil},
@@ -724,7 +723,7 @@ func TestTypeCheckErr(t *testing.T) {
 				"        ^^^^^^^",
 		}},
 		{"== with invalid type", `"hello" == "world"`, []string{
-			"test.met:1:1: type mismatch: binary operation '==' expects Int or U8 or Bool, got Str\n" +
+			"test.met:1:1: type mismatch: binary operation '==' expects an integer or Bool, got Str\n" +
 				`    "hello" == "world"` + "\n" +
 				"    ^^^^^^^",
 		}},
@@ -814,41 +813,16 @@ func TestTypeCheckErr(t *testing.T) {
 				"              ^^^^^",
 		}},
 
-		// Type constructor errors.
+		// Type constructor errors — see TestIntegerTypes for comprehensive coverage.
 		{"U8 out of range positive", `U8(256)`, []string{
 			"test.met:1:4: value 256 out of range for U8 (0..255)\n" +
 				"    U8(256)\n" +
 				"       ^^^",
 		}},
-		{"U8 out of range negative", `U8(0 - 1)`, []string{
-			"test.met:1:4: cannot convert Int to U8\n" +
-				"    U8(0 - 1)\n" +
-				"       ^^^^^",
-		}},
-		{"U8 from str", `U8("hello")`, []string{
-			"test.met:1:4: cannot convert Str to U8\n" +
-				`    U8("hello")` + "\n" +
-				"       ^^^^^^^",
-		}},
-		{"Int from str", `Int("hello")`, []string{
-			"test.met:1:5: cannot convert Str to Int\n" +
-				`    Int("hello")` + "\n" +
-				"        ^^^^^^^",
-		}},
-		{"U8 wrong arg count", `U8(1, 2)`, []string{
-			"test.met:1:1: U8() takes exactly 1 argument, got 2\n" +
-				"    U8(1, 2)\n" +
-				"    ^^^^^^^^",
-		}},
 		{"Bool is not a type constructor", `Bool(true)`, []string{
 			"test.met:1:1: not a struct: Bool\n" +
 				"    Bool(true)\n" +
 				"    ^^^^",
-		}},
-		{"U8 from Int variable", `{ let x = 123 U8(x) }`, []string{
-			"test.met:1:18: cannot convert Int to U8\n" +
-				"    { let x = 123 U8(x) }\n" +
-				"                     ^",
 		}},
 		{"U8 + Int type mismatch", `{ let x = 123 U8(1) + x }`, []string{
 			"test.met:1:23: type mismatch: expected type of LHS: U8, got Int\n" +
@@ -1118,4 +1092,213 @@ func fun_t(types ...*Type) *Type {
 		paramIDs[i] = p.ID
 	}
 	return &Type{Kind: FunType{paramIDs, ret.ID}}
+}
+
+func TestIntegerTypes(t *testing.T) {
+	assert := base.NewAssert(t)
+	allIntTypes := []string{"I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64"}
+
+	typeCheck := func(t *testing.T, src string) *Engine {
+		t.Helper()
+		source := base.NewSource("test.met", []rune(src))
+		tokens := token.Lex(source)
+		parser := ast.NewParser(tokens)
+		exprID, parseOK := parser.ParseExpr(0)
+		if !parseOK || len(parser.Diagnostics) > 0 {
+			t.Fatalf("parse failed: %s", parser.Diagnostics)
+		}
+		e := NewEngine(parser.AST)
+		e.Query(exprID)
+		return e
+	}
+
+	t.Run("literal range", func(t *testing.T) {
+		// Each type constructor accepts 0 and its max literal value.
+		for _, name := range allIntTypes {
+			info := intTypeInfos[name]
+			for _, val := range []string{"0", info.Max.String()} {
+				src := fmt.Sprintf("%s(%s)", name, val)
+				e := typeCheck(t, src)
+				assert.Equal(0, len(e.Diagnostics), "%s(%s) should be valid: %s", name, val, e.Diagnostics)
+			}
+		}
+		// NOTE: Signed min values (e.g. I8(-128)) can't be expressed as
+		// literals because the language has no negative literal syntax and
+		// `0 - 128` produces an Int (I64) which can't be narrowed to I8.
+	})
+
+	t.Run("literal out of range", func(t *testing.T) {
+		for _, name := range allIntTypes {
+			info := intTypeInfos[name]
+			aboveMax := new(big.Int).Add(info.Max, big.NewInt(1))
+			src := fmt.Sprintf("%s(%s)", name, aboveMax)
+			e := typeCheck(t, src)
+			assert.Equal(1, len(e.Diagnostics), "%s(%s) diagnostics: %s", name, aboveMax, e.Diagnostics)
+			assert.Contains(e.Diagnostics[0].Display(), "out of range", "%s(%s)", name, aboveMax)
+		}
+	})
+
+	t.Run("arithmetic", func(t *testing.T) {
+		for _, op := range []string{"+", "-", "*", "/"} {
+			for _, name := range allIntTypes {
+				src := fmt.Sprintf("%[1]s(1) %[2]s %[1]s(1)", name, op)
+				e := typeCheck(t, src)
+				assert.Equal(0, len(e.Diagnostics), "%s: %s", src, e.Diagnostics)
+			}
+		}
+	})
+
+	t.Run("comparison", func(t *testing.T) {
+		for _, op := range []string{"==", "!="} {
+			for _, name := range allIntTypes {
+				src := fmt.Sprintf("%[1]s(1) %[2]s %[1]s(1)", name, op)
+				e := typeCheck(t, src)
+				assert.Equal(0, len(e.Diagnostics), "%s: %s", src, e.Diagnostics)
+			}
+		}
+	})
+
+	t.Run("mixed types rejected in binary ops", func(t *testing.T) {
+		e := typeCheck(t, `{ let x = I32(1) let y = U8(1) x + y }`)
+		assert.Equal(1, len(e.Diagnostics), "diagnostics: %s", e.Diagnostics)
+		assert.Contains(e.Diagnostics[0].Display(), "type mismatch")
+	})
+
+	t.Run("non-integer rejected", func(t *testing.T) {
+		for _, name := range allIntTypes {
+			src := fmt.Sprintf(`%s("hello")`, name)
+			e := typeCheck(t, src)
+			assert.Equal(1, len(e.Diagnostics), "%s(Str) diagnostics: %s", name, e.Diagnostics)
+			assert.Contains(e.Diagnostics[0].Display(), "cannot convert", name)
+		}
+	})
+
+	t.Run("wrong arg count", func(t *testing.T) {
+		for _, name := range allIntTypes {
+			src := fmt.Sprintf("%s(1, 2)", name)
+			e := typeCheck(t, src)
+			assert.Equal(1, len(e.Diagnostics), "%s(1,2) diagnostics: %s", name, e.Diagnostics)
+			assert.Contains(e.Diagnostics[0].Display(), "takes exactly 1 argument", name)
+		}
+	})
+
+	t.Run("type conversions", func(t *testing.T) {
+		type convTest struct {
+			from, to string
+			ok       bool
+		}
+		tests := []convTest{
+			// Identity — always ok.
+			{"I8", "I8", true},
+			{"U8", "U8", true},
+			{"I64", "I64", true},
+			{"U64", "U64", true},
+
+			// Same signedness, widening — ok.
+			{"I8", "I16", true},
+			{"I8", "I32", true},
+			{"I8", "I64", true},
+			{"I16", "I32", true},
+			{"I16", "I64", true},
+			{"I32", "I64", true},
+			{"U8", "U16", true},
+			{"U8", "U32", true},
+			{"U8", "U64", true},
+			{"U16", "U32", true},
+			{"U16", "U64", true},
+			{"U32", "U64", true},
+
+			// Same signedness, narrowing — rejected.
+			{"I16", "I8", false},
+			{"I32", "I8", false},
+			{"I64", "I8", false},
+			{"I32", "I16", false},
+			{"I64", "I16", false},
+			{"I64", "I32", false},
+			{"U16", "U8", false},
+			{"U32", "U8", false},
+			{"U64", "U8", false},
+			{"U32", "U16", false},
+			{"U64", "U16", false},
+			{"U64", "U32", false},
+
+			// Unsigned → signed, strictly more bits — ok.
+			{"U8", "I16", true},
+			{"U8", "I32", true},
+			{"U8", "I64", true},
+			{"U16", "I32", true},
+			{"U16", "I64", true},
+			{"U32", "I64", true},
+
+			// Unsigned → signed, same or fewer bits — rejected.
+			{"U8", "I8", false},
+			{"U16", "I16", false},
+			{"U16", "I8", false},
+			{"U32", "I32", false},
+			{"U32", "I16", false},
+			{"U32", "I8", false},
+			{"U64", "I64", false},
+			{"U64", "I32", false},
+
+			// Signed → unsigned — always rejected.
+			{"I8", "U8", false},
+			{"I8", "U16", false},
+			{"I8", "U32", false},
+			{"I8", "U64", false},
+			{"I16", "U8", false},
+			{"I16", "U16", false},
+			{"I16", "U32", false},
+			{"I16", "U64", false},
+			{"I32", "U8", false},
+			{"I32", "U16", false},
+			{"I32", "U32", false},
+			{"I32", "U64", false},
+			{"I64", "U8", false},
+			{"I64", "U16", false},
+			{"I64", "U32", false},
+			{"I64", "U64", false},
+		}
+
+		for _, tt := range tests {
+			name := fmt.Sprintf("%s_to_%s", tt.from, tt.to)
+			t.Run(name, func(t *testing.T) {
+				src := fmt.Sprintf("{ let x = %s(1) %s(x) }", tt.from, tt.to)
+				e := typeCheck(t, src)
+				if tt.ok {
+					assert.Equal(0, len(e.Diagnostics), "%s(%s) should be allowed: %s", tt.to, tt.from, e.Diagnostics)
+				} else {
+					assert.NotEqual(0, len(e.Diagnostics), "%s(%s) should be rejected", tt.to, tt.from)
+					if len(e.Diagnostics) > 0 {
+						assert.Contains(e.Diagnostics[0].Display(), "cannot convert", "%s → %s", tt.from, tt.to)
+					}
+				}
+			})
+		}
+	})
+
+	// "Int" is an alias for I64.
+	t.Run("Int alias", func(t *testing.T) {
+		// Int(x) where x is I64 — identity.
+		e := typeCheck(t, `{ let x = I64(1) Int(x) }`)
+		assert.Equal(0, len(e.Diagnostics), "Int(I64) should be allowed: %s", e.Diagnostics)
+		// I64(x) where x is Int — identity.
+		e = typeCheck(t, `{ let x = 42 I64(x) }`)
+		assert.Equal(0, len(e.Diagnostics), "I64(Int) should be allowed: %s", e.Diagnostics)
+		// Int follows I64 conversion rules: U8 → Int ok, I8 → Int ok.
+		e = typeCheck(t, `{ let x = U8(1) Int(x) }`)
+		assert.Equal(0, len(e.Diagnostics), "Int(U8) should be allowed: %s", e.Diagnostics)
+		e = typeCheck(t, `{ let x = I8(1) Int(x) }`)
+		assert.Equal(0, len(e.Diagnostics), "Int(I8) should be allowed: %s", e.Diagnostics)
+		// Signed → unsigned: Int(x) → U64 rejected.
+		e = typeCheck(t, `{ let x = 42 U64(x) }`)
+		assert.NotEqual(0, len(e.Diagnostics), "U64(Int) should be rejected (signed → unsigned)")
+	})
+
+	t.Run("safe uninitialized", func(t *testing.T) {
+		for _, name := range allIntTypes {
+			src := fmt.Sprintf("{ let @a = Arena() let x = new(@a, [5]%s()) }", name)
+			e := typeCheck(t, src)
+			assert.Equal(0, len(e.Diagnostics), "%s should be safe uninitialized: %s", name, e.Diagnostics)
+		}
+	})
 }

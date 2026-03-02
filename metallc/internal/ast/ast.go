@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -134,7 +135,7 @@ type FieldAccess struct {
 func (FieldAccess) isKind() {}
 
 type Int struct {
-	Value int64
+	Value *big.Int
 }
 
 func (Int) isKind() {}
@@ -368,7 +369,7 @@ func (a *AST) NewAllocatorVar(name Name, allocator Name, args []NodeID, span bas
 	return a.node(AllocatorVar{Name: name, Allocator: allocator, Args: args}, span)
 }
 
-func (a *AST) NewInt(value int64, span base.Span) NodeID {
+func (a *AST) NewInt(value *big.Int, span base.Span) NodeID {
 	return a.node(Int{Value: value}, span)
 }
 
@@ -724,7 +725,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	case Ident:
 		addAttr("name", fmt.Sprintf("%q", kind.Name))
 	case Int:
-		addAttr("value", fmt.Sprintf("%d", kind.Value))
+		addAttr("value", kind.Value.String())
 	case Bool:
 		addAttr("value", fmt.Sprintf("%t", kind.Value))
 	case String:

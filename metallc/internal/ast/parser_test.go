@@ -2,6 +2,7 @@
 package ast
 
 import (
+	"math/big"
 	"strings"
 	"testing"
 
@@ -511,7 +512,7 @@ func (a *TestAST) string_(value string) NodeID {
 }
 
 func (a *TestAST) int_(value int64) NodeID {
-	return a.NewInt(value, a.span)
+	return a.NewInt(big.NewInt(value), a.span)
 }
 
 func (a *TestAST) block(exprs ...NodeID) NodeID {
