@@ -67,6 +67,7 @@ type RefType struct {
 func (RefType) isTypeKind() {}
 
 type FunType struct {
+	Name   string
 	Params []TypeID
 	Return TypeID
 }
@@ -167,42 +168,44 @@ type cachedType struct {
 
 type Engine struct {
 	*ast.AST
-	Debug       base.Debug
-	Diagnostics base.Diagnostics
-	ScopeGraph  *ScopeGraph
-	nodes       map[ast.NodeID]*cachedType
-	types       map[TypeID]*cachedType
-	refTypes    map[refTypeCacheKey]*cachedType
-	arrayTypes  map[arrayTypeCacheKey]*cachedType
-	sliceTypes  map[TypeID]*cachedType
-	nextID      TypeID
-	nextScopeID ScopeID
-	scope       *Scope
-	loopStack   []ast.NodeID
-	typeHint    *TypeID
-	builtins    map[string]TypeID
-	voidType    TypeID
-	boolType    TypeID
-	arenaType   TypeID
-	intType     TypeID            // alias for I64 — kept for convenience since it is used everywhere
-	intTypes    map[string]TypeID // "I8".."I64", "U8".."U64" (not "Int" — use intType)
+	Debug              base.Debug
+	Diagnostics        base.Diagnostics
+	ScopeGraph         *ScopeGraph
+	nodes              map[ast.NodeID]*cachedType
+	types              map[TypeID]*cachedType
+	refTypes           map[refTypeCacheKey]*cachedType
+	arrayTypes         map[arrayTypeCacheKey]*cachedType
+	sliceTypes         map[TypeID]*cachedType
+	nextID             TypeID
+	nextScopeID        ScopeID
+	scope              *Scope
+	loopStack          []ast.NodeID
+	typeHint           *TypeID
+	builtins           map[string]TypeID
+	voidType           TypeID
+	boolType           TypeID
+	arenaType          TypeID
+	intType            TypeID                    // alias for I64 — kept for convenience since it is used everywhere
+	intTypes           map[string]TypeID         // "I8".."I64", "U8".."U64" (not "Int" — use intType)
+	methodCallReceiver map[ast.NodeID]ast.NodeID // Call node ID → receiver target node ID
 }
 
 func NewEngine(a *ast.AST) *Engine {
 	rootScope := NewScope(0, nil)
 	e := &Engine{ //nolint:exhaustruct
-		AST:         a,
-		Debug:       base.NilDebug{},
-		ScopeGraph:  NewScopeGraph(),
-		nodes:       map[ast.NodeID]*cachedType{},
-		types:       map[TypeID]*cachedType{},
-		refTypes:    map[refTypeCacheKey]*cachedType{},
-		arrayTypes:  map[arrayTypeCacheKey]*cachedType{},
-		sliceTypes:  map[TypeID]*cachedType{},
-		nextID:      1,
-		nextScopeID: 1,
-		scope:       rootScope,
-		intTypes:    map[string]TypeID{},
+		AST:                a,
+		Debug:              base.NilDebug{},
+		ScopeGraph:         NewScopeGraph(),
+		nodes:              map[ast.NodeID]*cachedType{},
+		types:              map[TypeID]*cachedType{},
+		refTypes:           map[refTypeCacheKey]*cachedType{},
+		arrayTypes:         map[arrayTypeCacheKey]*cachedType{},
+		sliceTypes:         map[TypeID]*cachedType{},
+		nextID:             1,
+		nextScopeID:        1,
+		scope:              rootScope,
+		intTypes:           map[string]TypeID{},
+		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 	}
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
@@ -234,10 +237,10 @@ func NewEngine(a *ast.AST) *Engine {
 	maps.Copy(e.builtins, e.intTypes)
 
 	// Register print functions.
-	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
-	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
-	printUintFun := e.newType(FunType{[]TypeID{e.intTypes["U64"]}, voidType}, 0, span, TypeOK)
-	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
+	printStrFun := e.newType(FunType{"print_str", []TypeID{strType}, voidType}, 0, span, TypeOK)
+	printIntFun := e.newType(FunType{"print_int", []TypeID{intType}, voidType}, 0, span, TypeOK)
+	printUintFun := e.newType(FunType{"print_uint", []TypeID{e.intTypes["U64"]}, voidType}, 0, span, TypeOK)
+	printBoolFun := e.newType(FunType{"print_bool", []TypeID{boolType}, voidType}, 0, span, TypeOK)
 	e.builtins["print_str"] = printStrFun
 	e.builtins["print_int"] = printIntFun
 	e.builtins["print_uint"] = printUintFun
@@ -259,6 +262,11 @@ func (e *Engine) IntTypeInfo(typeID TypeID) (IntTypeInfo, bool) {
 	}
 	info, ok := intTypeInfos[name]
 	return info, ok
+}
+
+func (e *Engine) MethodCallReceiver(callNodeID ast.NodeID) (ast.NodeID, bool) {
+	target, ok := e.methodCallReceiver[callNodeID]
+	return target, ok
 }
 
 func (e *Engine) TypeDisplay(typeID TypeID) string {
@@ -346,7 +354,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Block:
 		typeID, status = e.checkBlock(nodeKind)
 	case ast.Call:
-		typeID, status = e.checkCall(nodeKind, node.Span)
+		typeID, status = e.checkCall(nodeKind, nodeID, node.Span)
 	case ast.Deref:
 		typeID, status = e.checkDeref(nodeKind)
 	case ast.File:
@@ -1028,27 +1036,28 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 		e.diag(fieldAccess.Field.Span, "unknown field on slice: %s", fieldAccess.Field.Name)
 		return InvalidTypeID, TypeFailed
 	}
-	struct_, ok := targetTyp.Kind.(StructType)
-	if !ok {
-		targetSpan := e.Node(fieldAccess.Target).Span
-		e.diag(targetSpan, "cannot access field on a non-struct type: %s", e.TypeDisplay(targetTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	var targetFieldTypeID TypeID
-	for _, field := range struct_.Fields {
-		if field.Name == fieldAccess.Field.Name {
-			targetFieldTypeID = field.Type
-			break
+	// Try struct field access, then method lookup.
+	struct_, isStruct := targetTyp.Kind.(StructType)
+	if isStruct {
+		for _, field := range struct_.Fields {
+			if field.Name == fieldAccess.Field.Name {
+				return field.Type, TypeOK
+			}
 		}
-	}
-	if targetFieldTypeID == 0 {
+		// No matching field — try method lookup: `TypeName.fieldName`.
+		methodName := struct_.Name + "." + fieldAccess.Field.Name
+		if binding, _, ok := e.scope.Lookup(methodName); ok {
+			return binding.TypeID, TypeOK
+		}
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", struct_.Name, fieldAccess.Field.Name)
 		return InvalidTypeID, TypeFailed
 	}
-	return targetFieldTypeID, TypeOK
+	targetSpan := e.Node(fieldAccess.Target).Span
+	e.diag(targetSpan, "cannot access field on a non-struct type: %s", e.TypeDisplay(targetTypeID))
+	return InvalidTypeID, TypeFailed
 }
 
-func (e *Engine) checkCall(call ast.Call, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) {
 	calleeTypeID, status := e.Query(call.Callee)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -1060,24 +1069,49 @@ func (e *Engine) checkCall(call ast.Call, span base.Span) (TypeID, TypeStatus) {
 		e.diag(calleeSpan, "cannot call non-function: %s", e.TypeDisplay(calleeTypeID))
 		return InvalidTypeID, TypeFailed
 	}
-	if len(call.Args) != len(fun.Params) {
-		e.diag(span, "argument count mismatch: expected %d, got %d", len(fun.Params), len(call.Args))
+	// Build the full argument node list. For method calls, prepend the receiver.
+	var argNodes []ast.NodeID
+	fieldAccess, isMethod := e.Node(call.Callee).Kind.(ast.FieldAccess)
+	if isMethod {
+		argNodes = append(argNodes, fieldAccess.Target)
+		e.methodCallReceiver[callNodeID] = fieldAccess.Target
+	}
+	argNodes = append(argNodes, call.Args...)
+	if len(argNodes) != len(fun.Params) {
+		expected := len(fun.Params)
+		if isMethod {
+			expected-- // report expected count without the implicit receiver
+		}
+		e.diag(span, "argument count mismatch: expected %d, got %d", expected, len(call.Args))
 		return InvalidTypeID, TypeFailed
 	}
-	for i, argNodeID := range call.Args {
-		argNode := e.Node(argNodeID)
-		argTypeID, status := e.queryWithHint(argNodeID, fun.Params[i])
+	for i, argNodeID := range argNodes {
+		paramTypeID := fun.Params[i]
+		argTypeID, status := e.queryWithHint(argNodeID, paramTypeID)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if !e.isAssignableTo(argTypeID, fun.Params[i]) {
-			e.diag(
-				argNode.Span,
-				"type mismatch at argument %d: expected %s, got %s",
-				i+1,
-				e.TypeDisplay(fun.Params[i]),
-				e.TypeDisplay(argTypeID),
-			)
+		// Auto-deref receiver: if param expects a value type but receiver is a ref, deref it.
+		if i == 0 && isMethod {
+			if _, paramIsRef := e.Type(paramTypeID).Kind.(RefType); !paramIsRef {
+				if refTyp, ok := e.Type(argTypeID).Kind.(RefType); ok {
+					argTypeID = refTyp.Type
+				}
+			}
+		}
+		if !e.isAssignableTo(argTypeID, paramTypeID) {
+			argNode := e.Node(argNodeID)
+			if i == 0 && isMethod {
+				e.diag(argNode.Span, "type mismatch at receiver: expected %s, got %s",
+					e.TypeDisplay(paramTypeID), e.TypeDisplay(argTypeID))
+			} else {
+				argIndex := i
+				if isMethod {
+					argIndex-- // report 0-based index relative to explicit args
+				}
+				e.diag(argNode.Span, "type mismatch at argument %d: expected %s, got %s",
+					argIndex+1, e.TypeDisplay(paramTypeID), e.TypeDisplay(argTypeID))
+			}
 			return InvalidTypeID, TypeFailed
 		}
 	}
@@ -1219,7 +1253,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 		e.diag(e.Node(fun.ReturnType).Span, "cannot return an allocator from a function")
 		return InvalidTypeID, TypeFailed
 	}
-	funTypeID := e.newType(FunType{[]TypeID{}, retTypeID}, node.ID, node.Span, TypeInProgress)
+	funTypeID := e.newType(FunType{fun.Name.Name, []TypeID{}, retTypeID}, node.ID, node.Span, TypeInProgress)
 	if !e.bind(fun.Name.Name, false, node.ID, funTypeID, fun.Name.Span) {
 		return funTypeID, TypeFailed
 	}

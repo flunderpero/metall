@@ -415,6 +415,11 @@ func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, des
 }
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	resultType := g.engine.TypeOfNode(id)
+	if fun, ok := resultType.Kind.(types.FunType); ok {
+		g.setCode(id, fun.Name)
+		return
+	}
 	targetType := g.engine.TypeOfNode(fieldAccess.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		targetType = g.engine.Type(refTyp.Type)
@@ -782,13 +787,18 @@ func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
 
 func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	g.Gen(call.Callee)
-	for _, arg := range call.Args {
-		g.Gen(arg)
-	}
 	calleeType := g.engine.TypeOfNode(call.Callee)
 	fun, ok := calleeType.Kind.(types.FunType)
 	if !ok {
 		panic(base.Errorf("callee is not a function"))
+	}
+	var argNodes []ast.NodeID
+	if target, ok := g.engine.MethodCallReceiver(id); ok {
+		argNodes = append(argNodes, target)
+	}
+	argNodes = append(argNodes, call.Args...)
+	for _, nodeID := range argNodes {
+		g.Gen(nodeID)
 	}
 	sb := strings.Builder{}
 	retType := g.engine.Type(fun.Return)
@@ -814,21 +824,23 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	sb.WriteString(" @")
 	sb.WriteString(g.lookupCode(call.Callee))
 	sb.WriteString(" (")
+	hasArg := false
 	if isRetAggregate {
 		fmt.Fprintf(&sb, "ptr sret(%s) %s", g.irType(fun.Return), resReg)
+		hasArg = true
 	}
-	for i, arg := range call.Args {
-		if i > 0 || isRetAggregate {
+	for _, nodeID := range argNodes {
+		if hasArg {
 			sb.WriteString(", ")
 		}
-		argType := g.engine.TypeOfNode(arg)
-		if g.isAggregateType(argType.ID) {
-			fmt.Fprintf(&sb, "ptr byval(%s) ", g.irType(argType.ID))
+		typeID := g.engine.TypeOfNode(nodeID).ID
+		reg := g.lookupCode(nodeID)
+		if g.isAggregateType(typeID) {
+			fmt.Fprintf(&sb, "ptr byval(%s) %s", g.irType(typeID), reg)
 		} else {
-			sb.WriteString(g.irType(argType.ID))
-			sb.WriteString(" ")
+			fmt.Fprintf(&sb, "%s %s", g.irType(typeID), reg)
 		}
-		sb.WriteString(g.lookupCode(arg))
+		hasArg = true
 	}
 	sb.WriteString(")")
 	g.write(sb.String())

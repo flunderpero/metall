@@ -62,11 +62,29 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	span := t.Span
-	nameToken, ok := p.expect(token.Ident)
+	t, ok = p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
-	name := Name{nameToken.Value, nameToken.Span}
+	// Check for namespace syntax: `fun Foo.bar(...)` where Foo is a TypeIdent.
+	var name Name
+	if t.Kind == token.TypeIdent {
+		p.next()
+		if _, ok := p.expect(token.Dot); !ok {
+			return ParseFailed, false
+		}
+		method, ok := p.expect(token.Ident)
+		if !ok {
+			return ParseFailed, false
+		}
+		name = Name{t.Value + "." + method.Value, t.Span.Combine(method.Span)}
+	} else {
+		t, ok := p.expect(token.Ident)
+		if !ok {
+			return ParseFailed, false
+		}
+		name = Name{t.Value, t.Span}
+	}
 	params, ok := p.ParseFunParams()
 	if !ok {
 		return ParseFailed, false
@@ -523,11 +541,24 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = ident
 	case token.TypeIdent:
-		struct_literal, ok := p.ParseStructLiteral()
-		if !ok {
-			return ParseFailed, false
+		// Peek ahead: if the next token is `.`, this is a qualified name
+		// (e.g. `Foo.bar`), not a struct literal.
+		if next, ok := p.mayPeek1(); ok && next.Kind == token.Dot {
+			p.next()
+			p.next()
+			methodToken, ok := p.expect(token.Ident)
+			if !ok {
+				return ParseFailed, false
+			}
+			qualifiedName := t.Value + "." + methodToken.Value
+			expr = p.NewIdent(qualifiedName, t.Span.Combine(methodToken.Span))
+		} else {
+			struct_literal, ok := p.ParseStructLiteral()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = struct_literal
 		}
-		expr = struct_literal
 	case token.New:
 		allocation, ok := p.ParseNew(false)
 		if !ok {
@@ -971,6 +1002,16 @@ func (p *Parser) mayPeek() (*token.Token, bool) {
 		return nil, false
 	}
 	return &p.tokens[p.pos], true
+}
+
+// mayPeek1 peeks at the token after the current one (2-token lookahead).
+// The grammar is LL(1)-equivalent (can be left-factored), but a bounded
+// 2-token lookahead is sometimes more practical.
+func (p *Parser) mayPeek1() (*token.Token, bool) {
+	if p.pos+1 >= len(p.tokens) {
+		return nil, false
+	}
+	return &p.tokens[p.pos+1], true
 }
 
 // Same as `peek()` but adds a diagnostic if there are no more tokens.

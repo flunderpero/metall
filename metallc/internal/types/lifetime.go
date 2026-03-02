@@ -356,13 +356,21 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 		return
 	}
 
+	// For method calls, the effective argument list includes the receiver as param 0.
+	args := call.Args
+	if receiver, ok := a.e.MethodCallReceiver(nodeID); ok {
+		args = make([]ast.NodeID, 0, 1+len(call.Args))
+		args = append(args, receiver)
+		args = append(args, call.Args...)
+	}
+
 	// Apply the effects: map param flows --> return flow.
 	result := Flow{}
 	for _, paramIdx := range effects.ReturnTaints {
-		result.Taints = result.Taints.Merge(a.flow(call.Args[paramIdx]).Taints)
+		result.Taints = result.Taints.Merge(a.flow(args[paramIdx]).Taints)
 	}
 	for _, paramIdx := range effects.ReturnAliases {
-		result.PointsTo = result.PointsTo.Merge(a.flow(call.Args[paramIdx]).PointsTo)
+		result.PointsTo = result.PointsTo.Merge(a.flow(args[paramIdx]).PointsTo)
 	}
 	// Apply side effects: param-to-param taint flow.
 	//   fun swap(a &mut Int, b &Int) { *a = *b }
@@ -370,9 +378,9 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 	for targetIdx, srcIndices := range effects.SideEffects {
 		srcFlow := Flow{}
 		for _, srcIdx := range srcIndices {
-			srcFlow = srcFlow.Merge(a.flow(call.Args[srcIdx]))
+			srcFlow = srcFlow.Merge(a.flow(args[srcIdx]))
 		}
-		a.mergeIntoTarget(nodeID, call.Args[targetIdx], srcFlow)
+		a.mergeIntoTarget(nodeID, args[targetIdx], srcFlow)
 	}
 	a.flows[nodeID] = result
 	a.Debug.Print(1, "analyzeCall: %s taints=%s pointsTo=%s",
@@ -383,12 +391,18 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 // into every &mut arg. Used when we can't determine the actual effects
 // (recursive calls).
 func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call) {
+	args := call.Args
+	if target, ok := a.e.MethodCallReceiver(nodeID); ok {
+		args = make([]ast.NodeID, 0, 1+len(call.Args))
+		args = append(args, target)
+		args = append(args, call.Args...)
+	}
 	allArgs := Flow{}
-	for _, arg := range call.Args {
+	for _, arg := range args {
 		allArgs = allArgs.Merge(a.flow(arg))
 	}
 	a.flows[nodeID] = allArgs
-	for _, arg := range call.Args {
+	for _, arg := range args {
 		if ref, ok := a.e.TypeOfNode(arg).Kind.(RefType); ok && ref.Mut {
 			a.mergeIntoTarget(nodeID, arg, allArgs)
 		}

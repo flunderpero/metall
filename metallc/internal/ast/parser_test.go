@@ -299,6 +299,29 @@ func TestParseOK(t *testing.T) {
 		{"continue", "expr", "continue", func(a *TestAST) NodeID {
 			return a.continue_()
 		}},
+
+		{
+			"namespaced fun", "expr", `fun Foo.bar(f Foo) Int { 123 }`,
+			func(a *TestAST) NodeID {
+				return a.fun("Foo.bar",
+					[]NodeID{a.fun_param("f", a.typ("Foo"))},
+					a.int_typ(),
+					a.block_no_scope(a.int_(123)),
+				)
+			},
+		},
+		{
+			"namespaced fun in file", "file", `fun Foo.bar(f Foo) Int { 123 }`,
+			func(a *TestAST) NodeID {
+				return a.file(
+					a.fun("Foo.bar",
+						[]NodeID{a.fun_param("f", a.typ("Foo"))},
+						a.int_typ(),
+						a.block_no_scope(a.int_(123)),
+					),
+				)
+			},
+		},
 	}
 
 	hasOnly := false
@@ -381,6 +404,11 @@ func TestParseErr(t *testing.T) {
 			"test.met:1:13: unexpected token: expected ,, got )\n" +
 				`    new(@myalloc)` + "\n" +
 				"                ^",
+		}},
+		{"method fun missing method name", `fun Foo.() void {}`, []string{
+			"test.met:1:9: unexpected token: expected <identifier>, got (\n" +
+				"    fun Foo.() void {}\n" +
+				"            ^",
 		}},
 	}
 

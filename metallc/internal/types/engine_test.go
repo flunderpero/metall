@@ -64,13 +64,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(void, typ)
 			},
 		},
-		{"fun declaration", `fun foo(a Int, b Str) Int { 123 }`, fun_t(Int, Str, Int), nil},
-		{"fun void return coerces body to void", `fun foo() void { 123 }`, fun_t(void), nil},
-		{"fun params", `fun foo(a Int) Int { a }`, fun_t(Int, Int), nil},
+		{"fun declaration", `fun foo(a Int, b Str) Int { 123 }`, fun_t("foo", Int, Str, Int), nil},
+		{"fun void return coerces body to void", `fun foo() void { 123 }`, fun_t("foo", void), nil},
+		{"fun params", `fun foo(a Int) Int { a }`, fun_t("foo", Int, Int), nil},
 		{
 			"fun params are scoped to the fun",
 			`{ fun foo(a Int) void {} fun bar(a Int) void {} }`,
-			fun_t(Int, void),
+			fun_t("bar", Int, void),
 			nil,
 		},
 		{"fun call", `{ fun foo(a Int) Int { 123 } foo(321) }`, Int, nil},
@@ -175,7 +175,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			nil,
 		},
 
-		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t(void), nil},
+		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t("foo", void), nil},
 		{"self recursion", `{ fun foo(a Int) Int { foo(a) } foo(1) }`, Int, nil},
 		{"mutual recursion", `{ fun foo(a Int) Int { bar(a) } fun bar(a Int) Int { foo(a) } foo(10) }`, Int, nil},
 
@@ -395,6 +395,48 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"conditional for loop", `for true { 1 }`, void, nil},
 		{"unconditional for loop", `for { 1 }`, void, nil},
 		{"for body must be scoped", `{ let a = 1 for { let a = "hello" }}`, void, nil},
+
+		// Method syntax.
+		{
+			"method call basic",
+			`{ struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) x.get() }`,
+			Int, nil,
+		},
+		{
+			"method call with args",
+			`{ struct Foo { mut one Int } fun Foo.add(f Foo, n Int) Int { f.one + n } let x = Foo(10) x.add(5) }`,
+			Int, nil,
+		},
+		{
+			"method call on &ref receiver",
+			`{ struct Foo { one Int } fun Foo.get(f &Foo) Int { f.one } let x = Foo(42) let y = &x y.get() }`,
+			Int, nil,
+		},
+		{
+			"method fun declaration type",
+			`{ struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } }`,
+			// The result of the block is the method declaration, which has FunType.
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				funID := block.Exprs[1]
+				typ, ok := e.TypeOfNode(funID).Kind.(FunType)
+				assert.Equal(true, ok)
+				// Method has one param (Foo) and returns Int.
+				assert.Equal(1, len(typ.Params))
+			},
+		},
+		// Direct qualified call: Foo.get(x) instead of x.get().
+		{
+			"direct qualified call",
+			`{ struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) Foo.get(x) }`,
+			Int, nil,
+		},
+		{
+			"direct qualified call with extra args",
+			`{ struct Foo { one Int } fun Foo.add(f Foo, n Int) Int { f.one + n } let x = Foo(10) Foo.add(x, 5) }`,
+			Int, nil,
+		},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -829,6 +871,44 @@ func TestTypeCheckErr(t *testing.T) {
 				"    { let x = 123 U8(1) + x }\n" +
 				"                          ^",
 		}},
+
+		// Method syntax errors.
+		{
+			"method call wrong arg count",
+			`{ struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) x.get(1, 2) }`,
+			[]string{
+				"test.met:1:75: argument count mismatch: expected 0, got 2\n" +
+					"    { struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) x.get(1, 2) }\n" +
+					"                                                                              ^^^^^^^^^^^",
+			},
+		},
+		{
+			"method call wrong arg type",
+			`{ struct Foo { one Int } fun Foo.add(f Foo, n Int) Int { f.one + n } let x = Foo(42) x.add("hello") }`,
+			[]string{
+				"test.met:1:92: type mismatch at argument 1: expected Int, got Str\n" +
+					`    { struct Foo { one Int } fun Foo.add(f Foo, n Int) Int { f.one + n } let x = Foo(42) x.add("hello") }` + "\n" +
+					`                                                                                               ^^^^^^^`,
+			},
+		},
+		{
+			"method on unknown field",
+			`{ struct Foo { one Int } let x = Foo(42) x.nope() }`,
+			[]string{
+				"test.met:1:44: unknown field: Foo.nope\n" +
+					"    { struct Foo { one Int } let x = Foo(42) x.nope() }\n" +
+					"                                               ^^^^",
+			},
+		},
+		{
+			"direct qualified call undefined",
+			`{ struct Foo { one Int } Foo.nope(Foo(1)) }`,
+			[]string{
+				"test.met:1:26: symbol not defined: Foo.nope\n" +
+					"    { struct Foo { one Int } Foo.nope(Foo(1)) }\n" +
+					"                             ^^^^^^^^",
+			},
+		},
 	}
 
 	assert := base.NewAssert(t)
@@ -1081,7 +1161,7 @@ func slice_t(typ *Type) *Type {
 	return &Type{Kind: SliceType{typ.ID}}
 }
 
-func fun_t(types ...*Type) *Type {
+func fun_t(name string, types ...*Type) *Type {
 	if len(types) == 0 {
 		panic("fun_t requires at least a return type")
 	}
@@ -1091,7 +1171,7 @@ func fun_t(types ...*Type) *Type {
 	for i, p := range params {
 		paramIDs[i] = p.ID
 	}
-	return &Type{Kind: FunType{paramIDs, ret.ID}}
+	return &Type{Kind: FunType{name, paramIDs, ret.ID}}
 }
 
 func TestIntegerTypes(t *testing.T) {

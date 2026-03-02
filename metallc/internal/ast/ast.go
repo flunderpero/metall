@@ -341,7 +341,9 @@ func (a *AST) NewFile(decls []NodeID, span base.Span) NodeID {
 	return a.node(File{Decls: decls}, span)
 }
 
-func (a *AST) NewFun(name Name, params []NodeID, returnType NodeID, block NodeID, span base.Span) NodeID {
+func (a *AST) NewFun(
+	name Name, params []NodeID, returnType NodeID, block NodeID, span base.Span,
+) NodeID {
 	return a.node(Fun{Name: name, Params: params, ReturnType: returnType, Block: block}, span)
 }
 

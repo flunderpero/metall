@@ -893,6 +893,41 @@ func TestCompile(t *testing.T) {
 				print_int(Int(U8(255) / U8(2)))
 			}
 			`, "127\n"},
+
+		// Method syntax.
+		{"method call on struct", `
+			struct Foo { x Int }
+			fun Foo.get_x(self Foo) Int { self.x }
+			fun main() void {
+				let f = Foo(42)
+				print_int(f.get_x())
+			}
+			`, "42\n"},
+		{"method call with args", `
+			struct Foo { x Int }
+			fun Foo.add(self Foo, y Int) Int { self.x + y }
+			fun main() void {
+				let f = Foo(10)
+				print_int(f.add(32))
+			}
+			`, "42\n"},
+		{"method call on &ref", `
+			struct Foo { x Int }
+			fun Foo.get_x(self Foo) Int { self.x }
+			fun main() void {
+				let f = Foo(42)
+				let r = &f
+				print_int(r.get_x())
+			}
+			`, "42\n"},
+		{"direct qualified call", `
+			struct Foo { x Int }
+			fun Foo.add(self Foo, y Int) Int { self.x + y }
+			fun main() void {
+				let f = Foo(10)
+				print_int(Foo.add(f, 32))
+			}
+			`, "42\n"},
 	}
 
 	assert := base.NewAssert(t)

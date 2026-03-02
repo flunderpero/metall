@@ -1121,6 +1121,27 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				        break
 				`, "\n"),
 		}},
+		// Method call: receiver carries a ref to an inner-scope local, method
+		// returns that ref — the ref escapes.
+		{"method call receiver ref escapes", `
+			{
+				struct Foo { one Int }
+				fun Foo.get(self &Foo) &Foo { self }
+				let r = {
+					let f = Foo(42)
+					&f.get()
+				}
+				r
+			}
+			`, []string{
+			"test.met:7:21: reference escaping its allocation scope\n" +
+				strings.Trim(`
+				        let f = Foo(42)
+				        &f.get()
+						^^
+					}
+				`, "\n"),
+		}},
 	}
 	assert := base.NewAssert(t)
 	hasOnly := false
