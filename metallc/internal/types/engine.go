@@ -37,22 +37,19 @@ func (BuiltInType) isTypeKind() {}
 
 // IntTypeInfo describes a built-in integer type.
 type IntTypeInfo struct {
-	Name   string   // e.g. "I32", "U8"
-	Signed bool     // true for I8..I64, false for U8..U64
-	Bits   int      // 8, 16, 32, 64
+	Name   string
+	Signed bool
+	Bits   int
 	Min    *big.Int // inclusive lower bound
 	Max    *big.Int // inclusive upper bound
 }
 
-// intTypeInfos is the single source of truth for all integer types.
-// "Int" is an alias for "I64" and is NOT listed here — it shares the I64 TypeID.
-//
 //nolint:gochecknoglobals
 var intTypeInfos = map[string]IntTypeInfo{
 	"I8":  {"I8", true, 8, big.NewInt(-128), big.NewInt(127)},
 	"I16": {"I16", true, 16, big.NewInt(-32768), big.NewInt(32767)},
 	"I32": {"I32", true, 32, big.NewInt(-2147483648), big.NewInt(2147483647)},
-	"I64": {"I64", true, 64, big.NewInt(-9223372036854775808), big.NewInt(9223372036854775807)},
+	"Int": {"Int", true, 64, big.NewInt(-9223372036854775808), big.NewInt(9223372036854775807)},
 	"U8":  {"U8", false, 8, big.NewInt(0), big.NewInt(255)},
 	"U16": {"U16", false, 16, big.NewInt(0), big.NewInt(65535)},
 	"U32": {"U32", false, 32, big.NewInt(0), big.NewInt(4294967295)},
@@ -185,8 +182,8 @@ type Engine struct {
 	voidType           TypeID
 	boolType           TypeID
 	arenaType          TypeID
-	intType            TypeID                    // alias for I64 — kept for convenience since it is used everywhere
-	intTypes           map[string]TypeID         // "I8".."I64", "U8".."U64" (not "Int" — use intType)
+	intType            TypeID
+	intTypes           map[string]TypeID
 	methodCallReceiver map[ast.NodeID]ast.NodeID // Call node ID → receiver target node ID
 }
 
@@ -213,27 +210,23 @@ func NewEngine(a *ast.AST) *Engine {
 	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
 	arenaType := e.newType(AllocatorType{AllocatorArena}, 0, span, TypeOK)
 
-	// Register all integer types. "Int" is an alias for I64 — they share the same TypeID.
-	// Registration order: I8, I16, I32, I64, U8, U16, U32, U64.
-	intTypeNames := []string{"I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64"}
+	intTypeNames := []string{"I8", "I16", "I32", "Int", "U8", "U16", "U32", "U64"}
 	for _, name := range intTypeNames {
 		typeID := e.newType(BuiltInType{name}, 0, span, TypeOK)
 		e.intTypes[name] = typeID
 	}
-	intType := e.intTypes["I64"]
+	intType := e.intTypes["Int"]
 
 	e.voidType = voidType
 	e.boolType = boolType
 	e.arenaType = arenaType
 	e.intType = intType
 	e.builtins = map[string]TypeID{
-		"Int":   intType, // alias for I64
 		"Str":   strType,
 		"Bool":  boolType,
 		"Arena": arenaType,
 		"void":  e.voidType,
 	}
-	// Register all integer type names (I8..U64) as builtins.
 	maps.Copy(e.builtins, e.intTypes)
 
 	// Register print functions.
@@ -256,11 +249,7 @@ func (e *Engine) IntTypeInfo(typeID TypeID) (IntTypeInfo, bool) {
 	if !ok {
 		return IntTypeInfo{}, false
 	}
-	name := builtin.Name
-	if name == "Int" {
-		name = "I64"
-	}
-	info, ok := intTypeInfos[name]
+	info, ok := intTypeInfos[builtin.Name]
 	return info, ok
 }
 
@@ -282,10 +271,6 @@ func (e *Engine) TypeDisplay(typeID TypeID) string {
 	}
 	switch kind := cached.Type.Kind.(type) {
 	case BuiltInType:
-		// todo: I64 and Int share the same type id. This "hack" works, but is it really elegant?
-		if kind.Name == "I64" {
-			return "Int"
-		}
 		return kind.Name
 	case RefType:
 		if kind.Mut {
@@ -495,7 +480,6 @@ func (e *Engine) Scope() *Scope {
 	return e.scope
 }
 
-// isIntType reports whether typeID is any integer type (I8..I64, U8..U64, or Int).
 func (e *Engine) isIntType(typeID TypeID) bool {
 	_, ok := e.IntTypeInfo(typeID)
 	return ok
@@ -1054,11 +1038,7 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 	}
 	// Method lookup on built-in types (Int, Str, Bool, etc.).
 	if builtin, ok := targetTyp.Kind.(BuiltInType); ok {
-		typeName := builtin.Name
-		if typeName == "I64" {
-			typeName = "Int"
-		}
-		methodName := typeName + "." + fieldAccess.Field.Name
+		methodName := builtin.Name + "." + fieldAccess.Field.Name
 		if binding, _, ok := e.scope.Lookup(methodName); ok {
 			return binding.TypeID, TypeOK
 		}
@@ -1386,18 +1366,19 @@ func (e *Engine) checkBool() (TypeID, TypeStatus) {
 }
 
 func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
+	target := e.intType
 	if typeHint != nil {
-		if info, ok := e.IntTypeInfo(*typeHint); ok {
-			if intNode.Value.Cmp(info.Min) < 0 || intNode.Value.Cmp(info.Max) > 0 {
-				e.diag(span, "value %s out of range for %s (%s..%s)",
-					intNode.Value, info.Name, info.Min, info.Max)
-				return InvalidTypeID, TypeFailed
-			}
-			return *typeHint, TypeOK
+		if _, ok := e.IntTypeInfo(*typeHint); ok {
+			target = *typeHint
 		}
 	}
-	// Default: bare integer literal is Int (I64).
-	return e.intType, TypeOK
+	info, _ := e.IntTypeInfo(target)
+	if intNode.Value.Cmp(info.Min) < 0 || intNode.Value.Cmp(info.Max) > 0 {
+		e.diag(span, "value %s out of range for %s (%s..%s)",
+			intNode.Value, info.Name, info.Min, info.Max)
+		return InvalidTypeID, TypeFailed
+	}
+	return target, TypeOK
 }
 
 func (e *Engine) checkRef(

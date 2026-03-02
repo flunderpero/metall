@@ -256,7 +256,6 @@ func (g *IRGen) genTypeConstructor(id ast.NodeID, lit ast.StructLiteral) {
 	targetInfo, _ := g.engine.IntTypeInfo(g.engine.TypeOfNode(lit.Target).ID)
 	argInfo, _ := g.engine.IntTypeInfo(g.engine.TypeOfNode(lit.Args[0]).ID)
 	if targetInfo.Bits == argInfo.Bits {
-		// Same width: identity (e.g. I32(U32), Int(I64), U8(U8_literal)).
 		g.setCode(id, argReg)
 		return
 	}

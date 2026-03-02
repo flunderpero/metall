@@ -849,13 +849,6 @@ func TestCompile(t *testing.T) {
 				print_uint(y)
 			}
 			`, "18446744073709551615\n0\n"},
-		{"I64 is Int alias", `
-			fun main() void {
-				let x = I64(42)
-				print_int(x)
-			}
-			`, "42\n"},
-
 		// Integer type conversions.
 		{"widening U8 to I32", `
 			fun main() void {

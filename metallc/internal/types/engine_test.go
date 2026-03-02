@@ -15,14 +15,14 @@ import (
 
 func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	// TypeIDs for builtin types are stable, so we can do this.
-	// Registration order: void, Str, Bool, Arena, I8..I64, U8..U64.
+	// Registration order: void, Str, Bool, Arena, I8, I16, I32, Int, U8, U16, U32, U64.
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	void := &Type{1, 0, span, BuiltInType{"void"}}
 	Str := &Type{2, 0, span, BuiltInType{"Str"}}
 	Bool := &Type{3, 0, span, BuiltInType{"Bool"}}
 	// Arena = 4
 	// I8=5, I16=6, I32=7
-	Int := &Type{8, 0, span, BuiltInType{"I64"}}
+	Int := &Type{8, 0, span, BuiltInType{"Int"}}
 	U8 := &Type{9, 0, span, BuiltInType{"U8"}}
 	// U16=10, U32=11, U64=12
 
@@ -1187,7 +1187,7 @@ func fun_t(name string, types ...*Type) *Type {
 
 func TestIntegerTypes(t *testing.T) {
 	assert := base.NewAssert(t)
-	allIntTypes := []string{"I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64"}
+	allIntTypes := []string{"I8", "I16", "I32", "Int", "U8", "U16", "U32", "U64"}
 
 	typeCheck := func(t *testing.T, src string) *Engine {
 		t.Helper()
@@ -1215,7 +1215,7 @@ func TestIntegerTypes(t *testing.T) {
 		}
 		// NOTE: Signed min values (e.g. I8(-128)) can't be expressed as
 		// literals because the language has no negative literal syntax and
-		// `0 - 128` produces an Int (I64) which can't be narrowed to I8.
+		// `0 - 128` produces an Int which can't be narrowed to I8.
 	})
 
 	t.Run("literal out of range", func(t *testing.T) {
@@ -1282,16 +1282,16 @@ func TestIntegerTypes(t *testing.T) {
 			// Identity — always ok.
 			{"I8", "I8", true},
 			{"U8", "U8", true},
-			{"I64", "I64", true},
+			{"Int", "Int", true},
 			{"U64", "U64", true},
 
 			// Same signedness, widening — ok.
 			{"I8", "I16", true},
 			{"I8", "I32", true},
-			{"I8", "I64", true},
+			{"I8", "Int", true},
 			{"I16", "I32", true},
-			{"I16", "I64", true},
-			{"I32", "I64", true},
+			{"I16", "Int", true},
+			{"I32", "Int", true},
 			{"U8", "U16", true},
 			{"U8", "U32", true},
 			{"U8", "U64", true},
@@ -1302,10 +1302,10 @@ func TestIntegerTypes(t *testing.T) {
 			// Same signedness, narrowing — rejected.
 			{"I16", "I8", false},
 			{"I32", "I8", false},
-			{"I64", "I8", false},
+			{"Int", "I8", false},
 			{"I32", "I16", false},
-			{"I64", "I16", false},
-			{"I64", "I32", false},
+			{"Int", "I16", false},
+			{"Int", "I32", false},
 			{"U16", "U8", false},
 			{"U32", "U8", false},
 			{"U64", "U8", false},
@@ -1316,10 +1316,10 @@ func TestIntegerTypes(t *testing.T) {
 			// Unsigned → signed, strictly more bits — ok.
 			{"U8", "I16", true},
 			{"U8", "I32", true},
-			{"U8", "I64", true},
+			{"U8", "Int", true},
 			{"U16", "I32", true},
-			{"U16", "I64", true},
-			{"U32", "I64", true},
+			{"U16", "Int", true},
+			{"U32", "Int", true},
 
 			// Unsigned → signed, same or fewer bits — rejected.
 			{"U8", "I8", false},
@@ -1328,7 +1328,7 @@ func TestIntegerTypes(t *testing.T) {
 			{"U32", "I32", false},
 			{"U32", "I16", false},
 			{"U32", "I8", false},
-			{"U64", "I64", false},
+			{"U64", "Int", false},
 			{"U64", "I32", false},
 
 			// Signed → unsigned — always rejected.
@@ -1344,10 +1344,10 @@ func TestIntegerTypes(t *testing.T) {
 			{"I32", "U16", false},
 			{"I32", "U32", false},
 			{"I32", "U64", false},
-			{"I64", "U8", false},
-			{"I64", "U16", false},
-			{"I64", "U32", false},
-			{"I64", "U64", false},
+			{"Int", "U8", false},
+			{"Int", "U16", false},
+			{"Int", "U32", false},
+			{"Int", "U64", false},
 		}
 
 		for _, tt := range tests {
@@ -1365,24 +1365,6 @@ func TestIntegerTypes(t *testing.T) {
 				}
 			})
 		}
-	})
-
-	// "Int" is an alias for I64.
-	t.Run("Int alias", func(t *testing.T) {
-		// Int(x) where x is I64 — identity.
-		e := typeCheck(t, `{ let x = I64(1) Int(x) }`)
-		assert.Equal(0, len(e.Diagnostics), "Int(I64) should be allowed: %s", e.Diagnostics)
-		// I64(x) where x is Int — identity.
-		e = typeCheck(t, `{ let x = 42 I64(x) }`)
-		assert.Equal(0, len(e.Diagnostics), "I64(Int) should be allowed: %s", e.Diagnostics)
-		// Int follows I64 conversion rules: U8 → Int ok, I8 → Int ok.
-		e = typeCheck(t, `{ let x = U8(1) Int(x) }`)
-		assert.Equal(0, len(e.Diagnostics), "Int(U8) should be allowed: %s", e.Diagnostics)
-		e = typeCheck(t, `{ let x = I8(1) Int(x) }`)
-		assert.Equal(0, len(e.Diagnostics), "Int(I8) should be allowed: %s", e.Diagnostics)
-		// Signed → unsigned: Int(x) → U64 rejected.
-		e = typeCheck(t, `{ let x = 42 U64(x) }`)
-		assert.NotEqual(0, len(e.Diagnostics), "U64(Int) should be rejected (signed → unsigned)")
 	})
 
 	t.Run("safe uninitialized", func(t *testing.T) {
