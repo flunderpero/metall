@@ -1,13 +1,102 @@
 package internal
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/token"
+	"github.com/flunderpero/metall/metallc/internal/types"
 )
+
+// timingListener records the wall-clock duration of each compiler phase.
+// After CompileAndRun returns, call [timingListener.Log] to print every
+// step that took longer than 10 ms.
+type timingListener struct {
+	last  time.Time
+	steps []step
+}
+
+type step struct {
+	name     string
+	duration time.Duration
+}
+
+func newTimingListener() *timingListener {
+	return &timingListener{last: time.Now(), steps: nil}
+}
+
+func (l *timingListener) OnLex(_ []token.Token) bool {
+	l.record("lex")
+	return true
+}
+
+func (l *timingListener) OnParse(_ *ast.AST, _ ast.NodeID, _ base.Diagnostics) bool {
+	l.record("parse")
+	return true
+}
+
+func (l *timingListener) OnTypeCheck(_ *types.Engine, _ base.Diagnostics) bool {
+	l.record("typecheck")
+	return true
+}
+
+func (l *timingListener) OnLifetimeCheck(_ *types.LifetimeCheck, _ base.Diagnostics) bool {
+	l.record("lifetime")
+	return true
+}
+
+func (l *timingListener) OnIRGen(_ string) bool {
+	l.record("irgen")
+	return true
+}
+
+func (l *timingListener) OnOptimizeIR() bool {
+	l.record("optimize")
+	return true
+}
+
+func (l *timingListener) OnLink() bool {
+	l.record("link")
+	return true
+}
+
+func (l *timingListener) OnRun(_ int, _ string) bool {
+	l.record("run")
+	return true
+}
+
+// Log prints every step that took longer than 10ms.
+func (l *timingListener) Log(t *testing.T) {
+	t.Helper()
+	for _, s := range l.steps {
+		if s.duration >= 10*time.Millisecond {
+			t.Logf("%-12s %s", s.name, s.duration.Round(time.Millisecond))
+		}
+	}
+}
+
+// Total returns a display string of all step durations (for debugging).
+func (l *timingListener) Total() string {
+	var total time.Duration
+	parts := make([]string, 0, len(l.steps))
+	for _, s := range l.steps {
+		total += s.duration
+		parts = append(parts, fmt.Sprintf("%s=%s", s.name, s.duration.Round(time.Millisecond)))
+	}
+	return fmt.Sprintf("total=%s (%s)", total.Round(time.Millisecond), strings.Join(parts, ", "))
+}
+
+func (l *timingListener) record(name string) {
+	now := time.Now()
+	l.steps = append(l.steps, step{name, now.Sub(l.last)})
+	l.last = now
+}
 
 func TestCompile(t *testing.T) {
 	t.Parallel()
@@ -827,14 +916,16 @@ func TestCompile(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
+			timing := newTimingListener()
 			opts := CompileOpts{
-				Listener:         nil,
+				Listener:         timing,
 				Output:           outputPath,
 				KeepIR:           true,
 				LLVMPasses:       "verify," + DefaultLLVMPasses,
 				AddressSanitizer: true,
 			}
 			exitCode, output, err := CompileAndRun(t.Context(), source, opts)
+			timing.Log(t)
 			assert.NoError(err)
 			assert.Equal(0, exitCode)
 			assert.Equal(tt.wantOutput, output)
@@ -877,14 +968,16 @@ func TestCompilePanic(t *testing.T) {
 			source := base.NewSource("test.met", []rune(tt.src))
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
+			timing := newTimingListener()
 			opts := CompileOpts{
-				Listener:         nil,
+				Listener:         timing,
 				Output:           outputPath,
 				KeepIR:           true,
 				LLVMPasses:       "verify," + DefaultLLVMPasses,
 				AddressSanitizer: true,
 			}
 			exitCode, _, err := CompileAndRun(t.Context(), source, opts)
+			timing.Log(t)
 			assert.NoError(err)
 			assert.NotEqual(0, exitCode, "expected non-zero exit code (trap)")
 		})

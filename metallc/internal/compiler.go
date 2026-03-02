@@ -21,6 +21,9 @@ type CompileListener interface {
 	OnTypeCheck(engine *types.Engine, diagnostics base.Diagnostics) bool
 	OnLifetimeCheck(lifetime *types.LifetimeCheck, diagnostics base.Diagnostics) bool
 	OnIRGen(ir string) bool
+	OnOptimizeIR() bool
+	OnLink() bool
+	OnRun(exitCode int, output string) bool
 }
 
 var ErrAbort = base.Errorf("aborted by listener")
@@ -111,6 +114,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if err := run_cmd(ctx, cmdline); err != nil {
 		return base.WrapErrorf(err, "failed to generate optimized IR")
 	}
+	if listener != nil && !listener.OnOptimizeIR() {
+		return ErrAbort
+	}
 
 	// Produce optimized bitcode (.bc)
 	cmdline = []string{llvmHome + "/bin/opt", opt_ll, "-o", bc}
@@ -125,6 +131,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	if err := run_cmd(ctx, cmdline); err != nil {
 		return base.WrapErrorf(err, "failed to compile with clang")
+	}
+	if listener != nil && !listener.OnLink() {
+		return ErrAbort
 	}
 	return nil
 }
@@ -155,11 +164,19 @@ func CompileAndRun(
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
+			if listener := runOpts.Listener; listener != nil {
+				listener.OnRun(exitErr.ExitCode(), string(cmdOutput))
+			}
 			return exitErr.ExitCode(), string(cmdOutput), nil
 		}
 		return 0, "", base.WrapErrorf(err, "run failed\n%s", string(cmdOutput))
 	}
-	return cmd.ProcessState.ExitCode(), string(cmdOutput), nil
+	exitCode = cmd.ProcessState.ExitCode()
+	output = string(cmdOutput)
+	if listener := runOpts.Listener; listener != nil {
+		listener.OnRun(exitCode, output)
+	}
+	return exitCode, output, nil
 }
 
 func run_cmd(ctx context.Context, cmdline []string) error {

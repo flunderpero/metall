@@ -1,3 +1,6 @@
+_host_arch := `uname -m`
+host_arch := if _host_arch == "x86_64" { "amd64" } else if _host_arch == "aarch64" { "arm64" } else { _host_arch }
+
 precommit:
     just go-mod
     just fmt
@@ -59,6 +62,37 @@ compile-runtime:
         -e 's/(@arena_alloc\(ptr noundef %[0-9]+, i64 noundef %[0-9]+\)) \{/\1 allockind("alloc") allocsize(1) {/' \
         -e 's/(@arena_destroy\()(ptr noundef %[0-9]+\)) \{/\1ptr allocptr nocapture noundef %0) allockind("free") "alloc-family"="arena" {/' \
     > metallc/internal/gen/arena.ll
+
+test-linux arch=host_arch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    platform="linux/{{arch}}"
+    image="metall-test-linux-{{arch}}"
+    if ! podman image exists "$image"; then
+        echo ">>> Building $image image ($platform)"
+        podman build --platform "$platform" -t "$image" -f - <<'DOCKERFILE'
+    FROM docker.io/library/ubuntu:noble
+    RUN apt-get update \
+        && apt-get install -y --no-install-recommends wget ca-certificates \
+        && wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key > /etc/apt/trusted.gpg.d/apt.llvm.org.asc \
+        && echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" > /etc/apt/sources.list.d/llvm.list \
+        && apt-get update \
+        && apt-get install -y --no-install-recommends clang-21 llvm-21 libclang-rt-21-dev \
+        && ln -s /usr/bin/clang-21 /usr/bin/clang \
+        && ln -s /usr/bin/opt-21 /usr/bin/opt \
+        && apt-get clean && rm -rf /var/lib/apt/lists/*
+    ENV LLVM_HOME=/usr
+    DOCKERFILE
+    fi
+
+    echo ">>> Cross-compiling tests for $platform"
+    CGO_ENABLED=0 GOOS=linux GOARCH="{{arch}}" go test -c -o .build/metallc-test ./metallc/internal/
+
+    echo ">>> Running tests in podman ($platform)"
+    podman run --rm --platform "$platform" \
+        -v "$PWD/.build/metallc-test:/metallc-test:ro" \
+        "$image" \
+        /metallc-test -test.count=1
 
 go-mod:
     cd metallc && go mod tidy
