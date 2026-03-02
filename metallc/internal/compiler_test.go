@@ -928,6 +928,13 @@ func TestCompile(t *testing.T) {
 				print_int(Foo.add(f, 32))
 			}
 			`, "42\n"},
+		{"method call on Int", `
+			fun Int.double(self Int) Int { self + self }
+			fun main() void {
+				let x = 21
+				print_int(x.double())
+			}
+			`, "42\n"},
 	}
 
 	assert := base.NewAssert(t)

@@ -437,6 +437,17 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ struct Foo { one Int } fun Foo.add(f Foo, n Int) Int { f.one + n } let x = Foo(10) Foo.add(x, 5) }`,
 			Int, nil,
 		},
+		// Method syntax on built-in types.
+		{
+			"method call on builtin type",
+			`{ fun Int.double(self Int) Int { self + self } let x = 21 x.double() }`,
+			Int, nil,
+		},
+		{
+			"direct qualified call on builtin type",
+			`{ fun Int.double(self Int) Int { self + self } Int.double(21) }`,
+			Int, nil,
+		},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -599,7 +610,7 @@ func TestTypeCheckErr(t *testing.T) {
 		}},
 
 		{"field access on non-struct", `123.one`, []string{
-			"test.met:1:1: cannot access field on a non-struct type: Int\n" +
+			"test.met:1:1: cannot access field on non-struct type: Int\n" +
 				`    123.one` + "\n" +
 				`    ^^^`,
 		}},

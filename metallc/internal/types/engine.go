@@ -1052,8 +1052,19 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", struct_.Name, fieldAccess.Field.Name)
 		return InvalidTypeID, TypeFailed
 	}
+	// Method lookup on built-in types (Int, Str, Bool, etc.).
+	if builtin, ok := targetTyp.Kind.(BuiltInType); ok {
+		typeName := builtin.Name
+		if typeName == "I64" {
+			typeName = "Int"
+		}
+		methodName := typeName + "." + fieldAccess.Field.Name
+		if binding, _, ok := e.scope.Lookup(methodName); ok {
+			return binding.TypeID, TypeOK
+		}
+	}
 	targetSpan := e.Node(fieldAccess.Target).Span
-	e.diag(targetSpan, "cannot access field on a non-struct type: %s", e.TypeDisplay(targetTypeID))
+	e.diag(targetSpan, "cannot access field on non-struct type: %s", e.TypeDisplay(targetTypeID))
 	return InvalidTypeID, TypeFailed
 }
 
