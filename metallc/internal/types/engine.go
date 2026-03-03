@@ -1271,13 +1271,12 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
 			funType := base.Cast[FunType](typeKind)
-			decl.status = e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
+			e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
 		case ast.Struct:
 		// Structs don't have a body.
 		default:
 			panic(base.Errorf("node kind not supported: %T", nodeKind))
 		}
-		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
 	}
 }
 
@@ -1332,7 +1331,7 @@ func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType Struc
 	return TypeOK, structType
 }
 
-func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType) TypeStatus {
+func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType) {
 	e.funStack = append(e.funStack, funTypeID)
 	defer func() { e.funStack = e.funStack[:len(e.funStack)-1] }()
 	for i, paramNodeID := range funNode.Params {
@@ -1340,7 +1339,7 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType
 		paramTypeID := funType.Params[i]
 		// Params are never reassignable - mutability of the *binding* is always false.
 		if !e.bind(paramNode.Name.Name, false, paramNodeID, paramTypeID, paramNode.Name.Span) {
-			return TypeFailed
+			return
 		}
 	}
 	if funNode.Name.Name == "main" {
@@ -1348,13 +1347,13 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType
 	}
 	blockTypeID, status := e.Query(funNode.Block)
 	if status.Failed() {
-		return TypeDepFailed
+		return
 	}
 	blockNode := e.Node(funNode.Block)
 	block := base.Cast[ast.Block](blockNode.Kind)
 	// If the block ends with an return expr, we don't need to check any further.
 	if e.BlockReturns(funNode.Block) {
-		return TypeOK
+		return
 	}
 	// If the function returns void, we coerce the body to void.
 	if funType.Return != e.voidType && !e.isAssignableTo(blockTypeID, funType.Return) {
@@ -1370,9 +1369,8 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType
 			e.TypeDisplay(funType.Return),
 			e.TypeDisplay(blockTypeID),
 		)
-		return TypeFailed
+		return
 	}
-	return TypeOK
 }
 
 func (e *Engine) checkFunParam(_ ast.NodeID, funParam ast.FunParam, _ base.Span) (TypeID, TypeStatus) {

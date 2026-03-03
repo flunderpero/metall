@@ -705,6 +705,16 @@ func TestTypeCheckErr(t *testing.T) {
 					"                                                 ^^^^^",
 			},
 		},
+		// Checking the body should not modify the function type.
+		{
+			"type error in fun body does not poison fun type",
+			`{ fun foo(s Str) Int { s.nope } foo("hello") }`,
+			[]string{
+				"test.met:1:26: unknown field: Str.nope\n" +
+					`    { fun foo(s Str) Int { s.nope } foo("hello") }` + "\n" +
+					"                             ^^^^",
+			},
+		},
 
 		{"if condition must be bool", `{ if 123 { } }`, []string{
 			"test.met:1:6: if condition must evaluate to a boolean value, got Int\n" +
