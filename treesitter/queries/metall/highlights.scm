@@ -27,7 +27,7 @@
 (integer_literal) @number
 (string_literal) @string
 (boolean_literal) @constant.builtin
-(void) @constant.builtin
+(void) @type
 
 ; >>> Comments
 
@@ -37,6 +37,7 @@
 ; >>> Types
 
 (simple_type (type_identifier) @type)
+(simple_type "void" @type)
 (reference_type "&" @operator)
 
 ; >>> Functions
