@@ -230,7 +230,7 @@ func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 	case types.ArrayType:
 		arrIRType := g.irType(targetType.ID)
 		ptrReg := g.reg()
-		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
+		g.write("%s = getelementptr %s, %s* %s, i64 0, i64 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
 		valReg := g.loadValue(ptrReg, kind.Elem)
 		g.setCode(id, valReg)
 	case types.SliceType:
@@ -239,7 +239,7 @@ func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 		g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", dataPtrReg, targetReg)
 		g.write("%s = load ptr, ptr %s_field", dataPtrReg, dataPtrReg)
 		ptrReg := g.reg()
-		g.write("%s = getelementptr %s, ptr %s, i32 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
+		g.write("%s = getelementptr %s, ptr %s, i64 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
 		valReg := g.loadValue(ptrReg, kind.Elem)
 		g.setCode(id, valReg)
 	default:
@@ -747,14 +747,14 @@ func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 		switch kind := targetType.Kind.(type) {
 		case types.ArrayType:
 			arrIRType := g.irType(targetType.ID)
-			g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
+			g.write("%s = getelementptr %s, %s* %s, i64 0, i64 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
 			g.storeValue(rhs, ptrReg, kind.Elem)
 		case types.SliceType:
 			elemIRType := g.irType(kind.Elem)
 			dataPtrReg := g.reg()
 			g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", dataPtrReg, targetReg)
 			g.write("%s = load ptr, ptr %s_field", dataPtrReg, dataPtrReg)
-			g.write("%s = getelementptr %s, ptr %s, i32 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
+			g.write("%s = getelementptr %s, ptr %s, i64 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
 			g.storeValue(rhs, ptrReg, kind.Elem)
 		default:
 			panic(base.Errorf("genAssign index: unsupported target type %T", targetType.Kind))

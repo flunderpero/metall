@@ -444,6 +444,15 @@ func TestCompile(t *testing.T) {
 				print_int(x[0])
 			}
 			`, "3\n2\n1\n"},
+		{"array index with variable", `
+			fun main() void {
+				mut x = [10, 20, 30]
+				let i = 1
+				print_int(x[i])
+				x[i] = 99
+				print_int(x[i])
+			}
+			`, "20\n99\n"},
 
 		{"struct array", `
 			struct Foo {
@@ -651,6 +660,19 @@ func TestCompile(t *testing.T) {
 			}
 			`, "10\n20\n30\n3\n"},
 
+		{"slice index with variable", `
+			fun main() void {
+				let @a = Arena()
+				mut x = make(@a, []Int(3))
+				x[0] = 10
+				x[1] = 20
+				x[2] = 30
+				let i = 2
+				print_int(x[i])
+				x[i] = 99
+				print_int(x[i])
+			}
+			`, "30\n99\n"},
 		// Default value fills all elements of a heap-allocated array.
 		{"new array with default value", `
 			fun main() void {
