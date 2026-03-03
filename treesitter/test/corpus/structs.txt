@@ -1,0 +1,46 @@
+================================================================================
+Struct declaration
+================================================================================
+
+struct Foo {
+    one Str
+    mut two Int
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    name: (type_identifier)
+    (struct_field name: (identifier) type: (simple_type (type_identifier)))
+    (struct_field name: (identifier) type: (simple_type (type_identifier)))))
+
+================================================================================
+Struct with allocator field
+================================================================================
+
+struct Foo { @a Arena }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    name: (type_identifier)
+    (struct_field name: (allocator_identifier) type: (simple_type (type_identifier)))))
+
+================================================================================
+Struct literal
+================================================================================
+
+fun f() void { Foo(1, "hello") }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (struct_literal
+        type: (type_identifier)
+        arguments: (argument_list (integer_literal) (string_literal))))))

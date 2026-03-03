@@ -1,0 +1,128 @@
+================================================================================
+Function call
+================================================================================
+
+fun f() void { foo(1, "hello") }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (identifier)
+        arguments: (argument_list (integer_literal) (string_literal))))))
+
+================================================================================
+Method call
+================================================================================
+
+fun f() void { "abc".eq("def") }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (field_access object: (string_literal) field: (identifier))
+        arguments: (argument_list (string_literal))))))
+
+================================================================================
+Chained call
+================================================================================
+
+fun f() void { foo()() }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (call_expression callee: (identifier))))))
+
+================================================================================
+Field access
+================================================================================
+
+fun f() void { x.one.two }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (field_access
+        object: (field_access object: (identifier) field: (identifier))
+        field: (identifier)))))
+
+================================================================================
+Index expression
+================================================================================
+
+fun f() void { arr[i] }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (index_expression object: (identifier) index: (identifier)))))
+
+================================================================================
+Reference and dereference
+================================================================================
+
+fun f() void { &x  &mut y  r.*.* }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (reference (identifier))
+      (reference (identifier))
+      (dereference (dereference (identifier))))))
+
+================================================================================
+Array literal
+================================================================================
+
+fun f() void { [1, 2, 3] }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (array_literal (integer_literal) (integer_literal) (integer_literal)))))
+
+================================================================================
+Empty slice
+================================================================================
+
+fun f() void { [] }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (empty_slice))))

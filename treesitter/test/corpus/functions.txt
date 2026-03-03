@@ -1,0 +1,76 @@
+================================================================================
+Simple function
+================================================================================
+
+fun foo() Int { 123 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block (integer_literal))))
+
+================================================================================
+Function with parameters
+================================================================================
+
+fun add(a Int, b Int) Int { a }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier)))
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type (type_identifier))
+    body: (block (identifier))))
+
+================================================================================
+Void function
+================================================================================
+
+fun foo() void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+Namespaced function
+================================================================================
+
+fun Str.eq(s Str) Bool { true }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (type_identifier) (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type (type_identifier))
+    body: (block (boolean_literal))))
+
+================================================================================
+Allocator parameter
+================================================================================
+
+fun foo(@a Arena) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (allocator_identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block)))

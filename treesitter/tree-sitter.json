@@ -1,0 +1,13 @@
+{
+  "grammars": [
+    {
+      "name": "metall",
+      "scope": "source.metall",
+      "file-types": ["met"],
+      "highlights": "queries/metall/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0"
+  }
+}

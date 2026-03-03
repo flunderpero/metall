@@ -1,0 +1,86 @@
+================================================================================
+New and new_mut
+================================================================================
+
+fun f(@a Arena) void {
+    new(@a, Foo(1))
+    new_mut(@a, Foo())
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (allocator_identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (new_expression
+        allocator: (allocator_identifier)
+        value: (struct_literal type: (type_identifier) arguments: (argument_list (integer_literal))))
+      (new_mut_expression
+        allocator: (allocator_identifier)
+        value: (struct_literal type: (type_identifier))))))
+
+================================================================================
+New array with default
+================================================================================
+
+fun f(@a Arena) void { new(@a, [5]Int(42)) }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (allocator_identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (new_expression
+        allocator: (allocator_identifier)
+        value: (new_array
+          type: (array_type (integer_literal) (simple_type (type_identifier)))
+          default_value: (integer_literal))))))
+
+================================================================================
+Make slice
+================================================================================
+
+fun f(@a Arena) void { make(@a, []Int(10, 0)) }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (allocator_identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (make_expression
+        allocator: (allocator_identifier)
+        value: (make_slice
+          type: (slice_type (simple_type (type_identifier)))
+          length: (integer_literal)
+          default_value: (integer_literal))))))
+
+================================================================================
+Allocator from field access
+================================================================================
+
+fun f(x Foo) void { new(x.@a, Bar()) }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (new_expression
+        allocator: (field_access object: (identifier) field: (allocator_identifier))
+        value: (struct_literal type: (type_identifier))))))

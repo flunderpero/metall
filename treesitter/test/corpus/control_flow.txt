@@ -1,0 +1,85 @@
+================================================================================
+If then else
+================================================================================
+
+fun f() Int { if a { 1 } else { 2 } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (if_expression
+        condition: (identifier)
+        then: (block (integer_literal))
+        else: (block (integer_literal))))))
+
+================================================================================
+If without else
+================================================================================
+
+fun f() void { if a { 1 } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (if_expression
+        condition: (identifier)
+        then: (block (integer_literal))))))
+
+================================================================================
+For loop with condition
+================================================================================
+
+fun f() void { for i != 10 { i = i + 1 } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        condition: (binary_expression (identifier) (integer_literal))
+        body: (block
+          (assignment
+            target: (identifier)
+            value: (binary_expression (identifier) (integer_literal))))))))
+
+================================================================================
+Unconditional for loop
+================================================================================
+
+fun f() void { for { break } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression body: (block (break_expression))))))
+
+================================================================================
+Return, break, continue
+================================================================================
+
+fun f() Int { return 1  for { continue  break } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (return_expression (integer_literal))
+      (for_expression body: (block (continue_expression) (break_expression))))))

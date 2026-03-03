@@ -1,0 +1,32 @@
+================================================================================
+Line comment
+================================================================================
+
+-- this is a comment
+fun f() void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (line_comment)
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+Block comment
+================================================================================
+
+--- multi
+    line ---
+fun f() void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block_comment)
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block)))

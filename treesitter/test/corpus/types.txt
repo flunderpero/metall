@@ -1,0 +1,50 @@
+================================================================================
+Array type
+================================================================================
+
+fun f(a [5]Int) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (array_type (integer_literal) (simple_type (type_identifier)))))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+Slice type
+================================================================================
+
+fun f(a []Str) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (slice_type (simple_type (type_identifier)))))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+Reference types
+================================================================================
+
+fun f(a &Int, b &mut [5]Int) &Int {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (reference_type (simple_type (type_identifier))))
+      (parameter
+        name: (identifier)
+        type: (reference_type (array_type (integer_literal) (simple_type (type_identifier))))))
+    return_type: (reference_type (simple_type (type_identifier)))
+    body: (block)))

@@ -1,0 +1,69 @@
+================================================================================
+Arithmetic precedence
+================================================================================
+
+fun f() Int { 1 + 2 * 3 + 4 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (binary_expression
+          (integer_literal)
+          (binary_expression (integer_literal) (integer_literal)))
+        (integer_literal)))))
+
+================================================================================
+Logical operators
+================================================================================
+
+fun f() Bool { true and false or not true }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (binary_expression (boolean_literal) (boolean_literal))
+        (unary_expression (boolean_literal))))))
+
+================================================================================
+Comparison
+================================================================================
+
+fun f() Bool { a != b == c }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (binary_expression (identifier) (identifier))
+        (identifier)))))
+
+================================================================================
+Grouped expression
+================================================================================
+
+fun f() Int { (1 + 2) * 3 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (grouped_expression (binary_expression (integer_literal) (integer_literal)))
+        (integer_literal)))))

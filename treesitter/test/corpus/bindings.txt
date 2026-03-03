@@ -1,0 +1,51 @@
+================================================================================
+Let and mut bindings
+================================================================================
+
+fun f() void { let x = 1  mut y = 2 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (let_binding name: (identifier) value: (integer_literal))
+      (mut_binding name: (identifier) value: (integer_literal)))))
+
+================================================================================
+Allocator binding
+================================================================================
+
+fun f() void { let @a = Arena(4096) }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (allocator_binding
+        name: (allocator_identifier)
+        type: (type_identifier)
+        arguments: (argument_list (integer_literal))))))
+
+================================================================================
+Assignment to variable, field, index, deref
+================================================================================
+
+fun f() void { x = 1  x.y = 2  x[0] = 3  x.* = 4 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (assignment target: (identifier) value: (integer_literal))
+      (assignment target: (field_access object: (identifier) field: (identifier)) value: (integer_literal))
+      (assignment target: (index_expression object: (identifier) index: (integer_literal)) value: (integer_literal))
+      (assignment target: (dereference (identifier)) value: (integer_literal)))))
