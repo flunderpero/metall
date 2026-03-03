@@ -16,6 +16,7 @@ const (
 	And
 	Break
 	Comma
+	Comment
 	Continue
 	Dot
 	Else
@@ -54,6 +55,7 @@ const (
 	TypeIdent
 	Unknown
 	Void
+	Whitespace
 )
 
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
@@ -62,6 +64,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	And:                   "<and>",
 	Break:                 "<break>",
 	Comma:                 ",",
+	Comment:               "<comment>",
 	Continue:              "<continue>",
 	Dot:                   ".",
 	Else:                  "<else>",
@@ -100,6 +103,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	TypeIdent:             "<type identifier>",
 	Unknown:               "<unknown>",
 	Void:                  "<void>",
+	Whitespace:            "<whitespace>",
 }
 
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
@@ -108,7 +112,6 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'.': Dot,
 	'{': LCurly,
 	'(': LParen,
-	'-': Minus,
 	'+': Plus,
 	']': RBracket,
 	'}': RCurly,
@@ -202,6 +205,27 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			span = base.NewSpan(source, start, idx)
 		}
 		return Token{Kind: kind, Value: "", Span: span}
+	case c == '-':
+		if idx >= len(source.Content) || source.Content[idx] != '-' {
+			return Token{Kind: Minus, Value: "", Span: span}
+		}
+		value := "--"
+		end := "\n"
+		idx += 1
+		if idx < len(source.Content) && source.Content[idx] == '-' {
+			idx += 1
+			value = "---"
+			end = "---"
+		}
+		for idx < len(source.Content) {
+			if len(value) != len(end) && strings.HasSuffix(value, end) {
+				break
+			}
+			value += string(source.Content[idx])
+			idx += 1
+		}
+		span.End = idx - 1
+		return Token{Kind: Comment, Value: value, Span: span}
 	case c == '!':
 		if idx < len(source.Content) && source.Content[idx] == '=' {
 			return Token{Kind: Neq, Value: "", Span: base.NewSpan(source, start, idx)}
@@ -216,6 +240,18 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			}
 		}
 		return Token{Kind: kind, Value: "", Span: span}
+	case unicode.IsSpace(c):
+		value := []rune{c}
+		for idx < len(source.Content) {
+			c = source.Content[idx]
+			if !unicode.IsSpace(c) {
+				break
+			}
+			idx += 1
+			value = append(value, c)
+		}
+		span.End = idx - 1
+		return Token{Kind: Whitespace, Value: string(value), Span: span}
 	case unicode.IsLetter(c), c == '@':
 		value := []rune{c}
 		for idx < len(source.Content) {
@@ -257,25 +293,10 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	}
 }
 
-func lexSkipWhitespace(source *base.Source, idx int) int {
-	for idx < len(source.Content) {
-		c := source.Content[idx]
-		if !unicode.IsSpace(c) {
-			return idx
-		}
-		idx += 1
-	}
-	return idx
-}
-
 func Lex(source *base.Source) []Token {
 	tokens := []Token{}
 	idx := 0
-	for {
-		idx = lexSkipWhitespace(source, idx)
-		if idx >= len(source.Content) {
-			break
-		}
+	for idx < len(source.Content) {
 		token := lexToken(source, idx)
 		tokens = append(tokens, token)
 		idx = token.Span.End + 1

@@ -30,14 +30,18 @@ func TestLexer(t *testing.T) {
 			[]want{
 				{Ident, "a", "1:1"},
 				{LBracketIndex, "", "1:2"},
+				{Whitespace, " ", "1:3"},
 
 				{LBracket, "", "1:4"},
+				{Whitespace, " ", "1:5"},
 
 				{LParen, "", "1:6"},
 				{LBracket, "", "1:7"},
+				{Whitespace, " ", "1:8"},
 
 				{LBracket, "", "1:9"},
 				{LBracket, "", "1:10"},
+				{Whitespace, " ", "1:11"},
 
 				{LCurly, "", "1:12"},
 				{LBracket, "", "1:13"},
@@ -74,7 +78,19 @@ func TestLexer(t *testing.T) {
 		{"break", `break`, []want{{Break, "", "1:1-1:5"}}},
 		{"continue", `continue`, []want{{Continue, "", "1:1-1:8"}}},
 		{"dot", ".", []want{{Dot, "", "1:1"}}},
-		{"whitespace is ignored", " ( \n \t)\r", []want{{LParen, "", "1:2"}, {RParen, "", "2:3"}}},
+		{"whitespace", " ( \n \t)\r", []want{
+			{Whitespace, " ", "1:1"},
+			{LParen, "", "1:2"},
+			{Whitespace, " \n \t", "1:3-2:2"},
+			{RParen, "", "2:3"},
+			{Whitespace, "\r", "2:4"},
+		}},
+		{"single line comment", "-- comment", []want{{Comment, "-- comment", "1:1-1:10"}}},
+		{
+			"multi line comment",
+			"--- multi\n    line\n    comment ---",
+			[]want{{Comment, "--- multi\n    line\n    comment ---", "1:1-3:15"}},
+		},
 	}
 
 	assert := require.New(t)
@@ -90,16 +106,16 @@ func TestLexer(t *testing.T) {
 				token := tokens[i]
 				srow, scol := token.Span.StartPos()
 				erow, ecol := token.Span.EndPos()
-				var wantPos string
+				var pos string
 				if erow == srow && ecol == scol {
-					wantPos = fmt.Sprintf("%d:%d", srow, scol)
+					pos = fmt.Sprintf("%d:%d", srow, scol)
 				} else {
-					wantPos = fmt.Sprintf("%d:%d-%d:%d", srow, scol, erow, ecol)
+					pos = fmt.Sprintf("%d:%d-%d:%d", srow, scol, erow, ecol)
 				}
 				msg := fmt.Sprintf(" of token #%d: %s", i, token)
 				assert.Equal(want.kind, token.Kind, "kind"+msg)
 				assert.Equal(want.val, token.Value, "value"+msg)
-				assert.Equal(wantPos, want.pos, "span"+msg)
+				assert.Equal(want.pos, pos, "span"+msg)
 			}
 			assert.Len(tokens, len(tt.want))
 		})

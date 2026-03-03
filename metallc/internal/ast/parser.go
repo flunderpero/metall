@@ -20,7 +20,16 @@ type Parser struct {
 }
 
 func NewParser(tokens []token.Token) *Parser {
-	return &Parser{NewAST(), base.Diagnostics{}, tokens, 0}
+	// Strip comments and whitespace tokens.
+	stripped := []token.Token{}
+	for _, t := range tokens {
+		switch t.Kind { //nolint:exhaustive
+		case token.Comment, token.Whitespace:
+		default:
+			stripped = append(stripped, t)
+		}
+	}
+	return &Parser{NewAST(), base.Diagnostics{}, stripped, 0}
 }
 
 func (p *Parser) ParseFile() (NodeID, bool) {

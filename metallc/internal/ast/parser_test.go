@@ -55,6 +55,14 @@ func TestParseOK(t *testing.T) {
 				return a.block()
 			},
 		},
+		{"line comment", "expr", "-- comment\n 123", func(a *TestAST) NodeID { return a.int_(123) }},
+		{"multi-line comment", "expr", `
+			--- multi
+			    line
+				comment
+			---
+			123
+			`, func(a *TestAST) NodeID { return a.int_(123) }},
 		{
 			"fun with &mut param", "expr", `fun foo(a Int, b &mut Str) Int { 123 }`,
 			func(a *TestAST) NodeID {
