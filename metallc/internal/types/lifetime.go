@@ -205,6 +205,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeMakeSlice(nodeID, kind)
 	case ast.ArrayLiteral:
 		a.analyzeArrayLiteral(nodeID, kind)
+	case ast.EmptySlice:
+		// No children to analyze.
 	case ast.Index:
 		a.analyzeIndex(nodeID, kind)
 	case ast.Call:

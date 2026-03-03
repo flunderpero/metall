@@ -434,6 +434,75 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let x = [1, 2, 3] x[1] }`, Int, nil},
 		{"index write", `{ mut x = [1, 2, 3] x[1] = 5 }`, void, nil},
+		{
+			"empty slice in make",
+			`{ let @a = Arena() let x = make(@a, [][]Int(2, [])) }`,
+			void, nil,
+		},
+		{
+			"empty slice in assignment",
+			`{ let @a = Arena() mut x = make(@a, []Int(3)) x = [] }`,
+			void, nil,
+		},
+		{
+			"empty slice as fun arg",
+			`{ fun foo(s []Int) void {} foo([]) }`,
+			void, nil,
+		},
+		{
+			"empty slice in struct literal",
+			`{ struct Foo { items []Int } Foo([]) }`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				got := e.TypeOfNode(id)
+				_, ok := got.Kind.(StructType)
+				assert.Equal(true, ok)
+			},
+		},
+		{
+			"empty slice in new array default",
+			`{ let @a = Arena() let x = new(@a, [3][]Int([])) }`,
+			void, nil,
+		},
+		{
+			"multidimensional array type", `fun foo(a [3][4]Int) void {}`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				fun, ok := e.TypeOfNode(id).Kind.(FunType)
+				assert.Equal(true, ok)
+				outer, ok := e.Type(fun.Params[0]).Kind.(ArrayType)
+				assert.Equal(true, ok)
+				assert.Equal(int64(3), outer.Len)
+				inner, ok := e.Type(outer.Elem).Kind.(ArrayType)
+				assert.Equal(true, ok)
+				assert.Equal(int64(4), inner.Len)
+				assert.Equal(Int.ID, inner.Elem)
+			},
+		},
+		{
+			"multidimensional slice type", `fun foo(a [][]Int) void {}`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				fun, ok := e.TypeOfNode(id).Kind.(FunType)
+				assert.Equal(true, ok)
+				outer, ok := e.Type(fun.Params[0]).Kind.(SliceType)
+				assert.Equal(true, ok)
+				inner, ok := e.Type(outer.Elem).Kind.(SliceType)
+				assert.Equal(true, ok)
+				assert.Equal(Int.ID, inner.Elem)
+			},
+		},
+		{
+			"mixed array slice type", `fun foo(a [3][]Int) void {}`, nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				fun, ok := e.TypeOfNode(id).Kind.(FunType)
+				assert.Equal(true, ok)
+				outer, ok := e.Type(fun.Params[0]).Kind.(ArrayType)
+				assert.Equal(true, ok)
+				assert.Equal(int64(3), outer.Len)
+				inner, ok := e.Type(outer.Elem).Kind.(SliceType)
+				assert.Equal(true, ok)
+				assert.Equal(Int.ID, inner.Elem)
+			},
+		},
 
 		{"int +", `1 + 2`, Int, nil},
 		{"int -", `1 - 2`, Int, nil},
@@ -544,6 +613,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"slice len through ref",
 		"mut ref slice index write",
 		"new array U8 no default",
+		"empty slice in make",
+		"empty slice in assignment",
+		"empty slice as fun arg",
+		"empty slice in struct literal",
+		"empty slice in new array default",
 	}
 
 	assert := base.NewAssert(t)
@@ -951,6 +1025,16 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:49: &struct Foo(one Int) is not safe to leave uninitialized, provide a default value\n" +
 				`    { struct Foo{one Int} let @a = Arena() make(@a, []&Foo(3)) }` + "\n" +
 				`                                                    ^^^^^^`,
+		}},
+		{"empty slice without context", `[]`, []string{
+			"test.met:1:1: cannot infer type of empty slice []\n" +
+				"    []\n" +
+				"    ^^",
+		}},
+		{"empty slice in let binding", `let x = []`, []string{
+			"test.met:1:9: cannot infer type of empty slice []\n" +
+				"    let x = []\n" +
+				"            ^^",
 		}},
 		{"cannot return allocator from fun", `fun foo() Arena { }`, []string{
 			"test.met:1:11: cannot return an allocator from a function\n" +

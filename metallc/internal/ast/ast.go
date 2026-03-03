@@ -82,6 +82,10 @@ type ArrayLiteral struct {
 
 func (ArrayLiteral) isKind() {}
 
+type EmptySlice struct{}
+
+func (EmptySlice) isKind() {}
+
 type Index struct {
 	Target NodeID
 	Index  NodeID
@@ -417,6 +421,10 @@ func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
 	return a.node(ArrayLiteral{Elems: elems}, span)
 }
 
+func (a *AST) NewEmptySlice(span base.Span) NodeID {
+	return a.node(EmptySlice{}, span)
+}
+
 func (a *AST) NewIndex(target NodeID, index NodeID, span base.Span) NodeID {
 	return a.node(Index{Target: target, Index: index}, span)
 }
@@ -530,6 +538,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for i := range len(kind.Elems) {
 			f(kind.Elems[i])
 		}
+	case EmptySlice:
 	case Index:
 		f(kind.Target)
 		f(kind.Index)
@@ -807,6 +816,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 				addChild("first", kind.Elems[0])
 			}
 		}
+	case EmptySlice:
 	case Index:
 		if !children {
 			addAttr("target", nodeIDKind(kind.Target))

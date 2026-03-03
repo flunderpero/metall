@@ -220,8 +220,35 @@ func TestParseOK(t *testing.T) {
 		{"array type", "expr", `fun foo(a [5]Int) void {}}`, func(a *TestAST) NodeID {
 			return a.fun("foo", []NodeID{a.fun_param("a", a.arr_typ(a.int_typ(), 5))}, a.void_typ(), a.block_no_scope())
 		}},
+		{"multidimensional array type", "expr", `fun foo(a [3][4]Int) void {}}`, func(a *TestAST) NodeID {
+			return a.fun(
+				"foo",
+				[]NodeID{a.fun_param("a", a.arr_typ(a.arr_typ(a.int_typ(), 4), 3))},
+				a.void_typ(),
+				a.block_no_scope(),
+			)
+		}},
+		{"multidimensional slice type", "expr", `fun foo(a [][]Str) void {}}`, func(a *TestAST) NodeID {
+			return a.fun(
+				"foo",
+				[]NodeID{a.fun_param("a", a.slice_typ(a.slice_typ(a.str_typ())))},
+				a.void_typ(),
+				a.block_no_scope(),
+			)
+		}},
+		{"mixed array slice type", "expr", `fun foo(a [3][]Int) void {}}`, func(a *TestAST) NodeID {
+			return a.fun(
+				"foo",
+				[]NodeID{a.fun_param("a", a.arr_typ(a.slice_typ(a.int_typ()), 3))},
+				a.void_typ(),
+				a.block_no_scope(),
+			)
+		}},
 		{"array literal", "expr", `[1, 2, 3]`, func(a *TestAST) NodeID {
 			return a.arr_lit(a.int_(1), a.int_(2), a.int_(3))
+		}},
+		{"empty slice", "expr", `[]`, func(a *TestAST) NodeID {
+			return a.empty_slice()
 		}},
 		{"index read", "expr", `x[1]`, func(a *TestAST) NodeID {
 			return a.index(a.ident("x"), a.int_(1))
@@ -612,6 +639,10 @@ func (a *TestAST) arr_lit(elems ...NodeID) NodeID {
 		elems = []NodeID{}
 	}
 	return a.NewArrayLiteral(elems, a.span)
+}
+
+func (a *TestAST) empty_slice() NodeID {
+	return a.NewEmptySlice(a.span)
 }
 
 func (a *TestAST) index(base NodeID, index NodeID) NodeID {

@@ -122,6 +122,8 @@ func (g *IRGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genNew(id, kind)
 	case ast.ArrayLiteral:
 		g.genArrayLiteral(id, kind)
+	case ast.EmptySlice:
+		g.genEmptySlice(id)
 	case ast.Index:
 		g.genIndex(id, kind)
 	case ast.FieldAccess:
@@ -217,6 +219,13 @@ func (g *IRGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 	}
 }
 
+func (g *IRGen) genEmptySlice(id ast.NodeID) {
+	reg := g.reg()
+	g.write("%s = alloca {ptr, i64}", reg)
+	g.write("store {ptr, i64} zeroinitializer, ptr %s", reg)
+	g.setCode(id, reg)
+}
+
 func (g *IRGen) genIndex(id ast.NodeID, index ast.Index) {
 	g.Gen(index.Target)
 	g.Gen(index.Index)
@@ -300,11 +309,16 @@ func (g *IRGen) genNew(id ast.NodeID, alloc ast.New) {
 		g.write("%s_size = mul i64 %s_elm_size, %d", reg, reg, arrType.Len)
 		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
 		if lit.DefaultValue != nil {
-			g.Gen(*lit.DefaultValue)
-			valReg := g.lookupCode(*lit.DefaultValue)
-			elemTypeID := g.engine.TypeOfNode(arrType.Elem).ID
-			count := arrType.Len
-			g.genInitializeMemory(reg, irTyp, valReg, elemTypeID, fmt.Sprintf("%d", count), &count)
+			if _, ok := g.engine.Node(*lit.DefaultValue).Kind.(ast.EmptySlice); ok {
+				// EmptySlice is all zeros — use memset.
+				g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_size, i1 false)", reg, reg)
+			} else {
+				g.Gen(*lit.DefaultValue)
+				valReg := g.lookupCode(*lit.DefaultValue)
+				elemTypeID := g.engine.TypeOfNode(arrType.Elem).ID
+				count := arrType.Len
+				g.genInitializeMemory(reg, irTyp, valReg, elemTypeID, fmt.Sprintf("%d", count), &count)
+			}
 		}
 		g.setCode(id, reg)
 	case ast.StructLiteral:
@@ -332,10 +346,15 @@ func (g *IRGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
 	g.write("%s_size = mul i64 %s_elm_size, %s", reg, reg, lenReg)
 	g.write("%s_data = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
 	if makeSlice.DefaultValue != nil {
-		g.Gen(*makeSlice.DefaultValue)
-		valReg := g.lookupCode(*makeSlice.DefaultValue)
-		elemTypeID := g.engine.TypeOfNode(sliceType.Elem).ID
-		g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, elemTypeID, lenReg, nil)
+		if _, ok := g.engine.Node(*makeSlice.DefaultValue).Kind.(ast.EmptySlice); ok {
+			// EmptySlice is all zeros — use memset.
+			g.write("call void @llvm.memset.p0.i64(ptr %s_data, i8 0, i64 %s_size, i1 false)", reg, reg)
+		} else {
+			g.Gen(*makeSlice.DefaultValue)
+			valReg := g.lookupCode(*makeSlice.DefaultValue)
+			elemTypeID := g.engine.TypeOfNode(sliceType.Elem).ID
+			g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, elemTypeID, lenReg, nil)
+		}
 	}
 	// Build the slice {ptr, i64} on the stack.
 	g.write("%s = alloca {ptr, i64}", reg)
@@ -356,7 +375,7 @@ func (g *IRGen) genInitializeMemory(
 ) {
 	typ := g.engine.Type(elemTypeID)
 	switch typ.Kind.(type) {
-	case types.StructType:
+	case types.StructType, types.SliceType:
 		g.genInitializeMemoryStruct(dataReg, irElemType, valReg, countReg)
 	default:
 		g.genInitializeMemoryScalar(dataReg, irElemType, valReg, countReg, compileTimeCount)
@@ -958,7 +977,7 @@ func (g *IRGen) genVar(id ast.NodeID, v ast.Var) {
 	if g.isAggregateType(exprType.ID) {
 		exprNode := g.engine.Node(v.Expr)
 		switch exprNode.Kind.(type) {
-		case ast.StructLiteral, ast.ArrayLiteral, ast.MakeSlice, ast.Call:
+		case ast.StructLiteral, ast.ArrayLiteral, ast.EmptySlice, ast.MakeSlice, ast.Call:
 			// The result value is already a copy.
 			g.setCode(id, exprReg)
 			g.setSymbol(id, v.Name.Name, exprReg, "ptr")

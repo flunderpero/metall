@@ -398,6 +398,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkMakeSlice(nodeKind)
 	case ast.ArrayLiteral:
 		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span)
+	case ast.EmptySlice:
+		typeID, status = e.checkEmptySlice(node.Span, typeHint)
 	case ast.Index:
 		typeID, status = e.checkIndex(nodeKind)
 	case ast.AllocatorVar:
@@ -895,6 +897,16 @@ func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, sp
 		}
 	}
 	return e.buildArrayType(elemTyp, int64(len(array.Elems)), nodeID, span), TypeOK
+}
+
+func (e *Engine) checkEmptySlice(span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
+	if typeHint != nil {
+		if _, ok := e.Type(*typeHint).Kind.(SliceType); ok {
+			return *typeHint, TypeOK
+		}
+	}
+	e.diag(span, "cannot infer type of empty slice []")
+	return InvalidTypeID, TypeFailed
 }
 
 func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {

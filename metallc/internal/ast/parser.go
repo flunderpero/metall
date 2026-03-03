@@ -608,11 +608,17 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = makeSlice
 	case token.LBracket:
-		array, ok := p.ParseArrayLiteral()
-		if !ok {
-			return ParseFailed, false
+		if next, ok := p.mayPeek1(); ok && next.Kind == token.RBracket {
+			p.next()
+			p.next()
+			expr = p.NewEmptySlice(t.Span.Combine(next.Span))
+		} else {
+			array, ok := p.ParseArrayLiteral()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = array
 		}
-		expr = array
 	case token.Number:
 		num, ok := p.ParseNumber()
 		if !ok {
@@ -812,10 +818,13 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 	}
 }
 
-// ParseArrayOrSliceType parses `[5]Int` → ArrayType or `[]Int` → SliceType.
 func (p *Parser) ParseArrayOrSliceType() (NodeID, bool) {
-	t, ok := p.expect(token.LBracket)
+	t, ok := p.next()
 	if !ok {
+		return ParseFailed, false
+	}
+	if t.Kind != token.LBracket && t.Kind != token.LBracketIndex {
+		p.diagnostic(t.Span, "unexpected token: expected [, got %s", t.Kind)
 		return ParseFailed, false
 	}
 	span := t.Span
@@ -855,7 +864,7 @@ func (p *Parser) ParseType() (NodeID, bool) {
 	case token.TypeIdent:
 		p.next()
 		return p.NewSimpleType(Name{t.Value, span}, span), true
-	case token.LBracket:
+	case token.LBracket, token.LBracketIndex:
 		return p.ParseArrayOrSliceType()
 	case token.Amp:
 		p.next()

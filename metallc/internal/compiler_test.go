@@ -793,6 +793,38 @@ func TestCompile(t *testing.T) {
 			}
 			`, "42\n42\n99\n99\n"},
 
+		{"allocate multidimensional array", `
+			fun main() void {
+				let @a = Arena()
+				mut m = new_mut(@a, [2][3]Int())
+				m[0] = [10, 20, 30]
+				m[1] = [40, 50, 60]
+				print_int(m[0][1])
+				print_int(m[1][2])
+			}
+			`, "20\n60\n"},
+
+		{"make multidimensional slice", `
+			fun main() void {
+				let @a = Arena()
+				mut m = make(@a, [][]Int(2, []))
+				m[0] = make(@a, []Int(3, 20))
+				m[1] = make(@a, []Int(3, 60))
+				print_int(m[0][1])
+				print_int(m[1][2])
+			}
+			`, "20\n60\n"},
+
+		{"empty slice resets slice", `
+			fun main() void {
+				let @a = Arena()
+				mut x = make(@a, []Int(3, 42))
+				print_int(x[1])
+				x = []
+				print_int(x.len)
+			}
+			`, "42\n0\n"},
+
 		{"int arithmetic", `
 			fun main() void {
 				print_int(120 + 3)
