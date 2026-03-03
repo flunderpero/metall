@@ -829,6 +829,12 @@ func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
 			divOp = "udiv"
 		}
 		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, divOp, lhs, rhs)
+	case ast.BinaryOpMod:
+		remOp := "srem"
+		if info, _ := g.engine.IntTypeInfo(g.engine.TypeOfNode(binary.LHS).ID); !info.Signed {
+			remOp = "urem"
+		}
+		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, remOp, lhs, rhs)
 	case ast.BinaryOpEq:
 		g.write("%s = icmp eq %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpNeq:
@@ -1154,6 +1160,8 @@ func GenIR(fileID ast.NodeID, engine *types.Engine, opts IROpts) (string, error)
 		irType := fmt.Sprintf("i%d", bits)
 		g.write(builtinSafeDiv(irType, "sdiv"))
 		g.write(builtinSafeDiv(irType, "udiv"))
+		g.write(builtinSafeDiv(irType, "srem"))
+		g.write(builtinSafeDiv(irType, "urem"))
 		g.write(builtinFill(irType))
 	}
 	g.write(builtinFill("i1"))

@@ -50,6 +50,7 @@ func TestLexer(t *testing.T) {
 		{"plus", "+", []want{{Plus, "", "1:1"}}},
 		{"minus", "-", []want{{Minus, "", "1:1"}}},
 		{"slash", "/", []want{{Slash, "", "1:1"}}},
+		{"percent", "%", []want{{Percent, "", "1:1"}}},
 		{"eq", "=", []want{{Eq, "", "1:1"}}},
 		{"eqeq", "==", []want{{EqEq, "", "1:1-1:2"}}},
 		{"neq", "!=", []want{{Neq, "", "1:1-1:2"}}},

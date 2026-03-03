@@ -300,6 +300,9 @@ func TestParseOK(t *testing.T) {
 		{"int /", "expr", "1 / 2", func(a *TestAST) NodeID {
 			return a.binary(BinaryOpDiv, a.int_(1), a.int_(2))
 		}},
+		{"int %", "expr", "1 % 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpMod, a.int_(1), a.int_(2))
+		}},
 		{"arithmetic operator precedence", "expr", "1 + 2 * 3 + 4", func(a *TestAST) NodeID {
 			one := a.int_(1)
 			mul := a.binary(BinaryOpMul, a.int_(2), a.int_(3))

@@ -100,7 +100,7 @@
 
 ; >>> Operators
 
-["+" "-" "*" "/" "==" "!=" "="] @operator
+["+" "-" "*" "/" "%" "==" "!=" "="] @operator
 
 ; >>> Punctuation
 

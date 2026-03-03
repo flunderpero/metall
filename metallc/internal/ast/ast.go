@@ -169,6 +169,7 @@ const (
 	BinaryOpAdd BinaryOp = "+"
 	BinaryOpSub BinaryOp = "-"
 	BinaryOpDiv BinaryOp = "/"
+	BinaryOpMod BinaryOp = "%"
 	BinaryOpMul BinaryOp = "*"
 
 	BinaryOpEq  BinaryOp = "=="

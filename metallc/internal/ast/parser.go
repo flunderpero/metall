@@ -408,10 +408,11 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			return lhs, true
 		}
 		op, ok := map[token.TokenKind]BinaryOp{
-			token.Plus:  BinaryOpAdd,
-			token.Minus: BinaryOpSub,
-			token.Star:  BinaryOpMul,
-			token.Slash: BinaryOpDiv,
+			token.Plus:    BinaryOpAdd,
+			token.Minus:   BinaryOpSub,
+			token.Star:    BinaryOpMul,
+			token.Slash:   BinaryOpDiv,
+			token.Percent: BinaryOpMod,
 
 			token.EqEq: BinaryOpEq,
 			token.Neq:  BinaryOpNeq,
@@ -430,6 +431,7 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			BinaryOpSub: 3,
 			BinaryOpMul: 4,
 			BinaryOpDiv: 4,
+			BinaryOpMod: 4,
 		}[op]
 		if precedence < minPrecedence {
 			return lhs, true

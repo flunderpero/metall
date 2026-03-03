@@ -226,6 +226,7 @@ module.exports = grammar({
         prec.left(PREC.ADD, seq($._expression, "-", $._expression)),
         prec.left(PREC.MUL, seq($._expression, "*", $._expression)),
         prec.left(PREC.MUL, seq($._expression, "/", $._expression)),
+        prec.left(PREC.MUL, seq($._expression, "%", $._expression)),
       ),
 
     unary_expression: ($) =>

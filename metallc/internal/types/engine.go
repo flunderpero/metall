@@ -624,7 +624,7 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	case ast.BinaryOpOr, ast.BinaryOpAnd:
 		valid = lhsTypeID == e.boolType
 		expected = "Bool"
-	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv:
+	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod:
 		valid = e.isIntType(lhsTypeID)
 		expected = "an integer"
 	default:

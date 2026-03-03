@@ -831,9 +831,10 @@ func TestCompile(t *testing.T) {
 				print_int(44 - 2)
 				print_int(3 * 3)
 				print_int(9 / 3)
+				print_int(10 % 3)
+				print_int(Int(U8(10) % 3))
 			}
-
-			`, "123\n42\n9\n3\n"},
+			`, "123\n42\n9\n3\n1\n1\n"},
 
 		{"bool operators", `
 			fun main() void {
@@ -1079,6 +1080,11 @@ func TestCompilePanic(t *testing.T) {
 		{"int divide by zero", `
 			fun main() void {
 				1 / 0
+			}
+		`},
+		{"int modulo by zero", `
+			fun main() void {
+				1 % 0
 			}
 		`},
 	}

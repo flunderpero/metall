@@ -43,6 +43,7 @@ const (
 	Not
 	Number
 	Or
+	Percent
 	Plus
 	RBracket
 	RCurly
@@ -92,6 +93,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Not:                   "<not>",
 	Number:                "<number>",
 	Or:                    "<or>",
+	Percent:               "%",
 	Plus:                  "+",
 	RBracket:              "]",
 	RCurly:                "}",
@@ -114,6 +116,7 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'.': Dot,
 	'{': LCurly,
 	'(': LParen,
+	'%': Percent,
 	'+': Plus,
 	']': RBracket,
 	'}': RCurly,
