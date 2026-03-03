@@ -850,6 +850,20 @@ func TestCompile(t *testing.T) {
 			}
 			`, "false\ntrue\nfalse\ntrue\nfalse\ntrue\nfalse\n"},
 
+		{"int comparison operators", `
+			fun main() void {
+				print_bool(1 < 2)
+				print_bool(2 < 1)
+				print_bool(1 <= 1)
+				print_bool(1 <= 0)
+				print_bool(2 > 1)
+				print_bool(1 > 2)
+				print_bool(1 >= 1)
+				print_bool(0 >= 1)
+				print_bool(U8(1) < 2)
+			}
+			`, "true\nfalse\ntrue\nfalse\ntrue\nfalse\ntrue\nfalse\ntrue\n"},
+
 		{"conditional for loop", `
 			fun main() void {
 				mut x = 0

@@ -621,6 +621,9 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	case ast.BinaryOpEq, ast.BinaryOpNeq:
 		valid = e.isIntType(lhsTypeID) || lhsTypeID == e.boolType
 		expected = "an integer or Bool"
+	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
+		valid = e.isIntType(lhsTypeID)
+		expected = "an integer"
 	case ast.BinaryOpOr, ast.BinaryOpAnd:
 		valid = lhsTypeID == e.boolType
 		expected = "Bool"
@@ -654,10 +657,12 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 		)
 		return InvalidTypeID, TypeDepFailed
 	}
-	if binary.Op == ast.BinaryOpEq || binary.Op == ast.BinaryOpNeq {
+	switch binary.Op { //nolint:exhaustive
+	case ast.BinaryOpEq, ast.BinaryOpNeq, ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
 		return e.boolType, TypeOK
+	default:
+		return lhsTypeID, TypeOK
 	}
-	return lhsTypeID, TypeOK
 }
 
 func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {

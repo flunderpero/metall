@@ -839,6 +839,21 @@ func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
 		g.write("%s = icmp eq %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpNeq:
 		g.write("%s = icmp ne %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
+		signed := true
+		if info, ok := g.engine.IntTypeInfo(g.engine.TypeOfNode(binary.LHS).ID); ok {
+			signed = info.Signed
+		}
+		cmpOp := map[ast.BinaryOp]string{
+			ast.BinaryOpLt:  "slt",
+			ast.BinaryOpLte: "sle",
+			ast.BinaryOpGt:  "sgt",
+			ast.BinaryOpGte: "sge",
+		}[binary.Op]
+		if !signed {
+			cmpOp = "u" + cmpOp[1:]
+		}
+		g.write("%s = icmp %s %s %s, %s", reg, cmpOp, irTyp, lhs, rhs)
 	case ast.BinaryOpAnd:
 		g.write("%s = and %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpOr:

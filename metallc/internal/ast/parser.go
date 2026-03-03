@@ -416,6 +416,10 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 
 			token.EqEq: BinaryOpEq,
 			token.Neq:  BinaryOpNeq,
+			token.Lt:   BinaryOpLt,
+			token.Lte:  BinaryOpLte,
+			token.Gt:   BinaryOpGt,
+			token.Gte:  BinaryOpGte,
 			token.And:  BinaryOpAnd,
 			token.Or:   BinaryOpOr,
 		}[t.Kind]
@@ -427,6 +431,10 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			BinaryOpAnd: 1,
 			BinaryOpEq:  2,
 			BinaryOpNeq: 2,
+			BinaryOpLt:  2,
+			BinaryOpLte: 2,
+			BinaryOpGt:  2,
+			BinaryOpGte: 2,
 			BinaryOpAdd: 3,
 			BinaryOpSub: 3,
 			BinaryOpMul: 4,

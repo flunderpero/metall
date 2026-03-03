@@ -510,6 +510,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"int /", `1 / 2`, Int, nil},
 		{"int %", `1 % 2`, Int, nil},
 
+		{"< on int", `1 < 2`, Bool, nil},
+		{"<= on int", `1 <= 2`, Bool, nil},
+		{"> on int", `1 > 2`, Bool, nil},
+		{">= on int", `1 >= 2`, Bool, nil},
 		{"== on int", `1 == 2`, Bool, nil},
 		{"!= on int", `1 != 2`, Bool, nil},
 		{"== on bool", `true == true`, Bool, nil},

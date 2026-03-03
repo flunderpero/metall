@@ -26,6 +26,8 @@ const (
 	False
 	For
 	Fun
+	Gt
+	Gte
 	Ident
 	If
 	InvalidAllocatorIdent
@@ -34,6 +36,8 @@ const (
 	LCurly
 	Let
 	LParen
+	Lt
+	Lte
 	Make
 	Minus
 	Mut
@@ -75,6 +79,8 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	EqEq:                  "==",
 	False:                 "false",
 	For:                   "<for>",
+	Gt:                    ">",
+	Gte:                   ">=",
 	Fun:                   "<fun>",
 	Ident:                 "<identifier>",
 	If:                    "<if>",
@@ -84,6 +90,8 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	LCurly:                "{",
 	Let:                   "<let>",
 	LParen:                "(",
+	Lt:                    "<",
+	Lte:                   "<=",
 	Make:                  "<make>",
 	Minus:                 "-",
 	Mut:                   "<mut>",
@@ -208,6 +216,20 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		kind := Eq
 		if idx < len(source.Content) && source.Content[idx] == '=' {
 			kind = EqEq
+			span = base.NewSpan(source, start, idx)
+		}
+		return Token{Kind: kind, Value: "", Span: span}
+	case c == '<':
+		kind := Lt
+		if idx < len(source.Content) && source.Content[idx] == '=' {
+			kind = Lte
+			span = base.NewSpan(source, start, idx)
+		}
+		return Token{Kind: kind, Value: "", Span: span}
+	case c == '>':
+		kind := Gt
+		if idx < len(source.Content) && source.Content[idx] == '=' {
+			kind = Gte
 			span = base.NewSpan(source, start, idx)
 		}
 		return Token{Kind: kind, Value: "", Span: span}

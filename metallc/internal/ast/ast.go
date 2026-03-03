@@ -174,6 +174,10 @@ const (
 
 	BinaryOpEq  BinaryOp = "=="
 	BinaryOpNeq BinaryOp = "!="
+	BinaryOpLt  BinaryOp = "<"
+	BinaryOpLte BinaryOp = "<="
+	BinaryOpGt  BinaryOp = ">"
+	BinaryOpGte BinaryOp = ">="
 	BinaryOpAnd BinaryOp = "and"
 	BinaryOpOr  BinaryOp = "or"
 )
