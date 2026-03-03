@@ -106,6 +106,14 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 
+		{"void ident expr", "expr", "void", func(a *TestAST) NodeID { return a.ident("void") }},
+		{"return", "expr", `fun foo() Int { return 123 }`, func(a *TestAST) NodeID {
+			return a.fun("foo", nil, a.int_typ(), a.block_no_scope(a.return_(a.int_(123))))
+		}},
+		{"return void", "expr", `fun foo() void { return void }`, func(a *TestAST) NodeID {
+			return a.fun("foo", nil, a.void_typ(), a.block_no_scope(a.return_(a.ident("void"))))
+		}},
+
 		{"bool true", "expr", "true", func(a *TestAST) NodeID { return a.bool_(true) }},
 		{"bool false", "expr", "false", func(a *TestAST) NodeID { return a.bool_(false) }},
 		{
@@ -398,6 +406,12 @@ func TestParseErr(t *testing.T) {
 				"       ^^^",
 		}},
 
+		{"return expects expr", `{ return }`, []string{
+			"test.met:1:10: unexpected token: expected start of an expression, got }\n" +
+				`    { return }` + "\n" +
+				"             ^",
+		}},
+
 		{"reserved word Arena", `struct Arena{one Str}`, []string{
 			"test.met:1:8: reserved word: Arena\n" +
 				`    struct Arena{one Str}` + "\n" +
@@ -533,6 +547,10 @@ func (a *TestAST) for_cond(cond NodeID, block NodeID) NodeID {
 
 func (a *TestAST) break_() NodeID {
 	return a.NewBreak(a.span)
+}
+
+func (a *TestAST) return_(expr NodeID) NodeID {
+	return a.NewReturn(expr, a.span)
 }
 
 func (a *TestAST) continue_() NodeID {

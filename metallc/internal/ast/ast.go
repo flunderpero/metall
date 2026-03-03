@@ -230,6 +230,12 @@ type For struct {
 
 func (For) isKind() {}
 
+type Return struct {
+	Expr NodeID
+}
+
+func (Return) isKind() {}
+
 type Break struct{}
 
 func (Break) isKind() {}
@@ -303,6 +309,10 @@ func (a *AST) NewBreak(span base.Span) NodeID {
 
 func (a *AST) NewContinue(span base.Span) NodeID {
 	return a.node(Continue{}, span)
+}
+
+func (a *AST) NewReturn(expr NodeID, span base.Span) NodeID {
+	return a.node(Return{Expr: expr}, span)
 }
 
 func (a *AST) NewBool(value bool, span base.Span) NodeID {
@@ -523,6 +533,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Index:
 		f(kind.Target)
 		f(kind.Index)
+	case Return:
+		f(kind.Expr)
 	case Break:
 	case Continue:
 	case Ident:
@@ -650,6 +662,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 				addChild("cond", *kind.Cond)
 			}
 			addChild("body", kind.Body)
+		}
+	case Return:
+		if !children {
+			addAttr("expr", nodeIDKind(kind.Expr))
+		} else {
+			addChild("expr", kind.Expr)
 		}
 	case Break, Continue:
 	case File:

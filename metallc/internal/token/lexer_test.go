@@ -77,6 +77,7 @@ func TestLexer(t *testing.T) {
 		{"for", `for`, []want{{For, "", "1:1-1:3"}}},
 		{"break", `break`, []want{{Break, "", "1:1-1:5"}}},
 		{"continue", `continue`, []want{{Continue, "", "1:1-1:8"}}},
+		{"return", "return", []want{{Return, "", "1:1-1:6"}}},
 		{"dot", ".", []want{{Dot, "", "1:1"}}},
 		{"whitespace", " ( \n \t)\r", []want{
 			{Whitespace, " ", "1:1"},

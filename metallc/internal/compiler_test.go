@@ -124,7 +124,35 @@ func TestCompile(t *testing.T) {
 			"hello\n",
 		},
 		{"fun with bool param", `fun foo(a Bool) Bool { a } fun main() void { print_bool(foo(true)) }`, "true\n"},
+		{"fun with return", `fun foo() Int { return 123 } fun main() void { print_int(foo()) }`, "123\n"},
+		{
+			"fun with return struct", `
+			struct Foo { one Str }
+			fun foo() Foo { return Foo("hello") } 
+			fun main() void { print_str(foo().one) }`,
+			"hello\n",
+		},
+		{
+			"fun with multiple return", `
+			fun foo(a Int) Int { 
+				if a != 2 {
+					if a == 0 {
+						return 100
+					} else {
+						"just some expr"
+					}
+					return 101
+				}
+				return a + 200
+			} 
 
+			fun main() void { 
+				print_int(foo(0)) 
+				print_int(foo(1)) 
+				print_int(foo(2)) 
+			}`,
+			"100\n101\n202\n",
+		},
 		{"block expression", `fun main() void { let x = { "hello" } print_str(x) }`, "hello\n"},
 		{"var expr is void", `fun main() void { print_str("hello") let x = 123 }`, "hello\n"},
 		{"assign expr is void", `fun main() void { print_str("hello") mut x = 123 x = 321 }`, "hello\n"},

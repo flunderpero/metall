@@ -177,6 +177,7 @@ type Engine struct {
 	nextScopeID        ScopeID
 	scope              *Scope
 	loopStack          []ast.NodeID
+	funStack           []TypeID
 	typeHint           *TypeID
 	builtins           map[string]TypeID
 	voidType           TypeID
@@ -379,6 +380,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		return cachedType.Type.ID, cachedType.Status
 	case ast.FunParam:
 		typeID, status = e.checkFunParam(nodeID, nodeKind, node.Span)
+	case ast.Return:
+		typeID, status = e.checkReturn(nodeID, nodeKind, node.Span)
 	case ast.StructField:
 		typeID, status = e.checkStructField(nodeID, nodeKind, node.Span)
 	case ast.StructLiteral:
@@ -488,8 +491,34 @@ func (e *Engine) IterTypes(f func(*Type, TypeStatus) bool) {
 	}
 }
 
-func (e *Engine) Scope() *Scope {
-	return e.scope
+func (e *Engine) BlockReturns(blockID ast.NodeID) bool {
+	return e.BlockBreaksControlFlow(blockID, true)
+}
+
+// A block breaks the control flow if it ends with `return`, `break`, or `continue`
+// or contains only an 'if expr' with all branches breaking control flow.
+func (e *Engine) BlockBreaksControlFlow(blockID ast.NodeID, checkForReturnOnly bool) bool {
+	block := base.Cast[ast.Block](e.Node(blockID).Kind)
+	if len(block.Exprs) == 0 {
+		return false
+	}
+	lastExpr := e.Node(block.Exprs[len(block.Exprs)-1])
+	switch lastExpr.Kind.(type) {
+	case ast.Break, ast.Continue:
+		return !checkForReturnOnly
+	case ast.Return:
+		return true
+	default:
+		if len(block.Exprs) > 1 {
+			return false
+		}
+		ifNode, ok := e.Node(block.Exprs[0]).Kind.(ast.If)
+		if !ok {
+			return false
+		}
+		return ifNode.Else != nil && e.BlockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
+			e.BlockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
+	}
 }
 
 func (e *Engine) isIntType(typeID TypeID) bool {
@@ -641,10 +670,19 @@ func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {
 	depFailed := false
 	var lastExprTypeID TypeID
 	var status TypeStatus
+	wouldBeDeadCode := false
 	for _, exprNodeID := range block.Exprs {
+		if wouldBeDeadCode {
+			e.diag(e.Node(exprNodeID).Span, "unreachable code")
+			return InvalidTypeID, TypeDepFailed
+		}
 		lastExprTypeID, status = e.Query(exprNodeID)
 		if status.Failed() {
 			depFailed = true
+		}
+		switch e.Node(exprNodeID).Kind.(type) {
+		case ast.Continue, ast.Break, ast.Return:
+			wouldBeDeadCode = true
 		}
 	}
 	if depFailed {
@@ -715,6 +753,10 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	elseType, status := e.Query(*if_.Else)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
+	}
+	// If either of the branches returns early it is void.
+	if e.BlockBreaksControlFlow(if_.Then, false) || e.BlockBreaksControlFlow(*if_.Else, false) {
+		return e.voidType, TypeOK
 	}
 	if thenType != elseType {
 		e.diag(
@@ -1229,7 +1271,7 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
 			funType := base.Cast[FunType](typeKind)
-			decl.status = e.checkFunBody(nodeKind, funType)
+			decl.status = e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
 		case ast.Struct:
 		// Structs don't have a body.
 		default:
@@ -1290,7 +1332,9 @@ func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType Struc
 	return TypeOK, structType
 }
 
-func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
+func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType) TypeStatus {
+	e.funStack = append(e.funStack, funTypeID)
+	defer func() { e.funStack = e.funStack[:len(e.funStack)-1] }()
 	for i, paramNodeID := range funNode.Params {
 		paramNode := base.Cast[ast.FunParam](e.Node(paramNodeID).Kind)
 		paramTypeID := funType.Params[i]
@@ -1299,14 +1343,18 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
 			return TypeFailed
 		}
 	}
+	if funNode.Name.Name == "main" {
+		e.verifyMain(funNode)
+	}
 	blockTypeID, status := e.Query(funNode.Block)
 	if status.Failed() {
 		return TypeDepFailed
 	}
 	blockNode := e.Node(funNode.Block)
-	block, ok := blockNode.Kind.(ast.Block)
-	if !ok {
-		panic(base.Errorf("expected block, got %T", blockNode.Kind))
+	block := base.Cast[ast.Block](blockNode.Kind)
+	// If the block ends with an return expr, we don't need to check any further.
+	if e.BlockReturns(funNode.Block) {
+		return TypeOK
 	}
 	// If the function returns void, we coerce the body to void.
 	if funType.Return != e.voidType && !e.isAssignableTo(blockTypeID, funType.Return) {
@@ -1324,9 +1372,6 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funType FunType) TypeStatus {
 		)
 		return TypeFailed
 	}
-	if funNode.Name.Name == "main" {
-		e.verifyMain(funNode)
-	}
 	return TypeOK
 }
 
@@ -1336,6 +1381,29 @@ func (e *Engine) checkFunParam(_ ast.NodeID, funParam ast.FunParam, _ base.Span)
 		return InvalidTypeID, TypeDepFailed
 	}
 	return typeID, TypeOK
+}
+
+func (e *Engine) checkReturn(_ ast.NodeID, return_ ast.Return, span base.Span) (TypeID, TypeStatus) {
+	if len(e.funStack) == 0 {
+		e.diag(span, "return outside of function")
+		return InvalidTypeID, TypeFailed
+	}
+	exprTypeID, status := e.Query(return_.Expr)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	funType := base.Cast[FunType](e.Type(e.funStack[len(e.funStack)-1]).Kind)
+	if exprTypeID != funType.Return {
+		span := e.Node(return_.Expr).Span
+		e.diag(
+			span,
+			"return type mismatch: expected %s, got %s",
+			e.TypeDisplay(funType.Return),
+			e.TypeDisplay(exprTypeID),
+		)
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidType, TypeOK
 }
 
 func (e *Engine) checkStructField(_ ast.NodeID, structField ast.StructField, _ base.Span) (TypeID, TypeStatus) {

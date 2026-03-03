@@ -119,6 +119,18 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 	return p.NewFun(name, params, returnType, block, span.Combine(p.span())), true
 }
 
+func (p *Parser) ParseReturn() (NodeID, bool) {
+	t, ok := p.expect(token.Return)
+	if !ok {
+		return ParseFailed, false
+	}
+	expr, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewReturn(expr, t.Span.Combine(p.span())), true
+}
+
 func (p *Parser) ParseStructFields() ([]NodeID, bool) {
 	fields := []NodeID{}
 	for {
@@ -543,6 +555,15 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	case token.Continue:
 		p.next()
 		expr = p.NewContinue(t.Span)
+	case token.Void:
+		p.next()
+		expr = p.NewIdent("void", t.Span)
+	case token.Return:
+		return_, ok := p.ParseReturn()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = return_
 	case token.Ident:
 		ident, ok := p.ParseIdent()
 		if !ok {

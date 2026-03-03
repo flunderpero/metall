@@ -46,6 +46,7 @@ const (
 	Plus
 	RBracket
 	RCurly
+	Return
 	RParen
 	Slash
 	Star
@@ -94,6 +95,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Plus:                  "+",
 	RBracket:              "]",
 	RCurly:                "}",
+	Return:                "return",
 	RParen:                ")",
 	Slash:                 "/",
 	Star:                  "*",
@@ -136,6 +138,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"new_mut":  NewMut,
 	"not":      Not,
 	"or":       Or,
+	"return":   Return,
 	"struct":   Struct,
 	"true":     True,
 	"void":     Void,

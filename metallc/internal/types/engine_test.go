@@ -37,7 +37,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"empty block is void", `{ }`, void, nil},
 		{"let binding", `let x = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, _, ok := e.Scope().Lookup("x")
+			b, _, ok := e.scope.Lookup("x")
 			assert.Equal(true, ok)
 			bindingType := e.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
@@ -45,7 +45,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		}},
 		{"mut binding", `mut x = 123`, void, func(e *Engine, _ ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, _, ok := e.Scope().Lookup("x")
+			b, _, ok := e.scope.Lookup("x")
 			assert.Equal(true, ok)
 			bindingType := e.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
@@ -78,6 +78,24 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"builtin print_int", `print_int(123)`, void, nil},
 		{"builtin print_bool", `print_bool(true)`, void, nil},
 		{"shadowing", `{ let x = { let x = "hello" print_str(x) 123 } print_int(x) }`, void, nil},
+
+		{"return", `fun foo() Int { return 1 }`, fun_t("foo", Int), nil},
+		{"return void", `fun foo() void { return void }`, fun_t("foo", void), nil},
+		{
+			"return expr type is void",
+			`fun foo() Int { return 123 }`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				fun, ok := e.Node(id).Kind.(ast.Fun)
+				assert.Equal(true, ok)
+				block, ok := e.Node(fun.Block).Kind.(ast.Block)
+				assert.Equal(true, ok)
+				_, ok = e.Node(block.Exprs[0]).Kind.(ast.Return)
+				assert.Equal(true, ok)
+				retTyp := e.TypeOfNode(block.Exprs[0])
+				assert.Equal(void, retTyp)
+			},
+		},
 
 		{"struct declaration", `struct Foo { one Str two Int }`, struct_t("Foo", "one", Str, "two", Int), nil},
 		{
@@ -139,6 +157,51 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"bool false", "{ false }", Bool, nil},
 		{"if then else", `{ let x = true if x { 42 } else { 123 }}`, Int, nil},
 		{"if without else", `{ let x = true if x { 42 } }`, void, nil},
+		{
+			"if with one branch return",
+			`fun foo() Int { if true { return 123 } else { "hello" } 321 }`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				fun := base.Cast[ast.Fun](e.Node(id).Kind)
+				block := base.Cast[ast.Block](e.Node(fun.Block).Kind)
+				if_ := base.Cast[ast.If](e.Node(block.Exprs[0]).Kind)
+				assert.Equal(void, e.TypeOfNode(if_.Then))
+				assert.Equal(Str, e.TypeOfNode(*if_.Else))
+				assert.Equal(void, e.TypeOfNode(block.Exprs[0]), "if expr should be void")
+			},
+		},
+		{
+			"if with one branch break",
+			`fun foo() void { for { if true { break } else { "hello" } } }`,
+			fun_t("foo", void),
+			nil,
+		},
+		{
+			"if with one branch continue",
+			`fun foo() void { for { if true { continue } else { "hello" } } }`,
+			fun_t("foo", void),
+			nil,
+		},
+		{
+			"if with both branches return",
+			`fun foo() Int { if true { return 1 } else { return 2 } }`,
+			fun_t("foo", Int),
+			nil,
+		},
+		{
+			"nested if with all branches return",
+			`fun foo() Int { if true { if false { return 1 } else { return 2 } } else { return 3 } }`,
+			fun_t("foo", Int),
+			nil,
+		},
+		// Detect that a nested if/else expr is detected as "breaking control flow" and this making
+		// the whole if expression 'void'.
+		{
+			"nested return breaks outer 'if control flow'",
+			`fun foo(a Int) Int { if true { if a == 0 { return 1 } else { return 2 } } else { "hello" } 321 }`,
+			fun_t("foo", Int, Int),
+			nil,
+		},
 
 		{"ref type", `{ let x = 5 let y = &x y }`, ref_t(Int), nil},
 		{"mut ref type", `{ mut x = 5 let y = &mut x y }`, ref_mut_t(Int), nil},
@@ -571,6 +634,26 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:17: return type mismatch: expected Str, got Int\n" +
 				"    fun foo() Str { 123 }\n" +
 				"                    ^^^",
+		}},
+		{"return mismatch", `fun foo() Str { return 123 }`, []string{
+			"test.met:1:24: return type mismatch: expected Str, got Int\n" +
+				"    fun foo() Str { return 123 }\n" +
+				"                           ^^^",
+		}},
+		{"unreachable code after return", `fun foo() Int { return 123 456 }`, []string{
+			"test.met:1:28: unreachable code\n" +
+				"    fun foo() Int { return 123 456 }\n" +
+				"                               ^^^",
+		}},
+		{"unreachable code after break", `fun foo() Int { for { break 456 } }`, []string{
+			"test.met:1:29: unreachable code\n" +
+				"    fun foo() Int { for { break 456 } }\n" +
+				"                                ^^^",
+		}},
+		{"unreachable code after continue", `fun foo() Int { for { continue 456 } }`, []string{
+			"test.met:1:32: unreachable code\n" +
+				"    fun foo() Int { for { continue 456 } }\n" +
+				"                                   ^^^",
 		}},
 		{"assign type mismatch", `{ mut x = 123 x = "hello" }`, []string{
 			"test.met:1:19: type mismatch: expected Int, got Str\n" +

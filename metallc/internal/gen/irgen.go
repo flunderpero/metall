@@ -63,6 +63,8 @@ type IRGen struct {
 	opts               IROpts
 	blockAllocatorRegs []string
 	loopStack          []LoopLabels
+	funRetLabel        Label
+	funRetReg          string
 }
 
 func NewIRGen(engine *types.Engine, opts IROpts) *IRGen {
@@ -78,6 +80,8 @@ func NewIRGen(engine *types.Engine, opts IROpts) *IRGen {
 		opts:               opts,
 		blockAllocatorRegs: nil,
 		loopStack:          []LoopLabels{},
+		funRetLabel:        Label(""),
+		funRetReg:          "",
 	}
 }
 
@@ -108,6 +112,8 @@ func (g *IRGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genFile(kind, node.Span)
 	case ast.Fun:
 		g.genFun(id, kind)
+	case ast.Return:
+		g.genReturn(id, kind)
 	case ast.Struct:
 		g.genStruct(id, kind)
 	case ast.StructLiteral:
@@ -484,14 +490,17 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 	name := astFun.Name.Name
 	isMain := name == "main"
 	isRetAggregate := g.isAggregateType(fun.Return)
-	ret := g.irType(fun.Return)
+	retIRTyp := g.irType(fun.Return)
+	signatureIRTyp := retIRTyp
 	params := strings.Builder{}
 	if isMain {
-		ret = "i32"
+		signatureIRTyp = "i32"
 	} else if isRetAggregate {
-		ret = "void"
+		signatureIRTyp = "void"
 		fmt.Fprintf(&params, "ptr sret(%s) %%out_ptr", g.irType(fun.Return))
 	}
+	g.funRetLabel = g.label("ret", id)
+	g.funRetReg = g.reg()
 	paramAllocas := strings.Builder{}
 	for _, paramNodeID := range astFun.Params {
 		paramNode := g.engine.Node(paramNodeID)
@@ -535,33 +544,53 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 	if !isMain {
 		internal = " internal"
 	}
-	g.write("define%s %s @%s(%s) %s{", internal, ret, name, params.String(), attrs)
+	g.write("define%s %s @%s(%s) %s{", internal, signatureIRTyp, name, params.String(), attrs)
 	g.indent++
+	// We use a return alloca to store values for early returns (i.e. `return <expr>`).
+	bodyHasReturn := g.engine.BlockReturns(astFun.Block)
+	if retIRTyp != "void" {
+		g.write("%s = alloca %s", g.funRetReg, retIRTyp)
+	}
 	if len(astFun.Params) > 0 {
 		g.write(paramAllocas.String())
 	}
 	g.Gen(astFun.Block)
+	// Write the result of the block into the ret reg.
+	lastCode := g.lookupCode(astFun.Block)
+	if retIRTyp != "void" && !bodyHasReturn {
+		g.storeValue(lastCode, g.funRetReg, fun.Return)
+	}
+	if !bodyHasReturn {
+		g.write("br label %%%s", g.funRetLabel)
+	}
+	g.writeLabel(g.funRetLabel)
 	switch {
 	case isMain:
 		g.write("ret i32 0")
 	case isRetAggregate:
-		lastCode := g.lookupCode(astFun.Block)
-		retIRTyp := g.irType(fun.Return)
-		tmp := g.reg()
-		g.write("%s = load %s, ptr %s", tmp, retIRTyp, lastCode)
-		g.write("store %s %s, ptr %%out_ptr", retIRTyp, tmp)
+		resReg := g.reg()
+		g.write("%s = load %s, ptr %s", resReg, retIRTyp, g.funRetReg)
+		g.write("store %s %s, ptr %%out_ptr", retIRTyp, resReg)
 		g.write("ret void")
 	default:
-		lastCode := g.lookupCode(astFun.Block)
-		retType := g.irType(fun.Return)
-		if retType == "void" {
+		if retIRTyp == "void" {
 			g.write("ret void")
 		} else {
-			g.write("ret %s %s", retType, lastCode)
+			resReg := g.reg()
+			g.write("%s = load %s, ptr %s", resReg, retIRTyp, g.funRetReg)
+			g.write("ret %s %s", retIRTyp, resReg)
 		}
 	}
 	g.indent--
 	g.write("}\n")
+}
+
+func (g *IRGen) genReturn(id ast.NodeID, return_ ast.Return) {
+	g.Gen(return_.Expr)
+	exprReg := g.lookupCode(return_.Expr)
+	g.storeValue(exprReg, g.funRetReg, g.engine.TypeOfNode(return_.Expr).ID)
+	g.write("br label %%%s", g.funRetLabel)
+	g.setCode(id, exprReg)
 }
 
 func (g *IRGen) genBlock(id ast.NodeID, block ast.Block) {
@@ -626,11 +655,15 @@ func (g *IRGen) genIf(id ast.NodeID, ifNode ast.If) {
 	g.writeLabel(thenLabel)
 	g.Gen(ifNode.Then)
 	phiThenLabel := g.lastLabel
-	g.write("br label %%%s", contLabel)
+	if !g.engine.BlockBreaksControlFlow(ifNode.Then, false) {
+		g.write("br label %%%s", contLabel)
+	}
 	if ifNode.Else != nil {
 		g.writeLabel(elseLabel)
 		g.Gen(*ifNode.Else)
-		g.write("br label %%%s", contLabel)
+		if !g.engine.BlockBreaksControlFlow(*ifNode.Else, false) {
+			g.write("br label %%%s", contLabel)
+		}
 	}
 	phiElseLabel := g.lastLabel
 	g.writeLabel(contLabel)
@@ -666,7 +699,10 @@ func (g *IRGen) label(name string, id ast.NodeID) Label {
 
 func (g *IRGen) writeLabel(label Label) {
 	g.lastLabel = label
+	i := g.indent
+	g.indent = 0
 	g.write("%s:", label)
+	g.indent = i
 }
 
 func (g *IRGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
