@@ -5,7 +5,7 @@ precommit:
     just go-mod
     just fmt
     just lint
-    just test
+    just test-linux
     just examples
 
 lint:
