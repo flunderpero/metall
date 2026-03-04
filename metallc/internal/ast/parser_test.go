@@ -21,7 +21,7 @@ func TestParseOK(t *testing.T) {
 			"file with fun", "file", `fun foo() Str { "hello" 123 } `,
 			func(a *TestAST) NodeID {
 				return a.file(
-					a.fun("foo", nil, a.str_typ(), a.block_no_scope(a.string_("hello"), a.int_(123))),
+					a.fun("foo", a.str_typ(), a.block_no_scope(a.string_("hello"), a.int_(123))),
 				)
 			},
 		},
@@ -67,7 +67,7 @@ func TestParseOK(t *testing.T) {
 			"fun with &mut param", "expr", `fun foo(a Int, b &mut Str) Int { 123 }`,
 			func(a *TestAST) NodeID {
 				return a.fun("foo",
-					[]NodeID{a.fun_param("a", a.int_typ()), a.fun_param("b", a.mut_ref_typ(a.str_typ()))},
+					a.fun_param("a", a.int_typ()), a.fun_param("b", a.mut_ref_typ(a.str_typ())),
 					a.int_typ(),
 					a.block_no_scope(a.int_(123)),
 				)
@@ -77,14 +77,14 @@ func TestParseOK(t *testing.T) {
 			"fun in block", "expr", `{ fun foo() Str { "hello" 123 } }`,
 			func(a *TestAST) NodeID {
 				return a.block(
-					a.fun("foo", nil, a.str_typ(), a.block_no_scope(a.string_("hello"), a.int_(123))),
+					a.fun("foo", a.str_typ(), a.block_no_scope(a.string_("hello"), a.int_(123))),
 				)
 			},
 		},
 		{
 			"void fun", "expr", `fun foo() void {}`,
 			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.void_typ(), a.block_no_scope())
+				return a.fun("foo", a.void_typ(), a.block_no_scope())
 			},
 		},
 		{
@@ -106,12 +106,31 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 
+		{"fun type", "expr", `fun foo(bar fun(Str, Int) Bool) void {}`, func(a *TestAST) NodeID {
+			return a.fun(
+				"foo",
+				a.fun_param("bar", a.fun_typ(a.str_typ(), a.int_typ(), a.bool_typ())),
+				a.void_typ(),
+				a.block_no_scope(),
+			)
+		}},
+		{
+			"fun type with void return", "expr", `fun foo(bar fun(Int) void) void {}`, func(a *TestAST) NodeID {
+				return a.fun(
+					"foo",
+					a.fun_param("bar", a.fun_typ(a.int_typ(), a.void_typ())),
+					a.void_typ(),
+					a.block_no_scope(),
+				)
+			},
+		},
+
 		{"void ident expr", "expr", "void", func(a *TestAST) NodeID { return a.ident("void") }},
 		{"return", "expr", `fun foo() Int { return 123 }`, func(a *TestAST) NodeID {
-			return a.fun("foo", nil, a.int_typ(), a.block_no_scope(a.return_(a.int_(123))))
+			return a.fun("foo", a.int_typ(), a.block_no_scope(a.return_(a.int_(123))))
 		}},
 		{"return void", "expr", `fun foo() void { return void }`, func(a *TestAST) NodeID {
-			return a.fun("foo", nil, a.void_typ(), a.block_no_scope(a.return_(a.ident("void"))))
+			return a.fun("foo", a.void_typ(), a.block_no_scope(a.return_(a.ident("void"))))
 		}},
 
 		{"bool true", "expr", "true", func(a *TestAST) NodeID { return a.bool_(true) }},
@@ -163,12 +182,12 @@ func TestParseOK(t *testing.T) {
 			"ref type",
 			"expr",
 			`fun foo() &Int {}`,
-			func(a *TestAST) NodeID { return a.fun("foo", nil, a.ref_typ(a.int_typ()), a.block_no_scope()) },
+			func(a *TestAST) NodeID { return a.fun("foo", a.ref_typ(a.int_typ()), a.block_no_scope()) },
 		},
 		{
 			"nested ref type", "expr", `fun foo() &&Int {}`,
 			func(a *TestAST) NodeID {
-				return a.fun("foo", nil, a.ref_typ(a.ref_typ(a.int_typ())), a.block_no_scope())
+				return a.fun("foo", a.ref_typ(a.ref_typ(a.int_typ())), a.block_no_scope())
 			},
 		},
 		{
@@ -187,7 +206,7 @@ func TestParseOK(t *testing.T) {
 			"call with &ref arg", "expr", `{ fun foo(a &Int) void {} let x = 123 foo(&x) }`,
 			func(a *TestAST) NodeID {
 				return a.block(
-					a.fun("foo", []NodeID{a.fun_param("a", a.ref_typ(a.int_typ()))}, a.void_typ(), a.block_no_scope()),
+					a.fun("foo", a.fun_param("a", a.ref_typ(a.int_typ())), a.void_typ(), a.block_no_scope()),
 					a.var_("x", a.int_(123)),
 					a.call(a.ident("foo"), a.ref("x")),
 				)
@@ -203,11 +222,11 @@ func TestParseOK(t *testing.T) {
 		{
 			"alloc fun param", "expr", "fun foo(@myalloc Arena, x Str, @youralloc Arena) void {}",
 			func(a *TestAST) NodeID {
-				return a.fun("foo", []NodeID{
+				return a.fun("foo",
 					a.fun_param("@myalloc", a.typ("Arena")),
 					a.fun_param("x", a.str_typ()),
 					a.fun_param("@youralloc", a.typ("Arena")),
-				}, a.void_typ(), a.block_no_scope())
+					a.void_typ(), a.block_no_scope())
 			},
 		},
 		{
@@ -218,12 +237,12 @@ func TestParseOK(t *testing.T) {
 		},
 
 		{"array type", "expr", `fun foo(a [5]Int) void {}}`, func(a *TestAST) NodeID {
-			return a.fun("foo", []NodeID{a.fun_param("a", a.arr_typ(a.int_typ(), 5))}, a.void_typ(), a.block_no_scope())
+			return a.fun("foo", a.fun_param("a", a.arr_typ(a.int_typ(), 5)), a.void_typ(), a.block_no_scope())
 		}},
 		{"multidimensional array type", "expr", `fun foo(a [3][4]Int) void {}}`, func(a *TestAST) NodeID {
 			return a.fun(
 				"foo",
-				[]NodeID{a.fun_param("a", a.arr_typ(a.arr_typ(a.int_typ(), 4), 3))},
+				a.fun_param("a", a.arr_typ(a.arr_typ(a.int_typ(), 4), 3)),
 				a.void_typ(),
 				a.block_no_scope(),
 			)
@@ -231,7 +250,7 @@ func TestParseOK(t *testing.T) {
 		{"multidimensional slice type", "expr", `fun foo(a [][]Str) void {}}`, func(a *TestAST) NodeID {
 			return a.fun(
 				"foo",
-				[]NodeID{a.fun_param("a", a.slice_typ(a.slice_typ(a.str_typ())))},
+				a.fun_param("a", a.slice_typ(a.slice_typ(a.str_typ()))),
 				a.void_typ(),
 				a.block_no_scope(),
 			)
@@ -239,7 +258,7 @@ func TestParseOK(t *testing.T) {
 		{"mixed array slice type", "expr", `fun foo(a [3][]Int) void {}}`, func(a *TestAST) NodeID {
 			return a.fun(
 				"foo",
-				[]NodeID{a.fun_param("a", a.arr_typ(a.slice_typ(a.int_typ()), 3))},
+				a.fun_param("a", a.arr_typ(a.slice_typ(a.int_typ()), 3)),
 				a.void_typ(),
 				a.block_no_scope(),
 			)
@@ -362,7 +381,7 @@ func TestParseOK(t *testing.T) {
 			"namespaced fun", "expr", `fun Foo.bar(f Foo) Int { 123 }`,
 			func(a *TestAST) NodeID {
 				return a.fun("Foo.bar",
-					[]NodeID{a.fun_param("f", a.typ("Foo"))},
+					a.fun_param("f", a.typ("Foo")),
 					a.int_typ(),
 					a.block_no_scope(a.int_(123)),
 				)
@@ -373,7 +392,7 @@ func TestParseOK(t *testing.T) {
 			func(a *TestAST) NodeID {
 				return a.file(
 					a.fun("Foo.bar",
-						[]NodeID{a.fun_param("f", a.typ("Foo"))},
+						a.fun_param("f", a.typ("Foo")),
 						a.int_typ(),
 						a.block_no_scope(a.int_(123)),
 					),
@@ -526,11 +545,11 @@ func (a *TestAST) fun_param(name string, typ NodeID) NodeID {
 	return a.NewFunParam(Name{name, a.span}, typ, a.span)
 }
 
-func (a *TestAST) fun(name string, params []NodeID, return_type NodeID, block NodeID) NodeID {
-	if params == nil {
-		params = []NodeID{}
-	}
-	return a.NewFun(Name{name, a.span}, params, return_type, block, a.span)
+func (a *TestAST) fun(name string, paramsReturnAndBlock ...NodeID) NodeID {
+	block := paramsReturnAndBlock[len(paramsReturnAndBlock)-1]
+	returnTyp := paramsReturnAndBlock[len(paramsReturnAndBlock)-2]
+	params := paramsReturnAndBlock[:len(paramsReturnAndBlock)-2]
+	return a.NewFun(Name{name, a.span}, params, returnTyp, block, a.span)
 }
 
 func (a *TestAST) struct_field(name string, typ NodeID) NodeID {
@@ -633,8 +652,18 @@ func (a *TestAST) int_typ() NodeID {
 	return a.NewSimpleType(Name{"Int", a.span}, a.span)
 }
 
+func (a *TestAST) bool_typ() NodeID {
+	return a.NewSimpleType(Name{"Bool", a.span}, a.span)
+}
+
 func (a *TestAST) arr_typ(typ NodeID, len_ int) NodeID {
 	return a.NewArrayType(typ, int64(len_), a.span)
+}
+
+func (a *TestAST) fun_typ(paramsAndReturn ...NodeID) NodeID {
+	returnTyp := paramsAndReturn[len(paramsAndReturn)-1]
+	params := paramsAndReturn[:len(paramsAndReturn)-1]
+	return a.NewFunType(params, returnTyp, a.span)
 }
 
 func (a *TestAST) slice_typ(typ NodeID) NodeID {

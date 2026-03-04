@@ -172,6 +172,7 @@ type Engine struct {
 	refTypes           map[refTypeCacheKey]*cachedType
 	arrayTypes         map[arrayTypeCacheKey]*cachedType
 	sliceTypes         map[TypeID]*cachedType
+	funTypes           map[string]*cachedType // key is `Engine.funCacheKey()`
 	nextID             TypeID
 	nextScopeID        ScopeID
 	scope              *Scope
@@ -186,7 +187,7 @@ type Engine struct {
 	intType            TypeID
 	intTypes           map[string]TypeID
 	methodCallReceiver map[ast.NodeID]ast.NodeID // Call node ID → receiver target node ID
-	funNames           map[TypeID]string
+	namedFunRef        map[ast.NodeID]string     // Node ID → function name (for nodes that reference a named function)
 }
 
 func NewEngine(a *ast.AST) *Engine {
@@ -200,12 +201,13 @@ func NewEngine(a *ast.AST) *Engine {
 		refTypes:           map[refTypeCacheKey]*cachedType{},
 		arrayTypes:         map[arrayTypeCacheKey]*cachedType{},
 		sliceTypes:         map[TypeID]*cachedType{},
+		funTypes:           map[string]*cachedType{},
 		nextID:             1,
 		nextScopeID:        1,
 		scope:              rootScope,
 		intTypes:           map[string]TypeID{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
-		funNames:           map[TypeID]string{},
+		namedFunRef:        map[ast.NodeID]string{},
 	}
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
@@ -238,15 +240,10 @@ func NewEngine(a *ast.AST) *Engine {
 	}
 	maps.Copy(e.builtins, e.intTypes)
 
-	// Register print functions.
-	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
-	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
-	printUintFun := e.newType(FunType{[]TypeID{e.intTypes["U64"]}, voidType}, 0, span, TypeOK)
-	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
-	e.funNames[printStrFun] = "print_str"
-	e.funNames[printIntFun] = "print_int"
-	e.funNames[printUintFun] = "print_uint"
-	e.funNames[printBoolFun] = "print_bool"
+	printStrFun := e.newBuiltinFun(FunType{[]TypeID{strType}, voidType}, span)
+	printIntFun := e.newBuiltinFun(FunType{[]TypeID{intType}, voidType}, span)
+	printUintFun := e.newBuiltinFun(FunType{[]TypeID{e.intTypes["U64"]}, voidType}, span)
+	printBoolFun := e.newBuiltinFun(FunType{[]TypeID{boolType}, voidType}, span)
 	e.builtins["print_str"] = printStrFun
 	e.builtins["print_int"] = printIntFun
 	e.builtins["print_uint"] = printUintFun
@@ -268,6 +265,13 @@ func (e *Engine) IntTypeInfo(typeID TypeID) (IntTypeInfo, bool) {
 func (e *Engine) MethodCallReceiver(callNodeID ast.NodeID) (ast.NodeID, bool) {
 	target, ok := e.methodCallReceiver[callNodeID]
 	return target, ok
+}
+
+// NamedFunRef returns the function name if this node references a named
+// function (ast.Fun declaration or builtin function), or ("", false) otherwise.
+func (e *Engine) NamedFunRef(nodeID ast.NodeID) (string, bool) {
+	name, ok := e.namedFunRef[nodeID]
+	return name, ok
 }
 
 func (e *Engine) TypeDisplay(typeID TypeID) string {
@@ -396,6 +400,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.SliceType:
 		typeID, status = e.checkSliceType(nodeID, nodeKind, node.Span)
+	case ast.FunType:
+		typeID, status = e.checkFunType(nodeID, nodeKind, node.Span)
 	case ast.NewArray:
 		typeID, status = e.checkNewArray(nodeKind)
 	case ast.MakeSlice:
@@ -409,9 +415,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.AllocatorVar:
 		typeID, status = e.checkAllocatorVar(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
-		typeID, status = e.checkFieldAccess(nodeKind)
+		typeID, status = e.checkFieldAccess(nodeID, nodeKind)
 	case ast.Ident:
-		typeID, status = e.checkIdent(nodeKind, node.Span)
+		typeID, status = e.checkIdent(nodeID, nodeKind, node.Span)
 	case ast.Bool:
 		typeID, status = e.checkBool()
 	case ast.Int:
@@ -525,11 +531,6 @@ func (e *Engine) BlockBreaksControlFlow(blockID ast.NodeID, checkForReturnOnly b
 		return ifNode.Else != nil && e.BlockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
 			e.BlockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
 	}
-}
-
-func (e *Engine) FunName(typeID TypeID) (string, bool) {
-	name, ok := e.funNames[typeID]
-	return name, ok
 }
 
 func (e *Engine) isIntType(typeID TypeID) bool {
@@ -1083,7 +1084,7 @@ func (e *Engine) checkTypeConstructor(
 	return targetTypeID, TypeOK
 }
 
-func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
+func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
 	targetTypeID, status := e.Query(fieldAccess.Target)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -1111,6 +1112,7 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 		// No matching field — try method lookup: `TypeName.fieldName`.
 		methodName := struct_.Name + "." + fieldAccess.Field.Name
 		if binding, _, ok := e.scope.Lookup(methodName); ok {
+			e.namedFunRef[nodeID] = methodName
 			return binding.TypeID, TypeOK
 		}
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", struct_.Name, fieldAccess.Field.Name)
@@ -1120,6 +1122,7 @@ func (e *Engine) checkFieldAccess(fieldAccess ast.FieldAccess) (TypeID, TypeStat
 	if builtin, ok := targetTyp.Kind.(BuiltInType); ok {
 		methodName := builtin.Name + "." + fieldAccess.Field.Name
 		if binding, _, ok := e.scope.Lookup(methodName); ok {
+			e.namedFunRef[nodeID] = methodName
 			return binding.TypeID, TypeOK
 		}
 	}
@@ -1141,8 +1144,12 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 		return InvalidTypeID, TypeFailed
 	}
 	// Build the full argument node list. For method calls, prepend the receiver.
+	// A field access is a method call only if it resolved to a named function
+	// (recorded in namedFunRef), not a struct field that happens to hold a function.
 	var argNodes []ast.NodeID
-	fieldAccess, isMethod := e.Node(call.Callee).Kind.(ast.FieldAccess)
+	fieldAccess, isFieldAccess := e.Node(call.Callee).Kind.(ast.FieldAccess)
+	_, isMethod := e.namedFunRef[call.Callee]
+	isMethod = isMethod && isFieldAccess
 	if isMethod {
 		argNodes = append(argNodes, fieldAccess.Target)
 		e.methodCallReceiver[callNodeID] = fieldAccess.Target
@@ -1241,18 +1248,14 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		}
 	}
 
-	// Create the types and bind names.
+	// Create struct types and bind their names first so that functions can
+	// reference them in their parameter types.
 	for _, decl := range decls {
-		var typeID TypeID
-		var status TypeStatus
-		switch nodeKind := decl.node.Kind.(type) {
-		case ast.Fun:
-			typeID, status = e.checkFunCreateAndBind(decl.node, nodeKind)
-		case ast.Struct:
-			typeID, status = e.checkStructCreateAndBind(decl.node, nodeKind)
-		default:
-			panic(base.Errorf("node kind not supported: %T", nodeKind))
+		if _, ok := decl.node.Kind.(ast.Struct); !ok {
+			continue
 		}
+		nodeKind := base.Cast[ast.Struct](decl.node.Kind)
+		typeID, status := e.checkStructCreateAndBind(decl.node, nodeKind)
 		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
 		if typeID != InvalidTypeID {
 			cachedType, ok := e.types[typeID]
@@ -1263,25 +1266,37 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		}
 	}
 
-	// Complete the types.
+	// Create function types (with full signatures) and bind their names.
 	for _, decl := range decls {
+		if _, ok := decl.node.Kind.(ast.Fun); !ok {
+			continue
+		}
+		nodeKind := base.Cast[ast.Fun](decl.node.Kind)
+		typeID, status := e.checkFunCreateAndBind(decl.node, nodeKind, decl.scope)
+		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
+		if typeID != InvalidTypeID {
+			cachedType, ok := e.types[typeID]
+			if !ok {
+				panic(base.Errorf("type %s not found", typeID))
+			}
+			decl.cachedType = cachedType
+		}
+	}
+
+	// Complete struct types (resolve fields).
+	for _, decl := range decls {
+		if _, ok := decl.node.Kind.(ast.Struct); !ok {
+			continue
+		}
 		if decl.status.Failed() {
 			continue
 		}
 		prevScope := e.scope
 		e.scope = decl.scope
 		defer func() { e.scope = prevScope }()
-		typeKind := decl.cachedType.Type.Kind
-		switch nodeKind := decl.node.Kind.(type) {
-		case ast.Fun:
-			funType := base.Cast[FunType](typeKind)
-			decl.status, decl.cachedType.Type.Kind = e.checkFunCompleteType(nodeKind, funType)
-		case ast.Struct:
-			structType := base.Cast[StructType](typeKind)
-			decl.status, decl.cachedType.Type.Kind = e.checkStructCompleteType(nodeKind, structType)
-		default:
-			panic(base.Errorf("node kind not supported: %T", nodeKind))
-		}
+		structType := base.Cast[StructType](decl.cachedType.Type.Kind)
+		structNode := base.Cast[ast.Struct](decl.node.Kind)
+		decl.status, decl.cachedType.Type.Kind = e.checkStructCompleteType(structNode, structType)
 		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
 	}
 
@@ -1306,7 +1321,7 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 	}
 }
 
-func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, TypeStatus) {
+func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun, funScope *Scope) (TypeID, TypeStatus) {
 	retTypeID, status := e.Query(fun.ReturnType)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -1315,12 +1330,38 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 		e.diag(e.Node(fun.ReturnType).Span, "cannot return an allocator from a function")
 		return InvalidTypeID, TypeFailed
 	}
-	funTypeID := e.newType(FunType{[]TypeID{}, retTypeID}, node.ID, node.Span, TypeInProgress)
-	e.funNames[funTypeID] = fun.Name.Name
-	if !e.bind(fun.Name.Name, false, node.ID, funTypeID, fun.Name.Span) {
-		return funTypeID, TypeFailed
+	// Query params inside the function's own scope so that param nodes are
+	// associated with the correct scope in the ScopeGraph.
+	prevScope := e.scope
+	e.scope = funScope
+	paramTypeIDs := make([]TypeID, len(fun.Params))
+	for i, paramNodeID := range fun.Params {
+		paramTypeID, status := e.Query(paramNodeID)
+		if status.Failed() {
+			e.scope = prevScope
+			return InvalidTypeID, TypeDepFailed
+		}
+		paramTypeIDs[i] = paramTypeID
 	}
-	return funTypeID, TypeInProgress
+	e.scope = prevScope
+	funTyp := FunType{paramTypeIDs, retTypeID}
+	cacheKey := e.funTypeCacheKey(funTyp)
+	cached, ok := e.funTypes[cacheKey]
+	var funTypeID TypeID
+	var funStatus TypeStatus
+	if ok {
+		funTypeID = cached.Type.ID
+		funStatus = cached.Status
+		e.nodes[node.ID] = cached
+	} else {
+		funTypeID = e.newType(funTyp, node.ID, node.Span, TypeOK)
+		funStatus = TypeOK
+		e.funTypes[cacheKey] = e.types[funTypeID]
+	}
+	if !e.bind(fun.Name.Name, false, node.ID, funTypeID, fun.Name.Span) {
+		return InvalidTypeID, TypeFailed
+	}
+	return funTypeID, funStatus
 }
 
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
@@ -1329,19 +1370,6 @@ func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct)
 		return structTypeID, TypeFailed
 	}
 	return structTypeID, TypeInProgress
-}
-
-func (e *Engine) checkFunCompleteType(funNode ast.Fun, funType FunType) (TypeStatus, FunType) {
-	paramTypeIDs := make([]TypeID, len(funNode.Params))
-	for i, paramNodeID := range funNode.Params {
-		paramTypeID, status := e.Query(paramNodeID)
-		if status.Failed() {
-			return TypeDepFailed, funType
-		}
-		paramTypeIDs[i] = paramTypeID
-	}
-	funType.Params = paramTypeIDs
-	return TypeInProgress, funType
 }
 
 func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType StructType) (TypeStatus, StructType) {
@@ -1408,6 +1436,34 @@ func (e *Engine) checkFunParam(_ ast.NodeID, funParam ast.FunParam, _ base.Span)
 	return typeID, TypeOK
 }
 
+func (e *Engine) funTypeCacheKey(typ FunType) string {
+	return fmt.Sprintf("fun:%v:%v", typ.Params, typ.Return)
+}
+
+func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.Span) (TypeID, TypeStatus) {
+	params := []TypeID{}
+	for _, paramNodeID := range funType.Params {
+		paramType, status := e.Query(paramNodeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		params = append(params, paramType)
+	}
+	returnType, status := e.Query(funType.ReturnType)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	funTyp := FunType{params, returnType}
+	cacheKey := e.funTypeCacheKey(funTyp)
+	cached, ok := e.funTypes[cacheKey]
+	if ok {
+		return cached.Type.ID, cached.Status
+	}
+	typeID := e.newType(funTyp, nodeID, span, TypeOK)
+	e.funTypes[cacheKey] = e.types[typeID]
+	return typeID, TypeOK
+}
+
 func (e *Engine) checkReturn(_ ast.NodeID, return_ ast.Return, span base.Span) (TypeID, TypeStatus) {
 	if len(e.funStack) == 0 {
 		e.diag(span, "return outside of function")
@@ -1439,8 +1495,11 @@ func (e *Engine) checkStructField(_ ast.NodeID, structField ast.StructField, _ b
 	return typeID, TypeOK
 }
 
-func (e *Engine) checkIdent(ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
 	if typeID, ok := e.builtins[ident.Name]; ok {
+		if _, ok := e.Type(typeID).Kind.(FunType); ok {
+			e.namedFunRef[nodeID] = ident.Name
+		}
 		return typeID, TypeOK
 	}
 	binding, _, ok := e.scope.Lookup(ident.Name)
@@ -1450,6 +1509,9 @@ func (e *Engine) checkIdent(ident ast.Ident, span base.Span) (TypeID, TypeStatus
 	}
 	if cached, ok := e.types[binding.TypeID]; ok && cached.Status.Failed() {
 		return InvalidTypeID, TypeDepFailed
+	}
+	if _, ok := e.Node(binding.Decl).Kind.(ast.Fun); ok {
+		e.namedFunRef[nodeID] = ident.Name
 	}
 	return binding.TypeID, TypeOK
 }
@@ -1777,4 +1839,13 @@ func (e *Engine) newTypeWithID(
 	cached := &cachedType{Type: typ, Status: status}
 	e.types[typeID] = cached
 	e.nodes[nodeID] = cached
+}
+
+// newBuiltinFun creates a FunType and registers it in the funTypes cache so
+// that structural fun type annotations share the same TypeID.
+func (e *Engine) newBuiltinFun(funTyp FunType, span base.Span) TypeID {
+	typeID := e.newType(funTyp, 0, span, TypeOK)
+	cacheKey := e.funTypeCacheKey(funTyp)
+	e.funTypes[cacheKey] = e.types[typeID]
+	return typeID
 }

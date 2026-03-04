@@ -97,6 +97,50 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			},
 		},
 
+		{"fun type", `fun foo(bar fun(Int) Str) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
+			outer := base.Cast[FunType](e.TypeOfNode(id).Kind)
+			inner := base.Cast[FunType](e.Type(outer.Params[0]).Kind)
+			assert.Equal(Int.ID, inner.Params[0])
+			assert.Equal(Str.ID, inner.Return)
+		}},
+		{
+			"fun type identity",
+			`{
+				fun foo(a Int) Str { "x" }
+				fun bar(a Int) Str { "y" }
+				fun apply(f fun(Int) Str, g fun(Int) Str, h fun(fun(Int) Str) Bool) void {}
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				fooID := e.TypeOfNode(block.Exprs[0]).ID
+				barID := e.TypeOfNode(block.Exprs[1]).ID
+				applyFT := base.Cast[FunType](e.TypeOfNode(block.Exprs[2]).Kind)
+				f, g := applyFT.Params[0], applyFT.Params[1]
+				assert.Equal(f, g)
+				h := base.Cast[FunType](e.Type(applyFT.Params[2]).Kind)
+				assert.Equal(f, h.Params[0])
+				assert.Equal(fooID, barID)
+				assert.Equal(fooID, f)
+			},
+		},
+		{"named fun assignable to fun-type", `
+			{
+				fun foo(a Int) Int { a }
+				fun bar(f fun(Int) Int) Int { f(0) }
+				
+				bar(foo)
+			}`, Int, nil},
+		{
+			"if branches with different named funs", `
+				{
+					fun double(a Int) Int { a + a }
+					fun triple(a Int) Int { a + a + a }
+					if true { double } else { triple }
+				}
+			`, fun_t(Int, Int), nil,
+		},
+
 		{"struct declaration", `struct Foo { one Str two Int }`, struct_t("Foo", "one", Str, "two", Int), nil},
 		{
 			"forward declare struct type", `{ fun foo(a Foo) void {} struct Foo { one Str } }`,

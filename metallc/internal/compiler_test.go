@@ -153,6 +153,102 @@ func TestCompile(t *testing.T) {
 			}`,
 			"100\n101\n202\n",
 		},
+
+		{"free flowing fun", `
+			fun double(a Int) Int { a + a }
+
+			fun math(a Int, f fun(Int) Int) Int { f(a) }
+
+			fun main() void {
+				print_int(math(7, double))
+				let local_math = math
+				let local_double = double
+				print_int(local_math(9, double))
+			}
+			`, "14\n18\n"},
+		{"free flowing fun reassign", `
+			fun double(a Int) Int { a + a }
+			fun triple(a Int) Int { a + a + a }
+
+			fun main() void {
+				mut f = double
+				print_int(f(5))
+				f = triple
+				print_int(f(5))
+			}
+			`, "10\n15\n"},
+		{"free flowing fun qualified call", `
+			struct Foo { x Int }
+			fun Foo.get(self Foo) Int { self.x }
+
+			fun main() void {
+				let f = Foo(42)
+				print_int(Foo.get(f))
+				let g = Foo.get
+				print_int(g(f))
+			}
+			`, "42\n42\n"},
+		{"free flowing fun return", `
+			fun double(a Int) Int { a + a }
+
+			fun get_double() fun(Int) Int { double }
+
+			fun main() void {
+				let f = get_double()
+				print_int(f(5))
+			}
+			`, "10\n"},
+
+		{"free flowing fun in struct field", `
+			fun double(a Int) Int { a + a }
+
+			struct Foo { one fun(Int) Int }
+
+			fun main() void {
+				let x = Foo(double)
+				print_int(x.one(5))
+				let y = x.one
+				print_int(y(5))
+			}
+			`, "10\n10\n"},
+		{"free flowing fun higher order", `
+			fun double(a Int) Int { a + a }
+			fun apply_twice(f fun(Int) Int, x Int) Int { f(f(x)) }
+			fun main() void {
+				print_int(apply_twice(double, 3))
+			}
+			`, "12\n"},
+		{"free flowing fun recursive as value", `
+			fun factorial(n Int) Int {
+				if n == 0 { 1 } else { n * factorial(n - 1) }
+			}
+			fun apply(f fun(Int) Int, x Int) Int { f(x) }
+			fun main() void {
+				print_int(apply(factorial, 5))
+			}
+			`, "120\n"},
+		{"free flowing fun builtin as value", `
+			fun apply(f fun(Int) void, x Int) void { f(x) }
+			fun main() void {
+				let f = print_int
+				f(42)
+				apply(print_int, 99)
+			}
+			`, "42\n99\n"},
+		{"free flowing fun if branches", `
+			fun double(a Int) Int { a + a }
+			fun triple(a Int) Int { a + a + a }
+			fun pick(use_double Bool) fun(Int) Int {
+				if use_double { double } else { triple }
+			}
+			fun main() void {
+				let f = pick(true)
+				print_int(f(5))
+				let g = pick(false)
+				print_int(g(5))
+			}
+			`, "10\n15\n"},
+
 		{"block expression", `fun main() void { let x = { "hello" } print_str(x) }`, "hello\n"},
 		{"var expr is void", `fun main() void { print_str("hello") let x = 123 }`, "hello\n"},
 		{"assign expr is void", `fun main() void { print_str("hello") mut x = 123 x = 321 }`, "hello\n"},
@@ -1078,8 +1174,8 @@ func TestCompile(t *testing.T) {
 			exitCode, output, err := CompileAndRun(t.Context(), source, opts)
 			timing.Log(t)
 			assert.NoError(err)
-			assert.Equal(0, exitCode)
-			assert.Equal(tt.wantOutput, output)
+			assert.Equal(0, exitCode, "exit code")
+			assert.Equal(tt.wantOutput, output, "output")
 		})
 	}
 }

@@ -65,6 +65,46 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 	}
 }
 
+func (p *Parser) ParseFunType() (NodeID, bool) {
+	t, ok := p.expect(token.Fun)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	if _, ok := p.expect(token.LParen); !ok {
+		return ParseFailed, false
+	}
+	params := []NodeID{}
+	for {
+		t, ok := p.mustPeek()
+		if !ok {
+			return ParseFailed, false
+		}
+		if t.Kind == token.RParen {
+			break
+		}
+		if len(params) > 0 {
+			_, ok := p.expect(token.Comma)
+			if !ok {
+				return ParseFailed, false
+			}
+		}
+		param, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		params = append(params, param)
+	}
+	if _, ok := p.expect(token.RParen); !ok {
+		return ParseFailed, false
+	}
+	returnTyp, ok := p.parseFunReturnType()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewFunType(params, returnTyp, span.Combine(p.span())), ok
+}
+
 func (p *Parser) ParseFun() (NodeID, bool) {
 	t, ok := p.expect(token.Fun)
 	if !ok {
@@ -98,19 +138,9 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	t, ok = p.mustPeek()
+	returnType, ok := p.parseFunReturnType()
 	if !ok {
 		return ParseFailed, false
-	}
-	var returnType NodeID
-	if t.Kind == token.Void {
-		returnType = p.NewSimpleType(Name{"void", t.Span}, t.Span)
-		p.next()
-	} else {
-		returnType, ok = p.ParseType()
-		if !ok {
-			return ParseFailed, false
-		}
 	}
 	block, ok := p.parseBlock(false) // Function creates its own scope for params and body.
 	if !ok {
@@ -888,6 +918,8 @@ func (p *Parser) ParseType() (NodeID, bool) {
 			return ParseFailed, false
 		}
 		return p.NewRefType(inner, mut, span.Combine(p.span())), true
+	case token.Fun:
+		return p.ParseFunType()
 	default:
 		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
 		return ParseFailed, false
@@ -1030,6 +1062,19 @@ func (p *Parser) parseBlock(createScope bool) (NodeID, bool) {
 		exprs = append(exprs, expr)
 	}
 	return p.NewBlock(exprs, createScope, span.Combine(p.span())), true
+}
+
+func (p *Parser) parseFunReturnType() (NodeID, bool) {
+	t, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	if t.Kind == token.Void {
+		p.next()
+		return p.NewSimpleType(Name{"void", t.Span}, t.Span), true
+	} else {
+		return p.ParseType()
+	}
 }
 
 func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {

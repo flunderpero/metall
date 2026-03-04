@@ -443,15 +443,6 @@ func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, des
 }
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
-	resultType := g.engine.TypeOfNode(id)
-	if _, ok := resultType.Kind.(types.FunType); ok {
-		name, ok := g.engine.FunName(resultType.ID)
-		if !ok {
-			panic(base.Errorf("cannot get function name for type %s", resultType.Kind))
-		}
-		g.setCode(id, name)
-		return
-	}
 	targetType := g.engine.TypeOfNode(fieldAccess.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		targetType = g.engine.Type(refTyp.Type)
@@ -555,7 +546,7 @@ func (g *IRGen) genFun(id ast.NodeID, astFun ast.Fun) { //nolint:funlen
 			params.WriteString(preg)
 			areg := g.reg()
 			fmt.Fprintf(&paramAllocas, "%s = alloca %s\n", areg, paramIRTyp)
-			fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s", paramIRTyp, preg, areg)
+			fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s\n", paramIRTyp, preg, areg)
 			g.setSymbol(paramNodeID, param.Name.Name, areg, paramIRTyp)
 		}
 	}
@@ -868,8 +859,7 @@ func (g *IRGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	g.setCode(id, reg)
 }
 
-func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
-	g.Gen(call.Callee)
+func (g *IRGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 	calleeType := g.engine.TypeOfNode(call.Callee)
 	fun, ok := calleeType.Kind.(types.FunType)
 	if !ok {
@@ -904,8 +894,13 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 	} else {
 		sb.WriteString(g.irType(fun.Return))
 	}
-	sb.WriteString(" @")
-	sb.WriteString(g.lookupCode(call.Callee))
+	// Resolve the callee. Direct calls use @name, indirect calls go through a loaded ptr.
+	if funName, ok := g.engine.NamedFunRef(call.Callee); ok {
+		fmt.Fprintf(&sb, " @%s", funName)
+	} else {
+		g.Gen(call.Callee)
+		fmt.Fprintf(&sb, " %s", g.lookupCode(call.Callee))
+	}
 	sb.WriteString(" (")
 	hasArg := false
 	if isRetAggregate {
@@ -930,6 +925,11 @@ func (g *IRGen) genCall(id ast.NodeID, call ast.Call) {
 }
 
 func (g *IRGen) genIdent(id ast.NodeID, ident ast.Ident) {
+	// Named function reference — emit @name directly (no load needed).
+	if name, ok := g.engine.NamedFunRef(id); ok {
+		g.setCode(id, "@%s", name)
+		return
+	}
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
 		identType := g.engine.TypeOfNode(id)
 		if _, ok := identType.Kind.(types.AllocatorType); ok || g.isAggregateType(identType.ID) {
@@ -1065,7 +1065,7 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 	case types.SliceType:
 		return "{ptr, i64}"
 	case types.FunType:
-		panic("unexpected fun type")
+		return "ptr"
 	default:
 		panic(base.Errorf("unknown type kind: %T", typ.Kind))
 	}

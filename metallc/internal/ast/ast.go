@@ -60,6 +60,13 @@ type SliceType struct {
 
 func (SliceType) isKind() {}
 
+type FunType struct {
+	Params     []NodeID
+	ReturnType NodeID
+}
+
+func (FunType) isKind() {}
+
 type NewArray struct {
 	Type         NodeID
 	DefaultValue *NodeID
@@ -414,6 +421,10 @@ func (a *AST) NewSliceType(elemType NodeID, span base.Span) NodeID {
 	return a.node(SliceType{Elem: elemType}, span)
 }
 
+func (a *AST) NewFunType(params []NodeID, returnType NodeID, span base.Span) NodeID {
+	return a.node(FunType{Params: params, ReturnType: returnType}, span)
+}
+
 func (a *AST) NewNewArray(typ NodeID, defaultValue *NodeID, span base.Span) NodeID {
 	return a.node(NewArray{Type: typ, DefaultValue: defaultValue}, span)
 }
@@ -501,6 +512,11 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		f(kind.ReturnType)
 		f(kind.Block)
+	case FunType:
+		for i := range len(kind.Params) {
+			f(kind.Params[i])
+		}
+		f(kind.ReturnType)
 	case FunParam:
 		f(kind.Type)
 	case Struct:
@@ -707,6 +723,14 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {
 			addChild("type", kind.Type)
+		}
+	case FunType:
+		if !children {
+			addAttr("params", nodeIDList(kind.Params))
+			addAttr("returnType", nodeIDKind(kind.ReturnType))
+		} else {
+			addChild("params", kind.Params...)
+			addChild("returnType", kind.ReturnType)
 		}
 	case Struct:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
