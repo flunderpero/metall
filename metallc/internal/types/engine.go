@@ -167,6 +167,8 @@ type Engine struct {
 	Debug              base.Debug
 	Diagnostics        base.Diagnostics
 	ScopeGraph         *ScopeGraph
+	Structs            []ast.NodeID
+	Funs               []ast.NodeID
 	nodes              map[ast.NodeID]*cachedType
 	types              map[TypeID]*cachedType
 	refTypes           map[refTypeCacheKey]*cachedType
@@ -176,6 +178,7 @@ type Engine struct {
 	nextID             TypeID
 	nextScopeID        ScopeID
 	scope              *Scope
+	namespace          string
 	loopStack          []ast.NodeID
 	funStack           []TypeID
 	typeHint           *TypeID
@@ -191,7 +194,7 @@ type Engine struct {
 }
 
 func NewEngine(a *ast.AST) *Engine {
-	rootScope := NewScope(0, nil)
+	rootScope := NewScope(0, 0, nil)
 	e := &Engine{ //nolint:exhaustruct
 		AST:                a,
 		Debug:              base.NilDebug{},
@@ -358,13 +361,13 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Unary:
 		typeID, status = e.checkUnary(nodeKind)
 	case ast.Block:
-		typeID, status = e.checkBlock(nodeKind)
+		typeID, status = e.checkBlock(nodeID, nodeKind)
 	case ast.Call:
 		typeID, status = e.checkCall(nodeKind, nodeID, node.Span)
 	case ast.Deref:
 		typeID, status = e.checkDeref(nodeKind)
 	case ast.File:
-		typeID, status = e.checkFile(nodeKind)
+		typeID, status = e.checkFile(nodeID, nodeKind)
 	case ast.If:
 		typeID, status = e.checkIf(nodeKind)
 	case ast.For:
@@ -675,9 +678,9 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	}
 }
 
-func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {
+func (e *Engine) checkBlock(nodeID ast.NodeID, block ast.Block) (TypeID, TypeStatus) {
 	if block.CreateScope {
-		e.enterScope()
+		e.enterScope(nodeID)
 		defer e.leaveScope()
 	}
 	if len(block.Exprs) == 0 {
@@ -738,7 +741,7 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 	}
 	e.loopStack = append(e.loopStack, nodeID)
 	defer func() { e.loopStack = e.loopStack[:len(e.loopStack)-1] }()
-	e.enterScope()
+	e.enterScope(nodeID)
 	defer e.leaveScope()
 	_, status := e.Query(for_.Body)
 	if status.Failed() {
@@ -1112,7 +1115,7 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		// No matching field — try method lookup: `TypeName.fieldName`.
 		methodName := struct_.Name + "." + fieldAccess.Field.Name
 		if binding, _, ok := e.scope.Lookup(methodName); ok {
-			e.namedFunRef[nodeID] = methodName
+			e.namedFunRef[nodeID] = e.namedFunRef[binding.Decl]
 			return binding.TypeID, TypeOK
 		}
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", struct_.Name, fieldAccess.Field.Name)
@@ -1122,7 +1125,7 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	if builtin, ok := targetTyp.Kind.(BuiltInType); ok {
 		methodName := builtin.Name + "." + fieldAccess.Field.Name
 		if binding, _, ok := e.scope.Lookup(methodName); ok {
-			e.namedFunRef[nodeID] = methodName
+			e.namedFunRef[nodeID] = e.namedFunRef[binding.Decl]
 			return binding.TypeID, TypeOK
 		}
 	}
@@ -1203,8 +1206,8 @@ func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
 	return ref.Type, TypeOK
 }
 
-func (e *Engine) checkFile(file ast.File) (TypeID, TypeStatus) {
-	e.enterScope()
+func (e *Engine) checkFile(nodeID ast.NodeID, file ast.File) (TypeID, TypeStatus) {
+	e.enterScope(nodeID)
 	defer e.leaveScope()
 	e.forwardDeclare(file.Decls)
 	// Everything should have been forward declared, but for good measure we query again.
@@ -1238,13 +1241,15 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		case ast.Fun:
 			e.ScopeGraph.SetNodeScope(nodeID, e.scope)
 			// Functions create their own scope for their parameters and their body.
-			e.enterScope()
+			e.enterScope(nodeID)
 			scope := e.scope
 			e.leaveScope()
 			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil, scope})
+			e.Funs = append(e.Funs, nodeID)
 		case ast.Struct:
 			e.ScopeGraph.SetNodeScope(nodeID, e.scope)
 			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil, e.scope})
+			e.Structs = append(e.Structs, nodeID)
 		}
 	}
 
@@ -1311,8 +1316,10 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		defer func() { e.scope = prevScope }()
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
+			e.namespace += nodeKind.Name.Name + "."
 			funType := base.Cast[FunType](typeKind)
 			e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
+			e.namespace = e.namespace[:len(e.namespace)-len(nodeKind.Name.Name)-1]
 		case ast.Struct:
 		// Structs don't have a body.
 		default:
@@ -1361,6 +1368,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun, funScope *Sc
 	if !e.bind(fun.Name.Name, false, node.ID, funTypeID, fun.Name.Span) {
 		return InvalidTypeID, TypeFailed
 	}
+	e.namedFunRef[node.ID] = e.namespace + fun.Name.Name
 	return funTypeID, funStatus
 }
 
@@ -1511,7 +1519,7 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		return InvalidTypeID, TypeDepFailed
 	}
 	if _, ok := e.Node(binding.Decl).Kind.(ast.Fun); ok {
-		e.namedFunRef[nodeID] = ident.Name
+		e.namedFunRef[nodeID] = e.namedFunRef[binding.Decl]
 	}
 	return binding.TypeID, TypeOK
 }
@@ -1798,12 +1806,20 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 	}
 }
 
-func (e *Engine) enterScope() {
-	e.scope = NewScope(e.nextScopeID, e.scope)
+func (e *Engine) enterScope(nodeID ast.NodeID) {
+	node := e.Node(nodeID)
+	if kind, ok := node.Kind.(ast.Fun); ok {
+		e.namespace += kind.Name.Name + "."
+	}
+	e.scope = NewScope(nodeID, e.nextScopeID, e.scope)
 	e.nextScopeID++
 }
 
 func (e *Engine) leaveScope() {
+	node := e.Node(e.scope.Node)
+	if kind, ok := node.Kind.(ast.Fun); ok {
+		e.namespace = e.namespace[:len(e.namespace)-len(kind.Name.Name)-1]
+	}
 	e.scope = e.scope.Parent
 }
 

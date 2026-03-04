@@ -16,6 +16,7 @@ func (id ScopeID) String() string {
 type Scope struct {
 	ID       ScopeID
 	Parent   *Scope
+	Node     ast.NodeID
 	bindings map[string]*Binding
 }
 
@@ -26,8 +27,8 @@ type Binding struct {
 	TypeID TypeID
 }
 
-func NewScope(id ScopeID, parent *Scope) *Scope {
-	return &Scope{id, parent, map[string]*Binding{}}
+func NewScope(root ast.NodeID, id ScopeID, parent *Scope) *Scope {
+	return &Scope{id, parent, root, map[string]*Binding{}}
 }
 
 func (s *Scope) Bind(name string, mut bool, decl ast.NodeID, typeID TypeID) bool {

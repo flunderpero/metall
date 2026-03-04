@@ -249,6 +249,65 @@ func TestCompile(t *testing.T) {
 			}
 			`, "10\n15\n"},
 
+		{"nested fun", `
+			fun foo() Int { 321 }
+			fun main() void {
+				fun foo() Int { 
+					fun foo() Int { 123 }
+					foo()
+				}
+				print_int(foo())
+			}
+			`, "123\n"},
+
+		{"nested fun mutual recursion", `
+			fun main() void {
+				fun is_even(n Int) Bool {
+					if n == 0 { true } else { is_odd(n - 1) }
+				}
+				fun is_odd(n Int) Bool {
+					if n == 0 { false } else { is_even(n - 1) }
+				}
+				print_bool(is_even(4))
+				print_bool(is_odd(4))
+			}
+			`, "true\nfalse\n"},
+
+		{"nested fun as value", `
+			fun apply(f fun(Int) Int, x Int) Int { f(x) }
+			fun main() void {
+				fun double(a Int) Int { a + a }
+				print_int(apply(double, 21))
+			}
+			`, "42\n"},
+
+		{"nested struct", `
+			struct Foo { x Int }
+			fun Foo.foo(self Foo) Int { self.x }
+
+			fun main() void {
+				struct Foo { x Int y Str }
+				fun Foo.bar(f Foo) Int { f.x + 1 }
+				let f = Foo(42, "hello")
+				print_int(f.bar())
+				print_str(f.y)
+			}
+			`, "43\nhello\n"},
+
+		{"nested fun same name different scopes", `
+			fun main() void {
+				fun foo() Int {
+					fun helper() Int { 10 }
+					helper()
+				}
+				fun bar() Int {
+					fun helper() Int { 20 }
+					helper()
+				}
+				print_int(foo() + bar())
+			}
+			`, "30\n"},
+
 		{"block expression", `fun main() void { let x = { "hello" } print_str(x) }`, "hello\n"},
 		{"var expr is void", `fun main() void { print_str("hello") let x = 123 }`, "hello\n"},
 		{"assign expr is void", `fun main() void { print_str("hello") mut x = 123 x = 321 }`, "hello\n"},
