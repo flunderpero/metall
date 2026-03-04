@@ -64,7 +64,6 @@ type RefType struct {
 func (RefType) isTypeKind() {}
 
 type FunType struct {
-	Name   string
 	Params []TypeID
 	Return TypeID
 }
@@ -187,6 +186,7 @@ type Engine struct {
 	intType            TypeID
 	intTypes           map[string]TypeID
 	methodCallReceiver map[ast.NodeID]ast.NodeID // Call node ID → receiver target node ID
+	funNames           map[TypeID]string
 }
 
 func NewEngine(a *ast.AST) *Engine {
@@ -205,6 +205,7 @@ func NewEngine(a *ast.AST) *Engine {
 		scope:              rootScope,
 		intTypes:           map[string]TypeID{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
+		funNames:           map[TypeID]string{},
 	}
 	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
 	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
@@ -238,15 +239,18 @@ func NewEngine(a *ast.AST) *Engine {
 	maps.Copy(e.builtins, e.intTypes)
 
 	// Register print functions.
-	printStrFun := e.newType(FunType{"print_str", []TypeID{strType}, voidType}, 0, span, TypeOK)
-	printIntFun := e.newType(FunType{"print_int", []TypeID{intType}, voidType}, 0, span, TypeOK)
-	printUintFun := e.newType(FunType{"print_uint", []TypeID{e.intTypes["U64"]}, voidType}, 0, span, TypeOK)
-	printBoolFun := e.newType(FunType{"print_bool", []TypeID{boolType}, voidType}, 0, span, TypeOK)
+	printStrFun := e.newType(FunType{[]TypeID{strType}, voidType}, 0, span, TypeOK)
+	printIntFun := e.newType(FunType{[]TypeID{intType}, voidType}, 0, span, TypeOK)
+	printUintFun := e.newType(FunType{[]TypeID{e.intTypes["U64"]}, voidType}, 0, span, TypeOK)
+	printBoolFun := e.newType(FunType{[]TypeID{boolType}, voidType}, 0, span, TypeOK)
+	e.funNames[printStrFun] = "print_str"
+	e.funNames[printIntFun] = "print_int"
+	e.funNames[printUintFun] = "print_uint"
+	e.funNames[printBoolFun] = "print_bool"
 	e.builtins["print_str"] = printStrFun
 	e.builtins["print_int"] = printIntFun
 	e.builtins["print_uint"] = printUintFun
 	e.builtins["print_bool"] = printBoolFun
-
 	return e
 }
 
@@ -521,6 +525,11 @@ func (e *Engine) BlockBreaksControlFlow(blockID ast.NodeID, checkForReturnOnly b
 		return ifNode.Else != nil && e.BlockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
 			e.BlockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
 	}
+}
+
+func (e *Engine) FunName(typeID TypeID) (string, bool) {
+	name, ok := e.funNames[typeID]
+	return name, ok
 }
 
 func (e *Engine) isIntType(typeID TypeID) bool {
@@ -1306,7 +1315,8 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 		e.diag(e.Node(fun.ReturnType).Span, "cannot return an allocator from a function")
 		return InvalidTypeID, TypeFailed
 	}
-	funTypeID := e.newType(FunType{fun.Name.Name, []TypeID{}, retTypeID}, node.ID, node.Span, TypeInProgress)
+	funTypeID := e.newType(FunType{[]TypeID{}, retTypeID}, node.ID, node.Span, TypeInProgress)
+	e.funNames[funTypeID] = fun.Name.Name
 	if !e.bind(fun.Name.Name, false, node.ID, funTypeID, fun.Name.Span) {
 		return funTypeID, TypeFailed
 	}

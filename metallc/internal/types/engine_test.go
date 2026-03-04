@@ -63,13 +63,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(void, typ)
 			},
 		},
-		{"fun declaration", `fun foo(a Int, b Str) Int { 123 }`, fun_t("foo", Int, Str, Int), nil},
-		{"fun void return coerces body to void", `fun foo() void { 123 }`, fun_t("foo", void), nil},
-		{"fun params", `fun foo(a Int) Int { a }`, fun_t("foo", Int, Int), nil},
+		{"fun declaration", `fun foo(a Int, b Str) Int { 123 }`, fun_t(Int, Str, Int), nil},
+		{"fun void return coerces body to void", `fun foo() void { 123 }`, fun_t(void), nil},
+		{"fun params", `fun foo(a Int) Int { a }`, fun_t(Int, Int), nil},
 		{
 			"fun params are scoped to the fun",
 			`{ fun foo(a Int) void {} fun bar(a Int) void {} }`,
-			fun_t("bar", Int, void),
+			fun_t(Int, void),
 			nil,
 		},
 		{"fun call", `{ fun foo(a Int) Int { 123 } foo(321) }`, Int, nil},
@@ -79,8 +79,8 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"builtin print_bool", `print_bool(true)`, void, nil},
 		{"shadowing", `{ let x = { let x = "hello" print_str(x) 123 } print_int(x) }`, void, nil},
 
-		{"return", `fun foo() Int { return 1 }`, fun_t("foo", Int), nil},
-		{"return void", `fun foo() void { return void }`, fun_t("foo", void), nil},
+		{"return", `fun foo() Int { return 1 }`, fun_t(Int), nil},
+		{"return void", `fun foo() void { return void }`, fun_t(void), nil},
 		{
 			"return expr type is void",
 			`fun foo() Int { return 123 }`,
@@ -173,25 +173,25 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{
 			"if with one branch break",
 			`fun foo() void { for { if true { break } else { "hello" } } }`,
-			fun_t("foo", void),
+			fun_t(void),
 			nil,
 		},
 		{
 			"if with one branch continue",
 			`fun foo() void { for { if true { continue } else { "hello" } } }`,
-			fun_t("foo", void),
+			fun_t(void),
 			nil,
 		},
 		{
 			"if with both branches return",
 			`fun foo() Int { if true { return 1 } else { return 2 } }`,
-			fun_t("foo", Int),
+			fun_t(Int),
 			nil,
 		},
 		{
 			"nested if with all branches return",
 			`fun foo() Int { if true { if false { return 1 } else { return 2 } } else { return 3 } }`,
-			fun_t("foo", Int),
+			fun_t(Int),
 			nil,
 		},
 		// Detect that a nested if/else expr is detected as "breaking control flow" and this making
@@ -199,7 +199,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{
 			"nested return breaks outer 'if control flow'",
 			`fun foo(a Int) Int { if true { if a == 0 { return 1 } else { return 2 } } else { "hello" } 321 }`,
-			fun_t("foo", Int, Int),
+			fun_t(Int, Int),
 			nil,
 		},
 
@@ -237,7 +237,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			nil,
 		},
 
-		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t("foo", void), nil},
+		{"forward declaration call", `{ foo() fun foo() void { } }`, fun_t(void), nil},
 		{"self recursion", `{ fun foo(a Int) Int { foo(a) } foo(1) }`, Int, nil},
 		{"mutual recursion", `{ fun foo(a Int) Int { bar(a) } fun bar(a Int) Int { foo(a) } foo(10) }`, Int, nil},
 
@@ -1375,7 +1375,7 @@ func slice_t(typ *Type) *Type {
 	return &Type{Kind: SliceType{typ.ID}}
 }
 
-func fun_t(name string, types ...*Type) *Type {
+func fun_t(types ...*Type) *Type {
 	if len(types) == 0 {
 		panic("fun_t requires at least a return type")
 	}
@@ -1385,7 +1385,7 @@ func fun_t(name string, types ...*Type) *Type {
 	for i, p := range params {
 		paramIDs[i] = p.ID
 	}
-	return &Type{Kind: FunType{name, paramIDs, ret.ID}}
+	return &Type{Kind: FunType{paramIDs, ret.ID}}
 }
 
 func TestIntegerTypes(t *testing.T) {

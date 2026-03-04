@@ -444,8 +444,12 @@ func (g *IRGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, des
 
 func (g *IRGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 	resultType := g.engine.TypeOfNode(id)
-	if fun, ok := resultType.Kind.(types.FunType); ok {
-		g.setCode(id, fun.Name)
+	if _, ok := resultType.Kind.(types.FunType); ok {
+		name, ok := g.engine.FunName(resultType.ID)
+		if !ok {
+			panic(base.Errorf("cannot get function name for type %s", resultType.Kind))
+		}
+		g.setCode(id, name)
 		return
 	}
 	targetType := g.engine.TypeOfNode(fieldAccess.Target)
