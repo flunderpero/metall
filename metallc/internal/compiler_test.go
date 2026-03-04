@@ -1219,7 +1219,7 @@ func TestCompile(t *testing.T) {
 		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
 			timing := newTimingListener()
@@ -1276,7 +1276,7 @@ func TestCompilePanic(t *testing.T) {
 		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
 			timing := newTimingListener()

@@ -35,11 +35,14 @@ type Name struct {
 	Span base.Span
 }
 
-type File struct {
-	Decls []NodeID
+type Module struct {
+	FileName string
+	Name     string
+	Main     bool
+	Decls    []NodeID
 }
 
-func (File) isKind() {}
+func (Module) isKind() {}
 
 type SimpleType struct {
 	Name Name
@@ -363,8 +366,8 @@ func (a *AST) NewUnary(op UnaryOp, expr NodeID, span base.Span) NodeID {
 	return a.node(Unary{Expr: expr, Op: op}, span)
 }
 
-func (a *AST) NewFile(decls []NodeID, span base.Span) NodeID {
-	return a.node(File{Decls: decls}, span)
+func (a *AST) NewModule(fileName string, name string, main bool, decls []NodeID, span base.Span) NodeID {
+	return a.node(Module{FileName: fileName, Name: name, Main: main, Decls: decls}, span)
 }
 
 func (a *AST) NewFun(
@@ -491,7 +494,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 	case Deref:
 		f(kind.Expr)
-	case File:
+	case Module:
 		for i := range len(kind.Decls) {
 			f(kind.Decls[i])
 		}
@@ -700,7 +703,10 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("expr", kind.Expr)
 		}
 	case Break, Continue:
-	case File:
+	case Module:
+		addAttr("fileName", fmt.Sprintf("%q", kind.FileName))
+		addAttr("name", fmt.Sprintf("%q", kind.Name))
+		addAttr("main", fmt.Sprintf("%t", kind.Main))
 		if !children {
 			addAttr("decls", nodeIDList(kind.Decls))
 		} else {

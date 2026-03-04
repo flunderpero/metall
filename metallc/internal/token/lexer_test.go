@@ -103,7 +103,7 @@ func TestLexer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := Lex(source)
 			for i, want := range tt.want {
 				if len(tokens) <= i {

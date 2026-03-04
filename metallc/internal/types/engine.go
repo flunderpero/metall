@@ -212,7 +212,7 @@ func NewEngine(a *ast.AST) *Engine {
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		namedFunRef:        map[ast.NodeID]string{},
 	}
-	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
+	span := base.NewSpan(base.NewSource("builtin", "", false, []rune{}), 0, 0)
 	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
 	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
 	arenaType := e.newType(AllocatorType{AllocatorArena}, 0, span, TypeOK)
@@ -366,8 +366,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkCall(nodeKind, nodeID, node.Span)
 	case ast.Deref:
 		typeID, status = e.checkDeref(nodeKind)
-	case ast.File:
-		typeID, status = e.checkFile(nodeID, nodeKind)
+	case ast.Module:
+		typeID, status = e.checkModule(nodeID, nodeKind)
 	case ast.If:
 		typeID, status = e.checkIf(nodeKind)
 	case ast.For:
@@ -1206,13 +1206,13 @@ func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
 	return ref.Type, TypeOK
 }
 
-func (e *Engine) checkFile(nodeID ast.NodeID, file ast.File) (TypeID, TypeStatus) {
+func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module) (TypeID, TypeStatus) {
 	e.enterScope(nodeID)
 	defer e.leaveScope()
-	e.forwardDeclare(file.Decls)
+	e.forwardDeclare(module.Decls)
 	// Everything should have been forward declared, but for good measure we query again.
 	depFailed := false
-	for _, declNodeID := range file.Decls {
+	for _, declNodeID := range module.Decls {
 		_, status := e.Query(declNodeID)
 		if status.Failed() {
 			depFailed = true
@@ -1808,7 +1808,10 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 
 func (e *Engine) enterScope(nodeID ast.NodeID) {
 	node := e.Node(nodeID)
-	if kind, ok := node.Kind.(ast.Fun); ok {
+	switch kind := node.Kind.(type) {
+	case ast.Module:
+		e.namespace += kind.Name + "."
+	case ast.Fun:
 		e.namespace += kind.Name.Name + "."
 	}
 	e.scope = NewScope(nodeID, e.nextScopeID, e.scope)
@@ -1817,7 +1820,10 @@ func (e *Engine) enterScope(nodeID ast.NodeID) {
 
 func (e *Engine) leaveScope() {
 	node := e.Node(e.scope.Node)
-	if kind, ok := node.Kind.(ast.Fun); ok {
+	switch kind := node.Kind.(type) {
+	case ast.Module:
+		e.namespace = e.namespace[:len(e.namespace)-len(kind.Name)-1]
+	case ast.Fun:
 		e.namespace = e.namespace[:len(e.namespace)-len(kind.Name.Name)-1]
 	}
 	e.scope = e.scope.Parent

@@ -15,7 +15,7 @@ import (
 
 func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	// TypeIDs for builtin types are stable, so we can do this.
-	span := base.NewSpan(base.NewSource("builtin", []rune{}), 0, 0)
+	span := base.NewSpan(base.NewSource("builtin", "", false, []rune{}), 0, 0)
 	void := &Type{1, 0, span, BuiltInType{"void"}}
 	Bool := &Type{2, 0, span, BuiltInType{"Bool"}}
 	Int := &Type{7, 0, span, BuiltInType{"Int"}}
@@ -683,7 +683,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		}
 		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
 		t.Run(name, func(t *testing.T) {
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
 			exprID, parseOK := parser.ParseExpr(0)
@@ -803,12 +803,14 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { 123() }` + "\n" +
 				`      ^^^`,
 		}},
-		{"main must return void", `fun main() Int { 123 }`, []string{
+		// These two tests are parsed as modules (not expressions) because
+		// main function validation only applies inside a main module.
+		{"main must return void (module)", `fun main() Int { 123 }`, []string{
 			"test.met:1:12: main function cannot return a value\n" +
 				`    fun main() Int { 123 }` + "\n" +
 				`               ^^^`,
 		}},
-		{"main must not have params", `fun main(a Int, b Str) void { }`, []string{
+		{"main must not have params (module)", `fun main(a Int, b Str) void { }`, []string{
 			"test.met:1:10: main function cannot take arguments\n" +
 				`    fun main(a Int, b Str) void { }` + "\n" +
 				`             ^^^^^^^^^^^^`,
@@ -1179,14 +1181,18 @@ func TestTypeCheckErr(t *testing.T) {
 		}
 		name := strings.TrimSpace(strings.ReplaceAll(tt.name, "!"+"only", ""))
 		t.Run(name, func(t *testing.T) {
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
-			exprID, parseOK := parser.ParseExpr(0)
+			var nodeID ast.NodeID
+			if strings.HasSuffix(name, "(module)") {
+				nodeID, _ = parser.ParseModule()
+			} else {
+				nodeID, _ = parser.ParseExpr(0)
+			}
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
-			assert.Equal(true, parseOK)
 			e := NewEngine(parser.AST)
-			e.Query(exprID)
+			e.Query(nodeID)
 			for i, want := range tt.want {
 				if i >= len(e.Diagnostics) {
 					t.Fatalf("no more diagnostics, but wanted: %s", want)
@@ -1285,7 +1291,7 @@ func TestScopes(t *testing.T) {
 	assert := base.NewAssert(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
 			exprID, parseOK := parser.ParseExpr(0)
@@ -1438,7 +1444,7 @@ func TestIntegerTypes(t *testing.T) {
 
 	typeCheck := func(t *testing.T, src string) *Engine {
 		t.Helper()
-		source := base.NewSource("test.met", []rune(src))
+		source := base.NewSource("test.met", "test", true, []rune(src))
 		tokens := token.Lex(source)
 		parser := ast.NewParser(tokens)
 		exprID, parseOK := parser.ParseExpr(0)

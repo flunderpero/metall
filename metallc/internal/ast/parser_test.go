@@ -414,7 +414,7 @@ func TestParseOK(t *testing.T) {
 			continue
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := NewParser(tokens)
 			var gotRoot NodeID
@@ -423,7 +423,7 @@ func TestParseOK(t *testing.T) {
 			case "expr":
 				gotRoot, ok = parser.ParseExpr(0)
 			case "file":
-				gotRoot, ok = parser.ParseFile()
+				gotRoot, ok = parser.ParseModule()
 			default:
 				t.Fatalf("unknown kind: %s", tt.kind)
 			}
@@ -509,7 +509,7 @@ func TestParseErr(t *testing.T) {
 			continue
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			source := base.NewSource("test.met", []rune(tt.src))
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
 			parser := NewParser(tokens)
 			_, parseOK := parser.ParseExpr(0)
@@ -538,7 +538,7 @@ func NewTestAST() *TestAST {
 }
 
 func (a *TestAST) file(decls ...NodeID) NodeID {
-	return a.NewFile(decls, a.span)
+	return a.NewModule("test.met", "test", true, decls, a.span)
 }
 
 func (a *TestAST) fun_param(name string, typ NodeID) NodeID {

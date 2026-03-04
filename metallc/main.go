@@ -37,7 +37,9 @@ func main() {
 			fmt.Fprintln(os.Stderr, "failed to read file:", err)
 			os.Exit(1)
 		}
-		source := base.NewSource(flag.Arg(1), []rune(string(src)))
+		fileName := flag.Arg(1)
+		moduleName := internal.ModuleNameFromPath(fileName)
+		source := base.NewSource(fileName, moduleName, true, []rune(string(src)))
 		exitCode, output, err := internal.CompileAndRun(
 			context.Background(),
 			source,

@@ -1156,7 +1156,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			continue
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			source := base.NewSource("test.met", []rune(strings.ReplaceAll(tt.src, "\t", "    ")))
+			source := base.NewSource("test.met", "test", true, []rune(strings.ReplaceAll(tt.src, "\t", "    ")))
 			tokens := token.Lex(source)
 			parser := ast.NewParser(tokens)
 			exprID, parseOK := parser.ParseExpr(0)

@@ -55,7 +55,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		return ErrAbort
 	}
 	parser := ast.NewParser(tokens)
-	fileID, _ := parser.ParseFile()
+	fileID, _ := parser.ParseModule()
 	if listener != nil && !listener.OnParse(parser.AST, fileID, parser.Diagnostics) {
 		return ErrAbort
 	}
@@ -87,7 +87,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	output := opts.Output
 	if output == "" {
-		output = source.Name[0 : len(source.Name)-len(filepath.Ext(source.Name))]
+		output = source.FileName[0 : len(source.FileName)-len(filepath.Ext(source.FileName))]
 	}
 
 	artifact_dir := filepath.Dir(output)
@@ -177,6 +177,12 @@ func CompileAndRun(
 		listener.OnRun(exitCode, output)
 	}
 	return exitCode, output, nil
+}
+
+func ModuleNameFromPath(path string) string {
+	name := strings.TrimSuffix(path, filepath.Ext(path))
+	name = filepath.ToSlash(name)
+	return strings.ReplaceAll(name, "/", ".")
 }
 
 func run_cmd(ctx context.Context, cmdline []string) error {

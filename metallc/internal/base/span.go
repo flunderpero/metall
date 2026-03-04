@@ -6,12 +6,14 @@ import (
 )
 
 type Source struct {
-	Name    string
-	Content []rune
+	FileName string
+	Module   string
+	Main     bool
+	Content  []rune
 }
 
-func NewSource(name string, content []rune) *Source {
-	return &Source{Name: name, Content: content}
+func NewSource(fileName string, module string, main bool, content []rune) *Source {
+	return &Source{FileName: fileName, Module: module, Main: main, Content: content}
 }
 
 type Span struct {
@@ -35,7 +37,7 @@ func (s Span) Combine(other Span) Span {
 		panic(Errorf("cannot combine spans where other.Source is nil"))
 	}
 	if s.Source != other.Source {
-		panic(Errorf("cannot combine spans from different sources: %s vs %s", s.Source.Name, other.Source.Name))
+		panic(Errorf("cannot combine spans from different sources: %s vs %s", s.Source.FileName, other.Source.FileName))
 	}
 	start := min(s.Start, other.Start)
 	end := max(s.End, other.End)
@@ -47,7 +49,7 @@ func (s Span) String() string {
 		return "<unknown>"
 	}
 	row, col := s.StartPos()
-	return fmt.Sprintf("%s:%d:%d", s.Source.Name, row, col)
+	return fmt.Sprintf("%s:%d:%d", s.Source.FileName, row, col)
 }
 
 // Print the surrounding lines of the span and underline the span.

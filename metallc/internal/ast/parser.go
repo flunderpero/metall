@@ -32,13 +32,14 @@ func NewParser(tokens []token.Token) *Parser {
 	return &Parser{NewAST(), base.Diagnostics{}, stripped, 0}
 }
 
-func (p *Parser) ParseFile() (NodeID, bool) {
+func (p *Parser) ParseModule() (NodeID, bool) {
 	span := p.span()
+	source := span.Source
 	decls, ok := p.ParseDecls()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFile(decls, span.Combine(p.span())), ok
+	return p.NewModule(source.FileName, source.Module, source.Main, decls, span.Combine(p.span())), ok
 }
 
 func (p *Parser) ParseDecls() ([]NodeID, bool) {
