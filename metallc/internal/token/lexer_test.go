@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLexer(t *testing.T) {
@@ -99,7 +98,7 @@ func TestLexer(t *testing.T) {
 		},
 	}
 
-	assert := require.New(t)
+	assert := base.NewAssert(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -123,7 +122,7 @@ func TestLexer(t *testing.T) {
 				assert.Equal(want.val, token.Value, "value"+msg)
 				assert.Equal(want.pos, pos, "span"+msg)
 			}
-			assert.Len(tokens, len(tt.want))
+			assert.Equal(len(tokens), len(tt.want))
 		})
 	}
 }
