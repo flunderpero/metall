@@ -38,7 +38,8 @@ module.exports = grammar({
 
     line_comment: (_) => token(seq("--", /[^-]/, /[^\n]*/)),
 
-    block_comment: (_) => token(seq("---", /(.|\n)*?/, "---")),
+    block_comment: (_) =>
+      token(seq("---", repeat(choice(/[^-]/, /-[^-]/, /--[^-]/)), "---")),
 
     // >>> Identifiers
 

@@ -30,3 +30,26 @@ fun f() void {}
     name: (function_name (identifier))
     return_type: (simple_type)
     body: (block)))
+
+================================================================================
+Multiple block comments
+================================================================================
+
+--- first block comment ---
+fun f() void {}
+--- second block comment ---
+fun g() void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block_comment)
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block))
+  (block_comment)
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block)))
