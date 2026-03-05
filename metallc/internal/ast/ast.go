@@ -895,6 +895,38 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	return strings.Join(lines, "\n")
 }
 
+func (a *AST) BlockReturns(blockID NodeID) bool {
+	return a.blockBreaksControlFlow(blockID, true)
+}
+
+func (a *AST) BlockBreaksControlFlow(blockID NodeID, checkReturnOnly bool) bool {
+	return a.blockBreaksControlFlow(blockID, checkReturnOnly)
+}
+
+func (a *AST) blockBreaksControlFlow(blockID NodeID, checkForReturnOnly bool) bool {
+	block := base.Cast[Block](a.Node(blockID).Kind)
+	if len(block.Exprs) == 0 {
+		return false
+	}
+	lastExpr := a.Node(block.Exprs[len(block.Exprs)-1])
+	switch lastExpr.Kind.(type) {
+	case Break, Continue:
+		return !checkForReturnOnly
+	case Return:
+		return true
+	default:
+		if len(block.Exprs) > 1 {
+			return false
+		}
+		ifNode, ok := a.Node(block.Exprs[0]).Kind.(If)
+		if !ok {
+			return false
+		}
+		return ifNode.Else != nil && a.blockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
+			a.blockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
+	}
+}
+
 func (a *AST) node(kind Kind, span base.Span) NodeID {
 	id := a.nextID_
 	node := &Node{ID: id, Span: span, Kind: kind}

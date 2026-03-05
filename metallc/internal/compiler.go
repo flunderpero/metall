@@ -70,7 +70,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(engine.Diagnostics) > 0 {
 		return engine.Diagnostics
 	}
-	lifetime := types.NewLifetimeAnalyzer(engine)
+	lifetime := types.NewLifetimeAnalyzer(parser.AST, engine.Env())
 	lifetime.Check(fileID)
 	if listener != nil && !listener.OnLifetimeCheck(lifetime, lifetime.Diagnostics) {
 		return ErrAbort
@@ -78,7 +78,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(lifetime.Diagnostics) > 0 {
 		return lifetime.Diagnostics
 	}
-	ir, err := gen.GenIR(fileID, engine, gen.IROpts{AddressSanitizer: opts.AddressSanitizer})
+	module := base.Cast[ast.Module](engine.Node(fileID).Kind)
+	funs, structs := engine.BuildWorkList(module)
+	ir, err := gen.GenIR(parser.AST, module, funs, structs, gen.IROpts{AddressSanitizer: opts.AddressSanitizer})
 	if err != nil {
 		return err //nolint:wrapcheck
 	}

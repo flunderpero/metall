@@ -53,7 +53,7 @@ type LoopLabels struct {
 
 type IRGen struct {
 	CodeWriter
-	engine       *types.Engine
+	ast          *ast.AST
 	module       ast.Module
 	symbols      map[types.ScopeID]map[string]Symbol
 	regCounter   int
@@ -66,6 +66,7 @@ type IRGen struct {
 type IRFunGen struct {
 	CodeWriter
 	*IRGen
+	env                *types.TypeEnv
 	funRetLabel        Label
 	funRetReg          string
 	lastLabel          Label
@@ -73,10 +74,10 @@ type IRFunGen struct {
 	loopStack          []LoopLabels
 }
 
-func NewIRGen(engine *types.Engine, module ast.Module, opts IROpts) *IRGen {
+func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 	return &IRGen{
 		CodeWriter:   *NewCodeWriter(),
-		engine:       engine,
+		ast:          a,
 		module:       module,
 		symbols:      map[types.ScopeID]map[string]Symbol{},
 		regCounter:   1,
@@ -87,12 +88,12 @@ func NewIRGen(engine *types.Engine, module ast.Module, opts IROpts) *IRGen {
 	}
 }
 
-func (g *IRGen) newFunGen() *IRFunGen {
-	return &IRFunGen{CodeWriter: *NewCodeWriter(), IRGen: g} //nolint:exhaustruct
+func (g *IRGen) newFunGen(env *types.TypeEnv) *IRFunGen {
+	return &IRFunGen{CodeWriter: *NewCodeWriter(), IRGen: g, env: env} //nolint:exhaustruct
 }
 
 func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
-	node := g.engine.Node(id)
+	node := g.ast.Node(id)
 	switch kind := node.Kind.(type) {
 	case ast.Assign:
 		g.genAssign(id, kind)
@@ -158,15 +159,15 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	}
 }
 
-func (g *IRGen) genStruct(id ast.NodeID) {
-	astStruct := base.Cast[ast.Struct](g.engine.Node(id).Kind)
-	typ := g.engine.TypeOfNode(id)
+func (g *IRGen) genStruct(env *types.TypeEnv, id ast.NodeID) {
+	astStruct := base.Cast[ast.Struct](g.ast.Node(id).Kind)
+	typ := env.TypeOfNode(id)
 	structType := base.Cast[types.StructType](typ.Kind)
 	g.write("%%%s = type { ; %s", typ.ID, astStruct.Name.Name)
 	g.indent++
 	for i, astFieldID := range astStruct.Fields {
-		astField := base.Cast[ast.StructField](g.engine.Node(astFieldID).Kind)
-		fieldIRType := g.irType(structType.Fields[i].Type)
+		astField := base.Cast[ast.StructField](g.ast.Node(astFieldID).Kind)
+		fieldIRType := irType(env, structType.Fields[i].Type)
 		comma := ""
 		if i < len(astStruct.Fields)-1 {
 			comma = ","
@@ -181,7 +182,7 @@ func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 	for _, elem := range lit.Elems {
 		g.Gen(elem)
 	}
-	arrTyp := base.Cast[types.ArrayType](g.engine.TypeOfNode(id).Kind)
+	arrTyp := base.Cast[types.ArrayType](g.env.TypeOfNode(id).Kind)
 	arrIRType := g.irTypeOfNode(id)
 	reg := g.reg()
 	g.write("%s = alloca %s", reg, arrIRType)
@@ -206,9 +207,9 @@ func (g *IRFunGen) genIndex(id ast.NodeID, index ast.Index) {
 	g.Gen(index.Index)
 	indexReg := g.lookupCode(index.Index)
 	targetReg := g.lookupCode(index.Target)
-	targetType := g.engine.TypeOfNode(index.Target)
+	targetType := g.env.TypeOfNode(index.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
-		targetType = g.engine.Type(refTyp.Type)
+		targetType = g.env.Type(refTyp.Type)
 	}
 	switch kind := targetType.Kind.(type) {
 	case types.ArrayType:
@@ -232,7 +233,7 @@ func (g *IRFunGen) genIndex(id ast.NodeID, index ast.Index) {
 }
 
 func (g *IRFunGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
-	targetTyp := g.engine.TypeOfNode(lit.Target)
+	targetTyp := g.env.TypeOfNode(lit.Target)
 	if _, ok := targetTyp.Kind.(types.BuiltInType); ok {
 		g.genTypeConstructor(id, lit)
 		return
@@ -247,8 +248,8 @@ func (g *IRFunGen) genTypeConstructor(id ast.NodeID, lit ast.StructLiteral) {
 	g.Gen(lit.Target)
 	g.Gen(lit.Args[0])
 	argReg := g.lookupCode(lit.Args[0])
-	targetInfo, _ := g.engine.IntTypeInfo(g.engine.TypeOfNode(lit.Target).ID)
-	argInfo, _ := g.engine.IntTypeInfo(g.engine.TypeOfNode(lit.Args[0]).ID)
+	targetInfo, _ := g.env.IntTypeInfo(g.env.TypeOfNode(lit.Target).ID)
+	argInfo, _ := g.env.IntTypeInfo(g.env.TypeOfNode(lit.Args[0]).ID)
 	if targetInfo.Bits == argInfo.Bits {
 		g.setCode(id, argReg)
 		return
@@ -273,10 +274,10 @@ func (g *IRFunGen) genTypeConstructor(id ast.NodeID, lit ast.StructLiteral) {
 func (g *IRFunGen) genNew(id ast.NodeID, alloc ast.New) {
 	g.Gen(alloc.Allocator)
 	allocReg := g.lookupCode(alloc.Allocator)
-	lit := g.engine.Node(alloc.Target).Kind
+	lit := g.ast.Node(alloc.Target).Kind
 	switch lit := lit.(type) {
 	case ast.NewArray:
-		arrType := base.Cast[ast.ArrayType](g.engine.Node(lit.Type).Kind)
+		arrType := base.Cast[ast.ArrayType](g.ast.Node(lit.Type).Kind)
 		reg := g.reg()
 		irTyp := g.irTypeOfNode(arrType.Elem)
 		g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
@@ -284,13 +285,13 @@ func (g *IRFunGen) genNew(id ast.NodeID, alloc ast.New) {
 		g.write("%s_size = mul i64 %s_elm_size, %d", reg, reg, arrType.Len)
 		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
 		if lit.DefaultValue != nil {
-			if _, ok := g.engine.Node(*lit.DefaultValue).Kind.(ast.EmptySlice); ok {
+			if _, ok := g.ast.Node(*lit.DefaultValue).Kind.(ast.EmptySlice); ok {
 				// EmptySlice is all zeros — use memset.
 				g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_size, i1 false)", reg, reg)
 			} else {
 				g.Gen(*lit.DefaultValue)
 				valReg := g.lookupCode(*lit.DefaultValue)
-				elemTypeID := g.engine.TypeOfNode(arrType.Elem).ID
+				elemTypeID := g.env.TypeOfNode(arrType.Elem).ID
 				count := arrType.Len
 				g.genInitializeMemory(reg, irTyp, valReg, elemTypeID, fmt.Sprintf("%d", count), &count)
 			}
@@ -311,7 +312,7 @@ func (g *IRFunGen) genNew(id ast.NodeID, alloc ast.New) {
 func (g *IRFunGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
 	g.Gen(makeSlice.Allocator)
 	allocReg := g.lookupCode(makeSlice.Allocator)
-	sliceType := base.Cast[ast.SliceType](g.engine.Node(makeSlice.Type).Kind)
+	sliceType := base.Cast[ast.SliceType](g.ast.Node(makeSlice.Type).Kind)
 	reg := g.reg()
 	irTyp := g.irTypeOfNode(sliceType.Elem)
 	g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
@@ -321,13 +322,13 @@ func (g *IRFunGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
 	g.write("%s_size = mul i64 %s_elm_size, %s", reg, reg, lenReg)
 	g.write("%s_data = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
 	if makeSlice.DefaultValue != nil {
-		if _, ok := g.engine.Node(*makeSlice.DefaultValue).Kind.(ast.EmptySlice); ok {
+		if _, ok := g.ast.Node(*makeSlice.DefaultValue).Kind.(ast.EmptySlice); ok {
 			// EmptySlice is all zeros — use memset.
 			g.write("call void @llvm.memset.p0.i64(ptr %s_data, i8 0, i64 %s_size, i1 false)", reg, reg)
 		} else {
 			g.Gen(*makeSlice.DefaultValue)
 			valReg := g.lookupCode(*makeSlice.DefaultValue)
-			elemTypeID := g.engine.TypeOfNode(sliceType.Elem).ID
+			elemTypeID := g.env.TypeOfNode(sliceType.Elem).ID
 			g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, elemTypeID, lenReg, nil)
 		}
 	}
@@ -348,7 +349,7 @@ func (g *IRFunGen) genInitializeMemory(
 	countReg string,
 	compileTimeCount *int64,
 ) {
-	typ := g.engine.Type(elemTypeID)
+	typ := g.env.Type(elemTypeID)
 	switch typ.Kind.(type) {
 	case types.StructType, types.SliceType:
 		g.genInitializeMemoryStruct(dataReg, irElemType, valReg, countReg)
@@ -405,7 +406,7 @@ func (g *IRFunGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, 
 	for _, arg := range lit.Args {
 		g.Gen(arg)
 	}
-	targetTyp := g.engine.TypeOfNode(lit.Target)
+	targetTyp := g.env.TypeOfNode(lit.Target)
 	structTyp := base.Cast[types.StructType](targetTyp.Kind)
 	irTyp := g.irType(targetTyp.ID)
 	for i, arg := range lit.Args {
@@ -418,16 +419,16 @@ func (g *IRFunGen) genStructLiteralFields(id ast.NodeID, lit ast.StructLiteral, 
 }
 
 func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
-	targetType := g.engine.TypeOfNode(fieldAccess.Target)
+	targetType := g.env.TypeOfNode(fieldAccess.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
-		targetType = g.engine.Type(refTyp.Type)
+		targetType = g.env.Type(refTyp.Type)
 	}
 	if _, ok := targetType.Kind.(types.SliceType); ok {
 		g.genSliceFieldAccess(id, fieldAccess)
 		return
 	}
 	_, ptrReg := g.genFieldAccessPtr(fieldAccess)
-	valReg := g.loadValue(ptrReg, g.engine.TypeOfNode(id).ID)
+	valReg := g.loadValue(ptrReg, g.env.TypeOfNode(id).ID)
 	g.setCode(id, valReg)
 }
 
@@ -448,11 +449,11 @@ func (g *IRFunGen) genSliceFieldAccess(id ast.NodeID, fieldAccess ast.FieldAcces
 
 func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string, ptrReg string) {
 	g.Gen(fieldAccess.Target)
-	targetType := g.engine.TypeOfNode(fieldAccess.Target)
+	targetType := g.env.TypeOfNode(fieldAccess.Target)
 	structReg := g.lookupCode(fieldAccess.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		// Auto de-reference: the loaded ref value is already a ptr to the struct data.
-		targetType = g.engine.Type(refTyp.Type)
+		targetType = g.env.Type(refTyp.Type)
 	}
 	structType := base.Cast[types.StructType](targetType.Kind)
 	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
@@ -470,21 +471,16 @@ func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType str
 	return fieldType, ptrReg
 }
 
-func (g *IRFunGen) genFun(id ast.NodeID) { //nolint:funlen
-	astFun := base.Cast[ast.Fun](g.engine.Node(id).Kind)
-	typ := g.engine.TypeOfNode(id)
+func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
+	id := work.NodeID
+	astFun := base.Cast[ast.Fun](g.ast.Node(id).Kind)
+	typ := g.env.TypeOfNode(id)
 	fun, ok := typ.Kind.(types.FunType)
 	if !ok {
 		panic(base.Errorf("expected fun type, got %T", typ.Kind))
 	}
-	name, ok := g.engine.NamedFunRef(id)
-	if !ok {
-		panic(base.Errorf("no namespaced name for function %s", astFun.Name.Name))
-	}
-	isMain := g.module.Main && name == g.module.Name+".main"
-	if isMain {
-		name = "main"
-	}
+	name := work.Name
+	isMain := work.IsMain
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIRTyp := g.irType(fun.Return)
 	signatureIRTyp := retIRTyp
@@ -499,7 +495,7 @@ func (g *IRFunGen) genFun(id ast.NodeID) { //nolint:funlen
 	g.funRetReg = g.reg()
 	paramAllocas := strings.Builder{}
 	for _, paramNodeID := range astFun.Params {
-		paramNode := g.engine.Node(paramNodeID)
+		paramNode := g.ast.Node(paramNodeID)
 		param, ok := paramNode.Kind.(ast.FunParam)
 		if !ok {
 			panic(base.Errorf("expected fun param, got %T", paramNode.Kind))
@@ -509,7 +505,7 @@ func (g *IRFunGen) genFun(id ast.NodeID) { //nolint:funlen
 		}
 		g.Gen(paramNodeID)
 		preg := g.reg()
-		paramTyp := g.engine.TypeOfNode(paramNodeID)
+		paramTyp := g.env.TypeOfNode(paramNodeID)
 		paramIRTyp := g.irTypeOfNode(paramNodeID)
 		if _, ok := paramTyp.Kind.(types.AllocatorType); ok {
 			// Allocator param: passed as a raw ptr, no alloca wrapping.
@@ -543,7 +539,7 @@ func (g *IRFunGen) genFun(id ast.NodeID) { //nolint:funlen
 	g.write("define%s %s @%s(%s) %s{", internal, signatureIRTyp, name, params.String(), attrs)
 	g.indent++
 	// We use a return alloca to store values for early returns (i.e. `return <expr>`).
-	bodyHasReturn := g.engine.BlockReturns(astFun.Block)
+	bodyHasReturn := g.ast.BlockReturns(astFun.Block)
 	if retIRTyp != "void" {
 		g.write("%s = alloca %s", g.funRetReg, retIRTyp)
 	}
@@ -584,7 +580,7 @@ func (g *IRFunGen) genFun(id ast.NodeID) { //nolint:funlen
 func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
 	g.Gen(return_.Expr)
 	exprReg := g.lookupCode(return_.Expr)
-	retTyp := g.engine.TypeOfNode(return_.Expr).ID
+	retTyp := g.env.TypeOfNode(return_.Expr).ID
 	if g.irType(retTyp) != "void" {
 		g.storeValue(exprReg, g.funRetReg, retTyp)
 	}
@@ -654,13 +650,13 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 	g.writeLabel(thenLabel)
 	g.Gen(ifNode.Then)
 	phiThenLabel := g.lastLabel
-	if !g.engine.BlockBreaksControlFlow(ifNode.Then, false) {
+	if !g.ast.BlockBreaksControlFlow(ifNode.Then, false) {
 		g.write("br label %%%s", contLabel)
 	}
 	if ifNode.Else != nil {
 		g.writeLabel(elseLabel)
 		g.Gen(*ifNode.Else)
-		if !g.engine.BlockBreaksControlFlow(*ifNode.Else, false) {
+		if !g.ast.BlockBreaksControlFlow(*ifNode.Else, false) {
 			g.write("br label %%%s", contLabel)
 		}
 	}
@@ -671,7 +667,7 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 		phi := g.reg()
 		thenCode := g.lookupCode(ifNode.Then)
 		elseCode := g.lookupCode(*ifNode.Else)
-		thenType := g.engine.TypeOfNode(ifNode.Then)
+		thenType := g.env.TypeOfNode(ifNode.Then)
 		typ := g.irType(thenType.ID)
 		if g.isAggregateType(thenType.ID) {
 			typ = "ptr" // Aggregate values flow as pointers in code registers.
@@ -707,14 +703,14 @@ func (g *IRFunGen) writeLabel(label Label) {
 func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 	g.Gen(assign.RHS)
 	rhs := g.lookupCode(assign.RHS)
-	lhsNode := g.engine.Node(assign.LHS)
+	lhsNode := g.ast.Node(assign.LHS)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
 		symbol, ok := g.lookupSymbol(assign.LHS, lhsKind.Name)
 		if !ok {
 			panic(base.Errorf("assign to unknown variable: %s", lhsKind.Name))
 		}
-		rhsType := g.engine.TypeOfNode(assign.RHS)
+		rhsType := g.env.TypeOfNode(assign.RHS)
 		if g.isAggregateType(rhsType.ID) {
 			irTyp := g.irType(rhsType.ID)
 			tmp := g.reg()
@@ -725,7 +721,7 @@ func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 		}
 	case ast.FieldAccess:
 		fieldType, ptrReg := g.genFieldAccessPtr(lhsKind)
-		rhsType := g.engine.TypeOfNode(assign.RHS)
+		rhsType := g.env.TypeOfNode(assign.RHS)
 		if g.isAggregateType(rhsType.ID) {
 			tmp := g.reg()
 			g.write("%s = load %s, ptr %s", tmp, fieldType, rhs)
@@ -739,9 +735,9 @@ func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 		targetReg := g.lookupCode(lhsKind.Target)
 		indexReg := g.lookupCode(lhsKind.Index)
 		ptrReg := g.reg()
-		targetType := g.engine.TypeOfNode(lhsKind.Target)
+		targetType := g.env.TypeOfNode(lhsKind.Target)
 		if refTyp, ok := targetType.Kind.(types.RefType); ok {
-			targetType = g.engine.Type(refTyp.Type)
+			targetType = g.env.Type(refTyp.Type)
 		}
 		switch kind := targetType.Kind.(type) {
 		case types.ArrayType:
@@ -761,7 +757,7 @@ func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
 	case ast.Deref:
 		g.Gen(assign.LHS)
 		ptr := g.lookupCode(lhsKind.Expr)
-		rhsType := g.engine.TypeOfNode(assign.RHS)
+		rhsType := g.env.TypeOfNode(assign.RHS)
 		if g.isAggregateType(rhsType.ID) {
 			irTyp := g.irType(rhsType.ID)
 			tmp := g.reg()
@@ -805,13 +801,13 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 		g.write("%s = mul %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
 	case ast.BinaryOpDiv:
 		divOp := "sdiv"
-		if info, _ := g.engine.IntTypeInfo(g.engine.TypeOfNode(binary.LHS).ID); !info.Signed {
+		if info, _ := g.env.IntTypeInfo(g.env.TypeOfNode(binary.LHS).ID); !info.Signed {
 			divOp = "udiv"
 		}
 		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, divOp, lhs, rhs)
 	case ast.BinaryOpMod:
 		remOp := "srem"
-		if info, _ := g.engine.IntTypeInfo(g.engine.TypeOfNode(binary.LHS).ID); !info.Signed {
+		if info, _ := g.env.IntTypeInfo(g.env.TypeOfNode(binary.LHS).ID); !info.Signed {
 			remOp = "urem"
 		}
 		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, remOp, lhs, rhs)
@@ -821,7 +817,7 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 		g.write("%s = icmp ne %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
 		signed := true
-		if info, ok := g.engine.IntTypeInfo(g.engine.TypeOfNode(binary.LHS).ID); ok {
+		if info, ok := g.env.IntTypeInfo(g.env.TypeOfNode(binary.LHS).ID); ok {
 			signed = info.Signed
 		}
 		cmpOp := map[ast.BinaryOp]string{
@@ -845,13 +841,13 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 }
 
 func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
-	calleeType := g.engine.TypeOfNode(call.Callee)
+	calleeType := g.env.TypeOfNode(call.Callee)
 	fun, ok := calleeType.Kind.(types.FunType)
 	if !ok {
 		panic(base.Errorf("callee is not a function"))
 	}
 	var argNodes []ast.NodeID
-	if target, ok := g.engine.MethodCallReceiver(id); ok {
+	if target, ok := g.env.MethodCallReceiver(id); ok {
 		argNodes = append(argNodes, target)
 	}
 	argNodes = append(argNodes, call.Args...)
@@ -859,7 +855,7 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 		g.Gen(nodeID)
 	}
 	sb := strings.Builder{}
-	retType := g.engine.Type(fun.Return)
+	retType := g.env.Type(fun.Return)
 	isRetAggregate := g.isAggregateType(fun.Return)
 	var resReg string
 	if builtin, ok := retType.Kind.(types.BuiltInType); ok && builtin.Name == "void" {
@@ -880,7 +876,7 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 		sb.WriteString(g.irType(fun.Return))
 	}
 	// Resolve the callee. Direct calls use @name, indirect calls go through a loaded ptr.
-	if funName, ok := g.engine.NamedFunRef(call.Callee); ok {
+	if funName, ok := g.env.NamedFunRef(call.Callee); ok {
 		fmt.Fprintf(&sb, " @%s", funName)
 	} else {
 		g.Gen(call.Callee)
@@ -896,7 +892,7 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 		if hasArg {
 			sb.WriteString(", ")
 		}
-		typeID := g.engine.TypeOfNode(nodeID).ID
+		typeID := g.env.TypeOfNode(nodeID).ID
 		reg := g.lookupCode(nodeID)
 		if g.isAggregateType(typeID) {
 			fmt.Fprintf(&sb, "ptr byval(%s) %s", g.irType(typeID), reg)
@@ -911,12 +907,12 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 
 func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	// Named function reference — emit @name directly (no load needed).
-	if name, ok := g.engine.NamedFunRef(id); ok {
+	if name, ok := g.env.NamedFunRef(id); ok {
 		g.setCode(id, "@%s", name)
 		return
 	}
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
-		identType := g.engine.TypeOfNode(id)
+		identType := g.env.TypeOfNode(id)
 		if _, ok := identType.Kind.(types.AllocatorType); ok || g.isAggregateType(identType.ID) {
 			// Aggregate/Allocator: symbol.Reg is already the raw ptr (single indirection, no alloca).
 			g.setCode(id, symbol.Reg)
@@ -962,7 +958,7 @@ func (g *IRFunGen) genRef(id ast.NodeID, ref ast.Ref) {
 
 func (g *IRFunGen) genDeref(id ast.NodeID, deref ast.Deref) {
 	g.Gen(deref.Expr)
-	exprType := g.engine.TypeOfNode(deref.Expr)
+	exprType := g.env.TypeOfNode(deref.Expr)
 	ref, ok := exprType.Kind.(types.RefType)
 	if !ok {
 		panic(base.Errorf("dereference: expected reference, got %T", exprType.Kind))
@@ -983,9 +979,9 @@ func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 	g.Gen(v.Expr)
 	exprReg := g.lookupCode(v.Expr)
-	exprType := g.engine.TypeOfNode(v.Expr)
+	exprType := g.env.TypeOfNode(v.Expr)
 	if g.isAggregateType(exprType.ID) {
-		exprNode := g.engine.Node(v.Expr)
+		exprNode := g.ast.Node(v.Expr)
 		switch exprNode.Kind.(type) {
 		case ast.StructLiteral, ast.ArrayLiteral, ast.EmptySlice, ast.MakeSlice, ast.Call:
 			// The result value is already a copy.
@@ -1018,16 +1014,29 @@ func (g *IRGen) reg() string {
 	return fmt.Sprintf("%%r%d", id)
 }
 
-func (g *IRGen) irTypeOfNode(nodeID ast.NodeID) string {
-	typ := g.engine.TypeOfNode(nodeID)
+func (g *IRFunGen) irTypeOfNode(nodeID ast.NodeID) string {
+	typ := g.env.TypeOfNode(nodeID)
 	return g.irType(typ.ID)
 }
 
-func (g *IRGen) irType(typeID types.TypeID) string {
-	typ := g.engine.Type(typeID)
+func (g *IRFunGen) irType(typeID types.TypeID) string {
+	return irType(g.env, typeID)
+}
+
+func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
+	switch g.env.Type(typeID).Kind.(type) {
+	case types.StructType, types.ArrayType, types.SliceType:
+		return true
+	default:
+		return false
+	}
+}
+
+func irType(env *types.TypeEnv, typeID types.TypeID) string {
+	typ := env.Type(typeID)
 	switch kind := typ.Kind.(type) {
 	case types.BuiltInType:
-		if info, ok := g.engine.IntTypeInfo(typeID); ok {
+		if info, ok := env.IntTypeInfo(typeID); ok {
 			return fmt.Sprintf("i%d", info.Bits)
 		}
 		switch kind.Name {
@@ -1046,7 +1055,7 @@ func (g *IRGen) irType(typeID types.TypeID) string {
 		}
 		return "%" + typeID.String()
 	case types.ArrayType:
-		return fmt.Sprintf("[%d x %s]", kind.Len, g.irType(kind.Elem))
+		return fmt.Sprintf("[%d x %s]", kind.Len, irType(env, kind.Elem))
 	case types.SliceType:
 		return "{ptr, i64}"
 	case types.FunType:
@@ -1071,9 +1080,9 @@ func irScalarSize(irType string) int64 {
 	}
 }
 
-func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {
+func (g *IRFunGen) setCode(astID ast.NodeID, code string, args ...any) {
 	if _, ok := g.astCode[astID]; ok {
-		panic(base.Errorf("code already set for %s", g.engine.AST.Debug(astID, false, 0)))
+		panic(base.Errorf("code already set for %s", g.ast.Debug(astID, false, 0)))
 	}
 	if len(args) > 0 {
 		code = fmt.Sprintf(code, args...)
@@ -1081,16 +1090,16 @@ func (g *IRGen) setCode(astID ast.NodeID, code string, args ...any) {
 	g.astCode[astID] = code
 }
 
-func (g *IRGen) lookupCode(astID ast.NodeID) string {
+func (g *IRFunGen) lookupCode(astID ast.NodeID) string {
 	code, ok := g.astCode[astID]
 	if !ok {
-		panic(base.Errorf("no reg for %s", g.engine.AST.Debug(astID, false, 0)))
+		panic(base.Errorf("no reg for %s", g.ast.Debug(astID, false, 0)))
 	}
 	return code
 }
 
-func (g *IRGen) setSymbol(nodeID ast.NodeID, name string, reg string, typ string) {
-	scope := g.engine.ScopeGraph.NodeScope(nodeID)
+func (g *IRFunGen) setSymbol(nodeID ast.NodeID, name string, reg string, typ string) {
+	scope := g.env.NodeScope(nodeID)
 	if g.symbols[scope.ID] == nil {
 		g.symbols[scope.ID] = map[string]Symbol{}
 	}
@@ -1100,8 +1109,8 @@ func (g *IRGen) setSymbol(nodeID ast.NodeID, name string, reg string, typ string
 	g.symbols[scope.ID][name] = Symbol{Name: name, Reg: reg, Type: typ}
 }
 
-func (g *IRGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
-	scope := g.engine.ScopeGraph.NodeScope(nodeID)
+func (g *IRFunGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
+	scope := g.env.NodeScope(nodeID)
 	for scope != nil {
 		if symbols, ok := g.symbols[scope.ID]; ok {
 			if symbol, ok := symbols[name]; ok {
@@ -1111,15 +1120,6 @@ func (g *IRGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
 		scope = scope.Parent
 	}
 	return Symbol{}, false
-}
-
-func (g *IRGen) isAggregateType(typeID types.TypeID) bool {
-	switch g.engine.Type(typeID).Kind.(type) {
-	case types.StructType, types.ArrayType, types.SliceType:
-		return true
-	default:
-		return false
-	}
 }
 
 func (g *IRFunGen) loadValue(ptrReg string, typeID types.TypeID) string {
@@ -1155,9 +1155,10 @@ type IROpts struct {
 	AddressSanitizer bool
 }
 
-func GenIR(moduleID ast.NodeID, engine *types.Engine, opts IROpts) (string, error) {
-	module := base.Cast[ast.Module](engine.Node(moduleID).Kind)
-	g := NewIRGen(engine, module, opts)
+func GenIR(
+	a *ast.AST, module ast.Module, funs []types.FunWork, structs []types.StructWork, opts IROpts,
+) (string, error) {
+	g := NewIRGen(a, module, opts)
 	g.write("; Generated by metallc")
 	g.write("")
 	g.write(`source_filename = "%s"`, module.FileName)
@@ -1165,13 +1166,13 @@ func GenIR(moduleID ast.NodeID, engine *types.Engine, opts IROpts) (string, erro
 	// Emit the Str type definition (built-in struct, no AST node).
 	g.write("%Str = type { {ptr, i64} }\n")
 	// Emit struct type definitions.
-	for _, id := range engine.Structs {
-		g.genStruct(id)
+	for _, s := range structs {
+		g.genStruct(s.Env, s.NodeID)
 	}
 	// Emit all functions — each gets a fresh IRFunGen.
-	for _, id := range engine.Funs {
-		f := g.newFunGen()
-		f.genFun(id)
+	for i := range funs {
+		f := g.newFunGen(funs[i].Env)
+		f.genFun(funs[i])
 		g.sb.WriteString(f.sb.String())
 	}
 	// Emit string constants.

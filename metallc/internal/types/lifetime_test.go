@@ -1165,7 +1165,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			e := NewEngine(parser.AST)
 			e.Query(exprID)
 			assert.Equal(0, len(e.Diagnostics), "type check failed: %s", e.Diagnostics)
-			a := NewLifetimeAnalyzer(e)
+			a := NewLifetimeAnalyzer(e.AST, e.Env())
 			// a.Debug = base.NewStdoutDebug("lifetime")
 			a.Check(exprID)
 			for i, want := range tt.want {
