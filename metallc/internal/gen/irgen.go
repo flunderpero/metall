@@ -584,7 +584,10 @@ func (g *IRFunGen) genFun(id ast.NodeID) { //nolint:funlen
 func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
 	g.Gen(return_.Expr)
 	exprReg := g.lookupCode(return_.Expr)
-	g.storeValue(exprReg, g.funRetReg, g.engine.TypeOfNode(return_.Expr).ID)
+	retTyp := g.engine.TypeOfNode(return_.Expr).ID
+	if g.irType(retTyp) != "void" {
+		g.storeValue(exprReg, g.funRetReg, retTyp)
+	}
 	g.write("br label %%%s", g.funRetLabel)
 	g.setCode(id, exprReg)
 }

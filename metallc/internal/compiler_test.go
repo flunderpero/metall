@@ -154,6 +154,18 @@ func TestCompile(t *testing.T) {
 			"100\n101\n202\n",
 		},
 
+		{
+			"return void in if", `
+			fun foo(x Int) void {
+				if x > 0 {
+					return void
+				}
+				print_int(x)
+			}
+			fun main() void { foo(1) foo(0) }`,
+			"0\n",
+		},
+
 		{"free flowing fun", `
 			fun double(a Int) Int { a + a }
 
