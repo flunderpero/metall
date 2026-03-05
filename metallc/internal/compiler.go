@@ -54,7 +54,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if listener != nil && !listener.OnLex(tokens) {
 		return ErrAbort
 	}
-	parser := ast.NewParser(tokens)
+	parser := ast.NewParser(tokens, 1)
 	fileID, _ := parser.ParseModule()
 	if listener != nil && !listener.OnParse(parser.AST, fileID, parser.Diagnostics) {
 		return ErrAbort
@@ -62,7 +62,8 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(parser.Diagnostics) > 0 {
 		return parser.Diagnostics
 	}
-	engine := types.NewEngine(parser.AST)
+	preludeAST, preludeModuleID := ast.PreludeAST()
+	engine := types.NewEngine(parser.AST, preludeAST, preludeModuleID)
 	engine.Query(fileID)
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics) {
 		return ErrAbort

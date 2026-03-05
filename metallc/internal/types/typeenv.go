@@ -2,7 +2,6 @@ package types
 
 import (
 	"fmt"
-	"maps"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -18,20 +17,9 @@ type typeRegistry struct {
 	nextID     TypeID
 }
 
-type Builtins struct {
-	Names     map[string]TypeID
-	VoidType  TypeID
-	BoolType  TypeID
-	StrType   TypeID
-	ArenaType TypeID
-	IntType   TypeID
-	IntTypes  map[string]TypeID
-}
-
 type TypeEnv struct {
 	ast                *ast.AST
 	ScopeGraph         *ScopeGraph
-	builtins           *Builtins
 	reg                *typeRegistry
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
@@ -41,7 +29,7 @@ type TypeEnv struct {
 }
 
 func NewRootEnv(a *ast.AST) *TypeEnv {
-	e := &TypeEnv{ //nolint:exhaustruct
+	return &TypeEnv{ //nolint:exhaustruct
 		ast:        a,
 		ScopeGraph: NewScopeGraph(),
 		reg: &typeRegistry{
@@ -56,16 +44,10 @@ func NewRootEnv(a *ast.AST) *TypeEnv {
 		namedFunRef:        map[ast.NodeID]string{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 	}
-	e.builtins = e.initBuiltins()
-	return e
 }
 
 func (e *TypeEnv) AST() *ast.AST {
 	return e.ast
-}
-
-func (e *TypeEnv) Builtins() *Builtins {
-	return e.builtins
 }
 
 func (e *TypeEnv) TypeOfNode(id ast.NodeID) *Type {
@@ -89,16 +71,6 @@ func (e *TypeEnv) DeclNode(typeID TypeID) ast.NodeID {
 		return cached.Type.NodeID
 	}
 	return 0
-}
-
-func (e *TypeEnv) IntTypeInfo(id TypeID) (IntTypeInfo, bool) {
-	typ := e.Type(id)
-	builtin, ok := typ.Kind.(BuiltInType)
-	if !ok {
-		return IntTypeInfo{}, false
-	}
-	info, ok := intTypeInfos[builtin.Name]
-	return info, ok
 }
 
 func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
@@ -127,8 +99,12 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		return cached.Status.String()
 	}
 	switch kind := cached.Type.Kind.(type) {
-	case BuiltInType:
+	case IntType:
 		return kind.Name
+	case BoolType:
+		return "Bool"
+	case VoidType:
+		return "void"
 	case RefType:
 		if kind.Mut {
 			return fmt.Sprintf("&mut %s", e.TypeDisplay(kind.Type))
@@ -147,19 +123,7 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		sb.WriteString(e.TypeDisplay(kind.Return))
 		return sb.String()
 	case StructType:
-		if typeID == e.builtins.StrType {
-			return "Str"
-		}
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "struct %s(", kind.Name)
-		for i, field := range kind.Fields {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			fmt.Fprintf(&sb, "%s %s", field.Name, e.TypeDisplay(field.Type))
-		}
-		sb.WriteString(")")
-		return sb.String()
+		return kind.Name
 	case ArrayType:
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case SliceType:
@@ -176,53 +140,6 @@ func (e *TypeEnv) IterTypes(f func(*Type, TypeStatus) bool) {
 		if !f(cached.Type, cached.Status) {
 			return
 		}
-	}
-}
-
-func (e *TypeEnv) initBuiltins() *Builtins {
-	span := base.NewSpan(base.NewSource("builtin", "", false, []rune{}), 0, 0)
-	voidType := e.newType(BuiltInType{"void"}, 0, span, TypeOK)
-	boolType := e.newType(BuiltInType{"Bool"}, 0, span, TypeOK)
-	arenaType := e.newType(AllocatorType{AllocatorArena}, 0, span, TypeOK)
-
-	intTypeNames := []string{"I8", "I16", "I32", "Int", "U8", "U16", "U32", "U64"}
-	intTypes := map[string]TypeID{}
-	for _, name := range intTypeNames {
-		intTypes[name] = e.newType(BuiltInType{name}, 0, span, TypeOK)
-	}
-	intType := intTypes["Int"]
-
-	u8SliceType := e.buildSliceType(intTypes["U8"], 0, span)
-	strType := e.newType(StructType{
-		Name:   "Str",
-		Fields: []StructField{{Name: "data", Type: u8SliceType, Mut: false}},
-	}, 0, span, TypeOK)
-
-	names := map[string]TypeID{
-		"Str":   strType,
-		"Bool":  boolType,
-		"Arena": arenaType,
-		"void":  voidType,
-	}
-	maps.Copy(names, intTypes)
-
-	printStrFun := e.newBuiltinFun(FunType{[]TypeID{strType}, voidType}, span)
-	printIntFun := e.newBuiltinFun(FunType{[]TypeID{intType}, voidType}, span)
-	printUintFun := e.newBuiltinFun(FunType{[]TypeID{intTypes["U64"]}, voidType}, span)
-	printBoolFun := e.newBuiltinFun(FunType{[]TypeID{boolType}, voidType}, span)
-	names["print_str"] = printStrFun
-	names["print_int"] = printIntFun
-	names["print_uint"] = printUintFun
-	names["print_bool"] = printBoolFun
-
-	return &Builtins{
-		Names:     names,
-		VoidType:  voidType,
-		BoolType:  boolType,
-		StrType:   strType,
-		ArenaType: arenaType,
-		IntType:   intType,
-		IntTypes:  intTypes,
 	}
 }
 
@@ -243,13 +160,6 @@ func (e *TypeEnv) newTypeWithID(
 	cached := &cachedType{Type: typ, Status: status}
 	e.reg.types[typeID] = cached
 	e.nodes[nodeID] = cached
-}
-
-func (e *TypeEnv) newBuiltinFun(funTyp FunType, span base.Span) TypeID {
-	typeID := e.newType(funTyp, 0, span, TypeOK)
-	cacheKey := funTypeCacheKey(funTyp)
-	e.reg.funTypes[cacheKey] = e.reg.types[typeID]
-	return typeID
 }
 
 func (e *TypeEnv) buildRefType(nodeID ast.NodeID, innerTypeID TypeID, mut bool, span base.Span) TypeID {

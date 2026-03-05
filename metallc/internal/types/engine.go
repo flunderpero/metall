@@ -27,32 +27,23 @@ type TypeKind interface {
 	isTypeKind()
 }
 
-type BuiltInType struct {
-	Name string
-}
-
-func (BuiltInType) isTypeKind() {}
-
-// IntTypeInfo describes a built-in integer type.
-type IntTypeInfo struct {
+type IntType struct {
 	Name   string
 	Signed bool
 	Bits   int
-	Min    *big.Int // inclusive lower bound
-	Max    *big.Int // inclusive upper bound
+	Min    *big.Int
+	Max    *big.Int
 }
 
-//nolint:gochecknoglobals
-var intTypeInfos = map[string]IntTypeInfo{
-	"I8":  {"I8", true, 8, big.NewInt(-128), big.NewInt(127)},
-	"I16": {"I16", true, 16, big.NewInt(-32768), big.NewInt(32767)},
-	"I32": {"I32", true, 32, big.NewInt(-2147483648), big.NewInt(2147483647)},
-	"Int": {"Int", true, 64, big.NewInt(-9223372036854775808), big.NewInt(9223372036854775807)},
-	"U8":  {"U8", false, 8, big.NewInt(0), big.NewInt(255)},
-	"U16": {"U16", false, 16, big.NewInt(0), big.NewInt(65535)},
-	"U32": {"U32", false, 32, big.NewInt(0), big.NewInt(4294967295)},
-	"U64": {"U64", false, 64, big.NewInt(0), new(big.Int).SetUint64(18446744073709551615)},
-}
+func (IntType) isTypeKind() {}
+
+type BoolType struct{}
+
+func (BoolType) isTypeKind() {}
+
+type VoidType struct{}
+
+func (VoidType) isTypeKind() {}
 
 type RefType struct {
 	Type TypeID
@@ -173,15 +164,20 @@ type Engine struct {
 	typeHint    *TypeID
 }
 
-func NewEngine(a *ast.AST) *Engine {
+func NewEngine(a *ast.AST, preludeAST *ast.AST, preludeModuleID ast.NodeID) *Engine {
+	if err := a.Merge(preludeAST); err != nil {
+		panic(base.WrapErrorf(err, "failed to merge prelude AST"))
+	}
 	rootScope := NewScope(0, 0, nil)
-	return &Engine{ //nolint:exhaustruct
+	e := &Engine{ //nolint:exhaustruct
 		AST:         a,
 		Debug:       base.NilDebug{},
 		env:         NewRootEnv(a),
 		nextScopeID: 1,
 		scope:       rootScope,
 	}
+	e.checkPrelude(preludeModuleID)
+	return e
 }
 
 func (e *Engine) Env() *TypeEnv {
@@ -300,6 +296,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 func (e *Engine) BuildWorkList(module ast.Module) ([]FunWork, []StructWork) {
 	funs := make([]FunWork, 0, len(e.env.funs))
 	for _, id := range e.env.funs {
+		if id >= ast.PreludeFirstID {
+			continue
+		}
 		name, ok := e.env.NamedFunRef(id)
 		if !ok {
 			panic(base.Errorf("no namespaced name for function node %s", id))
@@ -312,13 +311,56 @@ func (e *Engine) BuildWorkList(module ast.Module) ([]FunWork, []StructWork) {
 	}
 	structs := make([]StructWork, 0, len(e.env.structs))
 	for _, id := range e.env.structs {
+		if id >= ast.PreludeFirstID {
+			continue
+		}
 		structs = append(structs, StructWork{NodeID: id, Env: e.env})
 	}
 	return funs, structs
 }
 
+//nolint:gochecknoglobals
+var intTypes = []IntType{
+	{"I8", true, 8, big.NewInt(-128), big.NewInt(127)},
+	{"I16", true, 16, big.NewInt(-32768), big.NewInt(32767)},
+	{"I32", true, 32, big.NewInt(-2147483648), big.NewInt(2147483647)},
+	{"Int", true, 64, big.NewInt(-9223372036854775808), big.NewInt(9223372036854775807)},
+	{"U8", false, 8, big.NewInt(0), big.NewInt(255)},
+	{"U16", false, 16, big.NewInt(0), big.NewInt(65535)},
+	{"U32", false, 32, big.NewInt(0), big.NewInt(4294967295)},
+	{"U64", false, 64, big.NewInt(0), new(big.Int).SetUint64(18446744073709551615)},
+}
+
+func (e *Engine) checkPrelude(preludeModuleID ast.NodeID) {
+	module := base.Cast[ast.Module](e.Node(preludeModuleID).Kind)
+	e.env.ScopeGraph.SetNodeScope(preludeModuleID, e.scope)
+	e.checkModuleInner(preludeModuleID, module, false)
+	if len(e.Diagnostics) > 0 {
+		panic(base.Errorf("prelude type-check failed: %s", e.Diagnostics))
+	}
+	e.replacePreludeType("Arena", AllocatorType{AllocatorArena})
+	e.replacePreludeType("void", VoidType{})
+	e.replacePreludeType("Bool", BoolType{})
+	for _, intTyp := range intTypes {
+		e.replacePreludeType(intTyp.Name, intTyp)
+	}
+}
+
+func (e *Engine) replacePreludeType(name string, kind TypeKind) {
+	typeID := e.mustLookup(name)
+	e.env.reg.types[typeID].Type.Kind = kind
+}
+
+func (e *Engine) mustLookup(name string) TypeID {
+	binding, _, ok := e.scope.Lookup(name)
+	if !ok {
+		panic(base.Errorf("builtin %q not found in scope", name))
+	}
+	return binding.TypeID
+}
+
 func (e *Engine) isIntType(typeID TypeID) bool {
-	_, ok := e.env.IntTypeInfo(typeID)
+	_, ok := e.env.Type(typeID).Kind.(IntType)
 	return ok
 }
 
@@ -383,7 +425,7 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 		e.diag(span, "type mismatch: expected %s, got %s", e.env.TypeDisplay(lhsTypeID), e.env.TypeDisplay(rhsTypeID))
 		return InvalidTypeID, TypeDepFailed
 	}
-	return e.env.builtins.VoidType, TypeOK
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
@@ -393,17 +435,17 @@ func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
 	}
 	switch unary.Op {
 	case ast.UnaryOpNot:
-		if exprTypeID != e.env.builtins.BoolType {
+		if exprTypeID != e.mustLookup("Bool") {
 			span := e.Node(unary.Expr).Span
 			e.diag(
 				span,
 				"type mismatch: expected %s, got %s",
-				e.env.TypeDisplay(e.env.builtins.BoolType),
+				e.env.TypeDisplay(e.mustLookup("Bool")),
 				e.env.TypeDisplay(exprTypeID),
 			)
 			return InvalidTypeID, TypeDepFailed
 		}
-		return e.env.builtins.BoolType, TypeOK
+		return e.mustLookup("Bool"), TypeOK
 	default:
 		panic(base.Errorf("unknown unary operator: %s", unary.Op))
 	}
@@ -418,13 +460,13 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	var expected string
 	switch binary.Op {
 	case ast.BinaryOpEq, ast.BinaryOpNeq:
-		valid = e.isIntType(lhsTypeID) || lhsTypeID == e.env.builtins.BoolType
+		valid = e.isIntType(lhsTypeID) || lhsTypeID == e.mustLookup("Bool")
 		expected = "an integer or Bool"
 	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
 		valid = e.isIntType(lhsTypeID)
 		expected = "an integer"
 	case ast.BinaryOpOr, ast.BinaryOpAnd:
-		valid = lhsTypeID == e.env.builtins.BoolType
+		valid = lhsTypeID == e.mustLookup("Bool")
 		expected = "Bool"
 	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod:
 		valid = e.isIntType(lhsTypeID)
@@ -458,7 +500,7 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	}
 	switch binary.Op { //nolint:exhaustive
 	case ast.BinaryOpEq, ast.BinaryOpNeq, ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
-		return e.env.builtins.BoolType, TypeOK
+		return e.mustLookup("Bool"), TypeOK
 	default:
 		return lhsTypeID, TypeOK
 	}
@@ -470,7 +512,7 @@ func (e *Engine) checkBlock(nodeID ast.NodeID, block ast.Block) (TypeID, TypeSta
 		defer e.leaveScope()
 	}
 	if len(block.Exprs) == 0 {
-		return e.env.builtins.VoidType, TypeOK
+		return e.mustLookup("void"), TypeOK
 	}
 	e.forwardDeclare(block.Exprs)
 	depFailed := false
@@ -502,7 +544,7 @@ func (e *Engine) checkContinue(span base.Span) (TypeID, TypeStatus) {
 		e.diag(span, "continue statement outside of loop")
 		return InvalidTypeID, TypeFailed
 	}
-	return e.env.builtins.VoidType, TypeOK
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) checkBreak(span base.Span) (TypeID, TypeStatus) {
@@ -510,7 +552,7 @@ func (e *Engine) checkBreak(span base.Span) (TypeID, TypeStatus) {
 		e.diag(span, "break statement outside of loop")
 		return InvalidTypeID, TypeFailed
 	}
-	return e.env.builtins.VoidType, TypeOK
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) {
@@ -519,7 +561,7 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if condType != e.env.builtins.BoolType {
+		if condType != e.mustLookup("Bool") {
 			condSpan := e.Node(*for_.Cond).Span
 			e.diag(condSpan, "type mismatch: expected Bool, got %s", e.env.TypeDisplay(condType))
 			return InvalidTypeID, TypeFailed
@@ -535,7 +577,7 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 	}
 	// We always coerce the body to `void`.
 	// todo: we don't want to ever coerce to `void` (we do this in function bodies to)
-	return e.env.builtins.VoidType, TypeOK
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
@@ -543,7 +585,7 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if condType != e.env.builtins.BoolType {
+	if condType != e.mustLookup("Bool") {
 		condSpan := e.Node(if_.Cond).Span
 		e.diag(condSpan, "if condition must evaluate to a boolean value, got %s", e.env.TypeDisplay(condType))
 		return InvalidTypeID, TypeFailed
@@ -554,7 +596,7 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	}
 	if if_.Else == nil {
 		// Without an "else" branch, "if" always evaluates to "void".
-		return e.env.builtins.VoidType, TypeOK
+		return e.mustLookup("void"), TypeOK
 	}
 	elseType, status := e.Query(*if_.Else)
 	if status.Failed() {
@@ -562,7 +604,7 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 	}
 	// If either of the branches returns early it is void.
 	if e.BlockBreaksControlFlow(if_.Then, false) || e.BlockBreaksControlFlow(*if_.Else, false) {
-		return e.env.builtins.VoidType, TypeOK
+		return e.mustLookup("void"), TypeOK
 	}
 	if thenType != elseType {
 		e.diag(
@@ -585,8 +627,8 @@ func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, sp
 		e.diag(span, "argument count mismatch: expected %d, got %d", 0, len(alloc.Args))
 		return InvalidTypeID, TypeFailed
 	}
-	e.bind(alloc.Name.Name, false, nodeID, e.env.builtins.ArenaType, span)
-	return e.env.builtins.VoidType, TypeOK
+	e.bind(alloc.Name.Name, false, nodeID, e.mustLookup("Arena"), span)
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) checkArrayType(nodeID ast.NodeID, array ast.ArrayType, span base.Span) (TypeID, TypeStatus) {
@@ -650,7 +692,7 @@ func (e *Engine) checkMakeSlice(makeSlice ast.MakeSlice) (TypeID, TypeStatus) {
 	if lenStatus.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if lenTypeID != e.env.builtins.IntType {
+	if lenTypeID != e.mustLookup("Int") {
 		lenSpan := e.Node(makeSlice.Len).Span
 		e.diag(lenSpan, "type mismatch: expected Int, got %s", e.env.TypeDisplay(lenTypeID))
 		return InvalidTypeID, TypeFailed
@@ -738,12 +780,12 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if indexTypeID != e.env.builtins.IntType {
+	if indexTypeID != e.mustLookup("Int") {
 		indexSpan := e.Node(index.Index).Span
 		e.diag(
 			indexSpan,
 			"index type mismatch: expected %s, got %s",
-			e.env.TypeDisplay(e.env.builtins.IntType),
+			e.env.TypeDisplay(e.mustLookup("Int")),
 			e.env.TypeDisplay(indexTypeID),
 		)
 		return InvalidTypeID, TypeFailed
@@ -778,20 +820,26 @@ func (e *Engine) checkNew(nodeID ast.NodeID, alloc ast.New, span base.Span) (Typ
 }
 
 func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
-	structTypeID, status := e.Query(lit.Target)
+	targetTypeID, status := e.Query(lit.Target)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	structTyp := e.env.Type(structTypeID)
-	if builtin, ok := structTyp.Kind.(BuiltInType); ok {
-		return e.checkTypeConstructor(builtin, structTypeID, lit, span)
-	}
-	struct_, ok := structTyp.Kind.(StructType)
-	if !ok {
+	targetTyp := e.env.Type(targetTypeID)
+	switch kind := targetTyp.Kind.(type) {
+	case IntType:
+		return e.checkTypeConstructor(kind, targetTypeID, lit, span)
+	case StructType:
+		return e.checkStructLiteralFields(kind, targetTypeID, lit, span)
+	default:
 		calleeSpan := e.Node(lit.Target).Span
-		e.diag(calleeSpan, "not a struct: %s", e.env.TypeDisplay(structTypeID))
+		e.diag(calleeSpan, "not a struct: %s", e.env.TypeDisplay(targetTypeID))
 		return InvalidTypeID, TypeFailed
 	}
+}
+
+func (e *Engine) checkStructLiteralFields(
+	struct_ StructType, structTypeID TypeID, lit ast.StructLiteral, span base.Span,
+) (TypeID, TypeStatus) {
 	if len(lit.Args) != len(struct_.Fields) {
 		e.diag(span, "argument count mismatch: expected %d, got %d", len(struct_.Fields), len(lit.Args))
 		return InvalidTypeID, TypeFailed
@@ -825,44 +873,33 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 //   - Unsigned to signed: target bits > source bits (need the extra bit for sign).
 //   - Signed to unsigned: always rejected.
 func (e *Engine) checkTypeConstructor(
-	builtin BuiltInType, targetTypeID TypeID, lit ast.StructLiteral, span base.Span,
+	targetTyp IntType, targetTypeID TypeID, lit ast.StructLiteral, span base.Span,
 ) (TypeID, TypeStatus) {
-	targetInfo, isIntTarget := e.env.IntTypeInfo(targetTypeID)
-	if !isIntTarget {
-		calleeSpan := e.Node(lit.Target).Span
-		e.diag(calleeSpan, "not a struct: %s", builtin.Name)
-		return InvalidTypeID, TypeFailed
-	}
 	if len(lit.Args) != 1 {
-		e.diag(span, "%s() takes exactly 1 argument, got %d", builtin.Name, len(lit.Args))
+		e.diag(span, "%s() takes exactly 1 argument, got %d", targetTyp.Name, len(lit.Args))
 		return InvalidTypeID, TypeFailed
 	}
 	argNodeID := lit.Args[0]
-	// Query with a hint so int literals materialize as the target type directly.
 	argTypeID, status := e.queryWithHint(argNodeID, targetTypeID)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	// If the literal materialized as the target type, no conversion needed.
 	if argTypeID == targetTypeID {
 		return targetTypeID, TypeOK
 	}
-	argInfo, isIntArg := e.env.IntTypeInfo(argTypeID)
-	if !isIntArg {
+	argInfo, ok := e.env.Type(argTypeID).Kind.(IntType)
+	if !ok {
 		argSpan := e.Node(argNodeID).Span
 		e.diag(argSpan, "cannot convert %s to %s", e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
 		return InvalidTypeID, TypeFailed
 	}
-	// Check conversion rules.
 	allowed := false
 	switch {
-	case argInfo.Signed == targetInfo.Signed:
-		allowed = targetInfo.Bits >= argInfo.Bits
-	case !argInfo.Signed && targetInfo.Signed:
-		// Unsigned to signed: need strictly more bits for the sign bit.
-		allowed = targetInfo.Bits > argInfo.Bits
-	case argInfo.Signed && !targetInfo.Signed:
-		// Signed to unsigned: always rejected.
+	case argInfo.Signed == targetTyp.Signed:
+		allowed = targetTyp.Bits >= argInfo.Bits
+	case !argInfo.Signed && targetTyp.Signed:
+		allowed = targetTyp.Bits > argInfo.Bits
+	case argInfo.Signed && !targetTyp.Signed:
 		allowed = false
 	}
 	if !allowed {
@@ -880,43 +917,28 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	}
 	targetTyp := e.env.Type(targetTypeID)
 	if refTyp, ok := targetTyp.Kind.(RefType); ok {
-		// Auto de-reference one level deep.
 		targetTyp = e.env.Type(refTyp.Type)
 	}
 	if _, ok := targetTyp.Kind.(SliceType); ok {
 		if fieldAccess.Field.Name == "len" {
-			return e.env.builtins.IntType, TypeOK
+			return e.mustLookup("Int"), TypeOK
 		}
 		e.diag(fieldAccess.Field.Span, "unknown field on slice: %s", fieldAccess.Field.Name)
 		return InvalidTypeID, TypeFailed
 	}
-	// Try struct field access, then method lookup.
-	struct_, isStruct := targetTyp.Kind.(StructType)
-	if isStruct {
+	typeName := e.env.TypeDisplay(targetTyp.ID)
+	if struct_, ok := targetTyp.Kind.(StructType); ok {
 		for _, field := range struct_.Fields {
 			if field.Name == fieldAccess.Field.Name {
 				return field.Type, TypeOK
 			}
 		}
-		// No matching field — try method lookup: `TypeName.fieldName`.
-		methodName := struct_.Name + "." + fieldAccess.Field.Name
-		if binding, _, ok := e.scope.Lookup(methodName); ok {
-			e.env.namedFunRef[nodeID] = e.env.namedFunRef[binding.Decl]
-			return binding.TypeID, TypeOK
-		}
-		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", struct_.Name, fieldAccess.Field.Name)
-		return InvalidTypeID, TypeFailed
 	}
-	// Method lookup on built-in types (Int, Bool, etc.).
-	if builtin, ok := targetTyp.Kind.(BuiltInType); ok {
-		methodName := builtin.Name + "." + fieldAccess.Field.Name
-		if binding, _, ok := e.scope.Lookup(methodName); ok {
-			e.env.namedFunRef[nodeID] = e.env.namedFunRef[binding.Decl]
-			return binding.TypeID, TypeOK
-		}
+	if binding, _, ok := e.scope.Lookup(typeName + "." + fieldAccess.Field.Name); ok {
+		e.env.namedFunRef[nodeID] = e.env.namedFunRef[binding.Decl]
+		return binding.TypeID, TypeOK
 	}
-	targetSpan := e.Node(fieldAccess.Target).Span
-	e.diag(targetSpan, "cannot access field on non-struct type: %s", e.env.TypeDisplay(targetTypeID))
+	e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
 	return InvalidTypeID, TypeFailed
 }
 
@@ -993,10 +1015,17 @@ func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
 }
 
 func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module) (TypeID, TypeStatus) {
-	e.enterScope(nodeID)
-	defer e.leaveScope()
+	return e.checkModuleInner(nodeID, module, true)
+}
+
+func (e *Engine) checkModuleInner(
+	nodeID ast.NodeID, module ast.Module, createScope bool,
+) (TypeID, TypeStatus) {
+	if createScope {
+		e.enterScope(nodeID)
+		defer e.leaveScope()
+	}
 	e.forwardDeclare(module.Decls)
-	// Everything should have been forward declared, but for good measure we query again.
 	depFailed := false
 	for _, declNodeID := range module.Decls {
 		_, status := e.Query(declNodeID)
@@ -1007,7 +1036,7 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module) (TypeID, Type
 	if depFailed {
 		return InvalidTypeID, TypeDepFailed
 	}
-	return e.env.builtins.VoidType, TypeOK
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
@@ -1205,7 +1234,7 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType
 		return
 	}
 	// If the function returns void, we coerce the body to void.
-	if funType.Return != e.env.builtins.VoidType && !e.isAssignableTo(blockTypeID, funType.Return) {
+	if funType.Return != e.mustLookup("void") && !e.isAssignableTo(blockTypeID, funType.Return) {
 		// We want the span of the last expression for better diagnostics.
 		diagSpan := blockNode.Span
 		if len(block.Exprs) > 0 {
@@ -1274,7 +1303,7 @@ func (e *Engine) checkReturn(_ ast.NodeID, return_ ast.Return, span base.Span) (
 		)
 		return InvalidTypeID, TypeFailed
 	}
-	return e.env.builtins.VoidType, TypeOK
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) checkStructField(_ ast.NodeID, structField ast.StructField, _ base.Span) (TypeID, TypeStatus) {
@@ -1286,12 +1315,6 @@ func (e *Engine) checkStructField(_ ast.NodeID, structField ast.StructField, _ b
 }
 
 func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
-	if typeID, ok := e.env.builtins.Names[ident.Name]; ok {
-		if _, ok := e.env.Type(typeID).Kind.(FunType); ok {
-			e.env.namedFunRef[nodeID] = ident.Name
-		}
-		return typeID, TypeOK
-	}
 	binding, _, ok := e.scope.Lookup(ident.Name)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", ident.Name)
@@ -1300,28 +1323,26 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 	if cached, ok := e.env.reg.types[binding.TypeID]; ok && cached.Status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if _, ok := e.Node(binding.Decl).Kind.(ast.Fun); ok {
-		e.env.namedFunRef[nodeID] = e.env.namedFunRef[binding.Decl]
+	if binding.Decl != 0 {
+		if _, ok := e.Node(binding.Decl).Kind.(ast.Fun); ok {
+			e.env.namedFunRef[nodeID] = e.env.namedFunRef[binding.Decl]
+		}
 	}
 	return binding.TypeID, TypeOK
 }
 
 func (e *Engine) checkBool() (TypeID, TypeStatus) {
-	typeID, ok := e.env.builtins.Names["Bool"]
-	if !ok {
-		panic(base.Errorf("builtin type Bool not found"))
-	}
-	return typeID, TypeOK
+	return e.mustLookup("Bool"), TypeOK
 }
 
 func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
-	target := e.env.builtins.IntType
+	target := e.mustLookup("Int")
 	if typeHint != nil {
-		if _, ok := e.env.IntTypeInfo(*typeHint); ok {
+		if _, ok := e.env.Type(*typeHint).Kind.(IntType); ok {
 			target = *typeHint
 		}
 	}
-	info, _ := e.env.IntTypeInfo(target)
+	info := base.Cast[IntType](e.env.Type(target).Kind)
 	if intNode.Value.Cmp(info.Min) < 0 || intNode.Value.Cmp(info.Max) > 0 {
 		e.diag(span, "value %s out of range for %s (%s..%s)",
 			intNode.Value, info.Name, info.Min, info.Max)
@@ -1359,10 +1380,6 @@ func (e *Engine) checkRefType(
 func (e *Engine) checkSimpleType(
 	simpleType ast.SimpleType, span base.Span,
 ) (TypeID, TypeStatus) {
-	builtinTypeID, ok := e.env.builtins.Names[simpleType.Name.Name]
-	if ok {
-		return builtinTypeID, TypeOK
-	}
 	binding, _, ok := e.scope.Lookup(simpleType.Name.Name)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", simpleType.Name.Name)
@@ -1372,11 +1389,7 @@ func (e *Engine) checkSimpleType(
 }
 
 func (e *Engine) checkString() (TypeID, TypeStatus) {
-	typeID, ok := e.env.builtins.Names["Str"]
-	if !ok {
-		panic(base.Errorf("builtin type Str not found"))
-	}
-	return typeID, TypeOK
+	return e.mustLookup("Str"), TypeOK
 }
 
 func (e *Engine) checkVar(
@@ -1386,14 +1399,14 @@ func (e *Engine) checkVar(
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if exprTypeID == e.env.builtins.VoidType {
+	if exprTypeID == e.mustLookup("void") {
 		e.diag(span, "cannot assign void to a variable")
 		return InvalidTypeID, TypeFailed
 	}
 	if !e.bind(varNode.Name.Name, varNode.Mut, nodeID, exprTypeID, varNode.Name.Span) {
 		return InvalidTypeID, TypeFailed
 	}
-	return e.env.builtins.VoidType, TypeOK
+	return e.mustLookup("void"), TypeOK
 }
 
 func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
@@ -1408,18 +1421,17 @@ func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
 // All integer types are safe (any bit pattern is valid), but Bool (must be 0 or 1), Str,
 // references, slices, and allocators are not. Structs are safe only if all their fields are safe.
 func (e *Engine) isSafeUninitialized(typeID TypeID) bool {
-	if e.isIntType(typeID) {
-		return true
-	}
 	typ := e.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
+	case IntType:
+		return true
 	case StructType:
 		for _, field := range kind.Fields {
 			if !e.isSafeUninitialized(field.Type) {
 				return false
 			}
 		}
-		return true
+		return len(kind.Fields) > 0
 	case ArrayType:
 		return e.isSafeUninitialized(kind.Elem)
 	default:

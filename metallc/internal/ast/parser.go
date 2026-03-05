@@ -19,7 +19,7 @@ type Parser struct {
 	pos         int
 }
 
-func NewParser(tokens []token.Token) *Parser {
+func NewParser(tokens []token.Token, firstNodeID NodeID) *Parser {
 	// Strip comments and whitespace tokens.
 	stripped := []token.Token{}
 	for _, t := range tokens {
@@ -29,7 +29,7 @@ func NewParser(tokens []token.Token) *Parser {
 			stripped = append(stripped, t)
 		}
 	}
-	return &Parser{NewAST(), base.Diagnostics{}, stripped, 0}
+	return &Parser{NewAST(firstNodeID), base.Diagnostics{}, stripped, 0}
 }
 
 func (p *Parser) ParseModule() (NodeID, bool) {

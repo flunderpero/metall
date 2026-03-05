@@ -15,10 +15,10 @@ lint:
 
 # We never want to commit anything with a "fixme" comment.
 lint-fixme:
-    ! git --no-pager grep -i -n --untracked "fixme" -- :^.golangci.yaml :^.spell :^justfile
+    ! git --no-pager grep -i -n --untracked "fixme" -- :^.golangci.yaml :^.spell :^justfile :^AGENTS.md
 
 lint-no-excluded-tests:
-    ! git --no-pager grep -i -n --untracked "!only" -- :^justfile
+    ! git --no-pager grep -i -n --untracked "!only" -- :^justfile :^AGENTS.md
 
 fmt:
     go tool golangci-lint fmt ./metallc/...

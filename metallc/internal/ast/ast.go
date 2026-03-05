@@ -302,12 +302,29 @@ func (Deref) isKind() {}
 
 type AST struct {
 	nodes     map[NodeID]*Node
+	firstID   NodeID
 	nextID_   NodeID
 	onNewNode func(*Node)
 }
 
-func NewAST() *AST {
-	return &AST{nextID_: 1, nodes: make(map[NodeID]*Node), onNewNode: nil}
+func NewAST(firstNodeID NodeID) *AST {
+	return &AST{firstID: firstNodeID, nextID_: firstNodeID, nodes: make(map[NodeID]*Node), onNewNode: nil}
+}
+
+func (a *AST) Merge(other *AST) error {
+	if other.firstID >= a.firstID && other.firstID < a.nextID_ {
+		return base.Errorf("cannot merge: other firstID %d overlaps with [%d, %d)", other.firstID, a.firstID, a.nextID_)
+	}
+	if a.firstID >= other.firstID && a.firstID < other.nextID_ {
+		return base.Errorf("cannot merge: firstID %d overlaps with [%d, %d)", a.firstID, other.firstID, other.nextID_)
+	}
+	for id, node := range other.nodes {
+		if _, ok := a.nodes[id]; ok {
+			return base.Errorf("cannot merge: duplicate node id %d", id)
+		}
+		a.nodes[id] = node
+	}
+	return nil
 }
 
 func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {

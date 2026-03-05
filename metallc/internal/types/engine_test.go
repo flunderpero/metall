@@ -14,15 +14,13 @@ import (
 )
 
 func TestTypeCheckAndLifetimeOK(t *testing.T) {
-	// TypeIDs for builtin types are stable, so we can do this.
-	span := base.NewSpan(base.NewSource("builtin", "", false, []rune{}), 0, 0)
-	void := &Type{1, 0, span, BuiltInType{"void"}}
-	Bool := &Type{2, 0, span, BuiltInType{"Bool"}}
-	Int := &Type{7, 0, span, BuiltInType{"Int"}}
-	U8 := &Type{8, 0, span, BuiltInType{"U8"}}
-	Str := &Type{13, 0, span, StructType{
+	void := &Type{1, 0, base.Span{}, VoidType{}}
+	Bool := &Type{3, 0, base.Span{}, BoolType{}}
+	Int := &Type{7, 0, base.Span{}, lookupIntType("Int")}
+	U8 := &Type{8, 0, base.Span{}, lookupIntType("U8")}
+	Str := &Type{12, 0, base.Span{}, StructType{
 		Name:   "Str",
-		Fields: []StructField{{Name: "data", Type: TypeID(12), Mut: false}},
+		Fields: []StructField{{Name: "data", Type: TypeID(17), Mut: false}},
 	}}
 
 	tests := []struct {
@@ -113,15 +111,17 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.Node(id).Kind)
-				fooID := e.env.TypeOfNode(block.Exprs[0]).ID
-				barID := e.env.TypeOfNode(block.Exprs[1]).ID
+				fooTyp := e.env.TypeOfNode(block.Exprs[0])
+				barTyp := e.env.TypeOfNode(block.Exprs[1])
 				applyFT := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[2]).Kind)
-				f, g := applyFT.Params[0], applyFT.Params[1]
-				assert.Equal(f, g)
+				fTyp := e.env.Type(applyFT.Params[0])
+				gTyp := e.env.Type(applyFT.Params[1])
+				assert.Equal(fTyp, gTyp)
 				h := base.Cast[FunType](e.env.Type(applyFT.Params[2]).Kind)
-				assert.Equal(f, h.Params[0])
-				assert.Equal(fooID, barID)
-				assert.Equal(fooID, f)
+				hParamTyp := e.env.Type(h.Params[0])
+				assert.Equal(fTyp, hParamTyp)
+				assert.Equal(fooTyp, barTyp)
+				assert.Equal(fooTyp, fTyp)
 			},
 		},
 		{"named fun assignable to fun-type", `
@@ -151,7 +151,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				funID := block.Exprs[0]
 				typ, ok := e.env.TypeOfNode(funID).Kind.(FunType)
 				assert.Equal(true, ok, e.env.TypeOfNode(funID).ID)
-				assert.Equal("struct Foo(one Str)", e.env.TypeDisplay(typ.Params[0]))
+				paramTyp := e.env.Type(typ.Params[0])
+				foo := base.Cast[StructType](paramTyp.Kind)
+				assert.Equal("Foo", foo.Name)
+				assert.Equal(1, len(foo.Fields))
+				assert.Equal("one", foo.Fields[0].Name)
+				assert.Equal(Str.ID, foo.Fields[0].Type)
 			},
 		},
 		{
@@ -168,7 +173,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				got := e.env.TypeOfNode(id)
 				ref, ok := got.Kind.(RefType)
 				assert.Equal(true, ok)
-				assert.Equal("struct Foo(one Str)", e.env.TypeDisplay(ref.Type))
+				inner := e.env.Type(ref.Type)
+				foo := base.Cast[StructType](inner.Kind)
+				assert.Equal("Foo", foo.Name)
+				assert.Equal(1, len(foo.Fields))
+				assert.Equal("one", foo.Fields[0].Name)
+				assert.Equal(Str.ID, foo.Fields[0].Type)
 			},
 		},
 		{"field read access", `{ struct Foo { one Str } let x = Foo("hello") x.one }`, Str, nil},
@@ -302,9 +312,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
 				assert.Equal(false, ref.Mut)
-				_, ok = e.env.Type(ref.Type).Kind.(StructType)
-				assert.Equal(true, ok)
-				assert.Equal("&struct Foo(one Str)", e.env.TypeDisplay(e.env.TypeOfNode(lastExpr).ID))
+				foo := base.Cast[StructType](e.env.Type(ref.Type).Kind)
+				assert.Equal("Foo", foo.Name)
+				assert.Equal(1, len(foo.Fields))
+				assert.Equal("one", foo.Fields[0].Name)
+				assert.Equal(Str.ID, foo.Fields[0].Type)
 			},
 		},
 		{"pass alloc to fun", `{ fun foo(@myalloc Arena) void {} let @myalloc = Arena() foo(@myalloc) }`, void, nil},
@@ -317,9 +329,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
 				assert.Equal(true, ref.Mut)
-				_, ok = e.env.Type(ref.Type).Kind.(StructType)
-				assert.Equal(true, ok)
-				assert.Equal("&mut struct Bar(one Str)", e.env.TypeDisplay(e.env.TypeOfNode(lastExpr).ID))
+				bar := base.Cast[StructType](e.env.Type(ref.Type).Kind)
+				assert.Equal("Bar", bar.Name)
+				assert.Equal(1, len(bar.Fields))
+				assert.Equal("one", bar.Fields[0].Name)
+				assert.Equal(Str.ID, bar.Fields[0].Type)
 			},
 		},
 		{
@@ -365,8 +379,9 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				// The array literal in the body should have the same type as param 0.
 				block, ok := e.Node(funNode.Block).Kind.(ast.Block)
 				assert.Equal(true, ok)
-				literalTypeID := e.env.TypeOfNode(block.Exprs[0]).ID
-				assert.Equal(fun.Params[0], literalTypeID)
+				literalTyp := e.env.TypeOfNode(block.Exprs[0])
+				paramTyp := e.env.Type(fun.Params[0])
+				assert.Equal(paramTyp, literalTyp)
 			},
 		},
 		{
@@ -685,11 +700,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := ast.NewParser(tokens)
+			parser := ast.NewParser(tokens, 1)
 			exprID, parseOK := parser.ParseExpr(0)
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK, "ParseExpr returned false")
-			e := NewEngine(parser.AST)
+			preludeAST, preludeModuleID := ast.PreludeAST()
+			e := NewEngine(parser.AST, preludeAST, preludeModuleID)
 			// e.Debug = base.NewStdoutDebug("engine")
 			e.Query(exprID)
 			assert.Equal(0, len(e.Diagnostics), "diagnostics:\n%s", e.Diagnostics)
@@ -699,6 +715,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				e.env.IterTypes(zeroIDAndSpan)
 				assert.Equal(tt.want, got)
 			} else {
+				e.env.IterTypes(zeroIDAndSpan)
 				assert.NotNil(tt.check, "`tt.check` cannot be nil if `tt.want` is already nil")
 			}
 			if tt.check != nil {
@@ -710,8 +727,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				a.Check(exprID)
 				assert.Equal(0, len(a.Diagnostics), "lifetime check failed: %s", a.Diagnostics)
 			}
-			// Make sure every node has a scope.
+			// Make sure every user node has a scope.
 			parser.Iter(func(nodeID ast.NodeID) bool {
+				if nodeID >= ast.PreludeFirstID {
+					return true
+				}
 				_, ok := e.env.ScopeGraph.scopeByNodeID[nodeID]
 				assert.Equal(true, ok, "no scope for %s", e.AST.Debug(nodeID, false, 0))
 				return true
@@ -1054,7 +1074,7 @@ func TestTypeCheckErr(t *testing.T) {
 				`                               ^^^^^^`,
 		}},
 		{"new array ref uninitialized", `{ struct Foo{one Int} let @a = Arena() new(@a, [5]&Foo()) }`, []string{
-			"test.met:1:48: &struct Foo(one Int) is not safe to leave uninitialized, provide a default value\n" +
+			"test.met:1:48: &Foo is not safe to leave uninitialized, provide a default value\n" +
 				`    { struct Foo{one Int} let @a = Arena() new(@a, [5]&Foo()) }` + "\n" +
 				`                                                   ^^^^^^^`,
 		}},
@@ -1062,7 +1082,7 @@ func TestTypeCheckErr(t *testing.T) {
 			"new array struct with ref field uninitialized",
 			`{ struct Foo{one &Int} let @a = Arena() new(@a, [5]Foo()) }`,
 			[]string{
-				"test.met:1:49: struct Foo(one &Int) is not safe to leave uninitialized, provide a default value\n" +
+				"test.met:1:49: Foo is not safe to leave uninitialized, provide a default value\n" +
 					`    { struct Foo{one &Int} let @a = Arena() new(@a, [5]Foo()) }` + "\n" +
 					`                                                    ^^^^^^`,
 			},
@@ -1073,7 +1093,7 @@ func TestTypeCheckErr(t *testing.T) {
 				`                                ^^^^^^`,
 		}},
 		{"make slice ref uninitialized", `{ struct Foo{one Int} let @a = Arena() make(@a, []&Foo(3)) }`, []string{
-			"test.met:1:49: &struct Foo(one Int) is not safe to leave uninitialized, provide a default value\n" +
+			"test.met:1:49: &Foo is not safe to leave uninitialized, provide a default value\n" +
 				`    { struct Foo{one Int} let @a = Arena() make(@a, []&Foo(3)) }` + "\n" +
 				`                                                    ^^^^^^`,
 		}},
@@ -1093,7 +1113,7 @@ func TestTypeCheckErr(t *testing.T) {
 				"              ^^^^^",
 		}},
 
-		// Type constructor errors — see TestIntegerTypes for comprehensive coverage.
+		// Type constructor errors — see TestIntTypes for comprehensive coverage.
 		{"U8 out of range positive", `U8(256)`, []string{
 			"test.met:1:4: value 256 out of range for U8 (0..255)\n" +
 				"    U8(256)\n" +
@@ -1157,7 +1177,7 @@ func TestTypeCheckErr(t *testing.T) {
                 y.get()
             }`,
 			[]string{
-				"test.met:7:17: type mismatch at receiver: expected struct Foo(one Int), got &struct Foo(one Int)\n" +
+				"test.met:7:17: type mismatch at receiver: expected Foo, got &Foo\n" +
 					strings.Trim(`
                     let y = &x
                     y.get()
@@ -1183,7 +1203,7 @@ func TestTypeCheckErr(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := ast.NewParser(tokens)
+			parser := ast.NewParser(tokens, 1)
 			var nodeID ast.NodeID
 			if strings.HasSuffix(name, "(module)") {
 				nodeID, _ = parser.ParseModule()
@@ -1191,7 +1211,8 @@ func TestTypeCheckErr(t *testing.T) {
 				nodeID, _ = parser.ParseExpr(0)
 			}
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
-			e := NewEngine(parser.AST)
+			preludeAST, preludeModuleID := ast.PreludeAST()
+			e := NewEngine(parser.AST, preludeAST, preludeModuleID)
 			e.Query(nodeID)
 			for i, want := range tt.want {
 				if i >= len(e.Diagnostics) {
@@ -1293,12 +1314,13 @@ func TestScopes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := ast.NewParser(tokens)
+			parser := ast.NewParser(tokens, 1)
 			exprID, parseOK := parser.ParseExpr(0)
 			assert.Equal(true, parseOK, "ParseExpr returned false")
 			assert.Equal(0, len(parser.Diagnostics), "parse errors: %s", parser.Diagnostics)
 
-			e := NewEngine(parser.AST)
+			preludeAST, preludeModuleID := ast.PreludeAST()
+			e := NewEngine(parser.AST, preludeAST, preludeModuleID)
 			e.Query(exprID)
 			assert.Equal(0, len(e.Diagnostics), "type errors: %s", e.Diagnostics)
 
@@ -1319,6 +1341,9 @@ func collectScopes(e *Engine, a *ast.AST) string {
 	seen := map[ScopeID]bool{}
 	var scopes []*Scope
 	a.Iter(func(nodeID ast.NodeID) bool {
+		if nodeID >= ast.PreludeFirstID {
+			return true
+		}
 		scope := e.env.ScopeGraph.NodeScope(nodeID)
 		if !seen[scope.ID] {
 			seen[scope.ID] = true
@@ -1334,24 +1359,55 @@ func collectScopes(e *Engine, a *ast.AST) string {
 			}
 		}
 	}
+	// Map real scope IDs to sequential letters for stable test output.
+	letterMap := map[ScopeID]string{}
+	for i, scope := range scopes {
+		letterMap[scope.ID] = scopeLetter(ScopeID(i))
+	}
 	var lines []string
 	for _, scope := range scopes {
 		if scope.Parent != nil {
-			lines = append(lines, fmt.Sprintf("%s:%s", scopeLetter(scope.ID), scopeLetter(scope.Parent.ID)))
+			parentLetter, ok := letterMap[scope.Parent.ID]
+			if !ok {
+				parentLetter = scopeLetter(scope.Parent.ID)
+			}
+			lines = append(lines, fmt.Sprintf("%s:%s", letterMap[scope.ID], parentLetter))
 		} else {
-			lines = append(lines, fmt.Sprintf("%s:-", scopeLetter(scope.ID)))
+			lines = append(lines, fmt.Sprintf("%s:-", letterMap[scope.ID]))
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
 func collectNodes(e *Engine, a *ast.AST) string {
+	// Build scope letter map: collect all user scopes and assign sequential letters.
+	seenScopes := map[ScopeID]bool{}
+	var sortedScopes []ScopeID
 	var nodeIDs []ast.NodeID
 	a.Iter(func(nodeID ast.NodeID) bool {
+		if nodeID >= ast.PreludeFirstID {
+			return true
+		}
 		nodeIDs = append(nodeIDs, nodeID)
+		scope := e.env.ScopeGraph.NodeScope(nodeID)
+		if !seenScopes[scope.ID] {
+			seenScopes[scope.ID] = true
+			sortedScopes = append(sortedScopes, scope.ID)
+		}
 		return true
 	})
-	// Sort by ID for stable output.
+	for i := range sortedScopes {
+		for j := i + 1; j < len(sortedScopes); j++ {
+			if sortedScopes[i] > sortedScopes[j] {
+				sortedScopes[i], sortedScopes[j] = sortedScopes[j], sortedScopes[i]
+			}
+		}
+	}
+	letterMap := map[ScopeID]string{}
+	for i, id := range sortedScopes {
+		letterMap[id] = scopeLetter(ScopeID(i))
+	}
+	// Sort nodes by ID for stable output.
 	for i := range nodeIDs {
 		for j := i + 1; j < len(nodeIDs); j++ {
 			if nodeIDs[i] > nodeIDs[j] {
@@ -1362,7 +1418,7 @@ func collectNodes(e *Engine, a *ast.AST) string {
 	lines := make([]string, 0, len(nodeIDs))
 	for _, nodeID := range nodeIDs {
 		scope := e.env.ScopeGraph.NodeScope(nodeID)
-		lines = append(lines, fmt.Sprintf("%s:%s", a.Debug(nodeID, false, 0), scopeLetter(scope.ID)))
+		lines = append(lines, fmt.Sprintf("%s:%s", a.Debug(nodeID, false, 0), letterMap[scope.ID]))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1382,18 +1438,24 @@ func parseSnapshot(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-func zeroIDAndSpan(typ *Type, status TypeStatus) bool {
-	if _, ok := typ.Kind.(BuiltInType); ok {
-		return true
-	}
-	// Keep Str's ID stable — it's a built-in struct with a well-known TypeID.
-	if s, ok := typ.Kind.(StructType); ok && s.Name == "Str" {
+func zeroIDAndSpan(typ *Type, _ TypeStatus) bool {
+	isPrelude := typ.NodeID >= ast.PreludeFirstID
+	typ.NodeID = ast.NodeID(0)
+	typ.Span = base.Span{}
+	if isPrelude {
 		return true
 	}
 	typ.ID = TypeID(0)
-	typ.NodeID = ast.NodeID(0)
-	typ.Span = base.Span{}
 	return true
+}
+
+func lookupIntType(name string) IntType {
+	for _, t := range intTypes {
+		if t.Name == name {
+			return t
+		}
+	}
+	panic("unknown integer type: " + name)
 }
 
 func ref_t(typ *Type) *Type {
@@ -1438,7 +1500,7 @@ func fun_t(types ...*Type) *Type {
 	return &Type{Kind: FunType{paramIDs, ret.ID}}
 }
 
-func TestIntegerTypes(t *testing.T) {
+func TestIntTypes(t *testing.T) {
 	assert := base.NewAssert(t)
 	allIntTypes := []string{"I8", "I16", "I32", "Int", "U8", "U16", "U32", "U64"}
 
@@ -1446,24 +1508,24 @@ func TestIntegerTypes(t *testing.T) {
 		t.Helper()
 		source := base.NewSource("test.met", "test", true, []rune(src))
 		tokens := token.Lex(source)
-		parser := ast.NewParser(tokens)
+		parser := ast.NewParser(tokens, 1)
 		exprID, parseOK := parser.ParseExpr(0)
 		if !parseOK || len(parser.Diagnostics) > 0 {
 			t.Fatalf("parse failed: %s", parser.Diagnostics)
 		}
-		e := NewEngine(parser.AST)
+		preludeAST, preludeModuleID := ast.PreludeAST()
+		e := NewEngine(parser.AST, preludeAST, preludeModuleID)
 		e.Query(exprID)
 		return e
 	}
 
 	t.Run("literal range", func(t *testing.T) {
 		// Each type constructor accepts 0 and its max literal value.
-		for _, name := range allIntTypes {
-			info := intTypeInfos[name]
+		for _, info := range intTypes {
 			for _, val := range []string{"0", info.Max.String()} {
-				src := fmt.Sprintf("%s(%s)", name, val)
+				src := fmt.Sprintf("%s(%s)", info.Name, val)
 				e := typeCheck(t, src)
-				assert.Equal(0, len(e.Diagnostics), "%s(%s) should be valid: %s", name, val, e.Diagnostics)
+				assert.Equal(0, len(e.Diagnostics), "%s(%s) should be valid: %s", info.Name, val, e.Diagnostics)
 			}
 		}
 		// NOTE: Signed min values (e.g. I8(-128)) can't be expressed as
@@ -1472,13 +1534,12 @@ func TestIntegerTypes(t *testing.T) {
 	})
 
 	t.Run("literal out of range", func(t *testing.T) {
-		for _, name := range allIntTypes {
-			info := intTypeInfos[name]
-			aboveMax := new(big.Int).Add(info.Max, big.NewInt(1))
-			src := fmt.Sprintf("%s(%s)", name, aboveMax)
+		for _, typ := range intTypes {
+			aboveMax := new(big.Int).Add(typ.Max, big.NewInt(1))
+			src := fmt.Sprintf("%s(%s)", typ.Name, aboveMax)
 			e := typeCheck(t, src)
-			assert.Equal(1, len(e.Diagnostics), "%s(%s) diagnostics: %s", name, aboveMax, e.Diagnostics)
-			assert.Contains(e.Diagnostics[0].Display(), "out of range", "%s(%s)", name, aboveMax)
+			assert.Equal(1, len(e.Diagnostics), "%s(%s) diagnostics: %s", typ.Name, aboveMax, e.Diagnostics)
+			assert.Contains(e.Diagnostics[0].Display(), "out of range", "%s(%s)", typ.Name, aboveMax)
 		}
 	})
 

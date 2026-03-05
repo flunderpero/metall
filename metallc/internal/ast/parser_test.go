@@ -416,7 +416,7 @@ func TestParseOK(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := NewParser(tokens)
+			parser := NewParser(tokens, 1)
 			var gotRoot NodeID
 			var ok bool
 			switch tt.kind {
@@ -511,7 +511,7 @@ func TestParseErr(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := NewParser(tokens)
+			parser := NewParser(tokens, 1)
 			_, parseOK := parser.ParseExpr(0)
 			diagnostics := parser.Diagnostics
 			for i, want := range tt.want {
@@ -534,7 +534,7 @@ type TestAST struct {
 }
 
 func NewTestAST() *TestAST {
-	return &TestAST{AST: NewAST(), span: base.Span{}}
+	return &TestAST{AST: NewAST(1), span: base.Span{}}
 }
 
 func (a *TestAST) file(decls ...NodeID) NodeID {

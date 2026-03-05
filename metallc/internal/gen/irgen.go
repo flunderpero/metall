@@ -234,7 +234,7 @@ func (g *IRFunGen) genIndex(id ast.NodeID, index ast.Index) {
 
 func (g *IRFunGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
 	targetTyp := g.env.TypeOfNode(lit.Target)
-	if _, ok := targetTyp.Kind.(types.BuiltInType); ok {
+	if _, ok := targetTyp.Kind.(types.IntType); ok {
 		g.genTypeConstructor(id, lit)
 		return
 	}
@@ -248,24 +248,22 @@ func (g *IRFunGen) genTypeConstructor(id ast.NodeID, lit ast.StructLiteral) {
 	g.Gen(lit.Target)
 	g.Gen(lit.Args[0])
 	argReg := g.lookupCode(lit.Args[0])
-	targetInfo, _ := g.env.IntTypeInfo(g.env.TypeOfNode(lit.Target).ID)
-	argInfo, _ := g.env.IntTypeInfo(g.env.TypeOfNode(lit.Args[0]).ID)
-	if targetInfo.Bits == argInfo.Bits {
+	targetTyp := base.Cast[types.IntType](g.env.TypeOfNode(lit.Target).Kind)
+	argTyp := base.Cast[types.IntType](g.env.TypeOfNode(lit.Args[0]).Kind)
+	if targetTyp.Bits == argTyp.Bits {
 		g.setCode(id, argReg)
 		return
 	}
 	reg := g.reg()
-	srcIR := fmt.Sprintf("i%d", argInfo.Bits)
-	dstIR := fmt.Sprintf("i%d", targetInfo.Bits)
-	if targetInfo.Bits > argInfo.Bits {
-		// Widening: choose sign-extend or zero-extend based on the SOURCE signedness.
+	srcIR := fmt.Sprintf("i%d", argTyp.Bits)
+	dstIR := fmt.Sprintf("i%d", targetTyp.Bits)
+	if targetTyp.Bits > argTyp.Bits {
 		op := "zext"
-		if argInfo.Signed {
+		if argTyp.Signed {
 			op = "sext"
 		}
 		g.write("%[1]s = %[2]s %[3]s %[4]s to %[5]s", reg, op, srcIR, argReg, dstIR)
 	} else {
-		// Narrowing: truncate.
 		g.write("%[1]s = trunc %[2]s %[3]s to %[4]s", reg, srcIR, argReg, dstIR)
 	}
 	g.setCode(id, reg)
@@ -349,11 +347,9 @@ func (g *IRFunGen) genInitializeMemory(
 	countReg string,
 	compileTimeCount *int64,
 ) {
-	typ := g.env.Type(elemTypeID)
-	switch typ.Kind.(type) {
-	case types.StructType, types.SliceType:
+	if g.isAggregateType(elemTypeID) {
 		g.genInitializeMemoryStruct(dataReg, irElemType, valReg, countReg)
-	default:
+	} else {
 		g.genInitializeMemoryScalar(dataReg, irElemType, valReg, countReg, compileTimeCount)
 	}
 }
@@ -801,13 +797,13 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 		g.write("%s = mul %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
 	case ast.BinaryOpDiv:
 		divOp := "sdiv"
-		if info, _ := g.env.IntTypeInfo(g.env.TypeOfNode(binary.LHS).ID); !info.Signed {
+		if intTyp, ok := g.env.TypeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
 			divOp = "udiv"
 		}
 		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, divOp, lhs, rhs)
 	case ast.BinaryOpMod:
 		remOp := "srem"
-		if info, _ := g.env.IntTypeInfo(g.env.TypeOfNode(binary.LHS).ID); !info.Signed {
+		if intTyp, ok := g.env.TypeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
 			remOp = "urem"
 		}
 		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, remOp, lhs, rhs)
@@ -816,10 +812,8 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	case ast.BinaryOpNeq:
 		g.write("%s = icmp ne %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
-		signed := true
-		if info, ok := g.env.IntTypeInfo(g.env.TypeOfNode(binary.LHS).ID); ok {
-			signed = info.Signed
-		}
+		intTyp := base.Cast[types.IntType](g.env.TypeOfNode(binary.LHS).Kind)
+		signed := intTyp.Signed
 		cmpOp := map[ast.BinaryOp]string{
 			ast.BinaryOpLt:  "slt",
 			ast.BinaryOpLte: "sle",
@@ -858,7 +852,7 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 	retType := g.env.Type(fun.Return)
 	isRetAggregate := g.isAggregateType(fun.Return)
 	var resReg string
-	if builtin, ok := retType.Kind.(types.BuiltInType); ok && builtin.Name == "void" {
+	if _, ok := retType.Kind.(types.VoidType); ok {
 		g.setCode(id, "void")
 	} else if isRetAggregate {
 		resReg = g.reg()
@@ -1024,8 +1018,11 @@ func (g *IRFunGen) irType(typeID types.TypeID) string {
 }
 
 func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
-	switch g.env.Type(typeID).Kind.(type) {
-	case types.StructType, types.ArrayType, types.SliceType:
+	typ := g.env.Type(typeID)
+	switch typ.Kind.(type) {
+	case types.StructType:
+		return true
+	case types.ArrayType, types.SliceType:
 		return true
 	default:
 		return false
@@ -1035,25 +1032,19 @@ func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
 func irType(env *types.TypeEnv, typeID types.TypeID) string {
 	typ := env.Type(typeID)
 	switch kind := typ.Kind.(type) {
-	case types.BuiltInType:
-		if info, ok := env.IntTypeInfo(typeID); ok {
-			return fmt.Sprintf("i%d", info.Bits)
-		}
-		switch kind.Name {
-		case "Bool":
-			return "i1"
-		case "void":
-			return "void"
-		default:
-			panic(base.Errorf("unknown builtin type: %s", kind.Name))
-		}
-	case types.RefType, types.AllocatorType:
-		return "ptr"
+	case types.IntType:
+		return fmt.Sprintf("i%d", kind.Bits)
+	case types.BoolType:
+		return "i1"
+	case types.VoidType:
+		return "void"
 	case types.StructType:
 		if kind.Name == "Str" {
 			return "%Str"
 		}
 		return "%" + typeID.String()
+	case types.RefType, types.AllocatorType:
+		return "ptr"
 	case types.ArrayType:
 		return fmt.Sprintf("[%d x %s]", kind.Len, irType(env, kind.Elem))
 	case types.SliceType:
