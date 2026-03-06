@@ -67,7 +67,7 @@ func (t TaintSet) Without(exclude TaintSet) TaintSet {
 //   - `let b = &a` --> b's PointsTo = [{scope(a), "a"}]
 //   - `let c = if cond { &a } else { &b }` --> c's PointsTo = [{..,"a"}, {..,"b"}]
 type Alias struct {
-	ScopeID ScopeID
+	ScopeID ast.ScopeID
 	Name    string
 }
 
@@ -112,13 +112,13 @@ type VarTaint struct {
 // lexical scope. The ScopeTaint is added to LocalTaints and used as the
 // StorageTaint for variables declared in this scope.
 type ScopeState struct {
-	ID          ScopeID
+	ID          ast.ScopeID
 	Vars        map[string]*VarTaint
 	LocalTaints TaintSet // Taints born in this scope (just ScopeTaint).
 	ScopeTaint  TaintID  // The taint that represents this scope's storage lifetime.
 }
 
-func newScopeState(id ScopeID, scopeTaint TaintID) *ScopeState {
+func newScopeState(id ast.ScopeID, scopeTaint TaintID) *ScopeState {
 	return &ScopeState{
 		ID:          id,
 		Vars:        map[string]*VarTaint{},
@@ -155,22 +155,24 @@ type LifetimeCheck struct {
 	Debug       base.Debug
 	ast         *ast.AST
 	env         *TypeEnv
+	scopeGraph  *ast.ScopeGraph
 	nextTaintID TaintID
-	scopes      map[ScopeID]*ScopeState
+	scopes      map[ast.ScopeID]*ScopeState
 	flows       map[ast.NodeID]Flow
 	funEffects  map[TypeID]*FunEffects
 	taintOrigin map[TaintID]ast.NodeID // Which &x created this taint (for diagnostics).
 	status      map[ast.NodeID]analysisStatus
 }
 
-func NewLifetimeAnalyzer(a *ast.AST, env *TypeEnv) *LifetimeCheck {
+func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv) *LifetimeCheck {
 	return &LifetimeCheck{
 		Diagnostics: nil,
 		Debug:       base.NilDebug{},
 		ast:         a,
+		scopeGraph:  g,
 		env:         env,
 		nextTaintID: 1,
-		scopes:      map[ScopeID]*ScopeState{},
+		scopes:      map[ast.ScopeID]*ScopeState{},
 		flows:       map[ast.NodeID]Flow{},
 		funEffects:  map[TypeID]*FunEffects{},
 		taintOrigin: map[TaintID]ast.NodeID{},
@@ -428,11 +430,11 @@ func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 // CreateScope=true blocks. For-loops are always void, so there is no
 // result flow to check.
 func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
-	outerScope := a.env.NodeScope(nodeID)
+	outerScope := a.scopeGraph.NodeScope(nodeID)
 	ss := a.scopeState(forNode.Body)
 	parentState := a.scopeByID(outerScope.ID)
 
-	innerScope := a.env.NodeScope(forNode.Body)
+	innerScope := a.scopeGraph.NodeScope(forNode.Body)
 	for name, vt := range ss.Vars {
 		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
 			continue
@@ -625,7 +627,7 @@ func (a *LifetimeCheck) analyzeDerefAssign(nodeID ast.NodeID, deref ast.Deref, r
 //	    }
 //	}
 func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
-	outerScope := a.env.NodeScope(nodeID)
+	outerScope := a.scopeGraph.NodeScope(nodeID)
 	defer a.Debug.Print(0, "analyzeBlock: scope=%s node=%s", outerScope.ID, a.ast.Debug(nodeID, false, 0)).Indent()()
 	if len(block.Exprs) == 0 {
 		return
@@ -644,7 +646,7 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 
 	// Propagate mutations to outer-scope variables back to the parent.
 	// Skip variables declared in this block's own scope (they shadow, not mutate).
-	innerScope := a.env.NodeScope(lastExpr)
+	innerScope := a.scopeGraph.NodeScope(lastExpr)
 	for name, vt := range ss.Vars {
 		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
 			continue
@@ -683,7 +685,7 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	// Build reverse maps: taint --> param index, alias --> param index.
 	paramTaintToIdx := map[TaintID]int{}
 	paramAliasToIdx := map[Alias]int{}
-	paramScope := a.env.NodeScope(fun.Block)
+	paramScope := a.scopeGraph.NodeScope(fun.Block)
 	for i, paramNodeID := range fun.Params {
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
 		paramAliasToIdx[Alias{paramScope.ID, name}] = i
@@ -759,10 +761,10 @@ func (a *LifetimeCheck) derefFlow(targets AliasSet) Flow {
 }
 
 func (a *LifetimeCheck) scopeState(nodeID ast.NodeID) *ScopeState {
-	return a.scopeByID(a.env.NodeScope(nodeID).ID)
+	return a.scopeByID(a.scopeGraph.NodeScope(nodeID).ID)
 }
 
-func (a *LifetimeCheck) scopeByID(id ScopeID) *ScopeState {
+func (a *LifetimeCheck) scopeByID(id ast.ScopeID) *ScopeState {
 	if ss, ok := a.scopes[id]; ok {
 		return ss
 	}
@@ -777,7 +779,7 @@ func (a *LifetimeCheck) lookupVar(nodeID ast.NodeID, name string) *VarTaint {
 }
 
 func (a *LifetimeCheck) lookupVarWithScope(nodeID ast.NodeID, name string) (*VarTaint, *ScopeState) {
-	scope := a.env.NodeScope(nodeID)
+	scope := a.scopeGraph.NodeScope(nodeID)
 	for scope != nil {
 		if ss, ok := a.scopes[scope.ID]; ok {
 			if vt, ok := ss.Vars[name]; ok {

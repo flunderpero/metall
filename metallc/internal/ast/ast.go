@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+	"maps"
 	"math/big"
 	"strings"
 
@@ -301,6 +302,7 @@ type Deref struct {
 func (Deref) isKind() {}
 
 type AST struct {
+	Roots     []NodeID
 	nodes     map[NodeID]*Node
 	firstID   NodeID
 	nextID_   NodeID
@@ -308,23 +310,34 @@ type AST struct {
 }
 
 func NewAST(firstNodeID NodeID) *AST {
-	return &AST{firstID: firstNodeID, nextID_: firstNodeID, nodes: make(map[NodeID]*Node), onNewNode: nil}
+	return &AST{firstID: firstNodeID, nextID_: firstNodeID, nodes: make(map[NodeID]*Node), Roots: nil, onNewNode: nil}
 }
 
-func (a *AST) Merge(other *AST) error {
+func (a *AST) Merge(other *AST) (*AST, error) {
 	if other.firstID >= a.firstID && other.firstID < a.nextID_ {
-		return base.Errorf("cannot merge: other firstID %d overlaps with [%d, %d)", other.firstID, a.firstID, a.nextID_)
+		return nil, base.Errorf(
+			"cannot merge: other firstID %d overlaps with [%d, %d)",
+			other.firstID,
+			a.firstID,
+			a.nextID_,
+		)
 	}
 	if a.firstID >= other.firstID && a.firstID < other.nextID_ {
-		return base.Errorf("cannot merge: firstID %d overlaps with [%d, %d)", a.firstID, other.firstID, other.nextID_)
+		return nil, base.Errorf(
+			"cannot merge: firstID %d overlaps with [%d, %d)",
+			a.firstID,
+			other.firstID,
+			other.nextID_,
+		)
 	}
-	for id, node := range other.nodes {
-		if _, ok := a.nodes[id]; ok {
-			return base.Errorf("cannot merge: duplicate node id %d", id)
-		}
-		a.nodes[id] = node
-	}
-	return nil
+	nodes := make(map[NodeID]*Node, len(a.nodes)+len(other.nodes))
+	maps.Copy(nodes, a.nodes)
+	maps.Copy(nodes, other.nodes)
+	roots := append([]NodeID{}, a.Roots...)
+	roots = append(roots, other.Roots...)
+	firstID := min(a.firstID, other.firstID)
+	nextID_ := max(a.nextID_, other.nextID_)
+	return &AST{firstID: firstID, nextID_: nextID_, nodes: nodes, Roots: roots, onNewNode: nil}, nil
 }
 
 func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
@@ -384,7 +397,9 @@ func (a *AST) NewUnary(op UnaryOp, expr NodeID, span base.Span) NodeID {
 }
 
 func (a *AST) NewModule(fileName string, name string, main bool, decls []NodeID, span base.Span) NodeID {
-	return a.node(Module{FileName: fileName, Name: name, Main: main, Decls: decls}, span)
+	node := a.node(Module{FileName: fileName, Name: name, Main: main, Decls: decls}, span)
+	a.Roots = append(a.Roots, node)
+	return node
 }
 
 func (a *AST) NewFun(

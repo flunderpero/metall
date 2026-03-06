@@ -8,19 +8,26 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
-type typeRegistry struct {
+type Binding struct {
+	*ast.Binding
+	TypeID TypeID
+	Mut    bool
+}
+
+type TypeRegistry struct {
 	types      map[TypeID]*cachedType
 	refTypes   map[refTypeCacheKey]*cachedType
 	arrayTypes map[arrayTypeCacheKey]*cachedType
 	sliceTypes map[TypeID]*cachedType
 	funTypes   map[string]*cachedType
+	bindings   map[ast.BindingID]*Binding
 	nextID     TypeID
 }
 
 type TypeEnv struct {
 	ast                *ast.AST
-	ScopeGraph         *ScopeGraph
-	reg                *typeRegistry
+	scopeGraph         *ast.ScopeGraph
+	reg                *TypeRegistry
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
 	methodCallReceiver map[ast.NodeID]ast.NodeID
@@ -28,26 +35,23 @@ type TypeEnv struct {
 	structs            []ast.NodeID
 }
 
-func NewRootEnv(a *ast.AST) *TypeEnv {
+func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 	return &TypeEnv{ //nolint:exhaustruct
 		ast:        a,
-		ScopeGraph: NewScopeGraph(),
-		reg: &typeRegistry{
+		scopeGraph: g,
+		reg: &TypeRegistry{
 			types:      map[TypeID]*cachedType{},
 			refTypes:   map[refTypeCacheKey]*cachedType{},
 			arrayTypes: map[arrayTypeCacheKey]*cachedType{},
 			sliceTypes: map[TypeID]*cachedType{},
 			funTypes:   map[string]*cachedType{},
+			bindings:   map[ast.BindingID]*Binding{},
 			nextID:     1,
 		},
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 	}
-}
-
-func (e *TypeEnv) AST() *ast.AST {
-	return e.ast
 }
 
 func (e *TypeEnv) TypeOfNode(id ast.NodeID) *Type {
@@ -81,10 +85,6 @@ func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
 func (e *TypeEnv) MethodCallReceiver(callID ast.NodeID) (ast.NodeID, bool) {
 	target, ok := e.methodCallReceiver[callID]
 	return target, ok
-}
-
-func (e *TypeEnv) NodeScope(id ast.NodeID) *Scope {
-	return e.ScopeGraph.NodeScope(id)
 }
 
 func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
@@ -133,6 +133,19 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
 	}
+}
+
+func (e *TypeEnv) Lookup(nodeID ast.NodeID, name string) (*Binding, bool) {
+	scope := e.scopeGraph.NodeScope(nodeID)
+	scopeBinding, _, ok := scope.Lookup(name)
+	if !ok {
+		return nil, false
+	}
+	b, ok := e.reg.bindings[scopeBinding.ID]
+	if !ok {
+		return nil, false
+	}
+	return b, true
 }
 
 func (e *TypeEnv) IterTypes(f func(*Type, TypeStatus) bool) {
@@ -196,6 +209,13 @@ func (e *TypeEnv) buildSliceType(elemTypeID TypeID, nodeID ast.NodeID, span base
 	typeID := e.newType(SliceType{Elem: elemTypeID}, nodeID, span, TypeOK)
 	e.reg.sliceTypes[elemTypeID] = e.reg.types[typeID]
 	return typeID
+}
+
+func (e *TypeEnv) bind(decl ast.NodeID, name string, mut bool, typeID TypeID) bool {
+	scope := e.scopeGraph.NodeScope(decl)
+	b, isNew := scope.Bind(name, decl)
+	e.reg.bindings[b.ID] = &Binding{b, typeID, mut}
+	return isNew
 }
 
 func funTypeCacheKey(typ FunType) string {

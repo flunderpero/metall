@@ -55,7 +55,7 @@ type IRGen struct {
 	CodeWriter
 	ast          *ast.AST
 	module       ast.Module
-	symbols      map[types.ScopeID]map[string]Symbol
+	symbols      map[ast.BindingID]Symbol
 	regCounter   int
 	constCounter int
 	strConsts    map[string]int
@@ -79,7 +79,7 @@ func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 		CodeWriter:   *NewCodeWriter(),
 		ast:          a,
 		module:       module,
-		symbols:      map[types.ScopeID]map[string]Symbol{},
+		symbols:      map[ast.BindingID]Symbol{},
 		regCounter:   1,
 		constCounter: 0,
 		strConsts:    map[string]int{},
@@ -1090,27 +1090,20 @@ func (g *IRFunGen) lookupCode(astID ast.NodeID) string {
 }
 
 func (g *IRFunGen) setSymbol(nodeID ast.NodeID, name string, reg string, typ string) {
-	scope := g.env.NodeScope(nodeID)
-	if g.symbols[scope.ID] == nil {
-		g.symbols[scope.ID] = map[string]Symbol{}
+	b, ok := g.env.Lookup(nodeID, name)
+	if !ok {
+		panic(base.Errorf("symbol %s not found in node %s", name, nodeID))
 	}
-	if _, ok := g.symbols[scope.ID][name]; ok {
-		panic(base.Errorf("symbol %s already defined in scope %d", name, scope.ID))
-	}
-	g.symbols[scope.ID][name] = Symbol{Name: name, Reg: reg, Type: typ}
+	g.symbols[b.ID] = Symbol{Name: name, Reg: reg, Type: typ}
 }
 
 func (g *IRFunGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
-	scope := g.env.NodeScope(nodeID)
-	for scope != nil {
-		if symbols, ok := g.symbols[scope.ID]; ok {
-			if symbol, ok := symbols[name]; ok {
-				return symbol, true
-			}
-		}
-		scope = scope.Parent
+	b, ok := g.env.Lookup(nodeID, name)
+	if !ok {
+		return Symbol{}, false
 	}
-	return Symbol{}, false
+	symbol, ok := g.symbols[b.ID]
+	return symbol, ok
 }
 
 func (g *IRFunGen) loadValue(ptrReg string, typeID types.TypeID) string {
