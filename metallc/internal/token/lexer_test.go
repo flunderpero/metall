@@ -24,11 +24,11 @@ func TestLexer(t *testing.T) {
 		{"curly", "{}", []want{{LCurly, "", "1:1"}, {RCurly, "", "1:2"}}},
 		{"brackets", "[]", []want{{LBracket, "", "1:1"}, {RBracket, "", "1:2"}}},
 		{
-			"lbracket vs lbracketindex",
+			"lbracket vs lbracketimmediate",
 			"a[ [ ([ [[ {[",
 			[]want{
 				{Ident, "a", "1:1"},
-				{LBracketIndex, "", "1:2"},
+				{LBracketImmediate, "", "1:2"},
 				{Whitespace, " ", "1:3"},
 
 				{LBracket, "", "1:4"},
@@ -51,6 +51,28 @@ func TestLexer(t *testing.T) {
 		{"slash", "/", []want{{Slash, "", "1:1"}}},
 		{"percent", "%", []want{{Percent, "", "1:1"}}},
 		{"lt", "<", []want{{Lt, "", "1:1"}}},
+		{
+			"lt vs ltimmediate",
+			"a< < )< a<= <=",
+			[]want{
+				{Ident, "a", "1:1"},
+				{LtImmediate, "", "1:2"},
+				{Whitespace, " ", "1:3"},
+
+				{Lt, "", "1:4"},
+				{Whitespace, " ", "1:5"},
+
+				{RParen, "", "1:6"},
+				{Lt, "", "1:7"},
+				{Whitespace, " ", "1:8"},
+
+				{Ident, "a", "1:9"},
+				{Lte, "", "1:10-1:11"},
+				{Whitespace, " ", "1:12"},
+
+				{Lte, "", "1:13-1:14"},
+			},
+		},
 		{"lte", "<=", []want{{Lte, "", "1:1-1:2"}}},
 		{"gt", ">", []want{{Gt, "", "1:1"}}},
 		{"gte", ">=", []want{{Gte, "", "1:1-1:2"}}},

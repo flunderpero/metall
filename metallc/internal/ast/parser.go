@@ -509,7 +509,7 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
 			}
 			expr = p.NewCall(callee, args, span.Combine(p.span()))
 			continue
-		case token.LBracketIndex:
+		case token.LBracketImmediate:
 			p.next()
 			index, ok := p.ParseExpr(minPrecedence)
 			if !ok {
@@ -864,7 +864,7 @@ func (p *Parser) ParseArrayOrSliceType() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	if t.Kind != token.LBracket && t.Kind != token.LBracketIndex {
+	if t.Kind != token.LBracket && t.Kind != token.LBracketImmediate {
 		p.diagnostic(t.Span, "unexpected token: expected [, got %s", t.Kind)
 		return ParseFailed, false
 	}
@@ -905,7 +905,7 @@ func (p *Parser) ParseType() (NodeID, bool) {
 	case token.TypeIdent:
 		p.next()
 		return p.NewSimpleType(Name{t.Value, span}, span), true
-	case token.LBracket, token.LBracketIndex:
+	case token.LBracket, token.LBracketImmediate:
 		return p.ParseArrayOrSliceType()
 	case token.Amp:
 		p.next()

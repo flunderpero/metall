@@ -32,11 +32,12 @@ const (
 	If
 	InvalidAllocatorIdent
 	LBracket
-	LBracketIndex
+	LBracketImmediate
 	LCurly
 	Let
 	LParen
 	Lt
+	LtImmediate
 	Lte
 	Make
 	Minus
@@ -86,11 +87,12 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	If:                    "<if>",
 	InvalidAllocatorIdent: "<invalid allocation identifier>",
 	LBracket:              "[",
-	LBracketIndex:         "<[index>",
+	LBracketImmediate:     "<[immediate>",
 	LCurly:                "{",
 	Let:                   "<let>",
 	LParen:                "(",
 	Lt:                    "<",
+	LtImmediate:           "<<immediate>",
 	Lte:                   "<=",
 	Make:                  "<make>",
 	Minus:                 "-",
@@ -220,10 +222,15 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		return Token{Kind: kind, Value: "", Span: span}
 	case c == '<':
-		kind := Lt
 		if idx < len(source.Content) && source.Content[idx] == '=' {
-			kind = Lte
-			span = base.NewSpan(source, start, idx)
+			return Token{Kind: Lte, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		kind := Lt
+		if idx > 1 {
+			prev := source.Content[idx-2]
+			if unicode.IsLetter(prev) || prev == '_' {
+				kind = LtImmediate
+			}
 		}
 		return Token{Kind: kind, Value: "", Span: span}
 	case c == '>':
@@ -264,7 +271,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		if idx > 1 {
 			prev := source.Content[idx-2]
 			if unicode.IsLetter(prev) || prev == '_' || prev == ')' || prev == ']' {
-				kind = LBracketIndex
+				kind = LBracketImmediate
 			}
 		}
 		return Token{Kind: kind, Value: "", Span: span}
