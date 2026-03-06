@@ -104,6 +104,8 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 			if nodeID < PreludeFirstID {
 				defer enterScope(nodeID, kind.Name)()
 			}
+		case Struct:
+			defer enterScope(nodeID, kind.Name.Name)()
 		case Fun:
 			defer enterScope(nodeID, kind.Name.Name)()
 		}

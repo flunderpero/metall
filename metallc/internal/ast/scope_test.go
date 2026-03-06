@@ -89,6 +89,33 @@ func TestScopes(t *testing.T) {
 				n5:Fun(name="foo",params=[],returnType=n1:SimpleType,block=n4:Block):a
 			`,
 		},
+		{
+			name: "struct creates scope",
+			src:  `struct Foo { one Int }`,
+			scopes: `
+				a:-
+				b:a
+			`,
+			nodes: `
+				n1:SimpleType(name="Int"):b
+				n2:StructField(name="one",mut=false,type=n1:SimpleType):b
+				n3:Struct(name="Foo",fields=[n2:StructField]):a
+			`,
+		},
+		{
+			name: "generic struct scope",
+			src:  `struct Foo<T> { value T }`,
+			scopes: `
+				a:-
+				b:a
+			`,
+			nodes: `
+				n1:SimpleType(name="T"):b
+				n2:SimpleType(name="T"):b
+				n3:StructField(name="value",mut=false,type=n2:SimpleType):b
+				n4:Struct(name="Foo",typeParams=[n1:SimpleType],fields=[n3:StructField]):a
+			`,
+		},
 	}
 
 	assert := base.NewAssert(t)

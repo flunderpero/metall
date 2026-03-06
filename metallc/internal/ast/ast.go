@@ -26,7 +26,8 @@ type Kind interface {
 }
 
 type Ident struct {
-	Name string
+	Name     string
+	TypeArgs []NodeID
 }
 
 func (Ident) isKind() {}
@@ -46,7 +47,8 @@ type Module struct {
 func (Module) isKind() {}
 
 type SimpleType struct {
-	Name Name
+	Name     Name
+	TypeArgs []NodeID
 }
 
 func (SimpleType) isKind() {}
@@ -120,6 +122,7 @@ func (FunParam) isKind() {}
 
 type Fun struct {
 	Name       Name
+	TypeParams []NodeID
 	Params     []NodeID
 	ReturnType NodeID
 	Block      NodeID
@@ -136,8 +139,9 @@ type StructField struct {
 func (StructField) isKind() {}
 
 type Struct struct {
-	Name   Name
-	Fields []NodeID
+	Name       Name
+	TypeParams []NodeID
+	Fields     []NodeID
 }
 
 func (Struct) isKind() {}
@@ -403,17 +407,17 @@ func (a *AST) NewModule(fileName string, name string, main bool, decls []NodeID,
 }
 
 func (a *AST) NewFun(
-	name Name, params []NodeID, returnType NodeID, block NodeID, span base.Span,
+	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID, span base.Span,
 ) NodeID {
-	return a.node(Fun{Name: name, Params: params, ReturnType: returnType, Block: block}, span)
+	return a.node(Fun{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType, Block: block}, span)
 }
 
 func (a *AST) NewFunParam(name Name, type_ NodeID, span base.Span) NodeID {
 	return a.node(FunParam{Name: name, Type: type_}, span)
 }
 
-func (a *AST) NewStruct(name Name, fields []NodeID, span base.Span) NodeID {
-	return a.node(Struct{Name: name, Fields: fields}, span)
+func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, span base.Span) NodeID {
+	return a.node(Struct{Name: name, TypeParams: typeParams, Fields: fields}, span)
 }
 
 func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) NodeID {
@@ -424,8 +428,8 @@ func (a *AST) NewFieldAccess(target NodeID, field Name, span base.Span) NodeID {
 	return a.node(FieldAccess{Target: target, Field: field}, span)
 }
 
-func (a *AST) NewIdent(name string, span base.Span) NodeID {
-	return a.node(Ident{Name: name}, span)
+func (a *AST) NewIdent(name string, typeArgs []NodeID, span base.Span) NodeID {
+	return a.node(Ident{Name: name, TypeArgs: typeArgs}, span)
 }
 
 func (a *AST) NewAllocatorVar(name Name, allocator Name, args []NodeID, span base.Span) NodeID {
@@ -444,8 +448,8 @@ func (a *AST) NewString(value string, span base.Span) NodeID {
 	return a.node(String{Value: value}, span)
 }
 
-func (a *AST) NewSimpleType(name Name, span base.Span) NodeID {
-	return a.node(SimpleType{Name: name}, span)
+func (a *AST) NewSimpleType(name Name, typeArgs []NodeID, span base.Span) NodeID {
+	return a.node(SimpleType{Name: name, TypeArgs: typeArgs}, span)
 }
 
 func (a *AST) NewArrayType(elemType NodeID, len_ int64, span base.Span) NodeID {
@@ -542,6 +546,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		f(kind.Body)
 	case Fun:
+		for i := range len(kind.TypeParams) {
+			f(kind.TypeParams[i])
+		}
 		for i := range len(kind.Params) {
 			f(kind.Params[i])
 		}
@@ -555,6 +562,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case FunParam:
 		f(kind.Type)
 	case Struct:
+		for i := range len(kind.TypeParams) {
+			f(kind.TypeParams[i])
+		}
 		for i := range len(kind.Fields) {
 			f(kind.Fields[i])
 		}
@@ -603,12 +613,18 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Break:
 	case Continue:
 	case Ident:
+		for i := range len(kind.TypeArgs) {
+			f(kind.TypeArgs[i])
+		}
 	case Int:
 	case Bool:
 	case String:
 	case Var:
 		f(kind.Expr)
 	case SimpleType:
+		for i := range len(kind.TypeArgs) {
+			f(kind.TypeArgs[i])
+		}
 	case Ref:
 	case RefType:
 		f(kind.Type)
@@ -747,10 +763,16 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	case Fun:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if !children {
+			if len(kind.TypeParams) > 0 {
+				addAttr("typeParams", nodeIDList(kind.TypeParams))
+			}
 			addAttr("params", nodeIDList(kind.Params))
 			addAttr("returnType", nodeIDKind(kind.ReturnType))
 			addAttr("block", nodeIDKind(kind.Block))
 		} else {
+			if len(kind.TypeParams) > 0 {
+				addChild("typeParams", kind.TypeParams...)
+			}
 			addChild("params", kind.Params...)
 			addChild("returnType", kind.ReturnType)
 			addChild("block", kind.Block)
@@ -773,8 +795,14 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	case Struct:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if !children {
+			if len(kind.TypeParams) > 0 {
+				addAttr("typeParams", nodeIDList(kind.TypeParams))
+			}
 			addAttr("fields", nodeIDList(kind.Fields))
 		} else {
+			if len(kind.TypeParams) > 0 {
+				addChild("typeParams", kind.TypeParams...)
+			}
 			addChild("fields", kind.Fields...)
 		}
 	case StructField:
@@ -820,6 +848,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		}
 	case Ident:
 		addAttr("name", fmt.Sprintf("%q", kind.Name))
+		if len(kind.TypeArgs) > 0 {
+			if !children {
+				addAttr("typeArgs", nodeIDList(kind.TypeArgs))
+			} else {
+				addChild("typeArgs", kind.TypeArgs...)
+			}
+		}
 	case Int:
 		addAttr("value", kind.Value.String())
 	case Bool:
@@ -894,6 +929,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		}
 	case SimpleType:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if len(kind.TypeArgs) > 0 {
+			if !children {
+				addAttr("typeArgs", nodeIDList(kind.TypeArgs))
+			} else {
+				addChild("typeArgs", kind.TypeArgs...)
+			}
+		}
 	case Ref:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		addAttr("mut", fmt.Sprintf("%t", kind.Mut))

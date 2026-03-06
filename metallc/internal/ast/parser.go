@@ -135,6 +135,10 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 		}
 		name = Name{t.Value, t.Span}
 	}
+	typeParams, ok := p.parseTypeParams()
+	if !ok {
+		return ParseFailed, false
+	}
 	params, ok := p.ParseFunParams()
 	if !ok {
 		return ParseFailed, false
@@ -147,7 +151,7 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFun(name, params, returnType, block, span.Combine(p.span())), true
+	return p.NewFun(name, typeParams, params, returnType, block, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseReturn() (NodeID, bool) {
@@ -212,6 +216,10 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
+	typeParams, ok := p.parseTypeParams()
+	if !ok {
+		return ParseFailed, false
+	}
 	if _, ok := p.expect(token.LCurly); !ok {
 		return ParseFailed, false
 	}
@@ -222,7 +230,7 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if _, ok := p.expect(token.RCurly); !ok {
 		return ParseFailed, false
 	}
-	return p.NewStruct(name, fields, t.Span.Combine(p.span())), true
+	return p.NewStruct(name, typeParams, fields, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseStructLiteral() (NodeID, bool) {
@@ -230,7 +238,11 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	ident := p.NewIdent(struct_.Value, struct_.Span)
+	typeArgs, ok := p.parseTypeArgs()
+	if !ok {
+		return ParseFailed, false
+	}
+	ident := p.NewIdent(struct_.Value, typeArgs, struct_.Span.Combine(p.span()))
 	args, ok := p.ParseCallArgs()
 	if !ok {
 		return ParseFailed, false
@@ -598,7 +610,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		expr = p.NewContinue(t.Span)
 	case token.Void:
 		p.next()
-		expr = p.NewIdent("void", t.Span)
+		expr = p.NewIdent("void", nil, t.Span)
 	case token.Return:
 		return_, ok := p.ParseReturn()
 		if !ok {
@@ -622,7 +634,11 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 				return ParseFailed, false
 			}
 			qualifiedName := t.Value + "." + methodToken.Value
-			expr = p.NewIdent(qualifiedName, t.Span.Combine(methodToken.Span))
+			typeArgs, ok := p.parseTypeArgs()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = p.NewIdent(qualifiedName, typeArgs, t.Span.Combine(p.span()))
 		} else {
 			struct_literal, ok := p.ParseStructLiteral()
 			if !ok {
@@ -734,7 +750,7 @@ func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
 		var expr NodeID
 		if t.Kind == token.AllocatorIdent {
 			p.next()
-			expr = p.NewIdent(t.Value, t.Span)
+			expr = p.NewIdent(t.Value, nil, t.Span)
 		} else {
 			expr, ok = p.ParseExpr(0)
 			if !ok {
@@ -904,7 +920,11 @@ func (p *Parser) ParseType() (NodeID, bool) {
 	switch t.Kind { //nolint:exhaustive
 	case token.TypeIdent:
 		p.next()
-		return p.NewSimpleType(Name{t.Value, span}, span), true
+		typeArgs, ok := p.parseTypeArgs()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewSimpleType(Name{t.Value, span}, typeArgs, span.Combine(p.span())), true
 	case token.LBracket, token.LBracketImmediate:
 		return p.ParseArrayOrSliceType()
 	case token.Amp:
@@ -985,7 +1005,11 @@ func (p *Parser) ParseIdent() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewIdent(t.Value, t.Span.Combine(p.span())), true
+	typeArgs, ok := p.parseTypeArgs()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewIdent(t.Value, typeArgs, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseNumber() (NodeID, bool) {
@@ -1007,10 +1031,10 @@ func (p *Parser) parseAllocator() (NodeID, bool) {
 	switch t.Kind { //nolint:exhaustive
 	case token.AllocatorIdent:
 		p.next()
-		alloc = p.NewIdent(t.Value, t.Span)
+		alloc = p.NewIdent(t.Value, nil, t.Span)
 	case token.Ident:
 		p.next()
-		alloc = p.NewIdent(t.Value, t.Span)
+		alloc = p.NewIdent(t.Value, nil, t.Span)
 		for {
 			if _, ok := p.expect(token.Dot); !ok {
 				return ParseFailed, false
@@ -1065,6 +1089,70 @@ func (p *Parser) parseBlock(createScope bool) (NodeID, bool) {
 	return p.NewBlock(exprs, createScope, span.Combine(p.span())), true
 }
 
+func (p *Parser) parseTypeParams() ([]NodeID, bool) {
+	if t, ok := p.mayPeek(); !ok || t.Kind != token.LtImmediate {
+		return nil, true
+	}
+	open, _ := p.next()
+	params := []NodeID{}
+	for {
+		t, ok := p.mustPeek()
+		if !ok {
+			return nil, false
+		}
+		if t.Kind == token.Gt {
+			if len(params) == 0 {
+				p.diagnostic(open.Span.Combine(t.Span), "empty type parameter list")
+				return nil, false
+			}
+			p.next()
+			return params, true
+		}
+		if len(params) > 0 {
+			if _, ok := p.expect(token.Comma); !ok {
+				return nil, false
+			}
+		}
+		t, ok = p.expect(token.TypeIdent)
+		if !ok {
+			return nil, false
+		}
+		params = append(params, p.NewSimpleType(Name{t.Value, t.Span}, nil, t.Span))
+	}
+}
+
+func (p *Parser) parseTypeArgs() ([]NodeID, bool) {
+	if t, ok := p.mayPeek(); !ok || t.Kind != token.LtImmediate {
+		return nil, true
+	}
+	open, _ := p.next()
+	args := []NodeID{}
+	for {
+		t, ok := p.mustPeek()
+		if !ok {
+			return nil, false
+		}
+		if t.Kind == token.Gt {
+			if len(args) == 0 {
+				p.diagnostic(open.Span.Combine(t.Span), "empty type argument list")
+				return nil, false
+			}
+			p.next()
+			return args, true
+		}
+		if len(args) > 0 {
+			if _, ok := p.expect(token.Comma); !ok {
+				return nil, false
+			}
+		}
+		typ, ok := p.ParseType()
+		if !ok {
+			return nil, false
+		}
+		args = append(args, typ)
+	}
+}
+
 func (p *Parser) parseFunReturnType() (NodeID, bool) {
 	t, ok := p.mustPeek()
 	if !ok {
@@ -1072,7 +1160,7 @@ func (p *Parser) parseFunReturnType() (NodeID, bool) {
 	}
 	if t.Kind == token.Void {
 		p.next()
-		return p.NewSimpleType(Name{"void", t.Span}, t.Span), true
+		return p.NewSimpleType(Name{"void", t.Span}, nil, t.Span), true
 	} else {
 		return p.ParseType()
 	}

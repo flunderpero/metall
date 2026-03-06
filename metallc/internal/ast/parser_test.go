@@ -377,6 +377,50 @@ func TestParseOK(t *testing.T) {
 			return a.continue_()
 		}},
 
+		{"generic struct", "expr", `struct Foo<T> { value T }`, func(a *TestAST) NodeID {
+			return a.generic_struct("Foo", []NodeID{a.typ("T")}, a.struct_field("value", a.typ("T")))
+		}},
+		{"generic struct two params", "expr", `struct Foo<A, B> { a A b B }`, func(a *TestAST) NodeID {
+			return a.generic_struct("Foo",
+				[]NodeID{a.typ("A"), a.typ("B")},
+				a.struct_field("a", a.typ("A")), a.struct_field("b", a.typ("B")),
+			)
+		}},
+		{"generic fun", "expr", `fun foo<T>(x T) T { x }`, func(a *TestAST) NodeID {
+			return a.generic_fun("foo",
+				[]NodeID{a.typ("T")},
+				a.fun_param("x", a.typ("T")),
+				a.typ("T"),
+				a.block_no_scope(a.ident("x")),
+			)
+		}},
+		{"type arg in type", "expr", `fun foo(x Foo<Int>) void {}`, func(a *TestAST) NodeID {
+			return a.fun("foo",
+				a.fun_param("x", a.typ_args("Foo", a.int_typ())),
+				a.void_typ(),
+				a.block_no_scope(),
+			)
+		}},
+		{"nested type args", "expr", `fun foo(x Foo<Bar<Int>, Baz<Str>>) void {}`, func(a *TestAST) NodeID {
+			return a.fun("foo",
+				a.fun_param("x", a.typ_args("Foo", a.typ_args("Bar", a.int_typ()), a.typ_args("Baz", a.str_typ()))),
+				a.void_typ(),
+				a.block_no_scope(),
+			)
+		}},
+		{"struct literal with type args", "expr", `Foo<Int>(42)`, func(a *TestAST) NodeID {
+			return a.struct_lit(a.ident_type_args("Foo", a.int_typ()), a.int_(42))
+		}},
+		{"struct literal nested type args", "expr", `Foo<Bar<Int>>(42)`, func(a *TestAST) NodeID {
+			return a.struct_lit(a.ident_type_args("Foo", a.typ_args("Bar", a.int_typ())), a.int_(42))
+		}},
+		{"call with type args", "expr", `foo<Int>(42)`, func(a *TestAST) NodeID {
+			return a.call(a.ident_type_args("foo", a.int_typ()), a.int_(42))
+		}},
+		{"call nested type args", "expr", `foo<Bar<Int>>(42)`, func(a *TestAST) NodeID {
+			return a.call(a.ident_type_args("foo", a.typ_args("Bar", a.int_typ())), a.int_(42))
+		}},
+
 		{
 			"namespaced fun", "expr", `fun Foo.bar(f Foo) Int { 123 }`,
 			func(a *TestAST) NodeID {
@@ -493,6 +537,36 @@ func TestParseErr(t *testing.T) {
 				"    fun Foo.() void {}\n" +
 				"            ^",
 		}},
+		{"nested type param in struct", `struct Foo<T<A>> {}`, []string{
+			"test.met:1:13: unexpected token: expected ,, got <<immediate>\n" +
+				"    struct Foo<T<A>> {}\n" +
+				"                ^",
+		}},
+		{"nested type param in fun", `fun foo<T<A>>() void {}`, []string{
+			"test.met:1:10: unexpected token: expected ,, got <<immediate>\n" +
+				"    fun foo<T<A>>() void {}\n" +
+				"             ^",
+		}},
+		{"empty type params in struct", `struct Foo<> {}`, []string{
+			"test.met:1:11: empty type parameter list\n" +
+				"    struct Foo<> {}\n" +
+				"              ^^",
+		}},
+		{"empty type params in fun", `fun foo<>() void {}`, []string{
+			"test.met:1:8: empty type parameter list\n" +
+				"    fun foo<>() void {}\n" +
+				"           ^^",
+		}},
+		{"empty type args in struct literal", `{ struct Foo<T> { value T } Foo<>(42) }`, []string{
+			"test.met:1:32: empty type argument list\n" +
+				"    { struct Foo<T> { value T } Foo<>(42) }\n" +
+				"                                   ^^",
+		}},
+		{"empty type args in type position", `struct Foo<T> { value Foo<> }`, []string{
+			"test.met:1:26: empty type argument list\n" +
+				"    struct Foo<T> { value Foo<> }\n" +
+				"                             ^^",
+		}},
 	}
 
 	hasOnly := false
@@ -549,7 +623,7 @@ func (a *TestAST) fun(name string, paramsReturnAndBlock ...NodeID) NodeID {
 	block := paramsReturnAndBlock[len(paramsReturnAndBlock)-1]
 	returnTyp := paramsReturnAndBlock[len(paramsReturnAndBlock)-2]
 	params := paramsReturnAndBlock[:len(paramsReturnAndBlock)-2]
-	return a.NewFun(Name{name, a.span}, params, returnTyp, block, a.span)
+	return a.NewFun(Name{name, a.span}, nil, params, returnTyp, block, a.span)
 }
 
 func (a *TestAST) struct_field(name string, typ NodeID) NodeID {
@@ -564,7 +638,21 @@ func (a *TestAST) struct_(name string, fields ...NodeID) NodeID {
 	if fields == nil {
 		fields = []NodeID{}
 	}
-	return a.NewStruct(Name{name, a.span}, fields, a.span)
+	return a.NewStruct(Name{name, a.span}, nil, fields, a.span)
+}
+
+func (a *TestAST) generic_struct(name string, typeParams []NodeID, fields ...NodeID) NodeID {
+	if fields == nil {
+		fields = []NodeID{}
+	}
+	return a.NewStruct(Name{name, a.span}, typeParams, fields, a.span)
+}
+
+func (a *TestAST) generic_fun(name string, typeParams []NodeID, paramsReturnAndBlock ...NodeID) NodeID {
+	block := paramsReturnAndBlock[len(paramsReturnAndBlock)-1]
+	returnTyp := paramsReturnAndBlock[len(paramsReturnAndBlock)-2]
+	params := paramsReturnAndBlock[:len(paramsReturnAndBlock)-2]
+	return a.NewFun(Name{name, a.span}, typeParams, params, returnTyp, block, a.span)
 }
 
 func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
@@ -645,15 +733,15 @@ func (a *TestAST) block_no_scope(exprs ...NodeID) NodeID {
 }
 
 func (a *TestAST) str_typ() NodeID {
-	return a.NewSimpleType(Name{"Str", a.span}, a.span)
+	return a.NewSimpleType(Name{"Str", a.span}, nil, a.span)
 }
 
 func (a *TestAST) int_typ() NodeID {
-	return a.NewSimpleType(Name{"Int", a.span}, a.span)
+	return a.NewSimpleType(Name{"Int", a.span}, nil, a.span)
 }
 
 func (a *TestAST) bool_typ() NodeID {
-	return a.NewSimpleType(Name{"Bool", a.span}, a.span)
+	return a.NewSimpleType(Name{"Bool", a.span}, nil, a.span)
 }
 
 func (a *TestAST) arr_typ(typ NodeID, len_ int) NodeID {
@@ -694,15 +782,23 @@ func (a *TestAST) index(base NodeID, index NodeID) NodeID {
 }
 
 func (a *TestAST) void_typ() NodeID {
-	return a.NewSimpleType(Name{"void", a.span}, a.span)
+	return a.NewSimpleType(Name{"void", a.span}, nil, a.span)
 }
 
 func (a *TestAST) typ(name string) NodeID {
-	return a.NewSimpleType(Name{name, a.span}, a.span)
+	return a.NewSimpleType(Name{name, a.span}, nil, a.span)
+}
+
+func (a *TestAST) typ_args(name string, args ...NodeID) NodeID {
+	return a.NewSimpleType(Name{name, a.span}, args, a.span)
+}
+
+func (a *TestAST) ident_type_args(name string, args ...NodeID) NodeID {
+	return a.NewIdent(name, args, a.span)
 }
 
 func (a *TestAST) ident(name string) NodeID {
-	return a.NewIdent(name, a.span)
+	return a.NewIdent(name, nil, a.span)
 }
 
 func (a *TestAST) allocator_var(name string, allocator string, args ...NodeID) NodeID {
