@@ -8,10 +8,55 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
+const mutableRefFlag = 1 << 62
+
 type Binding struct {
 	*ast.Binding
 	TypeID TypeID
 	Mut    bool
+}
+
+type TypeStatus int
+
+const (
+	TypeOK TypeStatus = iota + 1
+	TypeInProgress
+	TypeFailed
+	TypeDepFailed
+)
+
+func (s TypeStatus) Failed() bool {
+	return s == TypeFailed || s == TypeDepFailed
+}
+
+func (s TypeStatus) String() string {
+	switch s {
+	case TypeOK:
+		return "<ok>"
+	case TypeInProgress:
+		return "<in progress>"
+	case TypeFailed:
+		return "<failed>"
+	case TypeDepFailed:
+		return "<failed dependency>"
+	default:
+		panic(base.Errorf("unknown type status: %d", s))
+	}
+}
+
+type cachedType struct {
+	Type   *Type
+	Status TypeStatus
+}
+
+type refTypeCacheKey struct {
+	TypeID
+	Mut bool
+}
+
+type arrayTypeCacheKey struct {
+	Elem TypeID
+	Len  int64
 }
 
 type TypeRegistry struct {
@@ -20,7 +65,6 @@ type TypeRegistry struct {
 	arrayTypes map[arrayTypeCacheKey]*cachedType
 	sliceTypes map[TypeID]*cachedType
 	funTypes   map[string]*cachedType
-	bindings   map[ast.BindingID]*Binding
 	nextID     TypeID
 }
 
@@ -28,15 +72,14 @@ type TypeEnv struct {
 	ast                *ast.AST
 	scopeGraph         *ast.ScopeGraph
 	reg                *TypeRegistry
+	bindings           map[ast.BindingID]*Binding
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
 	methodCallReceiver map[ast.NodeID]ast.NodeID
-	funs               []ast.NodeID
-	structs            []ast.NodeID
 }
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
-	return &TypeEnv{ //nolint:exhaustruct
+	return &TypeEnv{
 		ast:        a,
 		scopeGraph: g,
 		reg: &TypeRegistry{
@@ -45,9 +88,9 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 			arrayTypes: map[arrayTypeCacheKey]*cachedType{},
 			sliceTypes: map[TypeID]*cachedType{},
 			funTypes:   map[string]*cachedType{},
-			bindings:   map[ast.BindingID]*Binding{},
 			nextID:     1,
 		},
+		bindings:           map[ast.BindingID]*Binding{},
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
@@ -141,7 +184,7 @@ func (e *TypeEnv) Lookup(nodeID ast.NodeID, name string) (*Binding, bool) {
 	if !ok {
 		return nil, false
 	}
-	b, ok := e.reg.bindings[scopeBinding.ID]
+	b, ok := e.bindings[scopeBinding.ID]
 	if !ok {
 		return nil, false
 	}
@@ -214,22 +257,50 @@ func (e *TypeEnv) buildSliceType(elemTypeID TypeID, nodeID ast.NodeID, span base
 func (e *TypeEnv) bind(decl ast.NodeID, name string, mut bool, typeID TypeID) bool {
 	scope := e.scopeGraph.NodeScope(decl)
 	b, isNew := scope.Bind(name, decl)
-	e.reg.bindings[b.ID] = &Binding{b, typeID, mut}
+	e.bindings[b.ID] = &Binding{b, typeID, mut}
 	return isNew
+}
+
+func (e *TypeEnv) cachedNodeType(nodeID ast.NodeID) (*cachedType, bool) {
+	cached, ok := e.nodes[nodeID]
+	return cached, ok
+}
+
+func (e *TypeEnv) setNodeType(nodeID ast.NodeID, cached *cachedType) {
+	e.nodes[nodeID] = cached
+}
+
+func (e *TypeEnv) cachedTypeInfo(typeID TypeID) (*cachedType, bool) {
+	cached, ok := e.reg.types[typeID]
+	return cached, ok
+}
+
+func (e *TypeEnv) cachedFunType(key string) (*cachedType, bool) {
+	cached, ok := e.reg.funTypes[key]
+	return cached, ok
+}
+
+func (e *TypeEnv) cacheFunType(key string, typeID TypeID) {
+	e.reg.funTypes[key] = e.reg.types[typeID]
+}
+
+func (e *TypeEnv) setNamedFunRef(nodeID ast.NodeID, name string) {
+	e.namedFunRef[nodeID] = name
+}
+
+func (e *TypeEnv) copyNamedFunRef(dst ast.NodeID, src ast.NodeID) {
+	e.namedFunRef[dst] = e.namedFunRef[src]
+}
+
+func (e *TypeEnv) isNamedFun(nodeID ast.NodeID) bool {
+	_, ok := e.namedFunRef[nodeID]
+	return ok
+}
+
+func (e *TypeEnv) setMethodCallReceiver(callID ast.NodeID, targetID ast.NodeID) {
+	e.methodCallReceiver[callID] = targetID
 }
 
 func funTypeCacheKey(typ FunType) string {
 	return fmt.Sprintf("fun:%v:%v", typ.Params, typ.Return)
-}
-
-type FunWork struct {
-	NodeID ast.NodeID
-	Name   string
-	IsMain bool
-	Env    *TypeEnv
-}
-
-type StructWork struct {
-	NodeID ast.NodeID
-	Env    *TypeEnv
 }
