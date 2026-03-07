@@ -358,6 +358,89 @@ func (e *TypeEnv) setMethodCallReceiver(callID ast.NodeID, targetID ast.NodeID) 
 	e.methodCallReceiver[callID] = targetID
 }
 
+func (e *TypeEnv) isAssignableTo(got TypeID, expected TypeID) bool {
+	if got == expected {
+		return true
+	}
+	// A &mut T is assignable to &T (coerce by masking off the mutable flag).
+	return got&mutableRefFlag != 0 && got&^mutableRefFlag == expected
+}
+
+func (e *TypeEnv) isIntType(typeID TypeID) bool {
+	_, ok := e.Type(typeID).Kind.(IntType)
+	return ok
+}
+
+func (e *TypeEnv) hasTypeParam(typeIDs []TypeID) bool {
+	for _, id := range typeIDs {
+		if _, ok := e.Type(id).Kind.(TypeParamType); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *TypeEnv) isSafeUninitialized(typeID TypeID) bool {
+	typ := e.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case IntType:
+		return true
+	case StructType:
+		for _, field := range kind.Fields {
+			if !e.isSafeUninitialized(field.Type) {
+				return false
+			}
+		}
+		return len(kind.Fields) > 0
+	case ArrayType:
+		return e.isSafeUninitialized(kind.Elem)
+	default:
+		return false
+	}
+}
+
+func (e *TypeEnv) substituteType(srcTypeID, searchTypeID, replaceTypeID TypeID) TypeID {
+	if srcTypeID == searchTypeID {
+		return replaceTypeID
+	}
+	if refTyp, ok := e.Type(srcTypeID).Kind.(RefType); ok {
+		inner := e.substituteType(refTyp.Type, searchTypeID, replaceTypeID)
+		if inner != refTyp.Type {
+			return e.buildRefType(0, inner, refTyp.Mut, base.Span{})
+		}
+	}
+	return srcTypeID
+}
+
+func (e *TypeEnv) substituteFunType(funType FunType, searchTypeID, replaceTypeID TypeID) FunType {
+	result := FunType{
+		Params: make([]TypeID, len(funType.Params)),
+		Return: e.substituteType(funType.Return, searchTypeID, replaceTypeID),
+	}
+	for i, p := range funType.Params {
+		result.Params[i] = e.substituteType(p, searchTypeID, replaceTypeID)
+	}
+	return result
+}
+
+func (e *TypeEnv) typeName(typ *Type) string {
+	switch kind := typ.Kind.(type) {
+	case StructType:
+		return kind.Name
+	case IntType:
+		return kind.Name
+	case BoolType:
+		return "Bool"
+	case TypeParamType:
+		if kind.Shape != nil {
+			return base.Cast[ShapeType](e.Type(*kind.Shape).Kind).DeclName
+		}
+		panic(base.Errorf("typeName: unconstrained type parameter"))
+	default:
+		panic(base.Errorf("typeName: unsupported type kind: %T", typ.Kind))
+	}
+}
+
 func funTypeCacheKey(typ FunType) string {
 	return fmt.Sprintf("fun:%v:%v", typ.Params, typ.Return)
 }
