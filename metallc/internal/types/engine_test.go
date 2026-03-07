@@ -891,6 +891,38 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}`,
 			Int, nil,
 		},
+
+		// Shapes.
+		{
+			"shape field access",
+			`{
+				shape HasPair { one Str two Int }
+				struct Pair { one Str two Int }
+				fun first<T HasPair>(t T) Str { t.one }
+				first<Pair>(Pair("hello", 42))
+			}`,
+			Str, nil,
+		},
+		{
+			"shape satisfied with extra fields and different order",
+			`{
+				shape HasPair { one Str two Int }
+				struct Big { extra Bool two Int name Str one Str }
+				fun first<T HasPair>(t T) Str { t.one }
+				first<Big>(Big(true, 42, "world", "hello"))
+			}`,
+			Str, nil,
+		},
+		{
+			"shape forward declared after struct",
+			`{
+				struct Pair { one Str two Int }
+				shape HasPair { one Str two Int }
+				fun first<T HasPair>(t T) Str { t.one }
+				first<Pair>(Pair("hello", 42))
+			}`,
+			Str, nil,
+		},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -1546,6 +1578,44 @@ func TestTypeCheckErr(t *testing.T) {
 				"test.met:1:88: type mismatch at receiver: expected Foo.t18.t12, got Foo.t18.t7\n" +
 					"    { struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo<V>, a U) U { a } let x = Foo<Int>(1) x.bar<Str>(\"hi\") }\n" +
 					"                                                                                           ^",
+			},
+		},
+
+		// Shape errors.
+		{
+			"shape not satisfied missing field",
+			`{ shape HasPair { one Str two Int } struct Foo { one Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello")) }`,
+			[]string{
+				"test.met:1:100: type Foo does not satisfy shape HasPair: missing field two\n" +
+					`    { shape HasPair { one Str two Int } struct Foo { one Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello")) }` + "\n" +
+					"                                                                                                       ^^^^^^^^^^",
+			},
+		},
+		{
+			"shape not satisfied wrong field type",
+			`{ shape HasPair { one Str two Int } struct Foo { one Str two Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello", "world")) }`,
+			[]string{
+				"test.met:1:108: type Foo does not satisfy shape HasPair: field two has type Str, expected Int\n" +
+					`    { shape HasPair { one Str two Int } struct Foo { one Str two Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello", "world")) }` + "\n" +
+					"                                                                                                               ^^^^^^^^^^",
+			},
+		},
+		{
+			"shape not satisfied field not mut",
+			`{ shape S { mut one Int } struct Foo { one Int } fun foo<T S>(t T) Int { t.one } foo<Foo>(Foo(1)) }`,
+			[]string{
+				"test.met:1:82: type Foo does not satisfy shape S: field one must be mut\n" +
+					"    { shape S { mut one Int } struct Foo { one Int } fun foo<T S>(t T) Int { t.one } foo<Foo>(Foo(1)) }\n" +
+					"                                                                                     ^^^^^^^^",
+			},
+		},
+		{
+			"shape not satisfied ref vs mut ref",
+			`{ shape S { one &mut Int } struct Foo { one &Int } fun foo<T S>(t T) Int { 1 } let x = 1 foo<Foo>(Foo(&x)) }`,
+			[]string{
+				"test.met:1:90: type Foo does not satisfy shape S: field one has type &Int, expected &mut Int\n" +
+					"    { shape S { one &mut Int } struct Foo { one &Int } fun foo<T S>(t T) Int { 1 } let x = 1 foo<Foo>(Foo(&x)) }\n" +
+					"                                                                                             ^^^^^^^^",
 			},
 		},
 	}

@@ -150,8 +150,11 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	case ast.AllocatorVar:
 		g.genAllocatorVar(id, kind)
 	case ast.Struct,
+		ast.Shape,
 		ast.FunParam,
 		ast.Fun,
+		ast.FunDecl,
+		ast.TypeParam,
 		ast.SimpleType,
 		ast.RefType,
 		ast.ArrayType,

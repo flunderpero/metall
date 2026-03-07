@@ -107,7 +107,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkBreak(node.Span)
 	case ast.Continue:
 		typeID, status = e.checkContinue(node.Span)
-	case ast.Fun, ast.Struct:
+	case ast.Fun, ast.Struct, ast.Shape:
 		cachedType, ok := e.env.cachedNodeType(nodeID)
 		if !ok {
 			e.forwardDeclare([]ast.NodeID{nodeID})
@@ -765,6 +765,45 @@ func (e *Engine) resolveTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID, TypeSta
 	return argTypeIDs, TypeOK
 }
 
+func (e *Engine) satisfiesShape(concreteTypeID TypeID, typeParamNodeID ast.NodeID, span base.Span) bool {
+	typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
+	constraintTypeID, _ := e.Query(*typeParamNode.Constraint)
+	shapeType := base.Cast[ShapeType](e.env.Type(constraintTypeID).Kind)
+	concreteTyp := e.env.Type(concreteTypeID)
+	structType, isStruct := concreteTyp.Kind.(StructType)
+	if !isStruct {
+		e.diag(span, "type %s does not satisfy shape %s: not a struct",
+			e.env.TypeDisplay(concreteTypeID), shapeType.DeclName)
+		return false
+	}
+	for _, reqField := range shapeType.Fields {
+		found := false
+		for _, field := range structType.Fields {
+			if field.Name == reqField.Name {
+				found = true
+				if field.Type != reqField.Type {
+					e.diag(span, "type %s does not satisfy shape %s: field %s has type %s, expected %s",
+						structType.Name, shapeType.DeclName, field.Name,
+						e.env.TypeDisplay(field.Type), e.env.TypeDisplay(reqField.Type))
+					return false
+				}
+				if reqField.Mut && !field.Mut {
+					e.diag(span, "type %s does not satisfy shape %s: field %s must be mut",
+						structType.Name, shapeType.DeclName, field.Name)
+					return false
+				}
+				break
+			}
+		}
+		if !found {
+			e.diag(span, "type %s does not satisfy shape %s: missing field %s",
+				structType.Name, shapeType.DeclName, reqField.Name)
+			return false
+		}
+	}
+	return true
+}
+
 func (e *Engine) instantiateFun(
 	genericTypeID TypeID,
 	argTypeIDs []TypeID,
@@ -793,6 +832,11 @@ func (e *Engine) instantiateFun(
 	for i, typeParamNodeID := range funNode.TypeParams {
 		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
 		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
+		if typeParamNode.Constraint != nil {
+			if !e.satisfiesShape(argTypeIDs[i], typeParamNodeID, span) {
+				return InvalidTypeID, "", TypeFailed
+			}
+		}
 	}
 	paramTypeIDs := make([]TypeID, len(funNode.Params))
 	for i, paramNodeID := range funNode.Params {
@@ -906,6 +950,14 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	typeName := e.env.TypeDisplay(targetTyp.ID)
 	if struct_, ok := targetTyp.Kind.(StructType); ok {
 		for _, field := range struct_.Fields {
+			if field.Name == fieldAccess.Field.Name {
+				return field.Type, TypeOK
+			}
+		}
+	}
+	if tpt, ok := targetTyp.Kind.(TypeParamType); ok && tpt.Shape != nil {
+		shapeType := base.Cast[ShapeType](e.env.Type(*tpt.Shape).Kind)
+		for _, field := range shapeType.Fields {
 			if field.Name == fieldAccess.Field.Name {
 				return field.Type, TypeOK
 			}
@@ -1075,10 +1127,26 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 	for _, nodeID := range nodeIDs {
 		node := e.Node(nodeID)
 		switch node.Kind.(type) {
-		case ast.Fun:
+		case ast.Fun, ast.Struct, ast.Shape:
 			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil})
-		case ast.Struct:
-			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil})
+		}
+	}
+
+	// Create shape types and bind their names first so that type param constraints
+	// can reference them.
+	for _, decl := range decls {
+		if _, ok := decl.node.Kind.(ast.Shape); !ok {
+			continue
+		}
+		nodeKind := base.Cast[ast.Shape](decl.node.Kind)
+		typeID, status := e.checkShapeCreateAndBind(decl.node, nodeKind)
+		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
+		if typeID != InvalidTypeID {
+			cachedType, ok := e.env.cachedTypeInfo(typeID)
+			if !ok {
+				panic(base.Errorf("type %s not found", typeID))
+			}
+			decl.cachedType = cachedType
 		}
 	}
 
@@ -1098,6 +1166,21 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 			}
 			decl.cachedType = cachedType
 		}
+	}
+
+	// Complete shape types (resolve fields). After struct names are bound so
+	// shape fields can reference struct types.
+	for _, decl := range decls {
+		if _, ok := decl.node.Kind.(ast.Shape); !ok {
+			continue
+		}
+		if decl.status.Failed() {
+			continue
+		}
+		shapeNode := base.Cast[ast.Shape](decl.node.Kind)
+		shapeType := base.Cast[ShapeType](decl.cachedType.Type.Kind)
+		decl.status, decl.cachedType.Type.Kind = e.checkShapeCompleteType(shapeNode, shapeType)
+		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
 	}
 
 	// Create function types (with full signatures) and bind their names.
@@ -1144,25 +1227,45 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		case ast.Fun:
 			funType := base.Cast[FunType](typeKind)
 			e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
-		case ast.Struct:
-		// Structs don't have a body.
+		case ast.Struct, ast.Shape:
 		default:
 			panic(base.Errorf("node kind not supported: %T", nodeKind))
 		}
 	}
 }
 
-func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, TypeStatus) {
+func (e *Engine) bindTypeParams(typeParamNodeIDs []ast.NodeID) TypeStatus {
 	seen := map[string]bool{}
-	for _, typeParamNodeID := range fun.TypeParams {
+	for _, typeParamNodeID := range typeParamNodeIDs {
 		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
 		if seen[typeParamNode.Name.Name] {
 			e.diag(typeParamNode.Name.Span, "duplicate type parameter: %s", typeParamNode.Name.Name)
-			return InvalidTypeID, TypeFailed
+			return TypeFailed
 		}
 		seen[typeParamNode.Name.Name] = true
-		typeParamID := e.env.newType(TypeParamType{}, typeParamNodeID, e.Node(typeParamNodeID).Span, TypeOK)
+		var shapeID *TypeID
+		if typeParamNode.Constraint != nil {
+			constraintTypeID, status := e.Query(*typeParamNode.Constraint)
+			if status.Failed() {
+				return TypeDepFailed
+			}
+			if _, ok := e.env.Type(constraintTypeID).Kind.(ShapeType); !ok {
+				e.diag(e.Node(*typeParamNode.Constraint).Span, "constraint must be a shape")
+				return TypeFailed
+			}
+			shapeID = &constraintTypeID
+		}
+		typeParamID := e.env.newType(
+			TypeParamType{Shape: shapeID}, typeParamNodeID, e.Node(typeParamNodeID).Span, TypeOK,
+		)
 		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, typeParamID, typeParamNode.Name.Span)
+	}
+	return TypeOK
+}
+
+func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, TypeStatus) {
+	if status := e.bindTypeParams(fun.TypeParams); status.Failed() {
+		return InvalidTypeID, status
 	}
 	retTypeID, status := e.Query(fun.ReturnType)
 	if status.Failed() {
@@ -1213,6 +1316,11 @@ func (e *Engine) typeName(typ *Type) string {
 		return kind.Name
 	case BoolType:
 		return "Bool"
+	case TypeParamType:
+		if kind.Shape != nil {
+			return base.Cast[ShapeType](e.env.Type(*kind.Shape).Kind).DeclName
+		}
+		panic(base.Errorf("typeName: unconstrained type parameter"))
 	default:
 		panic(base.Errorf("typeName: unsupported type kind: %T", typ.Kind))
 	}
@@ -1263,16 +1371,8 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 
 func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType StructType) (TypeStatus, StructType) {
 	defer e.enterChildEnv()()
-	seen := map[string]bool{}
-	for _, typeParamNodeID := range structNode.TypeParams {
-		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
-		if seen[typeParamNode.Name.Name] {
-			e.diag(typeParamNode.Name.Span, "duplicate type parameter: %s", typeParamNode.Name.Name)
-			return TypeFailed, structType
-		}
-		seen[typeParamNode.Name.Name] = true
-		typeParamID := e.env.newType(TypeParamType{}, typeParamNodeID, e.Node(typeParamNodeID).Span, TypeOK)
-		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, typeParamID, typeParamNode.Name.Span)
+	if status := e.bindTypeParams(structNode.TypeParams); status.Failed() {
+		return status, structType
 	}
 	return e.resolveStructFields(structNode, structType)
 }
@@ -1289,6 +1389,31 @@ func (e *Engine) resolveStructFields(structNode ast.Struct, structType StructTyp
 	}
 	structType.Fields = fields
 	return TypeOK, structType
+}
+
+func (e *Engine) checkShapeCreateAndBind(node *ast.Node, shapeNode ast.Shape) (TypeID, TypeStatus) {
+	name := e.ScopeGraph.NodeScope(node.ID).NamespacedName(shapeNode.Name.Name)
+	typeID := e.env.newType(
+		ShapeType{Name: name, DeclName: shapeNode.Name.Name, Fields: nil}, node.ID, node.Span, TypeInProgress,
+	)
+	if !e.bind(node.ID, shapeNode.Name.Name, false, typeID, shapeNode.Name.Span) {
+		return typeID, TypeFailed
+	}
+	return typeID, TypeInProgress
+}
+
+func (e *Engine) checkShapeCompleteType(shapeNode ast.Shape, shapeType ShapeType) (TypeStatus, ShapeType) {
+	fields := make([]StructField, len(shapeNode.Fields))
+	for i, fieldNodeID := range shapeNode.Fields {
+		fieldTypeID, status := e.Query(fieldNodeID)
+		if status.Failed() {
+			return TypeDepFailed, shapeType
+		}
+		fieldNode := base.Cast[ast.StructField](e.Node(fieldNodeID).Kind)
+		fields[i] = StructField{fieldNode.Name.Name, fieldTypeID, fieldNode.Mut}
+	}
+	shapeType.Fields = fields
+	return TypeOK, shapeType
 }
 
 func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType) {

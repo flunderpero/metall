@@ -1349,6 +1349,16 @@ func TestCompile(t *testing.T) {
 				print_int(s.byte_len())
 			}
 			`, "AAA\n3\n"},
+
+		{"shape field access", `
+			shape HasPair { one Str two Int }
+			struct Pair { one Str two Int }
+			fun first<T HasPair>(t T) Str { t.one }
+			fun main() void {
+				let p = Pair("hello", 42)
+				print_str(first<Pair>(p))
+			}
+			`, "hello\n"},
 	}
 
 	assert := base.NewAssert(t)

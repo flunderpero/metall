@@ -207,6 +207,8 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		return fmt.Sprintf("[]%s", e.TypeDisplay(kind.Elem))
 	case TypeParamType:
 		return "<typeparam>"
+	case ShapeType:
+		return kind.Name
 	case AllocatorType:
 		return fmt.Sprintf("alloc(%s)", kind.Impl)
 	default:

@@ -86,9 +86,19 @@ type SliceType struct {
 
 func (SliceType) isTypeKind() {}
 
-type TypeParamType struct{}
+type TypeParamType struct {
+	Shape *TypeID // nil = unconstrained
+}
 
 func (TypeParamType) isTypeKind() {}
+
+type ShapeType struct {
+	Name     string // namespaced name (e.g. "test.HasFields")
+	DeclName string // declared local name (e.g. "HasFields"), used by typeName
+	Fields   []StructField
+}
+
+func (ShapeType) isTypeKind() {}
 
 type AllocatorImpl int
 
