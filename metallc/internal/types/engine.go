@@ -2,8 +2,6 @@ package types
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -178,11 +176,29 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 }
 
 func (e *Engine) Funs() []FunWork {
-	return slices.Collect(maps.Values(e.funs))
+	// During type-checking we also added unresolved functions (i.e. still containing TypeParamType)
+	// that we now need to filter out.
+	var result []FunWork
+	for _, fw := range e.funs {
+		funTyp := base.Cast[FunType](e.env.Type(fw.TypeID).Kind)
+		if !e.hasTypeParam(funTyp.Params) && !e.hasTypeParam([]TypeID{funTyp.Return}) {
+			result = append(result, fw)
+		}
+	}
+	return result
 }
 
 func (e *Engine) Structs() []StructWork {
-	return slices.Collect(maps.Values(e.structs))
+	// During type-checking we also added unresolved structs (i.e. still containing TypeParamType)
+	// that we now need to filter out.
+	var result []StructWork
+	for _, sw := range e.structs {
+		structTyp := base.Cast[StructType](e.env.Type(sw.TypeID).Kind)
+		if !e.hasTypeParam(structTyp.TypeArgs) {
+			result = append(result, sw)
+		}
+	}
+	return result
 }
 
 func (e *Engine) isIntType(typeID TypeID) bool {
@@ -663,6 +679,15 @@ func (e *Engine) enterChildEnv() func() {
 	return func() { e.env = prev }
 }
 
+func (e *Engine) hasTypeParam(typeIDs []TypeID) bool {
+	for _, id := range typeIDs {
+		if _, ok := e.env.Type(id).Kind.(TypeParamType); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) registerFun(nodeID ast.NodeID) {
 	if nodeID >= ast.PreludeFirstID {
 		return
@@ -715,7 +740,7 @@ func (e *Engine) instantiateStruct(
 		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
 	}
 	node := e.Node(structNodeID)
-	placeholder := StructType{mangledName, []StructField{}}
+	placeholder := StructType{mangledName, []StructField{}, argTypeIDs}
 	typeID := e.env.newType(placeholder, node.ID, node.Span, TypeInProgress)
 	e.structs[mangledName] = StructWork{NodeID: structNodeID, TypeID: typeID, Env: e.env}
 	status, resolved := e.resolveStructFields(structNode, placeholder)
@@ -728,26 +753,32 @@ func (e *Engine) instantiateStruct(
 	return typeID, TypeOK
 }
 
-func (e *Engine) instantiateFun(
-	genericTypeID TypeID,
-	typeArgNodeIDs []ast.NodeID,
-	span base.Span,
-) (TypeID, string, TypeStatus) {
-	funNodeID := e.env.DeclNode(genericTypeID)
-	funNode := base.Cast[ast.Fun](e.Node(funNodeID).Kind)
-	if len(typeArgNodeIDs) != len(funNode.TypeParams) {
-		e.diag(span, "type argument count mismatch: expected %d, got %d",
-			len(funNode.TypeParams), len(typeArgNodeIDs))
-		return InvalidTypeID, "", TypeFailed
-	}
-	mangledParts := make([]string, len(typeArgNodeIDs))
+func (e *Engine) resolveTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID, TypeStatus) {
 	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
 	for i, typeArgNodeID := range typeArgNodeIDs {
 		argTypeID, status := e.Query(typeArgNodeID)
 		if status.Failed() {
-			return InvalidTypeID, "", TypeDepFailed
+			return nil, TypeDepFailed
 		}
 		argTypeIDs[i] = argTypeID
+	}
+	return argTypeIDs, TypeOK
+}
+
+func (e *Engine) instantiateFun(
+	genericTypeID TypeID,
+	argTypeIDs []TypeID,
+	span base.Span,
+) (TypeID, string, TypeStatus) {
+	funNodeID := e.env.DeclNode(genericTypeID)
+	funNode := base.Cast[ast.Fun](e.Node(funNodeID).Kind)
+	if len(argTypeIDs) != len(funNode.TypeParams) {
+		e.diag(span, "type argument count mismatch: expected %d, got %d",
+			len(funNode.TypeParams), len(argTypeIDs))
+		return InvalidTypeID, "", TypeFailed
+	}
+	mangledParts := make([]string, len(argTypeIDs))
+	for i, argTypeID := range argTypeIDs {
 		mangledParts[i] = argTypeID.String()
 	}
 	genericName, ok := e.env.NamedFunRef(funNodeID)
@@ -880,24 +911,8 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 			}
 		}
 	}
-	if binding, ok := e.lookup(nodeID, typeName+"."+fieldAccess.Field.Name); ok {
-		if funNode, ok := e.Node(binding.Decl).Kind.(ast.Fun); ok {
-			if len(fieldAccess.TypeArgs) > 0 || len(funNode.TypeParams) > 0 {
-				typeID, mangledName, status := e.instantiateFun(
-					binding.TypeID,
-					fieldAccess.TypeArgs,
-					fieldAccess.Field.Span,
-				)
-				if status.Failed() {
-					return InvalidTypeID, status
-				}
-				e.env.setNamedFunRef(nodeID, mangledName)
-				return typeID, TypeOK
-			}
-		}
-		e.env.copyNamedFunRef(nodeID, binding.Decl)
-		e.registerFun(binding.Decl)
-		return binding.TypeID, TypeOK
+	if typeID, status, ok := e.resolveMethod(nodeID, fieldAccess, targetTyp); ok {
+		return typeID, status
 	}
 	if _, ok := targetTyp.Kind.(StructType); ok {
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
@@ -906,6 +921,54 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		e.diag(targetSpan, "cannot access field on non-struct type: %s", typeName)
 	}
 	return InvalidTypeID, TypeFailed
+}
+
+func (e *Engine) resolveMethod(
+	nodeID ast.NodeID, fieldAccess ast.FieldAccess, targetTyp *Type,
+) (TypeID, TypeStatus, bool) {
+	methodName := fieldAccess.Field.Name
+	// Try to find the method on the concrete type name (works for non-generic structs
+	// and builtins like Int).
+	binding, ok := e.lookup(nodeID, e.typeName(targetTyp)+"."+methodName)
+	if !ok {
+		// For generic struct instances, the method is bound under the generic struct's
+		// name (e.g. "Foo.bar" not "Foo.t1.t7.bar").
+		structType, isStruct := targetTyp.Kind.(StructType)
+		if !isStruct || len(structType.TypeArgs) == 0 {
+			return InvalidTypeID, TypeFailed, false
+		}
+		genericNodeID := e.env.DeclNode(targetTyp.ID)
+		genericNode := base.Cast[ast.Struct](e.Node(genericNodeID).Kind)
+		genericName := e.ScopeGraph.NodeScope(genericNodeID).NamespacedName(genericNode.Name.Name)
+		binding, ok = e.lookup(nodeID, genericName+"."+methodName)
+		if !ok || len(base.Cast[ast.Fun](e.Node(binding.Decl).Kind).TypeParams) < len(structType.TypeArgs) {
+			return InvalidTypeID, TypeFailed, false
+		}
+	}
+	// At this point we have the method binding. Determine whether it needs instantiation.
+	funNode, isFun := e.Node(binding.Decl).Kind.(ast.Fun)
+	if !isFun || (len(funNode.TypeParams) == 0 && len(fieldAccess.TypeArgs) == 0) {
+		// Non-generic method — register directly.
+		e.env.copyNamedFunRef(nodeID, binding.Decl)
+		e.registerFun(binding.Decl)
+		return binding.TypeID, TypeOK, true
+	}
+	// Build type args: struct type args (from the instance) + explicit method type args.
+	var argTypeIDs []TypeID
+	if structType, isStruct := targetTyp.Kind.(StructType); isStruct {
+		argTypeIDs = append(argTypeIDs, structType.TypeArgs...)
+	}
+	extraArgs, status := e.resolveTypeArgs(fieldAccess.TypeArgs)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	argTypeIDs = append(argTypeIDs, extraArgs...)
+	typeID, mangledName, status := e.instantiateFun(binding.TypeID, argTypeIDs, fieldAccess.Field.Span)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	e.env.setNamedFunRef(nodeID, mangledName)
+	return typeID, TypeOK, true
 }
 
 func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) {
@@ -1142,21 +1205,30 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 	return funTypeID, funStatus
 }
 
+func (e *Engine) typeName(typ *Type) string {
+	switch kind := typ.Kind.(type) {
+	case StructType:
+		return kind.Name
+	case IntType:
+		return kind.Name
+	case BoolType:
+		return "Bool"
+	default:
+		panic(base.Errorf("typeName: unsupported type kind: %T", typ.Kind))
+	}
+}
+
 func (e *Engine) resolveMethodBindName(nodeID ast.NodeID, structName, methodName string) string {
 	binding, ok := e.lookup(nodeID, structName)
 	if !ok {
 		panic(base.Errorf("method receiver type not found: %s", structName))
 	}
-	typ := e.env.Type(binding.TypeID)
-	if s, ok := typ.Kind.(StructType); ok {
-		return s.Name + "." + methodName
-	}
-	return structName + "." + methodName
+	return e.typeName(e.env.Type(binding.TypeID)) + "." + methodName
 }
 
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
 	name := e.ScopeGraph.NodeScope(node.ID).NamespacedName(structNode.Name.Name)
-	typeID := e.env.newType(StructType{name, []StructField{}}, node.ID, node.Span, TypeInProgress)
+	typeID := e.env.newType(StructType{name, []StructField{}, nil}, node.ID, node.Span, TypeInProgress)
 	if !e.bind(node.ID, structNode.Name.Name, false, typeID, structNode.Name.Span) {
 		return typeID, TypeFailed
 	}
@@ -1340,7 +1412,11 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 	if binding.Decl != 0 {
 		if funNode, ok := e.Node(binding.Decl).Kind.(ast.Fun); ok {
 			if len(ident.TypeArgs) > 0 || len(funNode.TypeParams) > 0 {
-				typeID, mangledName, status := e.instantiateFun(binding.TypeID, ident.TypeArgs, span)
+				argTypeIDs, status := e.resolveTypeArgs(ident.TypeArgs)
+				if status.Failed() {
+					return InvalidTypeID, status
+				}
+				typeID, mangledName, status := e.instantiateFun(binding.TypeID, argTypeIDs, span)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}

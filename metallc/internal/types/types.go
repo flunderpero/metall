@@ -66,8 +66,9 @@ type StructField struct {
 }
 
 type StructType struct {
-	Name   string
-	Fields []StructField
+	Name     string
+	Fields   []StructField
+	TypeArgs []TypeID
 }
 
 func (StructType) isTypeKind() {}

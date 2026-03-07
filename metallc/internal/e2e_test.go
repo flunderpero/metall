@@ -603,6 +603,17 @@ func TestCompile(t *testing.T) {
 			}
 			`, "42\nhello\n"},
 
+		{"method on generic struct", `
+			struct Foo<T> { one T }
+			fun Foo.bar<T>(f Foo<T>, a T, b Bool) T { if b { return f.one } a }
+
+			fun main() void {
+				let x = Foo<Int>(42)
+				print_int(x.bar(99, true))
+				print_int(x.bar(99, false))
+			}
+			`, "42\n99\n"},
+
 		{"generic method", `
 			struct Foo { value Int }
 			fun Foo.get<T>(f Foo, x T) T { x }
@@ -613,6 +624,69 @@ func TestCompile(t *testing.T) {
 				print_str(f.get<Str>("hello"))
 			}
 			`, "1\nhello\n"},
+
+		{"generic method with extra type param on generic struct", `
+			struct Foo<T> { one T }
+			fun Foo.bar<T, U>(f Foo<T>, a U) U { a }
+
+			fun main() void {
+				let x = Foo<Int>(42)
+				print_str(x.bar<Str>("hello"))
+				print_int(x.bar<Int>(99))
+			}
+			`, "hello\n99\n"},
+
+		{"method on generic struct accesses field", `
+			struct Pair<A, B> { first A second B }
+			fun Pair.get_first<A, B>(p Pair<A, B>) A { p.first }
+			fun Pair.get_second<A, B>(p Pair<A, B>) B { p.second }
+
+			fun main() void {
+				let p = Pair<Int, Str>(42, "hello")
+				print_int(p.get_first())
+				print_str(p.get_second())
+			}
+			`, "42\nhello\n"},
+
+		{"method on multi-param generic struct with extra type param", `
+			struct Pair<A, B> { first A second B }
+			fun Pair.swap<A, B>(p Pair<A, B>) Pair<B, A> { Pair<B, A>(p.second, p.first) }
+			fun Pair.map_first<A, B, C>(p Pair<A, B>, f fun(A) C) Pair<C, B> { Pair<C, B>(f(p.first), p.second) }
+
+			fun to_str(x Int) Str { "mapped" }
+
+			fun main() void {
+				let p = Pair<Int, Str>(42, "hello")
+				let s = p.swap()
+				print_str(s.first)
+				print_int(s.second)
+				let m = p.map_first<Str>(to_str)
+				print_str(m.first)
+				print_str(m.second)
+			}
+			`, "hello\n42\nmapped\nhello\n"},
+
+		{"generic method chain", `
+			struct Wrap<T> { inner T }
+			fun Wrap.unwrap<T>(w Wrap<T>) T { w.inner }
+
+			fun main() void {
+				let w = Wrap<Wrap<Int>>(Wrap<Int>(99))
+				let inner = w.unwrap()
+				print_int(inner.unwrap())
+			}
+			`, "99\n"},
+
+		{"generic struct method calls generic fun", `
+			struct Box<T> { value T }
+			fun id<T>(x T) T { x }
+			fun Box.get_id<T>(b Box<T>) T { id<T>(b.value) }
+
+			fun main() void {
+				let b = Box<Int>(7)
+				print_int(b.get_id())
+			}
+			`, "7\n"},
 
 		{"generic shadowing", `
 			struct Box<T> { value T }
@@ -1248,6 +1322,7 @@ func TestCompile(t *testing.T) {
 				print_int(Foo.add(f, 32))
 			}
 			`, "42\n"},
+
 		{"method call on Int", `
 			fun Int.double(self Int) Int { self + self }
 			fun main() void {

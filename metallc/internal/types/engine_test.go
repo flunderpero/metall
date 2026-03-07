@@ -700,6 +700,30 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			Int, nil,
 		},
 		{
+			"method on generic struct",
+			`{
+				struct Foo<T> { one T }
+				fun Foo.bar<T>(f Foo<T>, a T, b Bool) T { if b { return f.one } a }
+				let x = Foo<Int>(42)
+				x.bar(123, true)
+			}`,
+			Int,
+			func(e *Engine, _ ast.NodeID, assert base.Assert) {
+				structs := e.Structs()
+				assert.Equal(1, len(structs))
+				st := base.Cast[StructType](e.env.Type(structs[0].TypeID).Kind)
+				base.Cast[IntType](e.env.Type(st.Fields[0].Type).Kind)
+				funs := e.Funs()
+				assert.Equal(1, len(funs))
+				ft := base.Cast[FunType](e.env.Type(funs[0].TypeID).Kind)
+				assert.Equal(3, len(ft.Params))
+				base.Cast[StructType](e.env.Type(ft.Params[0]).Kind)
+				base.Cast[IntType](e.env.Type(ft.Params[1]).Kind)
+				base.Cast[BoolType](e.env.Type(ft.Params[2]).Kind)
+				base.Cast[IntType](e.env.Type(ft.Return).Kind)
+			},
+		},
+		{
 			"generic method on non-generic struct",
 			`{
 				struct Foo { value Int }
@@ -708,6 +732,28 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				f.get<Str>("hello")
 			}`,
 			Str, nil,
+		},
+		{
+			"generic method with extra type param on generic struct",
+			`{
+				struct Foo<T> { one T }
+				fun Foo.bar<T, U>(f Foo<T>, a U) U { a }
+				let x = Foo<Int>(42)
+				x.bar<Str>("hello")
+			}`,
+			nil,
+			func(e *Engine, _ ast.NodeID, assert base.Assert) {
+				structs := e.Structs()
+				assert.Equal(2, len(structs), "Foo<Int> and Str")
+				funs := e.Funs()
+				assert.Equal(1, len(funs))
+				ft := base.Cast[FunType](e.env.Type(funs[0].TypeID).Kind)
+				assert.Equal(2, len(ft.Params))
+				paramStruct := base.Cast[StructType](e.env.Type(ft.Params[0]).Kind)
+				base.Cast[IntType](e.env.Type(paramStruct.Fields[0].Type).Kind)
+				base.Cast[StructType](e.env.Type(ft.Params[1]).Kind)
+				base.Cast[StructType](e.env.Type(ft.Return).Kind)
+			},
 		},
 		{
 			"generic fun calls generic fun",
@@ -1463,6 +1509,45 @@ func TestTypeCheckErr(t *testing.T) {
 					"                              ^^^",
 			},
 		},
+		{
+			"method on generic struct too few type args",
+			`{ struct Foo<T> { one T } fun Foo.bar<T, U>(f Foo<T>, a U) U { a } let x = Foo<Int>(1) x.bar() }`,
+			[]string{
+				"test.met:1:90: type argument count mismatch: expected 2, got 1\n" +
+					"    { struct Foo<T> { one T } fun Foo.bar<T, U>(f Foo<T>, a U) U { a } let x = Foo<Int>(1) x.bar() }\n" +
+					"                                                                                             ^^^",
+			},
+		},
+		{
+			"method on generic struct too many type args",
+			`{ struct Foo<T> { one T } fun Foo.bar<T>(f Foo<T>) T { f.one } let x = Foo<Int>(1) x.bar<Int, Str>() }`,
+			[]string{
+				"test.met:1:86: type argument count mismatch: expected 1, got 3\n" +
+					"    { struct Foo<T> { one T } fun Foo.bar<T>(f Foo<T>) T { f.one } let x = Foo<Int>(1) x.bar<Int, Str>() }\n" +
+					"                                                                                         ^^^",
+			},
+		},
+		{
+			"method on generic struct wrong first param type",
+			`{ struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }`,
+			[]string{
+				"test.met:1:53: return type mismatch: expected <typeparam>, got Int\n" +
+					"    { struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }\n" +
+					"                                                        ^",
+				"test.met:1:77: type mismatch at receiver: expected Int, got Foo.t18.t7\n" +
+					"    { struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }\n" +
+					"                                                                                ^",
+			},
+		},
+		{
+			"method on generic struct type param must be in first position",
+			`{ struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo<V>, a U) U { a } let x = Foo<Int>(1) x.bar<Str>("hi") }`,
+			[]string{
+				"test.met:1:88: type mismatch at receiver: expected Foo.t18.t12, got Foo.t18.t7\n" +
+					"    { struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo<V>, a U) U { a } let x = Foo<Int>(1) x.bar<Str>(\"hi\") }\n" +
+					"                                                                                           ^",
+			},
+		},
 	}
 
 	assert := base.NewAssert(t)
@@ -1549,7 +1634,7 @@ func struct_t(name string, fields ...any) *Type {
 			structFields[len(structFields)-1].Type = base.Cast[*Type](f).ID
 		}
 	}
-	return &Type{Kind: StructType{name, structFields}}
+	return &Type{Kind: StructType{name, structFields, nil}}
 }
 
 func arr_t(typ *Type, size int) *Type {
