@@ -1121,6 +1121,35 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				        break
 				`, "\n"),
 		}},
+		// TODO: The lifetime checker does not track refs flowing through function
+		// call return values when the ref originates from an argument.
+		// {"non-generic method ref escapes via return", `
+		// 	{
+		// 		struct Foo { }
+		// 		fun Foo.escape(f Foo, a &Int) &Int { a }
+		// 		fun bar(t Foo) &Int { let a = 42 t.escape(&a) }
+		// 		let r = {
+		// 			let f = Foo()
+		// 			bar(f)
+		// 		}
+		// 		r
+		// 	}
+		// 	`, []string{"..."}},
+		// {"shape method ref escapes via return", `
+		// 	{
+		// 		shape Shape {
+		// 			fun Shape.escape(s Shape, a &Int) &Int
+		// 		}
+		// 		struct Foo { }
+		// 		fun Foo.escape(f Foo, a &Int) &Int { a }
+		// 		fun bar<T Shape>(t T) &Int { let a = 42 t.escape(&a) }
+		// 		let r = {
+		// 			let f = Foo()
+		// 			bar<Foo>(f)
+		// 		}
+		// 		r
+		// 	}
+		// 	`, []string{"..."}},
 		// Method call: receiver carries a ref to an inner-scope local, method
 		// returns that ref — the ref escapes.
 		{"method call receiver ref escapes", `

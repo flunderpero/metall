@@ -302,6 +302,12 @@ func (e *TypeEnv) bind(decl ast.NodeID, name string, mut bool, typeID TypeID) bo
 	return isNew
 }
 
+func (e *TypeEnv) bindInScope(scope *ast.Scope, decl ast.NodeID, name string, typeID TypeID) bool {
+	b, isNew := scope.Bind(name, decl)
+	e.bindings[b.ID] = &Binding{b, typeID, false}
+	return isNew
+}
+
 func (e *TypeEnv) cachedNodeType(nodeID ast.NodeID) (*cachedType, bool) {
 	cached, ok := e.nodes[nodeID]
 	return cached, ok

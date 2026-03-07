@@ -1,0 +1,20 @@
+shape Showable {
+    name Str
+    fun Showable.str(self Showable) Str
+}
+
+struct Guitar {
+    name Str
+}
+
+fun Guitar.str(g Guitar) Str {
+    return g.name
+}
+
+fun show<T Showable>(t T) void {
+    print_str(t.str())
+}
+
+fun main() void {
+    show<Guitar>(Guitar("Telecaster"))
+}

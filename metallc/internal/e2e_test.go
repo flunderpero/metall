@@ -1359,6 +1359,19 @@ func TestCompile(t *testing.T) {
 				print_str(first<Pair>(p))
 			}
 			`, "hello\n"},
+		{"shape method call", `
+			shape Showable {
+				fun Showable.show(self Showable) Str
+			}
+			struct Guitar {
+				name Str
+			}
+			fun Guitar.show(g Guitar) Str { g.name }
+			fun display<T Showable>(t T) Str { t.show() }
+			fun main() void {
+				print_str(display<Guitar>(Guitar("Telecaster")))
+			}
+			`, "Telecaster\n"},
 	}
 
 	assert := base.NewAssert(t)

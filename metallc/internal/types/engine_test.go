@@ -923,6 +923,140 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}`,
 			Str, nil,
 		},
+		{
+			"shape method call",
+			`{
+				shape Showable {
+					fun Showable.show(self Showable) Str
+				}
+				struct Guitar {
+					name Str
+				}
+				fun Guitar.show(g Guitar) Str { g.name }
+				fun display<T Showable>(t T) Str { t.show() }
+				display<Guitar>(Guitar("Telecaster"))
+			}`,
+			Str, nil,
+		},
+		{
+			"shape method call with ref receiver",
+			`{
+				shape HasValue {
+					fun HasValue.val(self &HasValue) Int
+				}
+				struct Foo { one Int }
+				fun Foo.val(self &Foo) Int { self.one }
+				fun peek<T HasValue>(t &T) Int { t.val() }
+				let f = Foo(42)
+				peek<Foo>(&f)
+			}`,
+			Int, nil,
+		},
+		{
+			"shape method call with mut ref to immutable ref coercion",
+			`{
+				shape HasValue {
+					fun HasValue.val(self &HasValue) Int
+				}
+				struct Foo { one Int }
+				fun Foo.val(self &Foo) Int { self.one }
+				fun peek<T HasValue>(t &mut T) Int { t.val() }
+				mut f = Foo(42)
+				peek<Foo>(&mut f)
+			}`,
+			Int, nil,
+		},
+		{
+			"shape two constrained type params",
+			`{
+				shape HasName { fun HasName.name(self HasName) Str }
+				shape HasAge { fun HasAge.age(self HasAge) Int }
+				struct Foo { n Str }
+				struct Bar { a Int }
+				fun Foo.name(f Foo) Str { f.n }
+				fun Bar.age(b Bar) Int { b.a }
+				fun combine<A HasName, B HasAge>(a A, b B) Str { a.name() }
+				combine<Foo, Bar>(Foo("x"), Bar(1))
+			}`,
+			Str, nil,
+		},
+		{
+			"shape method returns self type",
+			`{
+				shape Clonable {
+					fun Clonable.clone(self Clonable) Clonable
+				}
+				struct Foo { x Int }
+				fun Foo.clone(f Foo) Foo { Foo(f.x) }
+				fun dup<T Clonable>(t T) T { t.clone() }
+				dup<Foo>(Foo(1))
+			}`,
+			nil,
+			func(e *Engine, _ ast.NodeID, assert base.Assert) {
+				assert.Equal(0, len(e.Diagnostics))
+			},
+		},
+		{
+			"shape method with two shape params",
+			`{
+				shape Eq {
+					fun Eq.eq(self Eq, other Eq) Bool
+				}
+				struct Num { x Int }
+				fun Num.eq(a Num, b Num) Bool { a.x == b.x }
+				fun same<T Eq>(a T, b T) Bool { a.eq(b) }
+				same<Num>(Num(1), Num(1))
+			}`,
+			Bool, nil,
+		},
+		{
+			"shape two structs same shape",
+			`{
+				shape Showable {
+					fun Showable.show(self Showable) Str
+				}
+				struct A { }
+				struct B { }
+				fun A.show(a A) Str { "a" }
+				fun B.show(b B) Str { "b" }
+				fun display<T Showable>(t T) Str { t.show() }
+				let x = display<A>(A())
+				display<B>(B())
+			}`,
+			Str, nil,
+		},
+		{
+			"shape multiple methods",
+			`{
+				shape S {
+					fun S.foo(self S) Int
+					fun S.bar(self S) Str
+				}
+				struct X { }
+				fun X.foo(x X) Int { 1 }
+				fun X.bar(x X) Str { "x" }
+				fun test<T S>(t T) Str { let n = t.foo() t.bar() }
+				test<X>(X())
+			}`,
+			Str, nil,
+		},
+		{
+			"shape field and method combined",
+			`{
+				shape Named {
+					name Str
+					fun Named.greet(self Named) Str
+				}
+				struct Person { name Str age Int }
+				fun Person.greet(p Person) Str { p.name }
+				fun intro<T Named>(t T) Str {
+					let n = t.name
+					t.greet()
+				}
+				intro<Person>(Person("Alice", 30))
+			}`,
+			Str, nil,
+		},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -1616,6 +1750,51 @@ func TestTypeCheckErr(t *testing.T) {
 				"test.met:1:90: type Foo does not satisfy shape S: field one has type &Int, expected &mut Int\n" +
 					"    { shape S { one &mut Int } struct Foo { one &Int } fun foo<T S>(t T) Int { 1 } let x = 1 foo<Foo>(Foo(&x)) }\n" +
 					"                                                                                             ^^^^^^^^",
+			},
+		},
+		{
+			"shape not satisfied missing method",
+			`{ shape S { fun S.foo(s S) Int } struct Foo { } fun bar<T S>(t T) Int { t.foo() } bar<Foo>(Foo()) }`,
+			[]string{
+				"test.met:1:83: type Foo does not satisfy shape S: missing method foo\n" +
+					"    { shape S { fun S.foo(s S) Int } struct Foo { } fun bar<T S>(t T) Int { t.foo() } bar<Foo>(Foo()) }\n" +
+					"                                                                                      ^^^^^^^^",
+			},
+		},
+		{
+			"shape not satisfied wrong method return type",
+			`{ shape S { fun S.foo(s S) Int } struct Foo { } fun Foo.foo(f Foo) Str { "x" } fun bar<T S>(t T) Int { t.foo() } bar<Foo>(Foo()) }`,
+			[]string{
+				"test.met:1:114: type Foo does not satisfy shape S: method foo has signature fun(Foo) Str, expected fun(S) Int\n" +
+					`    { shape S { fun S.foo(s S) Int } struct Foo { } fun Foo.foo(f Foo) Str { "x" } fun bar<T S>(t T) Int { t.foo() } bar<Foo>(Foo()) }` + "\n" +
+					"                                                                                                                     ^^^^^^^^",
+			},
+		},
+		{
+			"shape not satisfied wrong method param type",
+			`{ shape S { fun S.foo(s S, n Int) Int } struct Foo { } fun Foo.foo(f Foo, n Str) Int { 1 } fun bar<T S>(t T) Int { t.foo(1) } bar<Foo>(Foo()) }`,
+			[]string{
+				"test.met:1:127: type Foo does not satisfy shape S: method foo has signature fun(Foo, Str) Int, expected fun(S, Int) Int\n" +
+					"    { shape S { fun S.foo(s S, n Int) Int } struct Foo { } fun Foo.foo(f Foo, n Str) Int { 1 } fun bar<T S>(t T) Int { t.foo(1) } bar<Foo>(Foo()) }\n" +
+					"                                                                                                                                  ^^^^^^^^",
+			},
+		},
+		{
+			"shape not satisfied wrong method param count",
+			`{ shape S { fun S.foo(s S) Int } struct Foo { } fun Foo.foo(f Foo, n Int) Int { n } fun bar<T S>(t T) Int { t.foo() } bar<Foo>(Foo()) }`,
+			[]string{
+				"test.met:1:119: type Foo does not satisfy shape S: method foo has signature fun(Foo, Int) Int, expected fun(S) Int\n" +
+					"    { shape S { fun S.foo(s S) Int } struct Foo { } fun Foo.foo(f Foo, n Int) Int { n } fun bar<T S>(t T) Int { t.foo() } bar<Foo>(Foo()) }\n" +
+					"                                                                                                                          ^^^^^^^^",
+			},
+		},
+		{
+			"shape duplicate method",
+			`{ shape S { fun S.foo(s S) Int fun S.foo(s S) Str } }`,
+			[]string{
+				"test.met:1:36: symbol already defined: S.foo\n" +
+					"    { shape S { fun S.foo(s S) Int fun S.foo(s S) Str } }\n" +
+					"                                       ^^^^^",
 			},
 		},
 	}

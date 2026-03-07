@@ -765,10 +765,10 @@ func (e *Engine) resolveTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID, TypeSta
 	return argTypeIDs, TypeOK
 }
 
-func (e *Engine) satisfiesShape(concreteTypeID TypeID, typeParamNodeID ast.NodeID, span base.Span) bool {
-	typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
-	constraintTypeID, _ := e.Query(*typeParamNode.Constraint)
-	shapeType := base.Cast[ShapeType](e.env.Type(constraintTypeID).Kind)
+func (e *Engine) satisfiesShape( //nolint:funlen
+	concreteTypeID TypeID, shapeTypeID TypeID, scopeNodeID ast.NodeID, span base.Span,
+) bool {
+	shapeType := base.Cast[ShapeType](e.env.Type(shapeTypeID).Kind)
 	concreteTyp := e.env.Type(concreteTypeID)
 	structType, isStruct := concreteTyp.Kind.(StructType)
 	if !isStruct {
@@ -776,6 +776,7 @@ func (e *Engine) satisfiesShape(concreteTypeID TypeID, typeParamNodeID ast.NodeI
 			e.env.TypeDisplay(concreteTypeID), shapeType.DeclName)
 		return false
 	}
+	// First, check fields.
 	for _, reqField := range shapeType.Fields {
 		found := false
 		for _, field := range structType.Fields {
@@ -801,7 +802,64 @@ func (e *Engine) satisfiesShape(concreteTypeID TypeID, typeParamNodeID ast.NodeI
 			return false
 		}
 	}
+
+	// Check namespaced functions.
+	shapeNodeID := e.env.DeclNode(shapeTypeID)
+	shapeNode := base.Cast[ast.Shape](e.Node(shapeNodeID).Kind)
+	concreteName := e.typeName(concreteTyp)
+	for _, funDeclNodeID := range shapeNode.Funs {
+		funDecl := base.Cast[ast.FunDecl](e.Node(funDeclNodeID).Kind)
+		_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
+		// Look up the concrete method (e.g. "Foo.show") from the instantiation site.
+		binding, ok := e.lookup(scopeNodeID, concreteName+"."+methodName)
+		if !ok {
+			e.diag(span, "type %s does not satisfy shape %s: missing method %s",
+				structType.Name, shapeType.DeclName, methodName)
+			return false
+		}
+		// Build the expected FunType by substituting Shape → Concrete in the shape
+		// method signature, then compare structurally against the concrete method.
+		shapeFunBinding, _ := e.lookup(scopeNodeID, shapeType.DeclName+"."+methodName)
+		shapeFunType := base.Cast[FunType](e.env.Type(shapeFunBinding.TypeID).Kind)
+		expectedFunType := e.substituteFunType(shapeFunType, shapeTypeID, concreteTypeID)
+		concreteFunType := base.Cast[FunType](e.env.Type(binding.TypeID).Kind)
+		if !expectedFunType.Equal(concreteFunType) {
+			e.diag(span,
+				"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
+				structType.Name, shapeType.DeclName, methodName,
+				e.env.TypeDisplay(binding.TypeID), e.env.TypeDisplay(shapeFunBinding.TypeID))
+			return false
+		}
+	}
 	return true
+}
+
+// substituteFunType returns a copy of funType with all occurrences of searchTypeID
+// replaced by replaceTypeID (including through one level of reference).
+func (e *Engine) substituteFunType(funType FunType, searchTypeID, replaceTypeID TypeID) FunType {
+	result := FunType{
+		Params: make([]TypeID, len(funType.Params)),
+		Return: e.substituteType(funType.Return, searchTypeID, replaceTypeID),
+	}
+	for i, p := range funType.Params {
+		result.Params[i] = e.substituteType(p, searchTypeID, replaceTypeID)
+	}
+	return result
+}
+
+// substituteType replaces searchTypeID with replaceTypeID in a single type,
+// recursing through any number of reference layers (e.g. &&Shape → &&Concrete).
+func (e *Engine) substituteType(srcTypeID, searchTypeID, replaceTypeID TypeID) TypeID {
+	if srcTypeID == searchTypeID {
+		return replaceTypeID
+	}
+	if refTyp, ok := e.env.Type(srcTypeID).Kind.(RefType); ok {
+		inner := e.substituteType(refTyp.Type, searchTypeID, replaceTypeID)
+		if inner != refTyp.Type {
+			return e.env.buildRefType(0, inner, refTyp.Mut, base.Span{})
+		}
+	}
+	return srcTypeID
 }
 
 func (e *Engine) instantiateFun(
@@ -833,7 +891,8 @@ func (e *Engine) instantiateFun(
 		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
 		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
 		if typeParamNode.Constraint != nil {
-			if !e.satisfiesShape(argTypeIDs[i], typeParamNodeID, span) {
+			constraintTypeID, _ := e.Query(*typeParamNode.Constraint)
+			if !e.satisfiesShape(argTypeIDs[i], constraintTypeID, typeParamNodeID, span) {
 				return InvalidTypeID, "", TypeFailed
 			}
 		}
@@ -996,6 +1055,16 @@ func (e *Engine) resolveMethod(
 		if !ok || len(base.Cast[ast.Fun](e.Node(binding.Decl).Kind).TypeParams) < len(structType.TypeArgs) {
 			return InvalidTypeID, TypeFailed, false
 		}
+	}
+	// Add a namespaced function type.
+	if _, isFunDecl := e.Node(binding.Decl).Kind.(ast.FunDecl); isFunDecl {
+		e.env.setNamedFunRef(nodeID, binding.Name)
+		tpt := base.Cast[TypeParamType](targetTyp.Kind)
+		shapeFunType := base.Cast[FunType](e.env.Type(binding.TypeID).Kind)
+		substFunType := e.substituteFunType(shapeFunType, *tpt.Shape, targetTyp.ID)
+		// TODO: We need synthetic nodes.
+		funTypeID := e.env.newType(substFunType, 0, base.Span{}, TypeOK)
+		return funTypeID, TypeOK, true
 	}
 	// At this point we have the method binding. Determine whether it needs instantiation.
 	funNode, isFun := e.Node(binding.Decl).Kind.(ast.Fun)
@@ -1179,7 +1248,7 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		}
 		shapeNode := base.Cast[ast.Shape](decl.node.Kind)
 		shapeType := base.Cast[ShapeType](decl.cachedType.Type.Kind)
-		decl.status, decl.cachedType.Type.Kind = e.checkShapeCompleteType(shapeNode, shapeType)
+		decl.status, decl.cachedType.Type.Kind = e.checkShapeCompleteType(decl.node, shapeNode, shapeType)
 		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
 	}
 
@@ -1402,7 +1471,11 @@ func (e *Engine) checkShapeCreateAndBind(node *ast.Node, shapeNode ast.Shape) (T
 	return typeID, TypeInProgress
 }
 
-func (e *Engine) checkShapeCompleteType(shapeNode ast.Shape, shapeType ShapeType) (TypeStatus, ShapeType) {
+func (e *Engine) checkShapeCompleteType(
+	node *ast.Node,
+	shapeNode ast.Shape,
+	shapeType ShapeType,
+) (TypeStatus, ShapeType) {
 	fields := make([]StructField, len(shapeNode.Fields))
 	for i, fieldNodeID := range shapeNode.Fields {
 		fieldTypeID, status := e.Query(fieldNodeID)
@@ -1413,7 +1486,41 @@ func (e *Engine) checkShapeCompleteType(shapeNode ast.Shape, shapeType ShapeType
 		fields[i] = StructField{fieldNode.Name.Name, fieldTypeID, fieldNode.Mut}
 	}
 	shapeType.Fields = fields
+	// Bind shape methods in the parent scope (not the shape's own scope) so they
+	// are visible at call sites. We use the FunDecl node ID as the declaration node
+	// to avoid BindingID collisions with the shape's own binding.
+	parentScope := e.ScopeGraph.NodeScope(node.ID)
+	for _, funDeclNodeID := range shapeNode.Funs {
+		funDecl := base.Cast[ast.FunDecl](e.Node(funDeclNodeID).Kind)
+		funTypeID, status := e.checkShapeFunDecl(funDecl)
+		if status.Failed() {
+			return status, shapeType
+		}
+		_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
+		bindName := shapeType.DeclName + "." + methodName
+		if !e.env.bindInScope(parentScope, funDeclNodeID, bindName, funTypeID) {
+			e.diag(funDecl.Name.Span, "symbol already defined: %s", bindName)
+		}
+	}
 	return TypeOK, shapeType
+}
+
+func (e *Engine) checkShapeFunDecl(funDecl ast.FunDecl) (TypeID, TypeStatus) {
+	paramTypeIDs := make([]TypeID, len(funDecl.Params))
+	for i, paramNodeID := range funDecl.Params {
+		paramTypeID, status := e.Query(paramNodeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		paramTypeIDs[i] = paramTypeID
+	}
+	retTypeID, status := e.Query(funDecl.ReturnType)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	funType := FunType{Params: paramTypeIDs, Return: retTypeID}
+	// TODO: We need synthetic nodes.
+	return e.env.newType(funType, 0, base.Span{}, TypeOK), TypeOK
 }
 
 func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType) {

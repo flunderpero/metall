@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"math/big"
+	"slices"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -55,6 +56,10 @@ func (RefType) isTypeKind() {}
 type FunType struct {
 	Params []TypeID
 	Return TypeID
+}
+
+func (f FunType) Equal(other FunType) bool {
+	return f.Return == other.Return && slices.Equal(f.Params, other.Params)
 }
 
 func (FunType) isTypeKind() {}
