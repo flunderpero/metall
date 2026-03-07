@@ -54,6 +54,7 @@ const (
 	RCurly
 	Return
 	RParen
+	Shape
 	Slash
 	Star
 	String
@@ -109,6 +110,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	RCurly:                "}",
 	Return:                "return",
 	RParen:                ")",
+	Shape:                 "<shape>",
 	Slash:                 "/",
 	Star:                  "*",
 	String:                "<string>",
@@ -152,6 +154,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"not":      Not,
 	"or":       Or,
 	"return":   Return,
+	"shape":    Shape,
 	"struct":   Struct,
 	"true":     True,
 	"void":     Void,

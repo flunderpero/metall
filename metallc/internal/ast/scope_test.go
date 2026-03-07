@@ -103,6 +103,24 @@ func TestScopes(t *testing.T) {
 			`,
 		},
 		{
+			name: "shape scope",
+			src:  `shape Showable { name Str fun Showable.str(self Showable) Str }`,
+			scopes: `
+				a:-
+				b:a
+				c:b
+			`,
+			nodes: `
+				n1:SimpleType(name="Str"):b
+				n2:StructField(name="name",mut=false,type=n1:SimpleType):b
+				n3:SimpleType(name="Showable"):c
+				n4:FunParam(name="self",type=n3:SimpleType):c
+				n5:SimpleType(name="Str"):c
+				n6:FunDecl(name="Showable.str",params=[n4:FunParam],returnType=n5:SimpleType):b
+				n7:Shape(name="Showable",fields=[n2:StructField],funs=[n6:FunDecl]):a
+			`,
+		},
+		{
 			name: "generic struct scope",
 			src:  `struct Foo<T> { value T }`,
 			scopes: `
@@ -110,10 +128,10 @@ func TestScopes(t *testing.T) {
 				b:a
 			`,
 			nodes: `
-				n1:SimpleType(name="T"):b
+				n1:TypeParam(name="T"):b
 				n2:SimpleType(name="T"):b
 				n3:StructField(name="value",mut=false,type=n2:SimpleType):b
-				n4:Struct(name="Foo",typeParams=[n1:SimpleType],fields=[n3:StructField]):a
+				n4:Struct(name="Foo",typeParams=[n1:TypeParam],fields=[n3:StructField]):a
 			`,
 		},
 	}

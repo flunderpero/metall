@@ -120,12 +120,18 @@ type FunParam struct {
 
 func (FunParam) isKind() {}
 
-type Fun struct {
+type FunDecl struct {
 	Name       Name
 	TypeParams []NodeID
 	Params     []NodeID
 	ReturnType NodeID
-	Block      NodeID
+}
+
+func (FunDecl) isKind() {}
+
+type Fun struct {
+	FunDecl
+	Block NodeID
 }
 
 func (Fun) isKind() {}
@@ -145,6 +151,21 @@ type Struct struct {
 }
 
 func (Struct) isKind() {}
+
+type TypeParam struct {
+	Name       Name
+	Constraint *NodeID
+}
+
+func (TypeParam) isKind() {}
+
+type Shape struct {
+	Name   Name
+	Fields []NodeID // StructField nodes
+	Funs   []NodeID // FunDecl nodes
+}
+
+func (Shape) isKind() {}
 
 type FieldAccess struct {
 	Target   NodeID
@@ -407,10 +428,19 @@ func (a *AST) NewModule(fileName string, name string, main bool, decls []NodeID,
 	return node
 }
 
+func (a *AST) NewFunDecl(
+	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, span base.Span,
+) NodeID {
+	return a.node(FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType}, span)
+}
+
 func (a *AST) NewFun(
 	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID, span base.Span,
 ) NodeID {
-	return a.node(Fun{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType, Block: block}, span)
+	return a.node(
+		Fun{FunDecl: FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType}, Block: block},
+		span,
+	)
 }
 
 func (a *AST) NewFunParam(name Name, type_ NodeID, span base.Span) NodeID {
@@ -423,6 +453,14 @@ func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, span ba
 
 func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) NodeID {
 	return a.node(StructField{Name: name, Type: type_, Mut: mut}, span)
+}
+
+func (a *AST) NewTypeParam(name Name, constraint *NodeID, span base.Span) NodeID {
+	return a.node(TypeParam{Name: name, Constraint: constraint}, span)
+}
+
+func (a *AST) NewShape(name Name, fields []NodeID, funs []NodeID, span base.Span) NodeID {
+	return a.node(Shape{Name: name, Fields: fields, Funs: funs}, span)
 }
 
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
@@ -546,6 +584,14 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 			f(*kind.Cond)
 		}
 		f(kind.Body)
+	case FunDecl:
+		for i := range len(kind.TypeParams) {
+			f(kind.TypeParams[i])
+		}
+		for i := range len(kind.Params) {
+			f(kind.Params[i])
+		}
+		f(kind.ReturnType)
 	case Fun:
 		for i := range len(kind.TypeParams) {
 			f(kind.TypeParams[i])
@@ -568,6 +614,17 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		for i := range len(kind.Fields) {
 			f(kind.Fields[i])
+		}
+	case Shape:
+		for i := range len(kind.Fields) {
+			f(kind.Fields[i])
+		}
+		for i := range len(kind.Funs) {
+			f(kind.Funs[i])
+		}
+	case TypeParam:
+		if kind.Constraint != nil {
+			f(*kind.Constraint)
 		}
 	case StructField:
 		f(kind.Type)
@@ -764,6 +821,21 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		} else {
 			addChild("decls", kind.Decls...)
 		}
+	case FunDecl:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if !children {
+			if len(kind.TypeParams) > 0 {
+				addAttr("typeParams", nodeIDList(kind.TypeParams))
+			}
+			addAttr("params", nodeIDList(kind.Params))
+			addAttr("returnType", nodeIDKind(kind.ReturnType))
+		} else {
+			if len(kind.TypeParams) > 0 {
+				addChild("typeParams", kind.TypeParams...)
+			}
+			addChild("params", kind.Params...)
+			addChild("returnType", kind.ReturnType)
+		}
 	case Fun:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if !children {
@@ -808,6 +880,24 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 				addChild("typeParams", kind.TypeParams...)
 			}
 			addChild("fields", kind.Fields...)
+		}
+	case Shape:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if !children {
+			addAttr("fields", nodeIDList(kind.Fields))
+			addAttr("funs", nodeIDList(kind.Funs))
+		} else {
+			addChild("fields", kind.Fields...)
+			addChild("funs", kind.Funs...)
+		}
+	case TypeParam:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Constraint != nil {
+			if !children {
+				addAttr("constraint", nodeIDKind(*kind.Constraint))
+			} else {
+				addChild("constraint", *kind.Constraint)
+			}
 		}
 	case StructField:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))

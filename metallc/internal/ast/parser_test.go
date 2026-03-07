@@ -378,17 +378,17 @@ func TestParseOK(t *testing.T) {
 		}},
 
 		{"generic struct", "expr", `struct Foo<T> { value T }`, func(a *TestAST) NodeID {
-			return a.generic_struct("Foo", []NodeID{a.typ("T")}, a.struct_field("value", a.typ("T")))
+			return a.generic_struct("Foo", []NodeID{a.type_param("T")}, a.struct_field("value", a.typ("T")))
 		}},
 		{"generic struct two params", "expr", `struct Foo<A, B> { a A b B }`, func(a *TestAST) NodeID {
 			return a.generic_struct("Foo",
-				[]NodeID{a.typ("A"), a.typ("B")},
+				[]NodeID{a.type_param("A"), a.type_param("B")},
 				a.struct_field("a", a.typ("A")), a.struct_field("b", a.typ("B")),
 			)
 		}},
 		{"generic fun", "expr", `fun foo<T>(x T) T { x }`, func(a *TestAST) NodeID {
 			return a.generic_fun("foo",
-				[]NodeID{a.typ("T")},
+				[]NodeID{a.type_param("T")},
 				a.fun_param("x", a.typ("T")),
 				a.typ("T"),
 				a.block_no_scope(a.ident("x")),
@@ -421,6 +421,32 @@ func TestParseOK(t *testing.T) {
 			return a.call(a.ident_type_args("foo", a.typ_args("Bar", a.int_typ())), a.int_(42))
 		}},
 
+		{"constrained type param", "expr", `fun foo<T Showable>(t T) void { }`, func(a *TestAST) NodeID {
+			return a.generic_fun("foo",
+				[]NodeID{a.constrained_type_param("T", a.typ("Showable"))},
+				a.fun_param("t", a.typ("T")),
+				a.void_typ(),
+				a.block_no_scope(),
+			)
+		}},
+		{"shape", "expr", `shape Foo { name Str }`, func(a *TestAST) NodeID {
+			return a.shape("Foo", []NodeID{a.struct_field("name", a.str_typ())})
+		}},
+		{"shape with fun", "expr", `shape Foo { fun Foo.bar(f Foo) Str }`, func(a *TestAST) NodeID {
+			return a.shape("Foo", nil,
+				a.fun_decl("Foo.bar", a.fun_param("f", a.typ("Foo")), a.str_typ()),
+			)
+		}},
+		{
+			"shape with field and fun", "expr",
+			`shape Foo { name Str fun Foo.bar(f Foo) Str }`,
+			func(a *TestAST) NodeID {
+				return a.shape("Foo",
+					[]NodeID{a.struct_field("name", a.str_typ())},
+					a.fun_decl("Foo.bar", a.fun_param("f", a.typ("Foo")), a.str_typ()),
+				)
+			},
+		},
 		{
 			"namespaced fun", "expr", `fun Foo.bar(f Foo) Int { 123 }`,
 			func(a *TestAST) NodeID {
@@ -639,6 +665,27 @@ func (a *TestAST) struct_(name string, fields ...NodeID) NodeID {
 		fields = []NodeID{}
 	}
 	return a.NewStruct(Name{name, a.span}, nil, fields, a.span)
+}
+
+func (a *TestAST) type_param(name string) NodeID {
+	return a.NewTypeParam(Name{name, a.span}, nil, a.span)
+}
+
+func (a *TestAST) constrained_type_param(name string, constraint NodeID) NodeID {
+	return a.NewTypeParam(Name{name, a.span}, &constraint, a.span)
+}
+
+func (a *TestAST) shape(name string, fields []NodeID, funs ...NodeID) NodeID {
+	if fields == nil {
+		fields = []NodeID{}
+	}
+	return a.NewShape(Name{name, a.span}, fields, funs, a.span)
+}
+
+func (a *TestAST) fun_decl(name string, paramsAndReturn ...NodeID) NodeID {
+	returnTyp := paramsAndReturn[len(paramsAndReturn)-1]
+	params := paramsAndReturn[:len(paramsAndReturn)-1]
+	return a.NewFunDecl(Name{name, a.span}, nil, params, returnTyp, a.span)
 }
 
 func (a *TestAST) generic_struct(name string, typeParams []NodeID, fields ...NodeID) NodeID {
@@ -860,7 +907,16 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 		case FunParam:
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
+		case FunDecl:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
 		case Fun:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case TypeParam:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case Shape:
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case StructField:

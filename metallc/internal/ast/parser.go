@@ -59,6 +59,10 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if struct_, ok := p.ParseStruct(); ok {
 				decls = append(decls, struct_)
 			}
+		case token.Shape:
+			if shape, ok := p.ParseShape(); ok {
+				decls = append(decls, shape)
+			}
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
 			return decls, false
@@ -106,52 +110,26 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 	return p.NewFunType(params, returnTyp, span.Combine(p.span())), ok
 }
 
+func (p *Parser) ParseFunDecl() (NodeID, bool) {
+	decl, startSpan, ok := p.parseFunDecl()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewFunDecl(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType,
+		startSpan.Combine(p.span())), true
+}
+
 func (p *Parser) ParseFun() (NodeID, bool) {
-	t, ok := p.expect(token.Fun)
+	decl, startSpan, ok := p.parseFunDecl()
 	if !ok {
 		return ParseFailed, false
 	}
-	span := t.Span
-	t, ok = p.mustPeek()
+	block, ok := p.parseBlock(false)
 	if !ok {
 		return ParseFailed, false
 	}
-	// Check for namespace syntax: `fun Foo.bar(...)` where Foo is a TypeIdent.
-	var name Name
-	if t.Kind == token.TypeIdent {
-		p.next()
-		if _, ok := p.expect(token.Dot); !ok {
-			return ParseFailed, false
-		}
-		method, ok := p.expect(token.Ident)
-		if !ok {
-			return ParseFailed, false
-		}
-		name = Name{t.Value + "." + method.Value, t.Span.Combine(method.Span)}
-	} else {
-		t, ok := p.expect(token.Ident)
-		if !ok {
-			return ParseFailed, false
-		}
-		name = Name{t.Value, t.Span}
-	}
-	typeParams, ok := p.parseTypeParams()
-	if !ok {
-		return ParseFailed, false
-	}
-	params, ok := p.ParseFunParams()
-	if !ok {
-		return ParseFailed, false
-	}
-	returnType, ok := p.parseFunReturnType()
-	if !ok {
-		return ParseFailed, false
-	}
-	block, ok := p.parseBlock(false) // Function creates its own scope for params and body.
-	if !ok {
-		return ParseFailed, false
-	}
-	return p.NewFun(name, typeParams, params, returnType, block, span.Combine(p.span())), true
+	return p.NewFun(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType, block,
+		startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseReturn() (NodeID, bool) {
@@ -166,11 +144,14 @@ func (p *Parser) ParseReturn() (NodeID, bool) {
 	return p.NewReturn(expr, t.Span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseStructFields() ([]NodeID, bool) {
+func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 	fields := []NodeID{}
 	for {
 		t, ok := p.mayPeek()
 		if !ok {
+			return fields, true
+		}
+		if slices.Contains(stopAt, t.Kind) {
 			return fields, true
 		}
 		span := t.Span
@@ -188,8 +169,6 @@ func (p *Parser) ParseStructFields() ([]NodeID, bool) {
 				return nil, false
 			}
 			name = Name{nt.Value, nt.Span}
-		case token.RCurly:
-			return fields, true
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
 			return nil, false
@@ -223,7 +202,7 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if _, ok := p.expect(token.LCurly); !ok {
 		return ParseFailed, false
 	}
-	fields, ok := p.ParseStructFields()
+	fields, ok := p.ParseStructFields(token.RCurly)
 	if !ok {
 		return ParseFailed, false
 	}
@@ -231,6 +210,42 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewStruct(name, typeParams, fields, t.Span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseShape() (NodeID, bool) {
+	t, ok := p.expect(token.Shape)
+	if !ok {
+		return ParseFailed, false
+	}
+	nameToken, ok := p.expect(token.TypeIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	name := Name{nameToken.Value, nameToken.Span}
+	if _, ok := p.expect(token.LCurly); !ok {
+		return ParseFailed, false
+	}
+	fields, ok := p.ParseStructFields(token.RCurly, token.Fun)
+	if !ok {
+		return ParseFailed, false
+	}
+	var funs []NodeID
+	for {
+		next, ok := p.mayPeek()
+		if !ok {
+			return ParseFailed, false
+		}
+		if next.Kind == token.RCurly {
+			p.next()
+			break
+		}
+		funDecl, ok := p.ParseFunDecl()
+		if !ok {
+			return ParseFailed, false
+		}
+		funs = append(funs, funDecl)
+	}
+	return p.NewShape(name, fields, funs, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseStructLiteral() (NodeID, bool) {
@@ -594,6 +609,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = struct_
+	case token.Shape:
+		shape, ok := p.ParseShape()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = shape
 	case token.If:
 		if_, ok := p.ParseIf()
 		if !ok {
@@ -1121,7 +1142,13 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 		if !ok {
 			return nil, false
 		}
-		params = append(params, p.NewSimpleType(Name{t.Value, t.Span}, nil, t.Span))
+		var constraint *NodeID
+		if next, ok := p.mayPeek(); ok && next.Kind == token.TypeIdent {
+			p.next()
+			c := p.NewSimpleType(Name{next.Value, next.Span}, nil, next.Span)
+			constraint = &c
+		}
+		params = append(params, p.NewTypeParam(Name{t.Value, t.Span}, constraint, t.Span))
 	}
 }
 
@@ -1155,6 +1182,48 @@ func (p *Parser) parseTypeArgs() ([]NodeID, bool) {
 		}
 		args = append(args, typ)
 	}
+}
+
+func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
+	t, ok := p.expect(token.Fun)
+	if !ok {
+		return FunDecl{}, base.Span{}, false
+	}
+	var name Name
+	peek, ok := p.mustPeek()
+	if !ok {
+		return FunDecl{}, base.Span{}, false
+	}
+	if peek.Kind == token.TypeIdent {
+		p.next()
+		if _, ok := p.expect(token.Dot); !ok {
+			return FunDecl{}, base.Span{}, false
+		}
+		method, ok := p.expect(token.Ident)
+		if !ok {
+			return FunDecl{}, base.Span{}, false
+		}
+		name = Name{peek.Value + "." + method.Value, peek.Span.Combine(method.Span)}
+	} else {
+		ident, ok := p.expect(token.Ident)
+		if !ok {
+			return FunDecl{}, base.Span{}, false
+		}
+		name = Name{ident.Value, ident.Span}
+	}
+	typeParams, ok := p.parseTypeParams()
+	if !ok {
+		return FunDecl{}, base.Span{}, false
+	}
+	params, ok := p.ParseFunParams()
+	if !ok {
+		return FunDecl{}, base.Span{}, false
+	}
+	returnType, ok := p.parseFunReturnType()
+	if !ok {
+		return FunDecl{}, base.Span{}, false
+	}
+	return FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType}, t.Span, true
 }
 
 func (p *Parser) parseFunReturnType() (NodeID, bool) {

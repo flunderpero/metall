@@ -736,7 +736,7 @@ func (e *Engine) instantiateStruct(
 	}
 	defer e.enterChildEnv()()
 	for i, typeParamNodeID := range structNode.TypeParams {
-		typeParamNode := base.Cast[ast.SimpleType](e.Node(typeParamNodeID).Kind)
+		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
 		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
 	}
 	node := e.Node(structNodeID)
@@ -791,7 +791,7 @@ func (e *Engine) instantiateFun(
 	}
 	defer e.enterChildEnv()()
 	for i, typeParamNodeID := range funNode.TypeParams {
-		typeParamNode := base.Cast[ast.SimpleType](e.Node(typeParamNodeID).Kind)
+		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
 		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
 	}
 	paramTypeIDs := make([]TypeID, len(funNode.Params))
@@ -1155,7 +1155,7 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, TypeStatus) {
 	seen := map[string]bool{}
 	for _, typeParamNodeID := range fun.TypeParams {
-		typeParamNode := base.Cast[ast.SimpleType](e.Node(typeParamNodeID).Kind)
+		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
 		if seen[typeParamNode.Name.Name] {
 			e.diag(typeParamNode.Name.Span, "duplicate type parameter: %s", typeParamNode.Name.Name)
 			return InvalidTypeID, TypeFailed
@@ -1265,7 +1265,7 @@ func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType Struc
 	defer e.enterChildEnv()()
 	seen := map[string]bool{}
 	for _, typeParamNodeID := range structNode.TypeParams {
-		typeParamNode := base.Cast[ast.SimpleType](e.Node(typeParamNodeID).Kind)
+		typeParamNode := base.Cast[ast.TypeParam](e.Node(typeParamNodeID).Kind)
 		if seen[typeParamNode.Name.Name] {
 			e.diag(typeParamNode.Name.Span, "duplicate type parameter: %s", typeParamNode.Name.Name)
 			return TypeFailed, structType

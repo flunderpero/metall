@@ -106,6 +106,10 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 			}
 		case Struct:
 			defer enterScope(nodeID, kind.Name.Name)()
+		case Shape:
+			defer enterScope(nodeID, kind.Name.Name)()
+		case FunDecl:
+			defer enterScope(nodeID, kind.Name.Name)()
 		case Fun:
 			defer enterScope(nodeID, kind.Name.Name)()
 		}
