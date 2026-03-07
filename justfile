@@ -86,13 +86,18 @@ test-linux arch=host_arch:
     fi
 
     echo ">>> Cross-compiling tests for $platform"
-    CGO_ENABLED=0 GOOS=linux GOARCH="{{arch}}" go test -c -o .build/metallc-test ./metallc/internal/
+    mkdir -p .build/tests
+    rm -f .build/tests/*
+    for pkg in $(go list ./metallc/...); do
+        name=$(echo "$pkg" | tr '/' '-')
+        CGO_ENABLED=0 GOOS=linux GOARCH="{{arch}}" go test -c -o ".build/tests/${name}" "$pkg" 2>/dev/null || true
+    done
 
     echo ">>> Running tests in podman ($platform)"
     podman run --rm --platform "$platform" \
-        -v "$PWD/.build/metallc-test:/metallc-test:ro" \
+        -v "$PWD/.build/tests:/tests:ro" \
         "$image" \
-        /metallc-test -test.count=1
+        sh -c 'for t in /tests/*; do echo "=== ${t##*/}"; "$t" -test.count=1 || exit 1; done'
 
 go-mod:
     cd metallc && go mod tidy
