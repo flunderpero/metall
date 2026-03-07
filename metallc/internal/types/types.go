@@ -85,6 +85,10 @@ type SliceType struct {
 
 func (SliceType) isTypeKind() {}
 
+type TypeParamType struct{}
+
+func (TypeParamType) isTypeKind() {}
+
 type AllocatorImpl int
 
 const (

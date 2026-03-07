@@ -642,6 +642,97 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ fun Int.double(self Int) Int { self + self } Int.double(21) }`,
 			Int, nil,
 		},
+		{
+			"method call in namespace",
+			`fun ns() Int { struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) x.get() }`,
+			nil,
+			func(e *Engine, _ ast.NodeID, assert base.Assert) {
+				assert.Equal(0, len(e.Diagnostics))
+			},
+		},
+		{
+			"direct qualified call in namespace",
+			`fun ns() Int { struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) Foo.get(x) }`,
+			nil,
+			func(e *Engine, _ ast.NodeID, assert base.Assert) {
+				assert.Equal(0, len(e.Diagnostics))
+			},
+		},
+		{
+			"generic struct two params nested",
+			`{
+				struct Pair<A, B> { first A second B }
+				struct Box<T> { value T }
+				let x = Pair<Box<Int>, Str>(Box<Int>(42), "hello")
+				x.first.value
+			}`,
+			Int, nil,
+		},
+
+		{
+			"generic struct",
+			`{ struct Foo<T> { value T } let x = Foo<Int>(42) x.value }`,
+			Int, nil,
+		},
+		{
+			"generic struct identity and distinctness",
+			`{ struct Foo<T> { value T } let a = Foo<Int>(1) let b = Foo<Int>(2) let c = Foo<Str>("x") }`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.Node(id).Kind)
+				aVar := base.Cast[ast.Var](e.Node(block.Exprs[1]).Kind)
+				bVar := base.Cast[ast.Var](e.Node(block.Exprs[2]).Kind)
+				cVar := base.Cast[ast.Var](e.Node(block.Exprs[3]).Kind)
+				aName := base.Cast[StructType](e.env.TypeOfNode(aVar.Expr).Kind).Name
+				bName := base.Cast[StructType](e.env.TypeOfNode(bVar.Expr).Kind).Name
+				cName := base.Cast[StructType](e.env.TypeOfNode(cVar.Expr).Kind).Name
+				assert.Equal(aName, bName, "Foo<Int> should be the same type")
+				assert.NotEqual(aName, cName, "Foo<Int> and Foo<Str> should be distinct")
+			},
+		},
+		{
+			"generic struct recursive",
+			`{
+				struct Node<T> { value T next &Node<T> }
+				fun foo(n &Node<Int>) Int { n.next.value }
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				funTyp := base.Cast[FunType](e.env.TypeOfNode(id).Kind)
+				assert.Equal(1, len(funTyp.Params))
+				ref := base.Cast[RefType](e.env.Type(funTyp.Params[0]).Kind)
+				node := base.Cast[StructType](e.env.Type(ref.Type).Kind)
+				assert.Equal(2, len(node.Fields))
+				assert.Equal("value", node.Fields[0].Name)
+				assert.Equal("next", node.Fields[1].Name)
+				nextRef := base.Cast[RefType](e.env.Type(node.Fields[1].Type).Kind)
+				assert.Equal(ref.Type, nextRef.Type, "recursive: next field should be same type")
+			},
+		},
+		{
+			"generic struct shadowed",
+			`{
+				struct Foo<T> { one T }
+				let a = Foo<Int>(1)
+				{
+					struct Foo<T> { one T two T }
+					let b = Foo<Int>(2, 3)
+					b.two
+				}
+				a.one
+			}`,
+			Int, nil,
+		},
+		{
+			"generic struct nested type arg",
+			`{
+				struct Foo<T> { value T }
+				struct Bar<T> { inner Foo<T> }
+				let x = Bar<Int>(Foo<Int>(42))
+				x.inner.value
+			}`,
+			Int, nil,
+		},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
@@ -1173,6 +1264,53 @@ func TestTypeCheckErr(t *testing.T) {
                     y.get()
                     ^
                 }`, "\n") + "\n",
+			},
+		},
+
+		// Generic struct errors.
+		{
+			"generic struct type arg count too few",
+			`{ struct Foo<T, U> { one T two U } let x = Foo<Int>(42, 42) }`,
+			[]string{
+				"test.met:1:44: type argument count mismatch: expected 2, got 1\n" +
+					"    { struct Foo<T, U> { one T two U } let x = Foo<Int>(42, 42) }\n" +
+					"                                               ^^^^^^^^",
+			},
+		},
+		{
+			"generic struct type arg count too many",
+			`{ struct Foo<T> { value T } let x = Foo<Int, Str>(42) }`,
+			[]string{
+				"test.met:1:37: type argument count mismatch: expected 1, got 2\n" +
+					"    { struct Foo<T> { value T } let x = Foo<Int, Str>(42) }\n" +
+					"                                        ^^^^^^^^^^^^^",
+			},
+		},
+		{
+			"generic struct duplicate type param",
+			`{ struct Foo<T, T> { one T two T } }`,
+			[]string{
+				"test.met:1:17: duplicate type parameter: T\n" +
+					"    { struct Foo<T, T> { one T two T } }\n" +
+					"                    ^",
+			},
+		},
+		{
+			"generic struct type args on non-struct",
+			`{ fun foo(x Int<Str>) void {} }`,
+			[]string{
+				"test.met:1:13: type arguments on non-struct type: Int\n" +
+					"    { fun foo(x Int<Str>) void {} }\n" +
+					"                ^^^^^^^^",
+			},
+		},
+		{
+			"generic struct missing type args",
+			`{ struct Foo<T> { value T } fun bar(f Foo) void {} }`,
+			[]string{
+				"test.met:1:39: type argument count mismatch: expected 1, got 0\n" +
+					"    { struct Foo<T> { value T } fun bar(f Foo) void {} }\n" +
+					"                                          ^^^",
 			},
 		},
 	}

@@ -159,11 +159,11 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	}
 }
 
-func (g *IRGen) genStruct(env *types.TypeEnv, id ast.NodeID) {
-	astStruct := base.Cast[ast.Struct](g.ast.Node(id).Kind)
-	typ := env.TypeOfNode(id)
+func (g *IRGen) genStruct(env *types.TypeEnv, s types.StructWork) {
+	astStruct := base.Cast[ast.Struct](g.ast.Node(s.NodeID).Kind)
+	typ := env.Type(s.TypeID)
 	structType := base.Cast[types.StructType](typ.Kind)
-	g.write("%%%s = type { ; %s", typ.ID, astStruct.Name.Name)
+	g.write("%%%s = type { ; %s", s.TypeID, structType.Name)
 	g.indent++
 	for i, astFieldID := range astStruct.Fields {
 		astField := base.Cast[ast.StructField](g.ast.Node(astFieldID).Kind)
@@ -1151,7 +1151,7 @@ func GenIR(
 	g.write("%Str = type { {ptr, i64} }\n")
 	// Emit struct type definitions.
 	for _, s := range structs {
-		g.genStruct(s.Env, s.NodeID)
+		g.genStruct(s.Env, s)
 	}
 	// Emit all functions — each gets a fresh IRFunGen.
 	for i := range funs {

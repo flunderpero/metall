@@ -69,6 +69,7 @@ type TypeRegistry struct {
 }
 
 type TypeEnv struct {
+	parent             *TypeEnv
 	ast                *ast.AST
 	scopeGraph         *ast.ScopeGraph
 	reg                *TypeRegistry
@@ -80,6 +81,7 @@ type TypeEnv struct {
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 	return &TypeEnv{
+		parent:     nil,
 		ast:        a,
 		scopeGraph: g,
 		reg: &TypeRegistry{
@@ -97,12 +99,32 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 	}
 }
 
+func (e *TypeEnv) NewChildEnv() *TypeEnv {
+	return &TypeEnv{
+		parent:             e,
+		ast:                e.ast,
+		scopeGraph:         e.scopeGraph,
+		reg:                e.reg,
+		bindings:           map[ast.BindingID]*Binding{},
+		nodes:              map[ast.NodeID]*cachedType{},
+		namedFunRef:        map[ast.NodeID]string{},
+		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
+	}
+}
+
+func (e *TypeEnv) IsRoot() bool {
+	return e.parent == nil
+}
+
 func (e *TypeEnv) TypeOfNode(id ast.NodeID) *Type {
 	cached, ok := e.nodes[id]
-	if !ok {
-		panic(base.Errorf("type not found for %s", e.ast.Debug(id, false, 0)))
+	if ok {
+		return cached.Type
 	}
-	return cached.Type
+	if e.parent != nil {
+		return e.parent.TypeOfNode(id)
+	}
+	panic(base.Errorf("type not found for %s", e.ast.Debug(id, false, 0)))
 }
 
 func (e *TypeEnv) Type(id TypeID) *Type {
@@ -122,12 +144,24 @@ func (e *TypeEnv) DeclNode(typeID TypeID) ast.NodeID {
 
 func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
 	name, ok := e.namedFunRef[id]
-	return name, ok
+	if ok {
+		return name, true
+	}
+	if e.parent != nil {
+		return e.parent.NamedFunRef(id)
+	}
+	return "", false
 }
 
 func (e *TypeEnv) MethodCallReceiver(callID ast.NodeID) (ast.NodeID, bool) {
 	target, ok := e.methodCallReceiver[callID]
-	return target, ok
+	if ok {
+		return target, true
+	}
+	if e.parent != nil {
+		return e.parent.MethodCallReceiver(callID)
+	}
+	return 0, false
 }
 
 func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
@@ -171,6 +205,8 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case SliceType:
 		return fmt.Sprintf("[]%s", e.TypeDisplay(kind.Elem))
+	case TypeParamType:
+		return "<typeparam>"
 	case AllocatorType:
 		return fmt.Sprintf("alloc(%s)", kind.Impl)
 	default:
@@ -185,10 +221,13 @@ func (e *TypeEnv) Lookup(nodeID ast.NodeID, name string) (*Binding, bool) {
 		return nil, false
 	}
 	b, ok := e.bindings[scopeBinding.ID]
-	if !ok {
-		return nil, false
+	if ok {
+		return b, true
 	}
-	return b, true
+	if e.parent != nil {
+		return e.parent.Lookup(nodeID, name)
+	}
+	return nil, false
 }
 
 func (e *TypeEnv) IterTypes(f func(*Type, TypeStatus) bool) {
@@ -289,12 +328,22 @@ func (e *TypeEnv) setNamedFunRef(nodeID ast.NodeID, name string) {
 }
 
 func (e *TypeEnv) copyNamedFunRef(dst ast.NodeID, src ast.NodeID) {
-	e.namedFunRef[dst] = e.namedFunRef[src]
+	name, ok := e.NamedFunRef(src)
+	if !ok {
+		panic(base.Errorf("named fun ref not found for %s", src))
+	}
+	e.namedFunRef[dst] = name
 }
 
 func (e *TypeEnv) isNamedFun(nodeID ast.NodeID) bool {
 	_, ok := e.namedFunRef[nodeID]
-	return ok
+	if ok {
+		return true
+	}
+	if e.parent != nil {
+		return e.parent.isNamedFun(nodeID)
+	}
+	return false
 }
 
 func (e *TypeEnv) setMethodCallReceiver(callID ast.NodeID, targetID ast.NodeID) {

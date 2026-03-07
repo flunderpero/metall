@@ -1,6 +1,11 @@
 package types
 
 import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
@@ -14,6 +19,7 @@ type FunWork struct {
 
 type StructWork struct {
 	NodeID ast.NodeID
+	TypeID TypeID
 	Env    *TypeEnv
 }
 
@@ -24,7 +30,7 @@ type Engine struct {
 	env         *TypeEnv
 	ScopeGraph  *ast.ScopeGraph
 	funs        []ast.NodeID
-	structs     []ast.NodeID
+	structs     map[string]StructWork
 	loopStack   []ast.NodeID
 	funStack    []TypeID
 	typeHint    *TypeID
@@ -46,10 +52,12 @@ func NewEngine(a *ast.AST, preludeAST *ast.AST) *Engine {
 		Debug:      base.NilDebug{},
 		env:        NewRootEnv(merged, g),
 		ScopeGraph: g,
+		structs:    map[string]StructWork{},
 	}
 	for _, root := range preludeAST.Roots {
 		e.Query(root)
 	}
+	e.structs = map[string]StructWork{}
 	if len(e.Diagnostics) > 0 {
 		panic(base.Errorf("prelude type-check failed: %s", e.Diagnostics))
 	}
@@ -184,13 +192,7 @@ func (e *Engine) BuildWorkList(module ast.Module) ([]FunWork, []StructWork) {
 		}
 		funs = append(funs, FunWork{NodeID: id, Name: name, IsMain: isMain, Env: e.env})
 	}
-	structs := make([]StructWork, 0, len(e.structs))
-	for _, id := range e.structs {
-		if id >= ast.PreludeFirstID {
-			continue
-		}
-		structs = append(structs, StructWork{NodeID: id, Env: e.env})
-	}
+	structs := slices.Collect(maps.Values(e.structs))
 	return funs, structs
 }
 
@@ -666,6 +668,64 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 	}
 }
 
+func (e *Engine) enterChildEnv() func() {
+	prev := e.env
+	e.env = e.env.NewChildEnv()
+	return func() { e.env = prev }
+}
+
+func (e *Engine) registerStruct(structType StructType, nodeID ast.NodeID, typeID TypeID) {
+	if _, ok := e.structs[structType.Name]; !ok {
+		e.structs[structType.Name] = StructWork{NodeID: nodeID, TypeID: typeID, Env: e.env}
+	}
+}
+
+func (e *Engine) instantiateStruct(
+	generic StructType,
+	genericTypeID TypeID,
+	typeArgNodeIDs []ast.NodeID,
+	span base.Span,
+) (TypeID, TypeStatus) {
+	structNodeID := e.env.DeclNode(genericTypeID)
+	structNode := base.Cast[ast.Struct](e.Node(structNodeID).Kind)
+	if len(typeArgNodeIDs) != len(structNode.TypeParams) {
+		e.diag(span, "type argument count mismatch: expected %d, got %d",
+			len(structNode.TypeParams), len(typeArgNodeIDs))
+		return InvalidTypeID, TypeFailed
+	}
+	mangledParts := make([]string, len(typeArgNodeIDs))
+	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
+	for i, typeArgNodeID := range typeArgNodeIDs {
+		argTypeID, status := e.Query(typeArgNodeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		argTypeIDs[i] = argTypeID
+		mangledParts[i] = argTypeID.String()
+	}
+	mangledName := fmt.Sprintf("%s.%s<%s>", generic.Name, genericTypeID, strings.Join(mangledParts, "."))
+	if cached, ok := e.structs[mangledName]; ok {
+		return cached.TypeID, TypeOK
+	}
+	defer e.enterChildEnv()()
+	for i, typeParamNodeID := range structNode.TypeParams {
+		typeParamNode := base.Cast[ast.SimpleType](e.Node(typeParamNodeID).Kind)
+		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
+	}
+	node := e.Node(structNodeID)
+	placeholder := StructType{mangledName, []StructField{}}
+	typeID := e.env.newType(placeholder, node.ID, node.Span, TypeInProgress)
+	e.structs[mangledName] = StructWork{NodeID: structNodeID, TypeID: typeID, Env: e.env}
+	status, resolved := e.resolveStructFields(structNode, placeholder)
+	if status.Failed() {
+		return InvalidTypeID, status
+	}
+	cached := e.env.reg.types[typeID]
+	cached.Type.Kind = resolved
+	cached.Status = TypeOK
+	return typeID, TypeOK
+}
+
 func (e *Engine) checkStructLiteralFields(
 	struct_ StructType, structTypeID TypeID, lit ast.StructLiteral, span base.Span,
 ) (TypeID, TypeStatus) {
@@ -880,7 +940,6 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 			e.funs = append(e.funs, nodeID)
 		case ast.Struct:
 			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil})
-			e.structs = append(e.structs, nodeID)
 		}
 	}
 
@@ -985,15 +1044,32 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 		funStatus = TypeOK
 		e.env.cacheFunType(cacheKey, funTypeID)
 	}
-	if !e.bind(node.ID, fun.Name.Name, false, funTypeID, fun.Name.Span) {
+	bindName := fun.Name.Name
+	if structName, methodName, ok := strings.Cut(fun.Name.Name, "."); ok {
+		bindName = e.resolveMethodBindName(node.ID, structName, methodName)
+	}
+	if !e.bind(node.ID, bindName, false, funTypeID, fun.Name.Span) {
 		return InvalidTypeID, TypeFailed
 	}
 	e.env.setNamedFunRef(node.ID, e.ScopeGraph.NodeScope(node.ID).NamespacedName(fun.Name.Name))
 	return funTypeID, funStatus
 }
 
+func (e *Engine) resolveMethodBindName(nodeID ast.NodeID, structName, methodName string) string {
+	binding, ok := e.lookup(nodeID, structName)
+	if !ok {
+		panic(base.Errorf("method receiver type not found: %s", structName))
+	}
+	typ := e.env.Type(binding.TypeID)
+	if s, ok := typ.Kind.(StructType); ok {
+		return s.Name + "." + methodName
+	}
+	return structName + "." + methodName
+}
+
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
-	typeID := e.env.newType(StructType{structNode.Name.Name, []StructField{}}, node.ID, node.Span, TypeInProgress)
+	name := e.ScopeGraph.NodeScope(node.ID).NamespacedName(structNode.Name.Name)
+	typeID := e.env.newType(StructType{name, []StructField{}}, node.ID, node.Span, TypeInProgress)
 	if !e.bind(node.ID, structNode.Name.Name, false, typeID, structNode.Name.Span) {
 		return typeID, TypeFailed
 	}
@@ -1027,6 +1103,22 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 }
 
 func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType StructType) (TypeStatus, StructType) {
+	defer e.enterChildEnv()()
+	seen := map[string]bool{}
+	for _, typeParamNodeID := range structNode.TypeParams {
+		typeParamNode := base.Cast[ast.SimpleType](e.Node(typeParamNodeID).Kind)
+		if seen[typeParamNode.Name.Name] {
+			e.diag(typeParamNode.Name.Span, "duplicate type parameter: %s", typeParamNode.Name.Name)
+			return TypeFailed, structType
+		}
+		seen[typeParamNode.Name.Name] = true
+		typeParamID := e.env.newType(TypeParamType{}, typeParamNodeID, e.Node(typeParamNodeID).Span, TypeOK)
+		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, typeParamID, typeParamNode.Name.Span)
+	}
+	return e.resolveStructFields(structNode, structType)
+}
+
+func (e *Engine) resolveStructFields(structNode ast.Struct, structType StructType) (TypeStatus, StructType) {
 	fields := make([]StructField, len(structNode.Fields))
 	for i, fieldNodeID := range structNode.Fields {
 		fieldTypeID, status := e.Query(fieldNodeID)
@@ -1146,7 +1238,11 @@ func (e *Engine) checkStructField(_ ast.NodeID, structField ast.StructField, _ b
 }
 
 func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
-	binding, ok := e.lookup(nodeID, ident.Name)
+	lookupName := ident.Name
+	if structName, methodName, ok := strings.Cut(ident.Name, "."); ok {
+		lookupName = e.resolveMethodBindName(nodeID, structName, methodName)
+	}
+	binding, ok := e.lookup(nodeID, lookupName)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
@@ -1157,6 +1253,14 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 	if binding.Decl != 0 {
 		if _, ok := e.Node(binding.Decl).Kind.(ast.Fun); ok {
 			e.env.copyNamedFunRef(nodeID, binding.Decl)
+		}
+		if structType, ok := e.env.Type(binding.TypeID).Kind.(StructType); ok {
+			if structNode, ok := e.Node(binding.Decl).Kind.(ast.Struct); ok {
+				if len(ident.TypeArgs) > 0 || len(structNode.TypeParams) > 0 {
+					return e.instantiateStruct(structType, binding.TypeID, ident.TypeArgs, span)
+				}
+				e.registerStruct(structType, binding.Decl, binding.TypeID)
+			}
 		}
 	}
 	return binding.TypeID, TypeOK
@@ -1211,6 +1315,22 @@ func (e *Engine) checkSimpleType(nodeID ast.NodeID, simpleType ast.SimpleType, s
 	if !ok {
 		e.diag(span, "symbol not defined: %s", simpleType.Name.Name)
 		return InvalidTypeID, TypeFailed
+	}
+	if len(simpleType.TypeArgs) > 0 {
+		structType, isStruct := e.env.Type(binding.TypeID).Kind.(StructType)
+		if !isStruct {
+			e.diag(span, "type arguments on non-struct type: %s", simpleType.Name.Name)
+			return InvalidTypeID, TypeFailed
+		}
+		return e.instantiateStruct(structType, binding.TypeID, simpleType.TypeArgs, span)
+	}
+	if structType, isStruct := e.env.Type(binding.TypeID).Kind.(StructType); isStruct {
+		if structNode, ok := e.Node(binding.Decl).Kind.(ast.Struct); ok {
+			if len(structNode.TypeParams) > 0 {
+				return e.instantiateStruct(structType, binding.TypeID, nil, span)
+			}
+			e.registerStruct(structType, binding.Decl, binding.TypeID)
+		}
 	}
 	return binding.TypeID, TypeOK
 }
@@ -1392,7 +1512,7 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 }
 
 func (e *Engine) bind(nodeID ast.NodeID, name string, mut bool, typeID TypeID, span base.Span) bool {
-	if !e.env.bind(nodeID, name, mut, typeID) {
+	if !e.env.bind(nodeID, name, mut, typeID) && e.env.IsRoot() {
 		e.diag(span, "symbol already defined: %s", name)
 		return false
 	}

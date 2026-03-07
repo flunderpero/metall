@@ -567,6 +567,19 @@ func TestCompile(t *testing.T) {
 			}
 			`, "hello\n"},
 
+		{"generic struct", `
+			struct Pair<T> {
+				first T
+				second T
+			}
+
+			fun main() void {
+				let p = Pair<Int>(10, 20)
+				print_int(p.first)
+				print_int(p.second)
+			}
+			`, "10\n20\n"},
+
 		{"forward declared fun", `
 			fun main() void {
 				print_int(foo())
