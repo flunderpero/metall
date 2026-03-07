@@ -65,13 +65,13 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	preludeAST, _ := ast.PreludeAST()
 	engine := types.NewEngine(parser.AST, preludeAST)
 	engine.Query(fileID)
-	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics) {
+	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
 		return ErrAbort
 	}
-	if len(engine.Diagnostics) > 0 {
-		return engine.Diagnostics
+	if len(engine.Diagnostics()) > 0 {
+		return engine.Diagnostics()
 	}
-	lifetime := types.NewLifetimeAnalyzer(engine.AST, engine.ScopeGraph, engine.Env())
+	lifetime := types.NewLifetimeAnalyzer(engine.AST(), engine.ScopeGraph(), engine.Env())
 	lifetime.Check(fileID)
 	if listener != nil && !listener.OnLifetimeCheck(lifetime, lifetime.Diagnostics) {
 		return ErrAbort
@@ -79,9 +79,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(lifetime.Diagnostics) > 0 {
 		return lifetime.Diagnostics
 	}
-	module := base.Cast[ast.Module](engine.Node(fileID).Kind)
+	module := base.Cast[ast.Module](engine.AST().Node(fileID).Kind)
 	ir, err := gen.GenIR(
-		engine.AST, module, engine.Funs(), engine.Structs(),
+		engine.AST(), module, engine.Funs(), engine.Structs(),
 		gen.IROpts{AddressSanitizer: opts.AddressSanitizer},
 	)
 	if err != nil {
