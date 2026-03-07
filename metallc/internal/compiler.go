@@ -80,8 +80,10 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		return lifetime.Diagnostics
 	}
 	module := base.Cast[ast.Module](engine.Node(fileID).Kind)
-	funs, structs := engine.BuildWorkList(module)
-	ir, err := gen.GenIR(engine.AST, module, funs, structs, gen.IROpts{AddressSanitizer: opts.AddressSanitizer})
+	ir, err := gen.GenIR(
+		engine.AST, module, engine.Funs(), engine.Structs(),
+		gen.IROpts{AddressSanitizer: opts.AddressSanitizer},
+	)
 	if err != nil {
 		return err //nolint:wrapcheck
 	}

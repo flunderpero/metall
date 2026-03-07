@@ -548,7 +548,11 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
 				return ParseFailed, false
 			}
 			p.next()
-			expr = p.NewFieldAccess(expr, Name{next.Value, next.Span}, span.Combine(p.span()))
+			typeArgs, ok := p.parseTypeArgs()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = p.NewFieldAccess(expr, Name{next.Value, next.Span}, typeArgs, span.Combine(p.span()))
 			continue
 		}
 		break
@@ -1046,10 +1050,10 @@ func (p *Parser) parseAllocator() (NodeID, bool) {
 			switch field.Kind { //nolint:exhaustive
 			case token.AllocatorIdent:
 				p.next()
-				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, t.Span.Combine(field.Span))
+				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, nil, t.Span.Combine(field.Span))
 			case token.Ident:
 				p.next()
-				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, t.Span.Combine(field.Span))
+				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, nil, t.Span.Combine(field.Span))
 				continue
 			default:
 				p.diagnostic(field.Span, "expected field name or allocator, got %s", field.Kind)

@@ -580,6 +580,56 @@ func TestCompile(t *testing.T) {
 			}
 			`, "10\n20\n"},
 
+		{"generic fun", `
+			struct Box<T> { value T }
+			fun id<T>(x T) T { x }
+
+			fun main() void {
+				print_int(id<Int>(42))
+				print_str(id<Str>("hello"))
+				let b = id<Box<Int>>(Box<Int>(99))
+				print_int(b.value)
+			}
+			`, "42\nhello\n99\n"},
+
+		{"generic fun as value", `
+			fun id<T>(x T) T { x }
+
+			fun main() void {
+				let f = id<Int>
+				print_int(f(42))
+				let g = id<Str>
+				print_str(g("hello"))
+			}
+			`, "42\nhello\n"},
+
+		{"generic method", `
+			struct Foo { value Int }
+			fun Foo.get<T>(f Foo, x T) T { x }
+
+			fun main() void {
+				let f = Foo(42)
+				print_int(f.get<Int>(1))
+				print_str(f.get<Str>("hello"))
+			}
+			`, "1\nhello\n"},
+
+		{"generic shadowing", `
+			struct Box<T> { value T }
+			fun id<T>(x T) T { x }
+
+			fun main() void {
+				print_int(id<Int>(1))
+				print_int(Box<Int>(2).value)
+				{
+					struct Box<T> { value T value2 T }
+					fun id<T>(x T) T { x }
+					print_int(id<Int>(3))
+					print_int(Box<Int>(4, 5).value2)
+				}
+			}
+			`, "1\n2\n3\n5\n"},
+
 		{"forward declared fun", `
 			fun main() void {
 				print_int(foo())

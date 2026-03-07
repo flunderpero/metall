@@ -669,6 +669,118 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			Int, nil,
 		},
 
+		// Generic functions.
+		{
+			"generic fun",
+			`{
+				struct Box<T> { value T }
+				fun id<T>(x T) T { x }
+				id<Int>(42)
+				id<Str>("hello")
+				let b = id<Box<Int>>(Box<Int>(99))
+				b.value
+			}`,
+			Int, nil,
+		},
+		{
+			"generic fun two type params",
+			`{
+				fun first<A, B>(a A, b B) A { a }
+				first<Int, Str>(1, "x")
+			}`,
+			Int, nil,
+		},
+		{
+			"generic fun dedup same type arg",
+			`{
+				fun id<T>(x T) T { x }
+				id<Int>(1)
+				id<Int>(2)
+			}`,
+			Int, nil,
+		},
+		{
+			"generic method on non-generic struct",
+			`{
+				struct Foo { value Int }
+				fun Foo.get<T>(f Foo, x T) T { x }
+				let f = Foo(42)
+				f.get<Str>("hello")
+			}`,
+			Str, nil,
+		},
+		{
+			"generic fun calls generic fun",
+			`{
+				fun id<T>(x T) T { x }
+				fun wrap<T>(x T) T { id<T>(x) }
+				wrap<Int>(42)
+			}`,
+			Int, nil,
+		},
+		{
+			"generic fun shadowing",
+			`{
+				fun foo<T>(x T) T { x }
+				let a = foo<Int>(1)
+				{
+					fun foo<T>(x T) Int { 99 }
+					let b = foo<Str>("hi")
+					b
+				}
+			}`,
+			Int, nil,
+		},
+		{
+			"generic fun creates struct from type param",
+			`{
+				struct Box<T> { value T }
+				fun box<T>(x T) Box<T> { Box<T>(x) }
+				let b = box<Int>(42)
+				b.value
+			}`,
+			Int, nil,
+		},
+		{
+			"generic fun with ref param",
+			`{
+				fun deref<T>(x &T) T { x.* }
+				let x = 42
+				deref<Int>(&x)
+			}`,
+			Int, nil,
+		},
+		{
+			"generic fun as value",
+			`{
+				fun id<T>(x T) T { x }
+				let f = id<Int>
+				f(42)
+			}`,
+			Int, nil,
+		},
+		{
+			"generic method as value",
+			`{
+				struct Foo { value Int }
+				fun Foo.get<T>(f Foo, x T) T { x }
+				let g = Foo.get<Str>
+				g(Foo(1), "hello")
+				let h = Foo.get<Int>
+				h(Foo(1), 42)
+			}`,
+			Int, nil,
+		},
+		{
+			"generic fun with mut ref param",
+			`{
+				fun set<T>(x &mut T, v T) void { x.* = v }
+				mut x = 1
+				set<Int>(&mut x, 42)
+			}`,
+			void, nil,
+		},
+
 		{
 			"generic struct",
 			`{ struct Foo<T> { value T } let x = Foo<Int>(42) x.value }`,
@@ -1311,6 +1423,44 @@ func TestTypeCheckErr(t *testing.T) {
 				"test.met:1:39: type argument count mismatch: expected 1, got 0\n" +
 					"    { struct Foo<T> { value T } fun bar(f Foo) void {} }\n" +
 					"                                          ^^^",
+			},
+		},
+
+		// Generic function errors.
+		{
+			"generic fun type arg count too few",
+			`{ fun foo<A, B>(a A, b B) A { a } foo<Int>(1, 2) }`,
+			[]string{
+				"test.met:1:35: type argument count mismatch: expected 2, got 1\n" +
+					"    { fun foo<A, B>(a A, b B) A { a } foo<Int>(1, 2) }\n" +
+					"                                      ^^^^^^^^",
+			},
+		},
+		{
+			"generic fun type arg count too many",
+			`{ fun foo<T>(x T) T { x } foo<Int, Str>(1) }`,
+			[]string{
+				"test.met:1:27: type argument count mismatch: expected 1, got 2\n" +
+					"    { fun foo<T>(x T) T { x } foo<Int, Str>(1) }\n" +
+					"                              ^^^^^^^^^^^^^",
+			},
+		},
+		{
+			"generic fun duplicate type param",
+			`{ fun foo<T, T>(x T) T { x } }`,
+			[]string{
+				"test.met:1:14: duplicate type parameter: T\n" +
+					"    { fun foo<T, T>(x T) T { x } }\n" +
+					"                 ^",
+			},
+		},
+		{
+			"generic fun missing type args",
+			`{ fun foo<T>(x T) T { x } foo(1) }`,
+			[]string{
+				"test.met:1:27: type argument count mismatch: expected 1, got 0\n" +
+					"    { fun foo<T>(x T) T { x } foo(1) }\n" +
+					"                              ^^^",
 			},
 		},
 	}

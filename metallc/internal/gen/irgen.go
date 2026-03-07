@@ -59,7 +59,6 @@ type IRGen struct {
 	regCounter   int
 	constCounter int
 	strConsts    map[string]int
-	astCode      map[ast.NodeID]string
 	opts         IROpts
 }
 
@@ -72,6 +71,7 @@ type IRFunGen struct {
 	lastLabel          Label
 	blockAllocatorRegs []string
 	loopStack          []LoopLabels
+	astCode            map[ast.NodeID]string
 }
 
 func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
@@ -83,13 +83,17 @@ func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 		regCounter:   1,
 		constCounter: 0,
 		strConsts:    map[string]int{},
-		astCode:      map[ast.NodeID]string{},
 		opts:         opts,
 	}
 }
 
 func (g *IRGen) newFunGen(env *types.TypeEnv) *IRFunGen {
-	return &IRFunGen{CodeWriter: *NewCodeWriter(), IRGen: g, env: env} //nolint:exhaustruct
+	return &IRFunGen{ //nolint:exhaustruct
+		CodeWriter: *NewCodeWriter(),
+		IRGen:      g,
+		env:        env,
+		astCode:    map[ast.NodeID]string{},
+	}
 }
 
 func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
@@ -470,13 +474,16 @@ func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType str
 func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	id := work.NodeID
 	astFun := base.Cast[ast.Fun](g.ast.Node(id).Kind)
-	typ := g.env.TypeOfNode(id)
+	typ := g.env.Type(work.TypeID)
 	fun, ok := typ.Kind.(types.FunType)
 	if !ok {
 		panic(base.Errorf("expected fun type, got %T", typ.Kind))
 	}
 	name := work.Name
-	isMain := work.IsMain
+	isMain := g.module.Main && name == g.module.Name+".main"
+	if isMain {
+		name = "main"
+	}
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIRTyp := g.irType(fun.Return)
 	signatureIRTyp := retIRTyp

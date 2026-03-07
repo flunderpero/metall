@@ -147,8 +147,9 @@ type Struct struct {
 func (Struct) isKind() {}
 
 type FieldAccess struct {
-	Target NodeID
-	Field  Name
+	Target   NodeID
+	Field    Name
+	TypeArgs []NodeID
 }
 
 func (FieldAccess) isKind() {}
@@ -424,8 +425,8 @@ func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) 
 	return a.node(StructField{Name: name, Type: type_, Mut: mut}, span)
 }
 
-func (a *AST) NewFieldAccess(target NodeID, field Name, span base.Span) NodeID {
-	return a.node(FieldAccess{Target: target, Field: field}, span)
+func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
+	return a.node(FieldAccess{Target: target, Field: field, TypeArgs: typeArgs}, span)
 }
 
 func (a *AST) NewIdent(name string, typeArgs []NodeID, span base.Span) NodeID {
@@ -572,6 +573,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Type)
 	case FieldAccess:
 		f(kind.Target)
+		for _, typeArg := range kind.TypeArgs {
+			f(typeArg)
+		}
 	case StructLiteral:
 		f(kind.Target)
 		for i := range len(kind.Args) {

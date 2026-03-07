@@ -679,7 +679,7 @@ func (a *TestAST) unary(op UnaryOp, expr NodeID) NodeID {
 }
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {
-	return a.NewFieldAccess(base, Name{field, a.span}, a.span)
+	return a.NewFieldAccess(base, Name{field, a.span}, nil, a.span)
 }
 
 func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {
