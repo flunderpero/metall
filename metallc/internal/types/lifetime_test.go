@@ -168,6 +168,39 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		{"return expr ref to local", `
+			{
+				fun foo() &Int {
+					mut x = 42
+					return &x
+				}
+			}
+			`, []string{
+			"test.met:5:28: reference escaping its allocation scope (via return)\n" +
+				strings.Trim(`
+				        mut x = 42
+				        return &x
+				               ^^
+				    }
+				`, "\n"),
+		}},
+		{"escape via return in if branch", `
+			{
+				fun foo(a &Int) &Int {
+					mut x = 42
+					if true { return &x }
+					a
+				}
+			}
+			`, []string{
+			"test.met:5:38: reference escaping its allocation scope (via return)\n" +
+				strings.Trim(`
+				        mut x = 42
+				        if true { return &x }
+				                         ^^
+				        a
+				`, "\n"),
+		}},
 		// {"local ref escapes via mut param", `
 		// 	{
 		// 		struct Foo { mut one &Int }

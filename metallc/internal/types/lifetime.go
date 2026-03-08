@@ -229,6 +229,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeFunParam(nodeID, kind)
 	case ast.Assign:
 		a.analyzeAssign(nodeID, kind)
+	case ast.Return:
+		a.analyzeReturn(nodeID, kind)
 	case ast.Block:
 		a.analyzeBlock(nodeID, kind)
 	case ast.Fun:
@@ -724,15 +726,42 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	}
 
 	// Check the block result for escaping local taints, then strip them.
-	escaped := lastFlow.Taints.ContainsAny(ss.LocalTaints)
-	a.debug(1, nodeID, "analyzeBlock: result escape=%v lastTaints=%s localTaints=%s",
-		escaped, lastFlow.Taints, ss.LocalTaints)
+	// Skip if the last expression is a return — analyzeReturn already checks for escapes.
+	_, lastIsReturn := a.ast.Node(lastExpr).Kind.(ast.Return)
+	escaped := !lastIsReturn && lastFlow.Taints.ContainsAny(ss.LocalTaints)
+	a.debug(
+		1,
+		nodeID,
+		"analyzeBlock: result escape=%v lastTaints=%s localTaints=%s",
+		escaped,
+		lastFlow.Taints,
+		ss.LocalTaints,
+	)
 	if escaped {
 		a.diagEscape(lastExpr, lastFlow.Taints, ss, "via block result")
 	}
 	resultFlow := Flow{lastFlow.Taints.Without(ss.LocalTaints), lastFlow.PointsTo}
 	a.flows[nodeID] = resultFlow
 	a.debug(1, nodeID, "analyzeBlock: resultFlow=%s", resultFlow)
+}
+
+func (a *LifetimeCheck) analyzeReturn(nodeID ast.NodeID, ret ast.Return) {
+	a.ast.Walk(nodeID, a.Check)
+	flow := a.flow(ret.Expr)
+	a.flows[nodeID] = flow
+	// Walk up scopes from the return to the enclosing function.
+	// At each scope, check if the return flow carries any local taints — if so, escape.
+	scope := a.scopeGraph.NodeScope(nodeID)
+	for scope != nil {
+		if _, isFun := a.ast.Node(scope.Node).Kind.(ast.Fun); isFun {
+			break
+		}
+		ss := a.scopeByID(scope.ID)
+		if flow.Taints.ContainsAny(ss.LocalTaints) {
+			a.diagEscape(ret.Expr, flow.Taints, ss, "via return")
+		}
+		scope = scope.Parent
+	}
 }
 
 // analyzeFun builds a FunEffects that describes how parameter flows map to the
