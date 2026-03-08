@@ -704,6 +704,26 @@ func TestCompile(t *testing.T) {
 			}
 			`, "1\n2\n3\n5\n"},
 
+		{"generic struct method called from generic fun", `
+			struct Box<V> {
+				mut items []V
+			}
+
+			fun Box.len<V>(b &Box<V>) Int {
+				b.items.len
+			}
+
+			fun wrap<V>(@a Arena, v V) Int {
+				let b = new_mut(@a, Box<V>(make(@a, []V(2, v))))
+				b.len()
+			}
+
+			fun main() void {
+				let @a = Arena()
+				print_int(wrap<Str>(@a, "x"))
+			}
+			`, "2\n"},
+
 		{"forward declared fun", `
 			fun main() void {
 				print_int(foo())

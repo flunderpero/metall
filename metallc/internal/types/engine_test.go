@@ -891,6 +891,41 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}`,
 			Int, nil,
 		},
+		{
+			"generic method with ref to generic struct",
+			`{
+				struct Box<V> { value V }
+				fun Box.get<V>(b &Box<V>) V { b.value }
+				fun wrap<V>(b &Box<V>) V { b.get() }
+				let b = Box<Int>(42)
+				wrap<Int>(&b)
+			}`,
+			Int,
+			nil,
+		},
+		{
+			"generic fun with slice of type param",
+			`{
+				struct Bag<V> { items []V }
+				fun Bag.len<V>(b &Bag<V>) Int { b.items.len }
+				fun count<V>(b &Bag<V>) Int { b.len() }
+				let @a = Arena()
+				let b = Bag<Str>(make(@a, []Str(2, "")))
+				count<Str>(&b)
+			}`,
+			Int,
+			nil,
+		},
+		{
+			"generic fun with fun-typed param",
+			`{
+				fun apply<T>(x T, f fun(T) Int) Int { f(x) }
+				fun to_len(s Str) Int { s.data.len }
+				apply<Str>("hi", to_len)
+			}`,
+			Int,
+			nil,
+		},
 
 		// Shapes.
 		{
@@ -1134,6 +1169,21 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}
 			if tt.check != nil {
 				tt.check(e, exprID, assert)
+			}
+			// Check that fun- and struct-work does not contain type parameters.
+			for _, f := range e.Funs() {
+				ft := base.Cast[FunType](e.c.env.Type(f.TypeID).Kind)
+				for _, p := range ft.Params {
+					assert.Equal(false, e.c.env.containsTypeParam(p),
+						"Funs() should not contain type params in params: %s", f.Name)
+				}
+				assert.Equal(false, e.c.env.containsTypeParam(ft.Return),
+					"Funs() should not contain type params in return: %s", f.Name)
+			}
+			for _, s := range e.Structs() {
+				st := base.Cast[StructType](e.c.env.Type(s.TypeID).Kind)
+				assert.Equal(false, e.c.env.hasTypeParam(st.TypeArgs),
+					"Structs() should not contain type params: %s", st.Name)
 			}
 			if !slices.Contains(skipLifetimeCheck, name) {
 				a := NewLifetimeAnalyzer(e.c.ast, e.c.scopeGraph, e.Env())

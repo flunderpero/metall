@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -372,12 +373,27 @@ func (e *TypeEnv) isIntType(typeID TypeID) bool {
 }
 
 func (e *TypeEnv) hasTypeParam(typeIDs []TypeID) bool {
-	for _, id := range typeIDs {
-		if _, ok := e.Type(id).Kind.(TypeParamType); ok {
-			return true
-		}
+	return slices.ContainsFunc(typeIDs, e.containsTypeParam)
+}
+
+func (e *TypeEnv) containsTypeParam(id TypeID) bool {
+	typ := e.Type(id)
+	switch kind := typ.Kind.(type) {
+	case TypeParamType:
+		return true
+	case RefType:
+		return e.containsTypeParam(kind.Type)
+	case StructType:
+		return e.hasTypeParam(kind.TypeArgs)
+	case ArrayType:
+		return e.containsTypeParam(kind.Elem)
+	case SliceType:
+		return e.containsTypeParam(kind.Elem)
+	case FunType:
+		return e.hasTypeParam(kind.Params) || e.containsTypeParam(kind.Return)
+	default:
+		return false
 	}
-	return false
 }
 
 func (e *TypeEnv) isSafeUninitialized(typeID TypeID) bool {
