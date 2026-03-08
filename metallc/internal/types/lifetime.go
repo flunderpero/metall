@@ -240,31 +240,54 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	}
 }
 
-// analyzeRef: `&x` or `&mut x`.
-// The ref carries x's storage taint (so it dies with x's scope) plus any
-// taints x already holds (if x itself stores refs).
-//   - `mut a = 1; &a`      --> taints: {scope_taint(a)}, pointsTo: {a}
-//   - `mut a = &b; &a`     --> taints: {scope_taint(a), scope_taint(b)}, pointsTo: {a}
+// analyzeRef: `&<place>` or `&mut <place>`.
+// The target can be any place expression: ident, field access, index, or deref.
+// The ref carries the root variable's storage taint (so it dies with the
+// variable's scope) plus any taints the target already holds.
+//   - `mut a = 1; &a`          --> taints: {scope(a)}, pointsTo: {a}
+//   - `mut a = &b; &a`         --> taints: {scope(a), scope(b)}, pointsTo: {a}
+//   - `let s = Foo(1); &s.one` --> taints: {scope(s)}, pointsTo: {s}
 func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 	a.ast.Walk(nodeID, a.Check)
-	vt, foundIn := a.lookupVarWithScope(nodeID, ref.Name.Name)
-	if vt == nil {
-		return
+	targetFlow := a.flow(ref.Target)
+	storageTaint, pointsTo := a.placeStorage(ref.Target)
+	taints := targetFlow.Taints
+	if storageTaint != 0 {
+		taints = taints.Merge(TaintSet{storageTaint})
 	}
-	taints := vt.Flow.Taints.Merge(TaintSet{vt.StorageTaint})
 	for _, t := range taints {
 		if _, ok := a.taintOrigin[t]; !ok {
 			a.taintOrigin[t] = nodeID
 		}
 	}
-	// PointsTo uses the scope where the variable is *declared*, not where
-	// the & expression appears. This matters for shadowed variables.
-	flow := Flow{
-		Taints:   taints,
-		PointsTo: AliasSet{{foundIn.ID, ref.Name.Name}},
-	}
+	flow := Flow{Taints: taints, PointsTo: pointsTo}
 	a.flows[nodeID] = flow
-	a.debug(1, nodeID, "analyzeRef: &%s %s storageTaint=%s", ref.Name.Name, flow, vt.StorageTaint)
+	a.debug(1, nodeID, "analyzeRef: %s storageTaint=%s", flow, storageTaint)
+}
+
+// placeStorage returns the storage taint and alias set for a place expression.
+// For `x` it returns x's storage taint and {x}. For `x.one` or `x[i]` it
+// returns x's storage taint (the field/element lives in x's allocation).
+// For `x.*` it follows the deref and returns the pointed-to storage.
+func (a *LifetimeCheck) placeStorage(nodeID ast.NodeID) (TaintID, AliasSet) {
+	switch kind := a.ast.Node(nodeID).Kind.(type) {
+	case ast.Ident:
+		vt, foundIn := a.lookupVarWithScope(nodeID, kind.Name)
+		if vt == nil {
+			return 0, nil
+		}
+		return vt.StorageTaint, AliasSet{{foundIn.ID, kind.Name}}
+	case ast.FieldAccess:
+		return a.placeStorage(kind.Target)
+	case ast.Index:
+		return a.placeStorage(kind.Target)
+	case ast.Deref:
+		f := a.flow(kind.Expr)
+		derefed := a.derefFlow(f.PointsTo)
+		return 0, derefed.PointsTo
+	default:
+		return 0, nil
+	}
 }
 
 // analyzeIdent: reading a variable propagates its flow.
@@ -621,11 +644,6 @@ func (a *LifetimeCheck) mergeIntoTarget(nodeID ast.NodeID, target ast.NodeID, rh
 	case ast.Ident:
 		aliases = AliasSet{{a.scopeState(root).ID, kind.Name}}
 		if vt := a.lookupVar(root, kind.Name); vt != nil && len(vt.Flow.PointsTo) > 0 {
-			aliases = vt.Flow.PointsTo
-		}
-	case ast.Ref:
-		aliases = AliasSet{{a.scopeState(root).ID, kind.Name.Name}}
-		if vt := a.lookupVar(root, kind.Name.Name); vt != nil && len(vt.Flow.PointsTo) > 0 {
 			aliases = vt.Flow.PointsTo
 		}
 	default:

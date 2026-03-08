@@ -314,8 +314,8 @@ type New struct {
 func (New) isKind() {}
 
 type Ref struct {
-	Name Name
-	Mut  bool
+	Target NodeID
+	Mut    bool
 }
 
 func (Ref) isKind() {}
@@ -478,8 +478,8 @@ func (a *AST) NewInt(value *big.Int, span base.Span) NodeID {
 	return a.node(Int{Value: value}, span)
 }
 
-func (a *AST) NewRef(name Name, mut bool, span base.Span) NodeID {
-	return a.node(Ref{Name: name, Mut: mut}, span)
+func (a *AST) NewRef(target NodeID, mut bool, span base.Span) NodeID {
+	return a.node(Ref{Target: target, Mut: mut}, span)
 }
 
 func (a *AST) NewString(value string, span base.Span) NodeID {
@@ -686,6 +686,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 			f(kind.TypeArgs[i])
 		}
 	case Ref:
+		f(kind.Target)
 	case RefType:
 		f(kind.Type)
 	default:
@@ -1029,8 +1030,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			}
 		}
 	case Ref:
-		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if !children {
+			addAttr("target", nodeIDKind(kind.Target))
+		} else {
+			addChild("target", kind.Target)
+		}
 	case RefType:
 		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 		if !children {

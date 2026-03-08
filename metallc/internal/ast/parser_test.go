@@ -174,8 +174,23 @@ func TestParseOK(t *testing.T) {
 			return a.call(a.field_access(a.field_access(a.ident("x"), "one"), "two"))
 		}},
 
-		{"&ref", "expr", `&x`, func(a *TestAST) NodeID { return a.ref("x") }},
-		{"&mut ref", "expr", `&mut x`, func(a *TestAST) NodeID { return a.mut_ref("x") }},
+		{"&ref", "expr", `&x`, func(a *TestAST) NodeID { return a.ref(a.ident("x")) }},
+		{"& has lower precedence than field access", "expr", `&x.one.two`, func(a *TestAST) NodeID {
+			return a.ref(a.field_access(a.field_access(a.ident("x"), "one"), "two"))
+		}},
+		{"&mut field access", "expr", `&mut x.one`, func(a *TestAST) NodeID {
+			return a.mut_ref(a.field_access(a.ident("x"), "one"))
+		}},
+		{"& of index", "expr", `&x[1]`, func(a *TestAST) NodeID {
+			return a.ref(a.index(a.ident("x"), a.int_(1)))
+		}},
+		{"& of deref", "expr", `&x.*`, func(a *TestAST) NodeID {
+			return a.ref(a.deref(a.ident("x")))
+		}},
+		{"& of chained field and index", "expr", `&x.one[2].three`, func(a *TestAST) NodeID {
+			return a.ref(a.field_access(a.index(a.field_access(a.ident("x"), "one"), a.int_(2)), "three"))
+		}},
+		{"&mut ref", "expr", `&mut x`, func(a *TestAST) NodeID { return a.mut_ref(a.ident("x")) }},
 		{"deref", "expr", `x.*`, func(a *TestAST) NodeID { return a.deref(a.ident("x")) }},
 		{"nested deref", "expr", `x.*.*`, func(a *TestAST) NodeID { return a.deref(a.deref(a.ident("x"))) }},
 		{
@@ -208,7 +223,7 @@ func TestParseOK(t *testing.T) {
 				return a.block(
 					a.fun("foo", a.fun_param("a", a.ref_typ(a.int_typ())), a.void_typ(), a.block()),
 					a.var_("x", a.int_(123)),
-					a.call(a.ident("foo"), a.ref("x")),
+					a.call(a.ident("foo"), a.ref(a.ident("x"))),
 				)
 			},
 		},
@@ -525,14 +540,13 @@ func TestParseErr(t *testing.T) {
 				`    { Str = "hello" }` + "\n" +
 				"          ^",
 		}},
-		// &&x is not valid syntax - use a let binding for nested refs.
 		{"nested &ref", `{ &&x }`, []string{
-			"test.met:1:4: unexpected token: expected <identifier>, got &\n" +
+			"test.met:1:4: expected a place expression (variable, field, index, or deref)\n" +
 				`    { &&x }` + "\n" +
-				"       ^",
+				"       ^^",
 		}},
 		{"&ref of literal", `{ &123 }`, []string{
-			"test.met:1:4: unexpected token: expected <identifier>, got <number>\n" +
+			"test.met:1:4: expected a place expression (variable, field, index, or deref)\n" +
 				`    { &123 }` + "\n" +
 				"       ^^^",
 		}},
@@ -867,12 +881,12 @@ func (a *TestAST) call(callee NodeID, args ...NodeID) NodeID {
 	return a.NewCall(callee, args, a.span)
 }
 
-func (a *TestAST) ref(name string) NodeID {
-	return a.NewRef(Name{name, a.span}, false, a.span)
+func (a *TestAST) ref(target NodeID) NodeID {
+	return a.NewRef(target, false, a.span)
 }
 
-func (a *TestAST) mut_ref(name string) NodeID {
-	return a.NewRef(Name{name, a.span}, true, a.span)
+func (a *TestAST) mut_ref(target NodeID) NodeID {
+	return a.NewRef(target, true, a.span)
 }
 
 func (a *TestAST) deref(expr NodeID) NodeID {
@@ -933,8 +947,6 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case Ref:
-			kind.Name.Span = base.Span{}
-			node.Kind = kind
 		}
 		nodes = append(nodes, node)
 		ast.Walk(nodeID, f)

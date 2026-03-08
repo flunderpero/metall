@@ -1149,6 +1149,48 @@ func TestCompile(t *testing.T) {
 			}
 			`, "42\n0\n"},
 
+		{"update array element in place", `
+			fun main() void {
+				struct Foo { mut one Int }
+				mut a = [Foo(1)]
+				a[0].one = 42
+				print_int(a[0].one)
+			}
+			`, "42\n"},
+
+		{"update slice element in place", `
+			fun main() void {
+				let @a = Arena()
+				struct Foo { mut one Int }
+				mut a = make(@a, []Foo(1))
+				a[0] = Foo(1)
+				a[0].one = 42
+				print_int(a[0].one)
+			}
+			`, "42\n"},
+
+		{"ref to array element", `
+			fun main() void {
+				struct Foo { mut one Int }
+				mut a = [Foo(1)]
+				mut b = &mut a[0]
+				b.one = 42
+				print_int(a[0].one)
+			}
+			`, "42\n"},
+
+		{"ref to slice element", `
+			fun main() void {
+				let @a = Arena()
+				struct Foo { mut one Int }
+				mut a = make(@a, []Foo(1))
+				a[0] = Foo(1)
+				let b = &mut a[0]
+				b.one = 42
+				print_int(a[0].one)
+			}
+			`, "42\n"},
+
 		{"int arithmetic", `
 			fun main() void {
 				print_int(120 + 3)

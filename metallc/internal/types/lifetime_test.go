@@ -201,17 +201,58 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				        a
 				`, "\n"),
 		}},
-		// {"local ref escapes via mut param", `
-		// 	{
-		// 		struct Foo { mut one &Int }
-		// 		fun foo(a &mut Foo) void {
-		// 			let x = 42
-		// 			a.one = &x
-		// 		}
-		// 	}
-		// 	`, []string{
-		// 	"should fail",
-		// }},
+		{"ref of field escapes", `
+			{
+				struct Foo { one Int }
+				let y = {
+					let x = Foo(42)
+					&x.one
+				}
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let x = Foo(42)
+				        &x.one
+				        ^^^^^^
+				    }
+				`, "\n"),
+		}},
+		{"ref of nested field escapes", `
+			{
+				struct Bar { one Int }
+				struct Foo { bar Bar }
+				let y = {
+					let x = Foo(Bar(1))
+					&x.bar.one
+				}
+			}
+			`, []string{
+			"test.met:7:21: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let x = Foo(Bar(1))
+				        &x.bar.one
+				        ^^^^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		{"ref of index escapes", `
+			{
+				let y = {
+					let @a = Arena()
+					let x = new(@a, [5]Int(0))
+					&x[0]
+				}
+			}
+			`, []string{
+			"test.met:6:21: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let x = new(@a, [5]Int(0))
+				        &x[0]
+				        ^^^^^
+				    }
+				`, "\n"),
+		}},
 		{"deref on rhs escapes", `
 			{
 				mut x = 0

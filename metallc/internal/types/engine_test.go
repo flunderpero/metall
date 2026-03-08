@@ -263,6 +263,18 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"mut binding of immutable ref", `{ let x = 5 mut y = &x y }`, ref_t(Int), nil},
 		// &x on a mut binding still produces &Int (not &mut), since we didn't write &mut.
 		{"immutable ref to mut", `{ mut x = 5 mut y = &x y }`, ref_t(Int), nil},
+		{"ref of field", `{ struct Foo { one Int } let x = Foo(42) let y = &x.one y }`, ref_t(Int), nil},
+		{
+			"ref of nested field",
+			`{ struct Bar { one Int } struct Foo { bar Bar } let x = Foo(Bar(1)) let y = &x.bar.one y }`,
+			ref_t(Int), nil,
+		},
+		{"ref of deref", `{ mut x = 5 let y = &mut x let z = &y.* z }`, ref_t(Int), nil},
+		{
+			"mut ref of mut field",
+			`{ struct Foo { mut one Int } mut x = Foo(42) let y = &mut x.one y }`,
+			ref_mut_t(Int), nil,
+		},
 		{"deref", `{ let x = 5 let y = &x y.* }`, Int, nil},
 		{
 			"deref field access",
@@ -1101,6 +1113,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"mut binding of immutable ref",
 		"mut ref type",
 		"immutable ref to mut",
+		"ref of field",
+		"ref of nested field",
+		"ref of deref",
+		"mut ref of mut field",
 		"struct ref",
 		"fun returns ref",
 		"heap alloc struct",
@@ -1347,6 +1363,15 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { let x = 123 let y = &mut x }` + "\n" +
 				`                          ^^^^^^`,
 		}},
+		{
+			"&mut of immutable field",
+			`{ struct Foo { one Int } mut x = Foo(42) let y = &mut x.one }`,
+			[]string{
+				"test.met:1:50: cannot take mutable reference to immutable value\n" +
+					`    { struct Foo { one Int } mut x = Foo(42) let y = &mut x.one }` + "\n" +
+					"                                                     ^^^^^^^^^^",
+			},
+		},
 		{
 			"field write on let binding",
 			`{ struct Foo{mut one Str} let x = Foo("hello") x.one = "bye" }`,

@@ -430,7 +430,7 @@ func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 		g.genSliceFieldAccess(id, fieldAccess)
 		return
 	}
-	_, ptrReg := g.genFieldAccessPtr(fieldAccess)
+	ptrReg := g.genFieldAccessPtr(fieldAccess)
 	valReg := g.loadValue(ptrReg, g.env.TypeOfNode(id).ID)
 	g.setCode(id, valReg)
 }
@@ -450,7 +450,7 @@ func (g *IRFunGen) genSliceFieldAccess(id ast.NodeID, fieldAccess ast.FieldAcces
 	}
 }
 
-func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType string, ptrReg string) {
+func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) string {
 	g.Gen(fieldAccess.Target)
 	targetType := g.env.TypeOfNode(fieldAccess.Target)
 	structReg := g.lookupCode(fieldAccess.Target)
@@ -460,9 +460,8 @@ func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType str
 	}
 	structType := base.Cast[types.StructType](targetType.Kind)
 	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
-	fieldType = g.irType(structType.Fields[fieldIndex].Type)
 	irTyp := g.irType(targetType.ID)
-	ptrReg = g.reg()
+	ptrReg := g.reg()
 	g.write(
 		"%s = getelementptr %s, %s* %s, i32 0, i32 %d",
 		ptrReg,
@@ -471,7 +470,7 @@ func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) (fieldType str
 		structReg,
 		fieldIndex,
 	)
-	return fieldType, ptrReg
+	return ptrReg
 }
 
 func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
@@ -706,75 +705,12 @@ func (g *IRFunGen) writeLabel(label Label) {
 	g.indent = i
 }
 
-func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) { //nolint:funlen
+func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.Gen(assign.RHS)
 	rhs := g.lookupCode(assign.RHS)
-	lhsNode := g.ast.Node(assign.LHS)
-	switch lhsKind := lhsNode.Kind.(type) {
-	case ast.Ident:
-		symbol, ok := g.lookupSymbol(assign.LHS, lhsKind.Name)
-		if !ok {
-			panic(base.Errorf("assign to unknown variable: %s", lhsKind.Name))
-		}
-		rhsType := g.env.TypeOfNode(assign.RHS)
-		if g.isAggregateType(rhsType.ID) {
-			irTyp := g.irType(rhsType.ID)
-			tmp := g.reg()
-			g.write("%s = load %s, ptr %s", tmp, irTyp, rhs)
-			g.write("store %s %s, ptr %s", irTyp, tmp, symbol.Reg)
-		} else {
-			g.write("store %s %s, ptr %s", symbol.Type, rhs, symbol.Reg)
-		}
-	case ast.FieldAccess:
-		fieldType, ptrReg := g.genFieldAccessPtr(lhsKind)
-		rhsType := g.env.TypeOfNode(assign.RHS)
-		if g.isAggregateType(rhsType.ID) {
-			tmp := g.reg()
-			g.write("%s = load %s, ptr %s", tmp, fieldType, rhs)
-			g.write("store %s %s, ptr %s", fieldType, tmp, ptrReg)
-		} else {
-			g.write("store %s %s, ptr %s", fieldType, rhs, ptrReg)
-		}
-	case ast.Index:
-		g.Gen(lhsKind.Target)
-		g.Gen(lhsKind.Index)
-		targetReg := g.lookupCode(lhsKind.Target)
-		indexReg := g.lookupCode(lhsKind.Index)
-		ptrReg := g.reg()
-		targetType := g.env.TypeOfNode(lhsKind.Target)
-		if refTyp, ok := targetType.Kind.(types.RefType); ok {
-			targetType = g.env.Type(refTyp.Type)
-		}
-		switch kind := targetType.Kind.(type) {
-		case types.ArrayType:
-			arrIRType := g.irType(targetType.ID)
-			g.write("%s = getelementptr %s, %s* %s, i64 0, i64 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
-			g.storeValue(rhs, ptrReg, kind.Elem)
-		case types.SliceType:
-			elemIRType := g.irType(kind.Elem)
-			dataPtrReg := g.reg()
-			g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", dataPtrReg, targetReg)
-			g.write("%s = load ptr, ptr %s_field", dataPtrReg, dataPtrReg)
-			g.write("%s = getelementptr %s, ptr %s, i64 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
-			g.storeValue(rhs, ptrReg, kind.Elem)
-		default:
-			panic(base.Errorf("genAssign index: unsupported target type %T", targetType.Kind))
-		}
-	case ast.Deref:
-		g.Gen(assign.LHS)
-		ptr := g.lookupCode(lhsKind.Expr)
-		rhsType := g.env.TypeOfNode(assign.RHS)
-		if g.isAggregateType(rhsType.ID) {
-			irTyp := g.irType(rhsType.ID)
-			tmp := g.reg()
-			g.write("%s = load %s, ptr %s", tmp, irTyp, rhs)
-			g.write("store %s %s, ptr %s", irTyp, tmp, ptr)
-		} else {
-			g.write("store %s %s, ptr %s", g.irTypeOfNode(assign.LHS), rhs, ptr)
-		}
-	default:
-		panic(base.Errorf("assign to unknown expression: %T", lhsKind))
-	}
+	ptrReg := g.genPlaceAddr(assign.LHS)
+	rhsTypeID := g.env.TypeOfNode(assign.RHS).ID
+	g.storeValue(rhs, ptrReg, rhsTypeID)
 	g.setCode(id, "void")
 }
 
@@ -953,11 +889,54 @@ func (g *IRFunGen) genString(id ast.NodeID, str ast.String) {
 }
 
 func (g *IRFunGen) genRef(id ast.NodeID, ref ast.Ref) {
-	if symbol, ok := g.lookupSymbol(id, ref.Name.Name); ok {
-		g.setCode(id, symbol.Reg)
-		return
+	ptrReg := g.genPlaceAddr(ref.Target)
+	g.setCode(id, ptrReg)
+}
+
+func (g *IRFunGen) genPlaceAddr(nodeID ast.NodeID) string {
+	node := g.ast.Node(nodeID)
+	switch kind := node.Kind.(type) {
+	case ast.Ident:
+		if symbol, ok := g.lookupSymbol(nodeID, kind.Name); ok {
+			return symbol.Reg
+		}
+		return kind.Name
+	case ast.FieldAccess:
+		return g.genFieldAccessPtr(kind)
+	case ast.Index:
+		return g.genIndexAddr(kind)
+	case ast.Deref:
+		g.Gen(kind.Expr)
+		return g.lookupCode(kind.Expr)
+	default:
+		panic(base.Errorf("genPlaceAddr: unsupported place expression: %T", kind))
 	}
-	g.setCode(id, "ptr %s", ref.Name.Name)
+}
+
+func (g *IRFunGen) genIndexAddr(index ast.Index) string {
+	g.Gen(index.Target)
+	g.Gen(index.Index)
+	indexReg := g.lookupCode(index.Index)
+	targetReg := g.lookupCode(index.Target)
+	targetType := g.env.TypeOfNode(index.Target)
+	if refTyp, ok := targetType.Kind.(types.RefType); ok {
+		targetType = g.env.Type(refTyp.Type)
+	}
+	ptrReg := g.reg()
+	switch targetType.Kind.(type) {
+	case types.ArrayType:
+		arrIRType := g.irType(targetType.ID)
+		g.write("%s = getelementptr %s, %s* %s, i64 0, i64 %s", ptrReg, arrIRType, arrIRType, targetReg, indexReg)
+	case types.SliceType:
+		elemIRType := g.irType(base.Cast[types.SliceType](targetType.Kind).Elem)
+		dataPtrReg := g.reg()
+		g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", dataPtrReg, targetReg)
+		g.write("%s = load ptr, ptr %s_field", dataPtrReg, dataPtrReg)
+		g.write("%s = getelementptr %s, ptr %s, i64 %s", ptrReg, elemIRType, dataPtrReg, indexReg)
+	default:
+		panic(base.Errorf("genIndexAddr: unsupported target type %T", targetType.Kind))
+	}
+	return ptrReg
 }
 
 func (g *IRFunGen) genDeref(id ast.NodeID, deref ast.Deref) {

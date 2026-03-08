@@ -771,12 +771,17 @@ func (p *Parser) ParseRefExpr() (NodeID, bool) {
 		p.next()
 		mut = true
 	}
-	t, ok = p.expect(token.Ident)
+	target, ok := p.ParsePostfixExpr(0)
 	if !ok {
 		return ParseFailed, false
 	}
-	name := Name{t.Value, t.Span}
-	return p.NewRef(name, mut, span.Combine(p.span())), true
+	switch p.AST.Node(target).Kind.(type) {
+	case Ident, FieldAccess, Index, Deref:
+	default:
+		p.diagnostic(p.AST.Node(target).Span, "expected a place expression (variable, field, index, or deref)")
+		return ParseFailed, false
+	}
+	return p.NewRef(target, mut, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseCallArgs() ([]NodeID, bool) {

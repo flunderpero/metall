@@ -1236,16 +1236,18 @@ func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (Ty
 }
 
 func (e *Engine) checkRef(nodeID ast.NodeID, ref ast.Ref, span base.Span) (TypeID, TypeStatus) {
-	binding, ok := e.c.lookup(nodeID, ref.Name.Name)
-	if !ok {
-		e.c.diag(span, "symbol not defined: %s", ref.Name.Name)
-		return InvalidTypeID, TypeFailed
+	targetTypeID, status := e.Query(ref.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
 	}
-	if ref.Mut && !binding.Mut {
-		e.c.diag(span, "cannot take mutable reference to immutable value")
-		return InvalidTypeID, TypeFailed
+	if ref.Mut {
+		_, mut := e.isPlaceMutable(ref.Target)
+		if !mut {
+			e.c.diag(span, "cannot take mutable reference to immutable value")
+			return InvalidTypeID, TypeFailed
+		}
 	}
-	refTypeID := e.c.env.buildRefType(nodeID, binding.TypeID, ref.Mut, span)
+	refTypeID := e.c.env.buildRefType(nodeID, targetTypeID, ref.Mut, span)
 	return refTypeID, TypeOK
 }
 
