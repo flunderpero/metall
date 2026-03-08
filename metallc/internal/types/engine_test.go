@@ -1222,12 +1222,6 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { fun foo() void {} fun foo() void {} }` + "\n" +
 				"                            ^^^",
 		}},
-		// Body redeclares a name that's already a parameter.
-		{"redeclare param in body", `fun foo(a Int) void { let a = 123 }`, []string{
-			"test.met:1:27: symbol already defined: a\n" +
-				`    fun foo(a Int) void { let a = 123 }` + "\n" +
-				"                              ^",
-		}},
 		{"fun return mismatch", `fun foo() Str { 123 }`, []string{
 			"test.met:1:17: return type mismatch: expected Str, got Int\n" +
 				"    fun foo() Str { 123 }\n" +

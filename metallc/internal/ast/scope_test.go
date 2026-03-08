@@ -37,7 +37,7 @@ func TestScopes(t *testing.T) {
 			nodes: `
 				n1:Int(value=1):b
 				n2:Var(name="x",mut=false,expr=n1:Int):b
-				n3:Block(createScope=true,exprs=[n2:Var]):a
+				n3:Block(exprs=[n2:Var]):a
 			`,
 		},
 		{
@@ -53,8 +53,8 @@ func TestScopes(t *testing.T) {
 				n2:Var(name="x",mut=false,expr=n1:Int):b
 				n3:Int(value=2):c
 				n4:Var(name="y",mut=false,expr=n3:Int):c
-				n5:Block(createScope=true,exprs=[n4:Var]):b
-				n6:Block(createScope=true,exprs=[n2:Var,n5:Block]):a
+				n5:Block(exprs=[n4:Var]):b
+				n6:Block(exprs=[n2:Var,n5:Block]):a
 			`,
 		},
 		{
@@ -63,13 +63,14 @@ func TestScopes(t *testing.T) {
 			scopes: `
 				a:-
 				b:a
+				c:b
 			`,
 			nodes: `
 				n1:SimpleType(name="Int"):b
 				n2:FunParam(name="a",type=n1:SimpleType):b
 				n3:SimpleType(name="Int"):b
-				n4:Ident(name="a"):b
-				n5:Block(createScope=false,exprs=[n4:Ident]):b
+				n4:Ident(name="a"):c
+				n5:Block(exprs=[n4:Ident]):b
 				n6:Fun(name="foo",params=[n2:FunParam],returnType=n3:SimpleType,block=n5:Block):a
 			`,
 		},
@@ -80,12 +81,13 @@ func TestScopes(t *testing.T) {
 				a:-
 				b:a
 				c:b
+				d:c
 			`,
 			nodes: `
 				n1:SimpleType(name="void"):b
-				n2:Int(value=1):c
-				n3:Block(createScope=true,exprs=[n2:Int]):b
-				n4:Block(createScope=false,exprs=[n3:Block]):b
+				n2:Int(value=1):d
+				n3:Block(exprs=[n2:Int]):c
+				n4:Block(exprs=[n3:Block]):b
 				n5:Fun(name="foo",params=[],returnType=n1:SimpleType,block=n4:Block):a
 			`,
 		},

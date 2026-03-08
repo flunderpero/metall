@@ -93,6 +93,10 @@ type Flow struct {
 	PointsTo AliasSet
 }
 
+func (f Flow) String() string {
+	return fmt.Sprintf("{taints=%s, pointsTo=%s}", f.Taints, f.PointsTo)
+}
+
 func (f Flow) Merge(o Flow) Flow {
 	return Flow{f.Taints.Merge(o.Taints), f.PointsTo.Merge(o.PointsTo)}
 }
@@ -187,8 +191,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	a.status[nodeID] = statusInProgress
 	defer func() { a.status[nodeID] = statusDone }()
 
-	defer a.Debug.Print(2, "analyze: node=%s", a.ast.Debug(nodeID, false, 0)).Indent()()
-	a.ast.Walk(nodeID, a.Check)
+	a.debug(2, nodeID, "analyze: %s", a.ast.Debug(nodeID, false, 0))
+	defer a.Debug.Indent()()
 	node := a.ast.Node(nodeID)
 	switch kind := node.Kind.(type) {
 	case ast.Ref:
@@ -230,6 +234,7 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	case ast.Fun:
 		a.analyzeFun(nodeID, kind)
 	default:
+		a.ast.Walk(nodeID, a.Check)
 	}
 }
 
@@ -239,6 +244,7 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 //   - `mut a = 1; &a`      --> taints: {scope_taint(a)}, pointsTo: {a}
 //   - `mut a = &b; &a`     --> taints: {scope_taint(a), scope_taint(b)}, pointsTo: {a}
 func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
+	a.ast.Walk(nodeID, a.Check)
 	vt, foundIn := a.lookupVarWithScope(nodeID, ref.Name.Name)
 	if vt == nil {
 		return
@@ -251,39 +257,52 @@ func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 	}
 	// PointsTo uses the scope where the variable is *declared*, not where
 	// the & expression appears. This matters for shadowed variables.
-	a.flows[nodeID] = Flow{
+	flow := Flow{
 		Taints:   taints,
 		PointsTo: AliasSet{{foundIn.ID, ref.Name.Name}},
 	}
+	a.flows[nodeID] = flow
+	a.debug(1, nodeID, "analyzeRef: &%s %s storageTaint=%s", ref.Name.Name, flow, vt.StorageTaint)
 }
 
 // analyzeIdent: reading a variable propagates its flow.
 func (a *LifetimeCheck) analyzeIdent(nodeID ast.NodeID, ident ast.Ident) {
+	a.ast.Walk(nodeID, a.Check)
 	vt := a.lookupVar(nodeID, ident.Name)
 	if vt == nil {
 		return
 	}
 	a.flows[nodeID] = vt.Flow
+	a.debug(1, nodeID, "analyzeIdent: %s %s", ident.Name, vt.Flow)
 }
 
 // analyzeDeref: `*x` follows x's aliases to find the target variable's flow.
 //   - `mut a = 1; mut b = &a; *b` --> flow of a
 func (a *LifetimeCheck) analyzeDeref(nodeID ast.NodeID, deref ast.Deref) {
-	a.flows[nodeID] = a.derefFlow(a.flow(deref.Expr).PointsTo)
+	a.ast.Walk(nodeID, a.Check)
+	flow := a.derefFlow(a.flow(deref.Expr).PointsTo)
+	a.flows[nodeID] = flow
+	a.debug(1, nodeID, "analyzeDeref: %s", flow)
 }
 
 // analyzeFieldAccess: `x.foo`.
 // If x is a ref, auto-deref through x's aliases first.
 func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess) {
+	a.ast.Walk(nodeID, a.Check)
 	targetType := a.env.TypeOfNode(fa.Target)
 	if _, ok := targetType.Kind.(RefType); ok {
-		a.flows[nodeID] = a.derefFlow(a.flow(fa.Target).PointsTo)
+		flow := a.derefFlow(a.flow(fa.Target).PointsTo)
+		a.flows[nodeID] = flow
+		a.debug(1, nodeID, "analyzeFieldAccess: .%s (deref) %s", fa.Field.Name, flow)
 		return
 	}
-	a.flows[nodeID] = a.flow(fa.Target)
+	flow := a.flow(fa.Target)
+	a.flows[nodeID] = flow
+	a.debug(1, nodeID, "analyzeFieldAccess: .%s %s", fa.Field.Name, flow)
 }
 
 func (a *LifetimeCheck) analyzeAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar) {
+	a.ast.Walk(nodeID, a.Check)
 	ss := a.scopeState(nodeID)
 	ss.Vars[alloc.Name.Name] = &VarTaint{
 		nodeID, ss.ScopeTaint,
@@ -293,44 +312,55 @@ func (a *LifetimeCheck) analyzeAllocatorVar(nodeID ast.NodeID, alloc ast.Allocat
 
 // analyzeStructLiteral: `Foo(a, b)` merges all argument flows.
 func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral) {
+	a.ast.Walk(nodeID, a.Check)
 	merged := Flow{}
 	for _, argNodeID := range lit.Args {
 		merged = merged.Merge(a.flow(argNodeID))
 	}
 	a.flows[nodeID] = merged
+	a.debug(1, nodeID, "analyzeStructLiteral: %s", merged)
 }
 
 // analyzeNew: `new(@alloc, Foo(...))` merges the target's flow with the allocator's.
 func (a *LifetimeCheck) analyzeNew(nodeID ast.NodeID, alloc ast.New) {
+	a.ast.Walk(nodeID, a.Check)
 	merged := a.flow(alloc.Target)
 	merged = merged.Merge(a.flow(alloc.Allocator))
 	if newArr, ok := a.ast.Node(alloc.Target).Kind.(ast.NewArray); ok && newArr.DefaultValue != nil {
 		merged = merged.Merge(a.flow(*newArr.DefaultValue))
 	}
 	a.flows[nodeID] = merged
+	a.debug(1, nodeID, "analyzeNew: %s", merged)
 }
 
 // analyzeMakeSlice: `make(@alloc, []T(len))` or `make(@alloc, []T(len, default))` merges the allocator's flow.
 func (a *LifetimeCheck) analyzeMakeSlice(nodeID ast.NodeID, makeSlice ast.MakeSlice) {
+	a.ast.Walk(nodeID, a.Check)
 	merged := a.flow(makeSlice.Allocator)
 	merged = merged.Merge(a.flow(makeSlice.Len))
 	if makeSlice.DefaultValue != nil {
 		merged = merged.Merge(a.flow(*makeSlice.DefaultValue))
 	}
 	a.flows[nodeID] = merged
+	a.debug(1, nodeID, "analyzeMakeSlice: %s", merged)
 }
 
 func (a *LifetimeCheck) analyzeArrayLiteral(nodeID ast.NodeID, lit ast.ArrayLiteral) {
+	a.ast.Walk(nodeID, a.Check)
 	merged := Flow{}
 	for _, elemNodeID := range lit.Elems {
 		merged = merged.Merge(a.flow(elemNodeID))
 	}
 	a.flows[nodeID] = merged
+	a.debug(1, nodeID, "analyzeArrayLiteral: %s", merged)
 }
 
 // analyzeIndex: `arr[i]` propagates the array's flow (conservative: any element).
 func (a *LifetimeCheck) analyzeIndex(nodeID ast.NodeID, index ast.Index) {
-	a.flows[nodeID] = a.flow(index.Target)
+	a.ast.Walk(nodeID, a.Check)
+	flow := a.flow(index.Target)
+	a.flows[nodeID] = flow
+	a.debug(1, nodeID, "analyzeIndex: %s", flow)
 }
 
 // analyzeCall applies the callee's FunEffects to map argument flows into
@@ -339,26 +369,31 @@ func (a *LifetimeCheck) analyzeIndex(nodeID ast.NodeID, index ast.Index) {
 // If the function hasn't been analyzed yet, we analyze it on demand.
 // If we detect a cycle (mutual recursion), we apply pessimistic effects.
 func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
+	a.ast.Walk(nodeID, a.Check)
 	calleeType := a.env.TypeOfNode(call.Callee)
 	if _, ok := calleeType.Kind.(FunType); !ok {
 		return
 	}
 
-	effects, ok := a.funEffects[calleeType.ID]
+	effectsTypeID := calleeType.ID
+	if origin, ok := a.env.GenericOrigin(effectsTypeID); ok {
+		effectsTypeID = origin
+	}
+	effects, ok := a.funEffects[effectsTypeID]
 	if !ok {
 		declID := a.env.DeclNode(calleeType.ID)
 		if declID != 0 {
 			if a.status[declID] == statusInProgress {
-				a.Debug.Print(1, "analyzeCall: cycle detected for %s, pessimistic fallback",
-					a.ast.Debug(call.Callee, false, 0))
+				a.debug(1, nodeID, "analyzeCall: cycle detected, pessimistic fallback")
 				a.applyPessimisticEffects(nodeID, call)
 				return
 			}
 			a.Check(declID)
-			effects, ok = a.funEffects[calleeType.ID]
+			effects, ok = a.funEffects[effectsTypeID]
 		}
 	}
 	if !ok {
+		a.applyPessimisticEffects(nodeID, call)
 		return
 	}
 
@@ -389,13 +424,12 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 		a.mergeIntoTarget(nodeID, args[targetIdx], srcFlow)
 	}
 	a.flows[nodeID] = result
-	a.Debug.Print(1, "analyzeCall: %s taints=%s pointsTo=%s",
-		a.ast.Debug(call.Callee, false, 0), result.Taints, result.PointsTo)
+	a.debug(1, nodeID, "analyzeCall: %s", result)
 }
 
 // applyPessimisticEffects: assume every arg flows into the return value and
-// into every &mut arg. Used when we can't determine the actual effects
-// (recursive calls).
+// into every &mut arg. Used when we can't determine the actual effects.
+// (like in recursive calls or shape methods).
 func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call) {
 	args := call.Args
 	if target, ok := a.env.MethodCallReceiver(nodeID); ok {
@@ -407,7 +441,10 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 	for _, arg := range args {
 		allArgs = allArgs.Merge(a.flow(arg))
 	}
-	a.flows[nodeID] = allArgs
+	funType := base.Cast[FunType](a.env.TypeOfNode(call.Callee).Kind)
+	if a.typeContainsRefOrAlloc(funType.Return) {
+		a.flows[nodeID] = allArgs
+	}
 	for _, arg := range args {
 		if ref, ok := a.env.TypeOfNode(arg).Kind.(RefType); ok && ref.Mut {
 			a.mergeIntoTarget(nodeID, arg, allArgs)
@@ -416,11 +453,13 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 }
 
 func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
+	a.ast.Walk(nodeID, a.Check)
 	merged := a.flow(ifNode.Then)
 	if ifNode.Else != nil {
 		merged = merged.Merge(a.flow(*ifNode.Else))
 	}
 	a.flows[nodeID] = merged
+	a.debug(1, nodeID, "analyzeIf: %s", merged)
 }
 
 // analyzeFor: `for cond { body }`.
@@ -430,6 +469,7 @@ func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 // CreateScope=true blocks. For-loops are always void, so there is no
 // result flow to check.
 func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
+	a.ast.Walk(nodeID, a.Check)
 	outerScope := a.scopeGraph.NodeScope(nodeID)
 	ss := a.scopeState(forNode.Body)
 	parentState := a.scopeByID(outerScope.ID)
@@ -438,9 +478,6 @@ func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
 	for name, vt := range ss.Vars {
 		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
 			continue
-		}
-		if vt.Flow.Taints.ContainsAny(ss.LocalTaints) {
-			a.diagEscape(vt.DiagNode, vt.Flow.Taints, ss)
 		}
 		if pvt, ok := parentState.Vars[name]; ok {
 			pvt.Flow = pvt.Flow.Merge(vt.Flow)
@@ -453,6 +490,7 @@ func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
 // analyzeVar: `let x = expr` or `mut x = expr`.
 // Arena-allocated vars get StorageTaint=0 because they outlive their scope.
 func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
+	a.ast.Walk(nodeID, a.Check)
 	ss := a.scopeState(nodeID)
 	f := a.flow(varNode.Expr)
 	storageTaint := ss.ScopeTaint
@@ -461,6 +499,7 @@ func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 		storageTaint = 0
 	}
 	ss.Vars[varNode.Name.Name] = &VarTaint{nodeID, storageTaint, f}
+	a.debug(1, nodeID, "analyzeVar: %s scope=%s storageTaint=%s %s", varNode.Name.Name, ss.ID, storageTaint, f)
 }
 
 // analyzeFunParam: function parameters with ref/alloc types carry a caller
@@ -468,6 +507,7 @@ func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 // A self-referencing alias is added so that side-effect tracking can find
 // the param by name.
 func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, param ast.FunParam) {
+	a.ast.Walk(nodeID, a.Check)
 	ss := a.scopeState(nodeID)
 	callerTaints := TaintSet{}
 	if a.typeContainsRefOrAlloc(a.env.TypeOfNode(nodeID).ID) {
@@ -480,6 +520,7 @@ func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, param ast.FunParam) {
 			PointsTo: AliasSet{{ss.ID, param.Name.Name}},
 		},
 	}
+	a.debug(1, nodeID, "analyzeFunParam: %s scope=%s callerTaints=%s", param.Name.Name, ss.ID, callerTaints)
 }
 
 // typeContainsRefOrAlloc returns true if the type is, or recursively contains,
@@ -501,6 +542,16 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 				return true
 			}
 		}
+	case TypeParamType:
+		if kind.Shape == nil {
+			return false
+		}
+		shape := base.Cast[ShapeType](a.env.Type(*kind.Shape).Kind)
+		for _, field := range shape.Fields {
+			if a.typeContainsRefOrAlloc(field.Type) {
+				return true
+			}
+		}
 	case ArrayType:
 		return a.typeContainsRefOrAlloc(kind.Elem)
 	case SliceType:
@@ -510,10 +561,10 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 }
 
 func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
+	a.ast.Walk(nodeID, a.Check)
 	rhs := a.flow(assign.RHS)
 	lhsNode := a.ast.Node(assign.LHS)
-	a.Debug.Print(1, "analyzeAssign: lhs=%s rhsTaints=%s rhsPointsTo=%s",
-		a.ast.Debug(assign.LHS, false, 0), rhs.Taints, rhs.PointsTo)
+	a.debug(1, nodeID, "analyzeAssign: lhs=%s rhs=%s", a.ast.Debug(assign.LHS, false, 0), rhs)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
 		// `x = expr` - replace x's flow, preserve its storage taint.
@@ -579,7 +630,7 @@ func (a *LifetimeCheck) mergeIntoTarget(nodeID ast.NodeID, target ast.NodeID, rh
 		aliases = a.flow(root).PointsTo
 	}
 
-	a.Debug.Print(1, "mergeIntoTarget: root=%s aliases=%s", a.ast.Debug(root, false, 0), aliases)
+	a.debug(1, nodeID, "mergeIntoTarget: root=%s aliases=%s", a.ast.Debug(root, false, 0), aliases)
 	ss := a.scopeState(nodeID)
 
 	for _, alias := range aliases {
@@ -601,12 +652,17 @@ func (a *LifetimeCheck) mergeIntoTarget(nodeID ast.NodeID, target ast.NodeID, rh
 //	--> *b writes into a (outer scope), c's taint escapes.
 func (a *LifetimeCheck) analyzeDerefAssign(nodeID ast.NodeID, deref ast.Deref, rhs Flow) {
 	targets := a.flow(deref.Expr).PointsTo
-	a.Debug.Print(1, "analyzeDerefAssign: rhsPointsTo=%s, targets=%s", rhs.PointsTo, targets)
+	a.debug(1, nodeID, "analyzeDerefAssign: rhs=%s targets=%s", rhs, targets)
 	localScope := a.scopeState(nodeID)
 	for _, target := range targets {
 		targetScope := a.scopeByID(target.ScopeID)
 		if targetScope != localScope && rhs.Taints.ContainsAny(localScope.LocalTaints) {
-			a.diagEscape(nodeID, rhs.Taints, localScope)
+			a.diagEscape(
+				nodeID,
+				rhs.Taints,
+				localScope,
+				"via deref assignment",
+			)
 		}
 		if vt, ok := targetScope.Vars[target.Name]; ok {
 			vt.Flow = rhs
@@ -627,22 +683,26 @@ func (a *LifetimeCheck) analyzeDerefAssign(nodeID ast.NodeID, deref ast.Deref, r
 //	    }
 //	}
 func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
+	a.ast.Walk(nodeID, a.Check)
 	outerScope := a.scopeGraph.NodeScope(nodeID)
-	defer a.Debug.Print(0, "analyzeBlock: scope=%s node=%s", outerScope.ID, a.ast.Debug(nodeID, false, 0)).Indent()()
+	a.debug(0, nodeID, "analyzeBlock: scope=%s", outerScope.ID)
+	defer a.Debug.Indent()()
 	if len(block.Exprs) == 0 {
 		return
 	}
 	lastExpr := block.Exprs[len(block.Exprs)-1]
 	lastFlow := a.flow(lastExpr)
 
-	// Function bodies (CreateScope=false) just bubble up the last expression's flow.
-	if !block.CreateScope {
-		a.flows[nodeID] = lastFlow
-		return
-	}
-
 	ss := a.scopeState(lastExpr)
 	parentState := a.scopeByID(outerScope.ID)
+	a.debug(
+		1,
+		nodeID,
+		"analyzeBlock: scopeTaint=%s localTaints=%s lastFlow=%s",
+		ss.ScopeTaint,
+		ss.LocalTaints,
+		lastFlow,
+	)
 
 	// Propagate mutations to outer-scope variables back to the parent.
 	// Skip variables declared in this block's own scope (they shadow, not mutate).
@@ -651,8 +711,10 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
 			continue
 		}
+		a.debug(1, nodeID, "analyzeBlock: outer var %q %s localTaints=%s escape=%v",
+			name, vt.Flow, ss.LocalTaints, vt.Flow.Taints.ContainsAny(ss.LocalTaints))
 		if vt.Flow.Taints.ContainsAny(ss.LocalTaints) {
-			a.diagEscape(vt.DiagNode, vt.Flow.Taints, ss)
+			a.diagEscape(vt.DiagNode, vt.Flow.Taints, ss, "via mutation of outer variable")
 		}
 		if pvt, ok := parentState.Vars[name]; ok {
 			pvt.Flow = pvt.Flow.Merge(vt.Flow)
@@ -662,31 +724,32 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	}
 
 	// Check the block result for escaping local taints, then strip them.
-	if lastFlow.Taints.ContainsAny(ss.LocalTaints) {
-		a.diagEscape(lastExpr, lastFlow.Taints, ss)
+	escaped := lastFlow.Taints.ContainsAny(ss.LocalTaints)
+	a.debug(1, nodeID, "analyzeBlock: result escape=%v lastTaints=%s localTaints=%s",
+		escaped, lastFlow.Taints, ss.LocalTaints)
+	if escaped {
+		a.diagEscape(lastExpr, lastFlow.Taints, ss, "via block result")
 	}
-	a.flows[nodeID] = Flow{lastFlow.Taints.Without(ss.LocalTaints), lastFlow.PointsTo}
+	resultFlow := Flow{lastFlow.Taints.Without(ss.LocalTaints), lastFlow.PointsTo}
+	a.flows[nodeID] = resultFlow
+	a.debug(1, nodeID, "analyzeBlock: resultFlow=%s", resultFlow)
 }
 
-// analyzeFun checks for locals escaping through the return value and
-// builds a FunEffects that describes how parameter flows map to the
+// analyzeFun builds a FunEffects that describes how parameter flows map to the
 // return value and to each other (side effects).
-func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
-	blockFlow := a.flow(fun.Block)
-
-	// Check for locals escaping through the return value.
-	ss := a.scopeState(fun.Block)
-	if blockFlow.Taints.ContainsAny(ss.LocalTaints) {
-		block := base.Cast[ast.Block](a.ast.Node(fun.Block).Kind)
-		lastExpr := block.Exprs[len(block.Exprs)-1]
-		a.diagEscape(lastExpr, blockFlow.Taints, ss)
+func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) { //nolint:funlen
+	// Walk type params and return type (no special handling needed).
+	for _, tp := range fun.TypeParams {
+		a.Check(tp)
 	}
+	a.Check(fun.ReturnType)
 
-	// Build reverse maps: taint --> param index, alias --> param index.
+	// Analyze params first and capture their initial caller taints.
 	paramTaintToIdx := map[TaintID]int{}
 	paramAliasToIdx := map[Alias]int{}
 	paramScope := a.scopeGraph.NodeScope(fun.Block)
 	for i, paramNodeID := range fun.Params {
+		a.Check(paramNodeID)
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
 		paramAliasToIdx[Alias{paramScope.ID, name}] = i
 		if vt := a.lookupVar(paramNodeID, name); vt != nil {
@@ -695,6 +758,10 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 			}
 		}
 	}
+
+	// Now analyze the body.
+	a.Check(fun.Block)
+	blockFlow := a.flow(fun.Block)
 
 	effects := &FunEffects{
 		ReturnTaints:  map[TaintID]int{},
@@ -722,9 +789,13 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	// e.g. `fun foo(a &mut Int, b &Int) { *a = *b }` --> param 0 got param 1's taint.
 	for i, paramNodeID := range fun.Params {
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
-		if vt := a.lookupVar(paramNodeID, name); vt != nil {
+		vt := a.lookupVar(paramNodeID, name)
+		a.debug(1, nodeID, "analyzeFun: side-effect check param %d (%s) vt=%v", i, name, vt)
+		if vt != nil {
 			for _, t := range vt.Flow.Taints {
 				if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i {
+					a.debug(1, nodeID, "analyzeFun: side-effect param %d (%s) tainted by param %d via %s",
+						i, name, srcIdx, t)
 					if !slices.Contains(effects.SideEffects[i], srcIdx) {
 						effects.SideEffects[i] = append(effects.SideEffects[i], srcIdx)
 					}
@@ -733,11 +804,10 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		}
 	}
 
-	if len(effects.ReturnTaints) > 0 || len(effects.ReturnAliases) > 0 || len(effects.SideEffects) > 0 {
-		a.funEffects[a.env.TypeOfNode(nodeID).ID] = effects
-		a.Debug.Print(1, "analyzeFun: effects for %s: taints=%v aliases=%v sideEffects=%v",
-			fun.Name.Name, effects.ReturnTaints, effects.ReturnAliases, effects.SideEffects)
-	}
+	funTypeID := a.env.TypeOfNode(nodeID).ID
+	a.funEffects[funTypeID] = effects
+	a.debug(1, nodeID, "analyzeFun: effects for %s (typeID=%d): taints=%v aliases=%v sideEffects=%v",
+		fun.Name.Name, funTypeID, effects.ReturnTaints, effects.ReturnAliases, effects.SideEffects)
 }
 
 func (a *LifetimeCheck) flow(nodeID ast.NodeID) Flow {
@@ -797,7 +867,14 @@ func (a *LifetimeCheck) newTaintID() TaintID {
 	return id
 }
 
-func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, ss *ScopeState) {
+func (a *LifetimeCheck) debug(level int, nodeID ast.NodeID, msg string, args ...any) {
+	d := a.Debug.Print(level, "%s", fmt.Sprintf(msg, args...))
+	indent := d.Indent()
+	d.Print(2, "at %s", a.ast.Node(nodeID).Span.DebugLine())
+	indent()
+}
+
+func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, ss *ScopeState, detail string) {
 	reported := map[ast.NodeID]bool{}
 	for _, t := range taints {
 		if !slices.Contains(ss.LocalTaints, t) {
@@ -811,7 +888,7 @@ func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, s
 			continue
 		}
 		reported[diagNode] = true
-		a.diag(a.ast.Node(diagNode).Span, "reference escaping its allocation scope")
+		a.diag(a.ast.Node(diagNode).Span, "reference escaping its allocation scope (%s)", detail)
 	}
 }
 

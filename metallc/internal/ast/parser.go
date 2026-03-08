@@ -124,7 +124,7 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	block, ok := p.parseBlock(false)
+	block, ok := p.ParseBlock()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -427,7 +427,28 @@ func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
 }
 
 func (p *Parser) ParseBlock() (NodeID, bool) {
-	return p.parseBlock(true)
+	t, ok := p.expect(token.LCurly)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	exprs := []NodeID{}
+	for {
+		t, ok := p.mayPeek()
+		if !ok {
+			break
+		}
+		if t.Kind == token.RCurly {
+			p.next()
+			break
+		}
+		expr, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		exprs = append(exprs, expr)
+	}
+	return p.NewBlock(exprs, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
@@ -990,7 +1011,7 @@ func (p *Parser) ParseFor() (NodeID, bool) {
 		}
 		cond = &expr
 	}
-	body, ok := p.parseBlock(false)
+	body, ok := p.ParseBlock()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -1087,31 +1108,6 @@ func (p *Parser) parseAllocator() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return alloc, true
-}
-
-func (p *Parser) parseBlock(createScope bool) (NodeID, bool) {
-	t, ok := p.expect(token.LCurly)
-	if !ok {
-		return ParseFailed, false
-	}
-	span := t.Span
-	exprs := []NodeID{}
-	for {
-		t, ok := p.mayPeek()
-		if !ok {
-			break
-		}
-		if t.Kind == token.RCurly {
-			p.next()
-			break
-		}
-		expr, ok := p.ParseExpr(0)
-		if !ok {
-			return ParseFailed, false
-		}
-		exprs = append(exprs, expr)
-	}
-	return p.NewBlock(exprs, createScope, span.Combine(p.span())), true
 }
 
 func (p *Parser) parseTypeParams() ([]NodeID, bool) {

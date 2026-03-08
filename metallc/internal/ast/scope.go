@@ -93,9 +93,7 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 		g.setNodeScope(nodeID, scope)
 		switch kind := ast.Node(nodeID).Kind.(type) {
 		case Block:
-			if kind.CreateScope {
-				defer enterScope(nodeID, "")()
-			}
+			defer enterScope(nodeID, "")()
 		case For:
 			defer enterScope(nodeID, "")()
 		case Module:

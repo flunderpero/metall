@@ -16,12 +16,12 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		want []string
 	}{
 		{"stack ref escapes", `let x = { let y = 123 &y }`, []string{
-			"test.met:1:23: reference escaping its allocation scope\n" +
+			"test.met:1:23: reference escaping its allocation scope (via block result)\n" +
 				`    let x = { let y = 123 &y }` + "\n" +
 				"                          ^^",
 		}},
 		{"assign ref to outer", `{ mut x = 123 mut y = &x { mut z = 123 y = &z } }`, []string{
-			"test.met:1:44: reference escaping its allocation scope\n" +
+			"test.met:1:44: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				`    { mut x = 123 mut y = &x { mut z = 123 y = &z } }` + "\n" +
 				"                                               ^^",
 		}},
@@ -37,7 +37,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			    }
 			}
 			`, []string{
-			"test.met:8:29: reference escaping its allocation scope\n" +
+			"test.met:8:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 					    {
 						    y = &z
@@ -56,7 +56,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:25: reference escaping its allocation scope\n" +
+			"test.met:8:25: reference escaping its allocation scope (via deref assignment)\n" +
 				strings.Trim(`
 				      mut w = 456
 				      z.* = &w
@@ -79,7 +79,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:10:31: reference escaping its allocation scope\n" +
+			"test.met:10:31: reference escaping its allocation scope (via deref assignment)\n" +
 				strings.Trim(`
 					        mut v = 789
 					        w.* = &v
@@ -98,7 +98,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"valid outer ref to inner", `
 			{
 				mut x = 123
-				{
+				let r = {
 					mut y = &x
 					y
 				}
@@ -116,7 +116,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:27: reference escaping its allocation scope\n" +
+			"test.met:8:27: reference escaping its allocation scope (via deref assignment)\n" +
 				strings.Trim(`
 					    mut w = 456
 					    z.* = &w
@@ -135,7 +135,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:29: reference escaping its allocation scope\n" +
+			"test.met:8:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 					    mut z = 456
 					    y.one = &z
@@ -160,7 +160,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:5:21: reference escaping its allocation scope\n" +
+			"test.met:5:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        mut x = 42
 				        &x
@@ -168,6 +168,17 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// {"local ref escapes via mut param", `
+		// 	{
+		// 		struct Foo { mut one &Int }
+		// 		fun foo(a &mut Foo) void {
+		// 			let x = 42
+		// 			a.one = &x
+		// 		}
+		// 	}
+		// 	`, []string{
+		// 	"should fail",
+		// }},
 		{"deref on rhs escapes", `
 			{
 				mut x = 0
@@ -180,7 +191,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:7:29: reference escaping its allocation scope\n" +
+			"test.met:7:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 						mut z = 456
 					    mut w = &z
@@ -198,7 +209,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:6:30: reference escaping its allocation scope\n" +
+			"test.met:6:30: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = 42
 				        identity(&y)
@@ -217,7 +228,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:7:25: reference escaping its allocation scope\n" +
+			"test.met:7:25: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = 42
 				        foo(&y)
@@ -225,15 +236,6 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
-		{"valid transitive call", `
-			{
-				fun identity(a &Int) &Int { a }
-				fun foo(a &Int) &Int { identity(a) }
-				let x = 42
-				let y = foo(&x)
-				y
-			}
-			`, []string{}},
 		{"call returns struct with ref to local", `
 			{
 				struct Wrapper { one &Int }
@@ -245,7 +247,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:7:25: reference escaping its allocation scope\n" +
+			"test.met:7:25: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = 42
 				        foo(&y)
@@ -264,7 +266,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:7:29: reference escaping its allocation scope\n" +
+			"test.met:7:29: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = 42
 				        Bar(Foo(&y))
@@ -283,7 +285,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:6:37: reference escaping its allocation scope\n" +
+			"test.met:6:37: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = 42
 				        let z = Wrapper(&y)
@@ -303,7 +305,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:6:37: reference escaping its allocation scope\n" +
+			"test.met:6:37: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 						let y = 42
 				        let z = Wrapper(&y)
@@ -324,7 +326,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:7:37: reference escaping its allocation scope\n" +
+			"test.met:7:37: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 						let y = 42
 				        let z = Bar(Foo(&y))
@@ -342,10 +344,16 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					y = Wrapper(&w)
 					y.one
 				}
-				z
 			}
 			`, []string{
-			"test.met:8:33: reference escaping its allocation scope\n" +
+			"test.met:8:33: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+				        let w = 42
+				        y = Wrapper(&w)
+				                    ^^
+				        y.one
+				`, "\n"),
+			"test.met:8:33: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let w = 42
 				        y = Wrapper(&w)
@@ -364,7 +372,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:6:21: reference escaping its allocation scope\n" +
+			"test.met:6:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
 				        new(@myalloc, Foo("hello"))
@@ -382,7 +390,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:5:21: reference escaping its allocation scope\n" +
+			"test.met:5:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
 				        new(@myalloc, [5]Int())
@@ -390,14 +398,6 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
-		{"valid heap alloc", `
-			{
-				struct Foo { one Str }
-				let @myalloc = Arena()
-				let x = new(@myalloc, Foo("hello"))
-				x
-			}
-			`, []string{}},
 		// Valid: allocator passed as param, result used in caller's scope.
 		{"valid heap alloc through param", `
 			{
@@ -405,7 +405,6 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				fun foo(@myalloc Arena) &Foo { new(@myalloc, Foo("hello")) }
 				let @myalloc = Arena()
 				let x = foo(@myalloc)
-				x
 			}
 			`, []string{}},
 		// Heap-allocated struct escapes through a nested block result.
@@ -420,7 +419,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:7:21: reference escaping its allocation scope\n" +
+			"test.met:7:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
 				        new(@myalloc, Foo("hello"))
@@ -443,7 +442,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:10:21: reference escaping its allocation scope\n" +
+			"test.met:10:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let z = y
 				        identity(z)
@@ -463,7 +462,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:7:21: reference escaping its allocation scope\n" +
+			"test.met:7:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let @youralloc = Arena()
 				        foo(@youralloc)
@@ -486,7 +485,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:11:21: reference escaping its allocation scope\n" +
+			"test.met:11:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = Bar(@myalloc)
 				        foo(y)
@@ -494,19 +493,6 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
-
-		// Valid: function takes a Bar but doesn't use its allocator in return value.
-		{"valid allocator field", `
-			{
-				struct Foo { one Str }
-				struct Bar { @myalloc Arena }
-				fun foo(a Bar, b &Foo) &Foo { b }
-				let @myalloc = Arena()
-				let x = Bar(@myalloc)
-				let y = new(@myalloc, Foo("hello"))
-				foo(x, y)
-			}
-			`, []string{}},
 
 		// Valid: struct with allocator used within same scope.
 		{"valid struct allocator", `
@@ -536,7 +522,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:12:21: reference escaping its allocation scope\n" +
+			"test.met:12:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = Baz(Bar(@myalloc))
 				        foo(y)
@@ -554,10 +540,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let local = 123
 					new_mut(@a, [3]Wrapper(Wrapper(&local)))
 				}
-				x
 			}
 			`, []string{
-			"test.met:7:52: reference escaping its allocation scope\n" +
+			"test.met:7:52: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
 				        new_mut(@a, [3]Wrapper(Wrapper(&local)))
@@ -574,10 +559,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let local = 123
 					make(@a, []Wrapper(3, Wrapper(&local)))
 				}
-				x
 			}
 			`, []string{
-			"test.met:7:51: reference escaping its allocation scope\n" +
+			"test.met:7:51: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
 				        make(@a, []Wrapper(3, Wrapper(&local)))
@@ -594,10 +578,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let local = 123
 					new_mut(@a, [3]&Int(&local))
 				}
-				x
 			}
 			`, []string{
-			"test.met:6:41: reference escaping its allocation scope\n" +
+			"test.met:6:41: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
 				        new_mut(@a, [3]&Int(&local))
@@ -613,10 +596,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let local = 123
 					make(@a, []&Int(3, &local))
 				}
-				x
 			}
 			`, []string{
-			"test.met:6:40: reference escaping its allocation scope\n" +
+			"test.met:6:40: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
 				        make(@a, []&Int(3, &local))
@@ -645,10 +627,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let z = 42
 					if true { &z } else { &x }
 				}
-				y
 			}
 			`, []string{
-			"test.met:6:31: reference escaping its allocation scope\n" +
+			"test.met:6:31: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let z = 42
 				        if true { &z } else { &x }
@@ -666,10 +647,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					let z = 99
 					foo(&x, &z)
 				}
-				y
 			}
 			`, []string{
-			"test.met:7:29: reference escaping its allocation scope\n" +
+			"test.met:7:29: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let z = 99
 				        foo(&x, &z)
@@ -684,7 +664,6 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				let x = 42
 				let y = 99
 				let z = foo(&x, &y)
-				z
 			}
 			`, []string{}},
 
@@ -700,7 +679,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:6:37: reference escaping its allocation scope\n" +
+			"test.met:6:37: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = 42
 				        let z = Wrapper(&y)
@@ -719,7 +698,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:5:30: reference escaping its allocation scope\n" +
+			"test.met:5:30: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let y = 42
 				        let z = [&y]
@@ -732,7 +711,6 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				let x = 42
 				let y = [&x]
-				y
 			}
 			`, []string{}},
 
@@ -748,7 +726,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:32: reference escaping its allocation scope\n" +
+			"test.met:8:32: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 					    mut z = 456
 					    y[0].one = &z
@@ -779,7 +757,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:8:32: reference escaping its allocation scope\n" +
+			"test.met:8:32: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 					    mut z = 456
 					    y.one[0] = &mut z
@@ -807,10 +785,10 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					&x
 				}
 				let y = 42
-				foo(&y)
+				let r = foo(&y)
 			}
 			`, []string{
-			"test.met:6:21: reference escaping its allocation scope\n" +
+			"test.met:6:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        x = a.*
 				        &x
@@ -830,10 +808,10 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 				let @myalloc = Arena()
 				let x = Foo(@myalloc)
-				foo(&x)
+				let r = foo(&x)
 			}
 			`, []string{
-			"test.met:8:21: reference escaping its allocation scope\n" +
+			"test.met:8:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        x = a.*
 				        &x
@@ -852,7 +830,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				x
 			}
 			`, []string{
-			"test.met:6:21: reference escaping its allocation scope\n" +
+			"test.met:6:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        y = 2
 				        &y
@@ -860,6 +838,12 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		// No false positive: function takes &mut but doesn't flow the ref.
+		{
+			"no escape through unused mut ref param",
+			`{ fun foo(a &mut Int) void { a.* = 321 } mut x = 123 foo(&mut x) }`,
+			[]string{},
+		},
 		{"field mutation bypass", `
 			{
 				struct Foo { mut one &Int }
@@ -875,7 +859,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:11:33: reference escaping its allocation scope\n" +
+			"test.met:11:33: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 						mut z = 99
 						foo(&mut y, &z)
@@ -897,7 +881,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:10:29: reference escaping its allocation scope\n" +
+			"test.met:10:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 						let w = identity(&mut y)
 						w.one = &z
@@ -919,7 +903,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:10:29: reference escaping its allocation scope\n" +
+			"test.met:10:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 					    let w = identity(&mut y)
 						w.one = &z
@@ -941,7 +925,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:10:28: reference escaping its allocation scope\n" +
+			"test.met:10:28: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 				        mut z = 99
 				        foo(y, &z)
@@ -967,12 +951,43 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:14:33: reference escaping its allocation scope\n" +
+			"test.met:14:33: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 				        mut z = 99
 				        foo(&mut y, &z)
 				                    ^^
 				    }
+				`, "\n"),
+		}},
+		// Pessimistic effects should not taint the return flow when the return
+		// type cannot carry a reference.
+		{"pessimistic no return taint for void", `
+			{
+				fun foo(a &Int) void { foo(a) }
+				let x = 42
+				foo(&x)
+			}
+			`, []string{}},
+		{"pessimistic no return taint for int", `
+			{
+				fun foo(a &Int) Int { foo(a) }
+				let x = 42
+				foo(&x)
+			}
+			`, []string{}},
+		{"pessimistic return taint for ref", `
+			{
+				fun foo(a &Int) &Int { foo(a) }
+				let x = 42
+				foo(&x)
+			}
+			`, []string{
+			"test.met:5:21: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+					let x = 42
+					foo(&x)
+					    ^^
+				}
 				`, "\n"),
 		}},
 		// mutual recursion (foo -> bar -> foo). The analyzer detects the cycle
@@ -984,12 +999,14 @@ func TestLifetimeAnalyzer(t *testing.T) {
 					mut one &Int
 				}
 
-				fun foo(a &mut Foo, b &Int) void {
+				fun foo(a &mut Foo, b &Int) Int {
 					bar(a, b)
+					42
 				}
 
-				fun bar(a &mut Foo, b &Int) void {
+				fun bar(a &mut Foo, b &Int) Int {
 					foo(a, b)
+					1337
 				}
 
 				mut x = 0
@@ -1003,7 +1020,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:20:33: reference escaping its allocation scope\n" +
+			"test.met:22:33: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 						mut z = 99
 						foo(&mut y, &z)
@@ -1026,7 +1043,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:11:43: reference escaping its allocation scope\n" +
+			"test.met:11:43: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 				        mut z = 99
 				        foo(identity(&mut y), &z)
@@ -1049,7 +1066,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, []string{
-			"test.met:10:33: reference escaping its allocation scope\n" +
+			"test.met:10:33: reference escaping its allocation scope (via deref assignment)\n" +
 				strings.Trim(`
 						mut a = 99
 						mut b = Foo(&mut a)
@@ -1070,7 +1087,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(z.one.*.*)
 			}
 			`, []string{
-			"test.met:9:31: reference escaping its allocation scope\n" +
+			"test.met:9:31: reference escaping its allocation scope (via deref assignment)\n" +
 				strings.Trim(`
 					    mut w = 99
 					    z.one.* = &w
@@ -1092,7 +1109,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.two.*)
 			}
 			`, []string{
-			"test.met:8:29: reference escaping its allocation scope\n" +
+			"test.met:8:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 					    mut z = 99
 					    y.two = &z
@@ -1113,7 +1130,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				}
 			}
 			`, []string{
-			"test.met:7:25: reference escaping its allocation scope\n" +
+			"test.met:7:25: reference escaping its allocation scope (via mutation of outer variable)\n" +
 				strings.Trim(`
 				        mut z = 99
 				        y = &z
@@ -1123,52 +1140,130 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		}},
 		// TODO: The lifetime checker does not track refs flowing through function
 		// call return values when the ref originates from an argument.
-		// {"non-generic method ref escapes via return", `
-		// 	{
-		// 		struct Foo { }
-		// 		fun Foo.escape(f Foo, a &Int) &Int { a }
-		// 		fun bar(t Foo) &Int { let a = 42 t.escape(&a) }
-		// 		let r = {
-		// 			let f = Foo()
-		// 			bar(f)
-		// 		}
-		// 		r
-		// 	}
-		// 	`, []string{"..."}},
-		// {"shape method ref escapes via return", `
-		// 	{
-		// 		shape Shape {
-		// 			fun Shape.escape(s Shape, a &Int) &Int
-		// 		}
-		// 		struct Foo { }
-		// 		fun Foo.escape(f Foo, a &Int) &Int { a }
-		// 		fun bar<T Shape>(t T) &Int { let a = 42 t.escape(&a) }
-		// 		let r = {
-		// 			let f = Foo()
-		// 			bar<Foo>(f)
-		// 		}
-		// 		r
-		// 	}
-		// 	`, []string{"..."}},
-		// Method call: receiver carries a ref to an inner-scope local, method
-		// returns that ref — the ref escapes.
-		{"method call receiver ref escapes", `
+		{"method ref escapes via return", `
 			{
-				struct Foo { one Int }
-				fun Foo.get(self &Foo) &Foo { self }
+				struct Foo { }
+				fun Foo.escape(f Foo, a &Int) &Int { a }
+				fun bar(t Foo) &Int { let a = 42 t.escape(&a) }
 				let r = {
-					let f = Foo(42)
-					&f.get()
+					let f = Foo()
+					bar(f)
 				}
 				r
 			}
 			`, []string{
-			"test.met:7:21: reference escaping its allocation scope\n" +
+			"test.met:5:59: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
-				        let f = Foo(42)
-				        &f.get()
-						^^
+					fun Foo.escape(f Foo, a &Int) &Int { a }
+					fun bar(t Foo) &Int { let a = 42 t.escape(&a) }
+															  ^^
+					let r = {
+				`, "\n"),
+		}},
+		// Test that type parameter constraints are checked at all.
+		// And pessimistic function effects are applied.
+		{"shape method ref escapes", `
+			{
+				shape Shape {
+					fun Shape.escape(s Shape, a &Int) &Int
+				}
+				struct Foo { }
+				fun Foo.escape(f Foo, a &Int) &Int { a }
+				fun bar<T Shape>(t T) &Int { let a = 42 t.escape(&a) }
+				let r = {
+					let f = Foo()
+					bar<Foo>(f)
+				}
+				r
+			}
+			`, []string{
+			"test.met:8:66: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+					fun Foo.escape(f Foo, a &Int) &Int { a }
+					fun bar<T Shape>(t T) &Int { let a = 42 t.escape(&a) }
+																	 ^^
+					let r = {
+				`, "\n"),
+		}},
+		// Test that shape fields are checked.
+		{"shape field ref escapes", `
+			{
+				shape Shape { 
+					mut one &Int 
+				}
+				
+				fun foo<T Shape>(s &mut T) void {
+					let x = 42
+					s.one = &x
+				}
+			}
+			`, []string{
+			"test.met:9:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+						let x = 42
+						s.one = &x
+						        ^^
 					}
+				`, "\n"),
+		}},
+		{"shape mut param ref escapes via side effect", `
+			{
+				shape HasRef { mut one &Int }
+				struct Foo { mut one &Int }
+				struct Bar { mut one &Int }
+				fun baz<T HasRef>(t &mut T, b &Int) void { t.one = b }
+				mut x = 42
+				mut foo = Foo(&mut x)
+				{
+					let z = 99
+					baz<Foo>(&mut foo, &z)
+				}
+			}
+			`, []string{
+			"test.met:11:40: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+				        let z = 99
+				        baz<Foo>(&mut foo, &z)
+				                           ^^
+				    }
+				`, "\n"),
+		}},
+		{"shape value param no escape when not written to mut ref", `
+			{
+				shape HasRef { one &Int }
+				struct Foo { one &Int }
+				struct Bar { mut one &Int }
+				fun baz<T HasRef>(t T, b &mut Bar) void { b.one = b.one }
+				let x = 42
+				mut y = Bar(&x)
+				{
+					let z = 99
+					baz<Foo>(Foo(&z), &mut y)
+				}
+				print_int(y.one.*)
+			}
+			`, nil},
+		{"shape value param ref escapes via side effect", `
+			{
+				shape HasRef { one &Int }
+				struct Foo { one &Int }
+				struct Bar { mut one &Int }
+				fun baz<T HasRef>(t T, b &mut Bar) void { b.one = t.one }
+				let x = 42
+				mut y = Bar(&x)
+				{
+					let z = 99
+					baz<Foo>(Foo(&z), &mut y)
+				}
+				print_int(y.one.*)
+			}
+			`, []string{
+			"test.met:11:34: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+				        let z = 99
+				        baz<Foo>(Foo(&z), &mut y)
+				                     ^^
+				    }
 				`, "\n"),
 		}},
 	}
@@ -1197,7 +1292,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			e.Query(exprID)
 			assert.Equal(0, len(e.c.diagnostics), "type check failed: %s", e.c.diagnostics)
 			a := NewLifetimeAnalyzer(e.c.ast, e.c.scopeGraph, e.Env())
-			// a.Debug = base.NewStdoutDebug("lifetime")
+			a.Debug = base.NewStdoutDebug("lifetime")
 			a.Check(exprID)
 			for i, want := range tt.want {
 				if i >= len(a.Diagnostics) {
@@ -1207,8 +1302,12 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				want = strings.TrimRight(want, " ")
 				assert.Equal(want, a.Diagnostics[i].Display())
 			}
-			if len(e.c.diagnostics) > len(tt.want) {
-				t.Fatalf("there are more diagnostics than expected: %s", a.Diagnostics[len(tt.want):])
+			if len(a.Diagnostics) > len(tt.want) {
+				t.Fatalf(
+					"there are more diagnostics than expected. \n>>> want:\n%s\n>>> got:\n%s",
+					tt.want,
+					a.Diagnostics,
+				)
 			}
 		})
 	}

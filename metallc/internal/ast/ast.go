@@ -257,8 +257,7 @@ type AllocatorVar struct {
 func (AllocatorVar) isKind() {}
 
 type Block struct {
-	Exprs       []NodeID
-	CreateScope bool
+	Exprs []NodeID
 }
 
 type If struct {
@@ -394,8 +393,8 @@ func (a *AST) NewBool(value bool, span base.Span) NodeID {
 	return a.node(Bool{Value: value}, span)
 }
 
-func (a *AST) NewBlock(exprs []NodeID, createScope bool, span base.Span) NodeID {
-	return a.node(Block{Exprs: exprs, CreateScope: createScope}, span)
+func (a *AST) NewBlock(exprs []NodeID, span base.Span) NodeID {
+	return a.node(Block{Exprs: exprs}, span)
 }
 
 func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
@@ -759,7 +758,6 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("rhs", kind.RHS)
 		}
 	case Block:
-		addAttr("createScope", fmt.Sprintf("%t", kind.CreateScope))
 		if !children {
 			addAttr("exprs", blockExprList(kind.Exprs))
 		} else {

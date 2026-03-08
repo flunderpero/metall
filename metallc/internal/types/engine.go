@@ -1413,8 +1413,20 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 		if !containerMut {
 			return typeID, false
 		}
-		structType := base.Cast[StructType](e.c.env.Type(structTypeID).Kind)
-		for _, field := range structType.Fields {
+		var fields []StructField
+		switch kind := e.c.env.Type(structTypeID).Kind.(type) {
+		case StructType:
+			fields = kind.Fields
+		case TypeParamType:
+			if kind.Shape == nil {
+				panic(base.Errorf("expected type parameter to be constrained by shape"))
+			}
+			shape := base.Cast[ShapeType](e.c.env.Type(*kind.Shape).Kind)
+			fields = shape.Fields
+		default:
+			panic(base.Errorf("expected struct or shape, got: %T", kind))
+		}
+		for _, field := range fields {
 			if field.Name == kind.Field.Name {
 				return typeID, field.Mut
 			}

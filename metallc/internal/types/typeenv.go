@@ -61,12 +61,13 @@ type arrayTypeCacheKey struct {
 }
 
 type TypeRegistry struct {
-	types      map[TypeID]*cachedType
-	refTypes   map[refTypeCacheKey]*cachedType
-	arrayTypes map[arrayTypeCacheKey]*cachedType
-	sliceTypes map[TypeID]*cachedType
-	funTypes   map[string]*cachedType
-	nextID     TypeID
+	types         map[TypeID]*cachedType
+	refTypes      map[refTypeCacheKey]*cachedType
+	arrayTypes    map[arrayTypeCacheKey]*cachedType
+	sliceTypes    map[TypeID]*cachedType
+	funTypes      map[string]*cachedType
+	genericOrigin map[TypeID]TypeID // monomorphized type ID → generic type ID
+	nextID        TypeID
 }
 
 type TypeEnv struct {
@@ -86,12 +87,13 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		ast:        a,
 		scopeGraph: g,
 		reg: &TypeRegistry{
-			types:      map[TypeID]*cachedType{},
-			refTypes:   map[refTypeCacheKey]*cachedType{},
-			arrayTypes: map[arrayTypeCacheKey]*cachedType{},
-			sliceTypes: map[TypeID]*cachedType{},
-			funTypes:   map[string]*cachedType{},
-			nextID:     1,
+			types:         map[TypeID]*cachedType{},
+			refTypes:      map[refTypeCacheKey]*cachedType{},
+			arrayTypes:    map[arrayTypeCacheKey]*cachedType{},
+			sliceTypes:    map[TypeID]*cachedType{},
+			funTypes:      map[string]*cachedType{},
+			genericOrigin: map[TypeID]TypeID{},
+			nextID:        1,
 		},
 		bindings:           map[ast.BindingID]*Binding{},
 		nodes:              map[ast.NodeID]*cachedType{},
@@ -141,6 +143,11 @@ func (e *TypeEnv) DeclNode(typeID TypeID) ast.NodeID {
 		return cached.Type.NodeID
 	}
 	return 0
+}
+
+func (e *TypeEnv) GenericOrigin(typeID TypeID) (TypeID, bool) {
+	origin, ok := e.reg.genericOrigin[typeID]
+	return origin, ok
 }
 
 func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {

@@ -91,6 +91,19 @@ func (s Span) StringWithSource(surroundingLines int) string {
 	return sb.String()
 }
 
+func (s Span) DebugLine() string {
+	loc := s.String()
+	if s.Source == nil || s.Source.Content == nil {
+		return loc
+	}
+	line := strings.SplitN(string(s.Source.Content[s.Start:]), "\n", 2)[0]
+	line = strings.TrimSpace(line)
+	if len(line) > 20 {
+		line = line[:20] + "..."
+	}
+	return loc + " `" + line + "`"
+}
+
 func (s Span) StartPos() (row, col int) {
 	row = 1
 	col = 1

@@ -55,6 +55,7 @@ func (g *GenericsEngine) instantiateStruct(
 	node := g.c.ast.Node(structNodeID)
 	placeholder := StructType{mangledName, []StructField{}, argTypeIDs}
 	typeID := g.c.env.newType(placeholder, node.ID, node.Span, TypeInProgress)
+	g.c.env.reg.genericOrigin[typeID] = genericTypeID
 	g.c.structs[mangledName] = StructWork{NodeID: structNodeID, TypeID: typeID, Env: g.c.env}
 	status, resolved := g.resolveStructFields(structNode, placeholder)
 	if status.Failed() {
@@ -144,6 +145,7 @@ func (g *GenericsEngine) instantiateFun(
 	funTyp := FunType{paramTypeIDs, retTypeID}
 	node := g.c.ast.Node(funNodeID)
 	funTypeID := g.c.env.newType(funTyp, node.ID, node.Span, TypeOK)
+	g.c.env.reg.genericOrigin[funTypeID] = genericTypeID
 	g.c.funs[mangledName] = FunWork{NodeID: funNodeID, TypeID: funTypeID, Name: mangledName, Env: g.c.env}
 	g.checkFunBody(funNode, funTypeID, funTyp)
 	return funTypeID, mangledName, TypeOK
