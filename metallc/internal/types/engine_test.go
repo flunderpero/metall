@@ -1170,7 +1170,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			exprID, parseOK := parser.ParseExpr(0)
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK, "ParseExpr returned false")
-			preludeAST, _ := ast.PreludeAST()
+			preludeAST, _ := ast.PreludeAST(true)
 			parser.Roots = append(parser.Roots, exprID)
 			e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 			e.Query(exprID)
@@ -1894,7 +1894,7 @@ func TestTypeCheckErr(t *testing.T) {
 				parser.Roots = append(parser.Roots, nodeID)
 			}
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
-			preludeAST, _ := ast.PreludeAST()
+			preludeAST, _ := ast.PreludeAST(true)
 			e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 			e.Query(nodeID)
 			for i, want := range tt.want {
@@ -1990,7 +1990,7 @@ func TestIntTypes(t *testing.T) {
 		if !parseOK || len(parser.Diagnostics) > 0 {
 			t.Fatalf("parse failed: %s", parser.Diagnostics)
 		}
-		preludeAST, _ := ast.PreludeAST()
+		preludeAST, _ := ast.PreludeAST(true)
 		parser.Roots = append(parser.Roots, exprID)
 		e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 		e.Query(exprID)

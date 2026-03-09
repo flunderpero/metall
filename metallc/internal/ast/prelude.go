@@ -1,11 +1,13 @@
 package ast
 
 import (
+	_ "embed"
+
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
-const Prelude = `
+const minimalPrelude = `
 struct Void________ {}
 struct Arena_______ {}
 struct Bool {}
@@ -18,11 +20,14 @@ struct U16 {}
 struct U32 {}
 struct U64 {}
 struct Str { data []U8 }
-fun print_str(s Str) Void________ {}
-fun print_int(n Int) Void________ {}
-fun print_uint(n U64) Void________ {}
-fun print_bool(b Bool) Void________ {}
+fun print_str(s Str) void {}
+fun print_int(n Int) void {}
+fun print_uint(n U64) void {}
+fun print_bool(b Bool) void {}
 `
+
+//go:embed prelude.met
+var fullPreludeSrc string
 
 const PreludeFirstID = NodeID(1_000_000_000)
 
@@ -31,8 +36,12 @@ var preludeRenames = map[string]string{ //nolint:gochecknoglobals
 	"Arena_______": "Arena",
 }
 
-func PreludeAST() (*AST, NodeID) {
-	source := base.NewSource("prelude", "", false, []rune(Prelude))
+func PreludeAST(minimal bool) (*AST, NodeID) {
+	src := minimalPrelude
+	if !minimal {
+		src += fullPreludeSrc
+	}
+	source := base.NewSource("prelude", "", false, []rune(src))
 	tokens := token.Lex(source)
 	parser := NewParser(tokens, NewAST(PreludeFirstID))
 	moduleID, ok := parser.ParseModule()

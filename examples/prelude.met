@@ -1,0 +1,8 @@
+--- Just test that the full prelude is available
+---
+
+fun main() void {
+    let @a = Arena()
+    let s = "Hello".concat(" there", @a)
+    print_str(s)
+}

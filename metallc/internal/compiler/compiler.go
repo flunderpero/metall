@@ -49,6 +49,7 @@ type CompileOpts struct {
 	ArenaPageMinSize    int
 	ArenaPageMaxSize    int
 	ArenaPageHeaderSize int
+	MinimalPrelude      bool
 }
 
 func (o CompileOpts) WithDefaults() CompileOpts {
@@ -94,7 +95,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(parseDiagnostics) > 0 {
 		return parseDiagnostics
 	}
-	preludeAST, _ := ast.PreludeAST()
+	preludeAST, _ := ast.PreludeAST(opts.MinimalPrelude)
 	engine := types.NewEngine(parser.AST, preludeAST, moduleResolution)
 	engine.Query(fileID)
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {

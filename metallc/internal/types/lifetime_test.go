@@ -1361,7 +1361,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			exprID, parseOK := parser.ParseExpr(0)
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK)
-			preludeAST, _ := ast.PreludeAST()
+			preludeAST, _ := ast.PreludeAST(true)
 			parser.Roots = append(parser.Roots, exprID)
 			e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 			e.Query(exprID)

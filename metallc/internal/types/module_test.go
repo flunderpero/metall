@@ -269,7 +269,7 @@ func typeCheckModule(
 	assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 	moduleResolution, diags := modules.ResolveModules(a, "local", []string{"lib"}, memFS(fileModules))
 	assert.Equal(0, len(diags), "module resolution failed:\n%s", diags)
-	preludeAST, _ := ast.PreludeAST()
+	preludeAST, _ := ast.PreludeAST(true)
 	e := NewEngine(a, preludeAST, moduleResolution)
 	e.Query(moduleID)
 	return e

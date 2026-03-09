@@ -1,6 +1,8 @@
 package types
 
 import (
+	"slices"
+
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
@@ -51,12 +53,13 @@ func (c *EngineCore) enterChildEnv() func() {
 }
 
 func (c *EngineCore) registerFun(nodeID ast.NodeID) {
-	if nodeID >= ast.PreludeFirstID {
-		return
-	}
 	name, ok := c.env.NamedFunRef(nodeID)
 	if !ok {
 		panic(base.Errorf("no namespaced name for function node %s", nodeID))
+	}
+	// todo: Once we don't use the print_xxx functions anymore we can remove this.
+	if slices.Contains([]string{"print_int", "print_uint", "print_str", "print_bool"}, name) {
+		return
 	}
 	if _, ok := c.funs[name]; !ok {
 		c.funs[name] = FunWork{NodeID: nodeID, TypeID: c.env.TypeOfNode(nodeID).ID, Name: name, Env: c.env}

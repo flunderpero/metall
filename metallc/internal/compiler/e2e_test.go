@@ -1481,6 +1481,7 @@ func TestCompile(t *testing.T) {
 				KeepIR:           true,
 				LLVMPasses:       "verify," + DefaultLLVMPasses,
 				AddressSanitizer: true,
+				MinimalPrelude:   true,
 			}
 			exitCode, output, err := CompileAndRun(t.Context(), source, opts)
 			timing.Log(t)
@@ -1538,6 +1539,7 @@ func TestCompilePanic(t *testing.T) {
 				KeepIR:           true,
 				LLVMPasses:       "verify," + DefaultLLVMPasses,
 				AddressSanitizer: true,
+				MinimalPrelude:   true,
 			}
 			exitCode, _, err := CompileAndRun(t.Context(), source, opts)
 			timing.Log(t)
