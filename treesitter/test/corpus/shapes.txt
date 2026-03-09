@@ -1,0 +1,72 @@
+================================================================================
+Shape with fields
+================================================================================
+
+shape Showable {
+    name Str
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shape_declaration
+    name: (type_identifier)
+    (struct_field name: (identifier) type: (simple_type (type_identifier)))))
+
+================================================================================
+Shape with fun signature
+================================================================================
+
+shape Showable {
+    fun Showable.str(self Showable) Str
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shape_declaration
+    name: (type_identifier)
+    (fun_signature
+      name: (function_name (type_identifier) (identifier))
+      parameters: (parameter_list
+        (parameter name: (identifier) type: (simple_type (type_identifier))))
+      return_type: (simple_type (type_identifier)))))
+
+================================================================================
+Shape with fields and fun signatures
+================================================================================
+
+shape Showable {
+    name Str
+    fun Showable.str(self Showable) Str
+    fun Showable.len(self Showable) Int
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shape_declaration
+    name: (type_identifier)
+    (struct_field name: (identifier) type: (simple_type (type_identifier)))
+    (fun_signature
+      name: (function_name (type_identifier) (identifier))
+      parameters: (parameter_list
+        (parameter name: (identifier) type: (simple_type (type_identifier))))
+      return_type: (simple_type (type_identifier)))
+    (fun_signature
+      name: (function_name (type_identifier) (identifier))
+      parameters: (parameter_list
+        (parameter name: (identifier) type: (simple_type (type_identifier))))
+      return_type: (simple_type (type_identifier)))))
+
+================================================================================
+Empty shape
+================================================================================
+
+shape Empty {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shape_declaration
+    name: (type_identifier)))

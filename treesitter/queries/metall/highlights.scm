@@ -3,6 +3,7 @@
 [
   "fun"
   "struct"
+  "shape"
   "use"
   "let"
   "if"
@@ -58,6 +59,14 @@
 (struct_field name: (identifier) @property)
 (struct_field name: (allocator_identifier) @attribute)
 (struct_literal type: (type_identifier) @type)
+
+; >>> Shapes
+
+(shape_declaration name: (type_identifier) @type.definition)
+
+(fun_signature "fun" @keyword.function)
+(fun_signature name: (function_name (identifier) @function))
+(fun_signature name: (function_name (type_identifier) @type))
 
 ; >>> Qualified names (Foo.bar)
 

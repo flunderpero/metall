@@ -28,7 +28,7 @@ module.exports = grammar({
   rules: {
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
-    _declaration: ($) => choice($.function_declaration, $.struct_declaration),
+    _declaration: ($) => choice($.function_declaration, $.struct_declaration, $.shape_declaration),
 
     // >>> Imports
 
@@ -125,6 +125,26 @@ module.exports = grammar({
         field("type", $._type),
       ),
 
+    // >>> Shape declaration
+
+    shape_declaration: ($) =>
+      seq(
+        "shape",
+        field("name", $.type_identifier),
+        "{",
+        repeat($.struct_field),
+        repeat($.fun_signature),
+        "}",
+      ),
+
+    fun_signature: ($) =>
+      seq(
+        "fun",
+        field("name", $.function_name),
+        "(", field("parameters", optional($.parameter_list)), ")",
+        field("return_type", $._type),
+      ),
+
     // >>> Blocks
 
     block: ($) => seq("{", repeat($._expression), "}"),
@@ -148,6 +168,7 @@ module.exports = grammar({
         // Declarations (can appear inside blocks).
         $.function_declaration,
         $.struct_declaration,
+        $.shape_declaration,
 
         // Type-prefixed expressions.
         $.qualified_name,
