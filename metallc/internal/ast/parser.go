@@ -582,7 +582,7 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	}
 }
 
-func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
+func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
 	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
@@ -611,15 +611,11 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			}
 			continue
 		case token.LBracketImmediate:
-			p.next()
-			index, ok := p.ParseExpr(minPrecedence)
+			result, ok := p.ParseIndexOrSubSlice(expr, span)
 			if !ok {
 				return ParseFailed, false
 			}
-			if _, ok := p.expect(token.RBracket); !ok {
-				return ParseFailed, false
-			}
-			expr = p.NewIndex(expr, index, span.Combine(p.span()))
+			expr = result
 			continue
 		case token.Dot:
 			p.next()
@@ -1171,6 +1167,55 @@ func (p *Parser) ParsePath() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewPath(segments, typeArgs, span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {
+	if _, ok := p.expect(token.LBracketImmediate); !ok {
+		return ParseFailed, false
+	}
+	isDotDot := func() bool {
+		next, ok := p.mayPeek()
+		return ok && next.Kind == token.DotDot
+	}
+	parseSubSlice := func(lo *NodeID) (NodeID, bool) {
+		p.next() // consume `..`
+		dotDotSpan := p.span()
+		inclusive := false
+		if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
+			p.next()
+			inclusive = true
+		}
+		var hi *NodeID
+		if next, ok := p.mayPeek(); ok && next.Kind != token.RBracket {
+			hiExpr, ok := p.ParseExpr(0)
+			if !ok {
+				return ParseFailed, false
+			}
+			hi = &hiExpr
+		}
+		if inclusive && hi == nil {
+			p.diagnostic(dotDotSpan, "inclusive range (..=) requires an upper bound")
+			return ParseFailed, false
+		}
+		if _, ok := p.expect(token.RBracket); !ok {
+			return ParseFailed, false
+		}
+		return p.NewSubSlice(target, lo, hi, inclusive, span.Combine(p.span())), true
+	}
+	if isDotDot() {
+		return parseSubSlice(nil)
+	}
+	lo, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false
+	}
+	if isDotDot() {
+		return parseSubSlice(&lo)
+	}
+	if _, ok := p.expect(token.RBracket); !ok {
+		return ParseFailed, false
+	}
+	return p.NewIndex(target, lo, span.Combine(p.span())), true
 }
 
 func (p *Parser) isStructTarget(nodeID NodeID) bool {

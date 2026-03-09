@@ -290,6 +290,31 @@ func TestParseOK(t *testing.T) {
 		{"index write", "expr", `x[1] = 2`, func(a *TestAST) NodeID {
 			return a.assign(a.index(a.ident("x"), a.int_(1)), a.int_(2))
 		}},
+		{"subslice lo..hi", "expr", `x[1..3]`, func(a *TestAST) NodeID {
+			target := a.ident("x")
+			lo, hi := a.int_(1), a.int_(3)
+			return a.sub_slice(target, &lo, &hi, false)
+		}},
+		{"subslice lo..=hi", "expr", `x[1..=3]`, func(a *TestAST) NodeID {
+			target := a.ident("x")
+			lo, hi := a.int_(1), a.int_(3)
+			return a.sub_slice(target, &lo, &hi, true)
+		}},
+		{"subslice ..hi", "expr", `x[..3]`, func(a *TestAST) NodeID {
+			target := a.ident("x")
+			hi := a.int_(3)
+			return a.sub_slice(target, nil, &hi, false)
+		}},
+		{"subslice lo..", "expr", `x[1..]`, func(a *TestAST) NodeID {
+			target := a.ident("x")
+			lo := a.int_(1)
+			return a.sub_slice(target, &lo, nil, false)
+		}},
+		{"subslice ..=hi", "expr", `x[..=3]`, func(a *TestAST) NodeID {
+			target := a.ident("x")
+			hi := a.int_(3)
+			return a.sub_slice(target, nil, &hi, true)
+		}},
 		{"heap alloc from field", "expr", `new(x.@myalloc, Foo("hello"))`, func(a *TestAST) NodeID {
 			return a.new_(a.field_access(a.ident("x"), "@myalloc"), a.struct_lit(a.ident("Foo"), a.string_("hello")))
 		}},
@@ -685,6 +710,25 @@ func TestParseErr(t *testing.T) {
 				"                             ^^",
 		}},
 
+		{"subslice ..= without hi", "expr", `x[..=]`, []string{
+			"test.met:1:3: inclusive range (..=) requires an upper bound\n" +
+				"    x[..=]\n" +
+				"      ^^",
+		}},
+		{"subslice lo..= without hi", "expr", `x[1..=]`, []string{
+			"test.met:1:4: inclusive range (..=) requires an upper bound\n" +
+				"    x[1..=]\n" +
+				"       ^^",
+		}},
+		{"subslice missing ]", "expr", `x[1..2`, []string{
+			"test.met:1:6: unexpected end of file\n" +
+				"    x[1..2\n" +
+				"         ^",
+			"test.met:1:6: unexpected end of file\n" +
+				"    x[1..2\n" +
+				"         ^",
+		}},
+
 		{"use in expression", "expr", `use foo::bar`, []string{
 			"test.met:1:1: unexpected token: expected start of an expression, got <use>\n" +
 				"    use foo::bar\n" +
@@ -960,6 +1004,10 @@ func (a *TestAST) empty_slice() NodeID {
 
 func (a *TestAST) index(base NodeID, index NodeID) NodeID {
 	return a.NewIndex(base, index, a.span)
+}
+
+func (a *TestAST) sub_slice(target NodeID, lo *NodeID, hi *NodeID, inclusive bool) NodeID {
+	return a.NewSubSlice(target, lo, hi, inclusive, a.span)
 }
 
 func (a *TestAST) void_typ() NodeID {

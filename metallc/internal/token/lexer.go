@@ -20,6 +20,7 @@ const (
 	Comment
 	Continue
 	Dot
+	DotDot
 	Else
 	EOF
 	Eq
@@ -78,6 +79,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Comment:               "<comment>",
 	Continue:              "<continue>",
 	Dot:                   ".",
+	DotDot:                "..",
 	Else:                  "<else>",
 	EOF:                   "<EOF>",
 	Eq:                    "=",
@@ -129,7 +131,6 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'&': Amp,
 	',': Comma,
-	'.': Dot,
 	'{': LCurly,
 	'(': LParen,
 	'%': Percent,
@@ -269,6 +270,11 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		span.End = idx - 1
 		return Token{Kind: Comment, Value: value, Span: span}
+	case c == '.':
+		if idx < len(source.Content) && source.Content[idx] == '.' {
+			return Token{Kind: DotDot, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Dot, Value: "", Span: span}
 	case c == ':':
 		if idx < len(source.Content) && source.Content[idx] == ':' {
 			return Token{Kind: ColonColon, Value: "", Span: base.NewSpan(source, start, idx)}

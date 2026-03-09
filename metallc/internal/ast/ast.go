@@ -121,6 +121,15 @@ type Index struct {
 
 func (Index) isKind() {}
 
+type SubSlice struct {
+	Target    NodeID
+	Lo        *NodeID
+	Hi        *NodeID
+	Inclusive bool
+}
+
+func (SubSlice) isKind() {}
+
 type RefType struct {
 	Type NodeID
 	Mut  bool
@@ -552,6 +561,10 @@ func (a *AST) NewIndex(target NodeID, index NodeID, span base.Span) NodeID {
 	return a.node(Index{Target: target, Index: index}, span)
 }
 
+func (a *AST) NewSubSlice(target NodeID, lo *NodeID, hi *NodeID, inclusive bool, span base.Span) NodeID {
+	return a.node(SubSlice{Target: target, Lo: lo, Hi: hi, Inclusive: inclusive}, span)
+}
+
 func (a *AST) NewRefType(type_ NodeID, mut bool, span base.Span) NodeID {
 	return a.node(RefType{Type: type_, Mut: mut}, span)
 }
@@ -706,6 +719,14 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Index:
 		f(kind.Target)
 		f(kind.Index)
+	case SubSlice:
+		f(kind.Target)
+		if kind.Lo != nil {
+			f(*kind.Lo)
+		}
+		if kind.Hi != nil {
+			f(*kind.Hi)
+		}
 	case Return:
 		f(kind.Expr)
 	case Break:
@@ -1075,6 +1096,25 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		} else {
 			addChild("target", kind.Target)
 			addChild("index", kind.Index)
+		}
+	case SubSlice:
+		addAttr("inclusive", fmt.Sprintf("%t", kind.Inclusive))
+		if !children {
+			addAttr("target", nodeIDKind(kind.Target))
+			if kind.Lo != nil {
+				addAttr("lo", nodeIDKind(*kind.Lo))
+			}
+			if kind.Hi != nil {
+				addAttr("hi", nodeIDKind(*kind.Hi))
+			}
+		} else {
+			addChild("target", kind.Target)
+			if kind.Lo != nil {
+				addChild("lo", *kind.Lo)
+			}
+			if kind.Hi != nil {
+				addChild("hi", *kind.Hi)
+			}
 		}
 	case SimpleType:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))

@@ -109,6 +109,14 @@ func TestLexer(t *testing.T) {
 		{"coloncolon", "::", []want{{ColonColon, "", "1:1-1:2"}}},
 		{"single colon is unknown", ":", []want{{Unknown, ":", "1:1"}}},
 		{"dot", ".", []want{{Dot, "", "1:1"}}},
+		{"dotdot", "..", []want{{DotDot, "", "1:1-1:2"}}},
+		{"dot vs dotdot", "a.b..c", []want{
+			{Ident, "a", "1:1"},
+			{Dot, "", "1:2"},
+			{Ident, "b", "1:3"},
+			{DotDot, "", "1:4-1:5"},
+			{Ident, "c", "1:6"},
+		}},
 		{"whitespace", " ( \n \t)\r", []want{
 			{Whitespace, " ", "1:1"},
 			{LParen, "", "1:2"},
