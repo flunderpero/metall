@@ -5,6 +5,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/modules"
 )
 
 type FunWork struct {
@@ -22,7 +23,8 @@ type StructWork struct {
 
 type Engine struct {
 	*EngineCore
-	generics *GenericsEngine
+	generics         *GenericsEngine
+	moduleResolution *modules.ModuleResolution
 
 	loopStack []ast.NodeID
 	funStack  []TypeID
@@ -34,7 +36,7 @@ type Engine struct {
 	intTyp    TypeID
 }
 
-func NewEngine(a *ast.AST, preludeAST *ast.AST) *Engine {
+func NewEngine(a *ast.AST, preludeAST *ast.AST, moduleResolution *modules.ModuleResolution) *Engine {
 	merged, err := preludeAST.Merge(a)
 	if err != nil {
 		panic(base.WrapErrorf(err, "failed to merge prelude AST"))
@@ -42,7 +44,8 @@ func NewEngine(a *ast.AST, preludeAST *ast.AST) *Engine {
 	g := ast.BuildScopeGraph(merged, merged.Roots)
 	c := NewEngineCore(merged, g)
 	e := &Engine{ //nolint:exhaustruct
-		EngineCore: c,
+		EngineCore:       c,
+		moduleResolution: moduleResolution,
 	}
 	e.generics = NewGenericsEngine(c, e.Query, e.checkFunBody)
 	for _, root := range preludeAST.Roots {
@@ -127,7 +130,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Deref:
 		typeID, status = e.checkDeref(nodeKind)
 	case ast.Module:
-		typeID, status = e.checkModule(nodeKind)
+		typeID, status = e.checkModule(nodeID, nodeKind, node.Span)
 	case ast.If:
 		typeID, status = e.checkIf(nodeKind)
 	case ast.For:
@@ -179,6 +182,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkAllocatorVar(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
 		typeID, status = e.checkFieldAccess(nodeID, nodeKind)
+	case ast.Path:
+		typeID, status = e.checkPath(nodeID, nodeKind, node.Span)
 	case ast.Ident:
 		typeID, status = e.checkIdent(nodeID, nodeKind, node.Span)
 	case ast.Bool:
@@ -735,10 +740,16 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 }
 
 func (e *Engine) resolveMethod(
-	nodeID ast.NodeID, fieldAccess ast.FieldAccess, targetTyp *Type,
+	nodeID ast.NodeID,
+	fieldAccess ast.FieldAccess,
+	targetTyp *Type,
 ) (TypeID, TypeStatus, bool) {
 	methodName := fieldAccess.Field.Name
-	binding, ok := e.lookup(nodeID, e.env.typeName(targetTyp)+"."+methodName)
+	lookupName := e.env.typeName(targetTyp) + "." + methodName
+	binding, ok := e.lookup(nodeID, lookupName)
+	if !ok {
+		binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
+	}
 	if !ok {
 		structType, isStruct := targetTyp.Kind.(StructType)
 		if !isStruct || len(structType.TypeArgs) == 0 {
@@ -747,7 +758,11 @@ func (e *Engine) resolveMethod(
 		structNodeID := e.env.DeclNode(targetTyp.ID)
 		structNode := base.Cast[ast.Struct](e.ast.Node(structNodeID).Kind)
 		structName := e.scopeGraph.NodeScope(structNodeID).NamespacedName(structNode.Name.Name)
-		binding, ok = e.lookup(nodeID, structName+"."+methodName)
+		lookupName = structName + "." + methodName
+		binding, ok = e.lookup(nodeID, lookupName)
+		if !ok {
+			binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
+		}
 		if !ok || len(base.Cast[ast.Fun](e.ast.Node(binding.Decl).Kind).TypeParams) < len(structType.TypeArgs) {
 			return InvalidTypeID, TypeFailed, false
 		}
@@ -762,6 +777,21 @@ func (e *Engine) resolveMethod(
 		return binding.TypeID, TypeOK, true
 	}
 	return e.generics.resolveGenericMethod(nodeID, fieldAccess, targetTyp, binding)
+}
+
+func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
+	if len(e.moduleResolution.Imports) == 0 {
+		return nil, false
+	}
+	declNodeID := e.env.DeclNode(typ.ID)
+	if declNodeID == 0 || declNodeID >= ast.PreludeFirstID {
+		return nil, false
+	}
+	_, typModule := e.moduleOf(declNodeID)
+	if len(typModule.Decls) == 0 {
+		return nil, false
+	}
+	return e.env.Lookup(typModule.Decls[0], name)
 }
 
 func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) {
@@ -832,7 +862,27 @@ func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
 	return ref.Type, TypeOK
 }
 
-func (e *Engine) checkModule(module ast.Module) (TypeID, TypeStatus) {
+func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Span) (TypeID, TypeStatus) {
+	// Bind imports into this module's scope.
+	if importMap, ok := e.moduleResolution.Imports[nodeID]; ok {
+		for name, importedModuleNodeID := range importMap {
+			typeID, status := e.Query(importedModuleNodeID)
+			if status.Failed() {
+				return InvalidTypeID, TypeDepFailed
+			}
+			var importNodeID ast.NodeID
+			for _, id := range module.Imports {
+				imp := base.Cast[ast.Import](e.ast.Node(id).Kind)
+				isAlias := imp.Alias != nil && imp.Alias.Name == name
+				if isAlias || imp.Segments[len(imp.Segments)-1] == name {
+					importNodeID = id
+					break
+				}
+			}
+			scope := e.scopeGraph.NodeScope(importNodeID)
+			e.env.bindInScope(scope, importNodeID, name, typeID)
+		}
+	}
 	e.forwardDeclare(module.Decls)
 	for _, declNodeID := range module.Decls {
 		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok && fun.Name.Name == "main" {
@@ -849,7 +899,11 @@ func (e *Engine) checkModule(module ast.Module) (TypeID, TypeStatus) {
 	if depFailed {
 		return InvalidTypeID, TypeDepFailed
 	}
-	return e.voidTyp, TypeOK
+	if nodeID >= ast.PreludeFirstID {
+		return e.voidTyp, TypeOK
+	}
+	typeID := e.env.newType(ModuleType{Name: module.Name}, nodeID, span, TypeOK)
+	return typeID, TypeOK
 }
 
 func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
@@ -1171,6 +1225,51 @@ func (e *Engine) checkStructField(structField ast.StructField) (TypeID, TypeStat
 	return typeID, TypeOK
 }
 
+func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (TypeID, TypeStatus) {
+	if len(path.Segments) < 2 {
+		panic(base.Errorf("path must have at least 2 segments"))
+	}
+	if len(path.Segments) > 2 {
+		e.diag(span, "invalid module path")
+		return InvalidTypeID, TypeFailed
+	}
+	moduleName := path.Segments[0]
+	modBinding, ok := e.lookup(nodeID, moduleName)
+	if !ok {
+		e.diag(span, "symbol not defined: %s", moduleName)
+		return InvalidTypeID, TypeFailed
+	}
+	if _, ok := e.env.Type(modBinding.TypeID).Kind.(ModuleType); !ok {
+		e.diag(span, "%s is not a module", moduleName)
+		return InvalidTypeID, TypeFailed
+	}
+	// Look up the member in the imported module's scope.
+	memberName := path.Segments[1]
+	thisModuleNode, _ := e.moduleOf(nodeID)
+	importedModuleNodeID, ok := e.moduleResolution.Imports[thisModuleNode.ID][moduleName]
+	if !ok {
+		e.diag(span, "module not found: %s", moduleName)
+		return InvalidTypeID, TypeFailed
+	}
+	mod := base.Cast[ast.Module](e.ast.Node(importedModuleNodeID).Kind)
+	if len(mod.Decls) == 0 {
+		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
+		return InvalidTypeID, TypeFailed
+	}
+	// Method references like `lib::Point.sum` need the same bind-name resolution
+	// as local `Point.sum`, i.e. the struct name is resolved to its namespaced type name.
+	lookupName := memberName
+	if structName, methodName, ok := strings.Cut(memberName, "."); ok {
+		lookupName = e.resolveMethodBindName(mod.Decls[0], structName, methodName)
+	}
+	binding, ok := e.env.Lookup(mod.Decls[0], lookupName)
+	if !ok {
+		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
+		return InvalidTypeID, TypeFailed
+	}
+	return e.resolveBinding(nodeID, binding, path.TypeArgs)
+}
+
 func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
 	lookupName := ident.Name
 	if structName, methodName, ok := strings.Cut(ident.Name, "."); ok {
@@ -1181,19 +1280,22 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
 	}
+	return e.resolveBinding(nodeID, binding, ident.TypeArgs)
+}
+
+func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []ast.NodeID) (TypeID, TypeStatus) {
 	if cached, ok := e.env.cachedTypeInfo(binding.TypeID); ok && cached.Status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
+	span := e.ast.Node(nodeID).Span
 	if binding.Decl != 0 {
 		if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok {
-			if len(ident.TypeArgs) > 0 || len(funNode.TypeParams) > 0 {
-				argTypeIDs, status := e.generics.resolveTypeArgs(ident.TypeArgs)
+			if len(typeArgs) > 0 || len(funNode.TypeParams) > 0 {
+				argTypeIDs, status := e.generics.resolveTypeArgs(typeArgs)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
-				typeID, mangledName, status := e.generics.instantiateFun(
-					binding.TypeID, argTypeIDs, span,
-				)
+				typeID, mangledName, status := e.generics.instantiateFun(binding.TypeID, argTypeIDs, span)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
@@ -1205,8 +1307,8 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		}
 		if structType, ok := e.env.Type(binding.TypeID).Kind.(StructType); ok {
 			if structNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Struct); ok {
-				if len(ident.TypeArgs) > 0 || len(structNode.TypeParams) > 0 {
-					return e.generics.instantiateStruct(structType, binding.TypeID, ident.TypeArgs, span)
+				if len(typeArgs) > 0 || len(structNode.TypeParams) > 0 {
+					return e.generics.instantiateStruct(structType, binding.TypeID, typeArgs, span)
 				}
 				e.registerStruct(structType, binding.Decl, binding.TypeID)
 			}

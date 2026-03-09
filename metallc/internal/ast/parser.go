@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -102,11 +103,20 @@ func (p *Parser) ParseImport() (NodeID, bool) {
 			alias = &a
 		}
 	}
-	fqn, ok := p.parseFQN(true)
-	if !ok {
-		return ParseFailed, false
+	segments := []string{}
+	for {
+		segment, ok := p.expect(token.Ident)
+		if !ok {
+			return ParseFailed, false
+		}
+		segments = append(segments, segment.Value)
+		t, ok := p.mayPeek()
+		if !ok || t.Kind != token.ColonColon {
+			break
+		}
+		p.next()
 	}
-	return p.NewImport(alias, fqn, span.Combine(span)), true
+	return p.NewImport(alias, segments, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFunType() (NodeID, bool) {
@@ -572,7 +582,7 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	}
 }
 
-func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
+func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
@@ -594,7 +604,11 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
 			if !ok {
 				return ParseFailed, false
 			}
-			expr = p.NewCall(callee, args, span.Combine(p.span()))
+			if p.isStructTarget(callee) {
+				expr = p.NewStructLiteral(callee, args, span.Combine(p.span()))
+			} else {
+				expr = p.NewCall(callee, args, span.Combine(p.span()))
+			}
 			continue
 		case token.LBracketImmediate:
 			p.next()
@@ -703,11 +717,19 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = return_
 	case token.Ident:
-		ident, ok := p.ParseIdent()
-		if !ok {
-			return ParseFailed, false
+		if next, ok := p.mayPeek1(); ok && next.Kind == token.ColonColon {
+			path, ok := p.ParsePath()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = path
+		} else {
+			ident, ok := p.ParseIdent()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = ident
 		}
-		expr = ident
 	case token.TypeIdent:
 		// Peek ahead: if the next token is `.`, this is a qualified name
 		// (e.g. `Foo.bar`), not a struct literal.
@@ -1110,39 +1132,57 @@ func (p *Parser) ParseNumber() (NodeID, bool) {
 	return p.NewInt(n, p.span()), true
 }
 
-func (p *Parser) parseFQN(mayStartWithDot bool) (Name, bool) {
-	t, ok := p.mayPeek()
-	if !ok {
-		return Name{}, false
-	}
-	span := t.Span
+func (p *Parser) ParsePath() (NodeID, bool) {
+	span := p.span()
 	segments := []string{}
-	if t.Kind == token.Dot {
-		if !mayStartWithDot {
-			p.diagnostic(span, "unexpected token: %s", t.Kind)
-			return Name{}, false
-		}
-		p.next()
-		segments = append(segments, t.Value)
-	}
 	for {
-		_, ok := p.mayPeek()
+		segment, ok := p.expect(token.Ident)
 		if !ok {
-			break
+			return ParseFailed, false
 		}
-		seg, ok := p.expect(token.Ident)
-		if !ok {
-			return Name{}, false
-		}
-		segments = append(segments, seg.Value)
-		t, ok = p.mayPeek()
-		if !ok || t.Kind != token.Dot {
+		segments = append(segments, segment.Value)
+		t, ok := p.mayPeek()
+		if !ok || t.Kind != token.ColonColon {
 			break
 		}
 		p.next()
+		t, ok = p.mustPeek()
+		if !ok {
+			return ParseFailed, false
+		}
+		if t.Kind == token.TypeIdent && len(segments) >= 1 {
+			p.next()
+			lastSegment := t.Value
+			// If followed by `.ident`, this is a method reference like `lib::Foo.bar`.
+			if dot, ok := p.mayPeek(); ok && dot.Kind == token.Dot {
+				p.next()
+				method, ok := p.expect(token.Ident)
+				if !ok {
+					return ParseFailed, false
+				}
+				lastSegment += "." + method.Value
+			}
+			segments = append(segments, lastSegment)
+			break
+		}
 	}
-	fqn := strings.Join(segments, ".")
-	return Name{fqn, span.Combine(p.span())}, true
+	typeArgs, ok := p.parseTypeArgs()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewPath(segments, typeArgs, span.Combine(p.span())), true
+}
+
+func (p *Parser) isStructTarget(nodeID NodeID) bool {
+	path, ok := p.Node(nodeID).Kind.(Path)
+	if !ok {
+		return false
+	}
+	last := path.Segments[len(path.Segments)-1]
+	if strings.Contains(last, ".") {
+		return false
+	}
+	return len(last) > 0 && unicode.IsUpper(rune(last[0]))
 }
 
 // parseAllocator parses `@a` or a field access chain ending in an

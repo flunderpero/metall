@@ -105,6 +105,12 @@ type ShapeType struct {
 
 func (ShapeType) isTypeKind() {}
 
+type ModuleType struct {
+	Name string
+}
+
+func (ModuleType) isTypeKind() {}
+
 type AllocatorImpl int
 
 const (

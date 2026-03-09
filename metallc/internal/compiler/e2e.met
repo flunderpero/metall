@@ -1,0 +1,11 @@
+fun say_hello() void {
+    print_str("hello")
+}
+
+struct Foo {
+    mut one Int
+}
+
+fun Foo.print(f Foo) void {
+    print_int(f.one)
+}

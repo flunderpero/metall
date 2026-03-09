@@ -15,6 +15,7 @@ const (
 	Amp
 	And
 	Break
+	ColonColon
 	Comma
 	Comment
 	Continue
@@ -72,6 +73,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Amp:                   "&",
 	And:                   "<and>",
 	Break:                 "<break>",
+	ColonColon:            "::",
 	Comma:                 ",",
 	Comment:               "<comment>",
 	Continue:              "<continue>",
@@ -267,6 +269,11 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		span.End = idx - 1
 		return Token{Kind: Comment, Value: value, Span: span}
+	case c == ':':
+		if idx < len(source.Content) && source.Content[idx] == ':' {
+			return Token{Kind: ColonColon, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Unknown, Value: string(c), Span: span}
 	case c == '!':
 		if idx < len(source.Content) && source.Content[idx] == '=' {
 			return Token{Kind: Neq, Value: "", Span: base.NewSpan(source, start, idx)}

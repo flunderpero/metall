@@ -10,6 +10,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/modules"
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
@@ -1171,7 +1172,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			assert.Equal(true, parseOK, "ParseExpr returned false")
 			preludeAST, _ := ast.PreludeAST()
 			parser.Roots = append(parser.Roots, exprID)
-			e := NewEngine(parser.AST, preludeAST)
+			e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 			e.Query(exprID)
 			assert.Equal(0, len(e.diagnostics), "diagnostics:\n%s", e.diagnostics)
 			got := e.env.TypeOfNode(exprID)
@@ -1894,7 +1895,7 @@ func TestTypeCheckErr(t *testing.T) {
 			}
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			preludeAST, _ := ast.PreludeAST()
-			e := NewEngine(parser.AST, preludeAST)
+			e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 			e.Query(nodeID)
 			for i, want := range tt.want {
 				if i >= len(e.diagnostics) {
@@ -1991,7 +1992,7 @@ func TestIntTypes(t *testing.T) {
 		}
 		preludeAST, _ := ast.PreludeAST()
 		parser.Roots = append(parser.Roots, exprID)
-		e := NewEngine(parser.AST, preludeAST)
+		e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 		e.Query(exprID)
 		return e
 	}

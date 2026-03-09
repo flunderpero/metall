@@ -26,9 +26,21 @@ module.exports = grammar({
   word: ($) => $.identifier,
 
   rules: {
-    source_file: ($) => repeat($._declaration),
+    source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
     _declaration: ($) => choice($.function_declaration, $.struct_declaration),
+
+    // >>> Imports
+
+    import_declaration: ($) =>
+      seq(
+        "use",
+        optional(seq(field("alias", $.identifier), "=")),
+        field("path", $.import_path),
+      ),
+
+    import_path: ($) =>
+      seq($.identifier, repeat(seq("::", $.identifier))),
 
     // >>> Comments
     // Line comments: `-- ...`
@@ -139,6 +151,7 @@ module.exports = grammar({
 
         // Type-prefixed expressions.
         $.qualified_name,
+        $.path_expression,
         $.struct_literal,
 
         // Bindings and assignment.
@@ -176,6 +189,15 @@ module.exports = grammar({
     // TypeName.methodName
     qualified_name: ($) =>
       prec(PREC.POSTFIX, seq($.type_identifier, ".", $.identifier)),
+
+    // module::member or module::Type (method access like lib::Foo.bar
+    // is handled by field_access on the path_expression)
+    path_expression: ($) =>
+      prec.left(PREC.POSTFIX, seq(
+        field("module", $.identifier),
+        "::",
+        field("member", choice($.type_identifier, $.identifier)),
+      )),
 
     // TypeName(args...)
     struct_literal: ($) =>

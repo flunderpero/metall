@@ -1,0 +1,152 @@
+================================================================================
+simple import
+================================================================================
+
+use lib
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_declaration
+    path: (import_path
+      (identifier))))
+
+================================================================================
+nested import
+================================================================================
+
+use std::collections::map
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_declaration
+    path: (import_path
+      (identifier)
+      (identifier)
+      (identifier))))
+
+================================================================================
+local import
+================================================================================
+
+use local::util
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_declaration
+    path: (import_path
+      (identifier)
+      (identifier))))
+
+================================================================================
+aliased import
+================================================================================
+
+use m = std::collections::map
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_declaration
+    alias: (identifier)
+    path: (import_path
+      (identifier)
+      (identifier)
+      (identifier))))
+
+================================================================================
+multiple imports
+================================================================================
+
+use lib
+use local::util
+
+fun main() void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_declaration
+    path: (import_path
+      (identifier)))
+  (import_declaration
+    path: (import_path
+      (identifier)
+      (identifier)))
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+path function call
+================================================================================
+
+fun main() void {
+  lib::get_lib()
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (path_expression
+          module: (identifier)
+          member: (identifier))))))
+
+================================================================================
+path struct literal
+================================================================================
+
+fun main() void {
+  lib::Point(1, 2)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (path_expression
+          module: (identifier)
+          member: (type_identifier))
+        arguments: (argument_list
+          (integer_literal)
+          (integer_literal))))))
+
+================================================================================
+path method call via field access
+================================================================================
+
+fun main() void {
+  lib::Foo.bar(x)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (field_access
+          object: (path_expression
+            module: (identifier)
+            member: (type_identifier))
+          field: (identifier))
+        arguments: (argument_list
+          (identifier))))))

@@ -473,33 +473,79 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
-			"use simple fqn", "file", `use foo.bar`,
+			"use simple path", "file", `use foo::bar`,
 			func(a *TestAST) NodeID {
-				return a.file_with_imports([]NodeID{a.import_("foo.bar")})
+				return a.file_with_imports([]NodeID{a.import_("foo", "bar")})
 			},
 		},
 		{
-			"use deep fqn", "file", `use foo.bar.baz`,
+			"use deep path", "file", `use foo::bar::baz`,
 			func(a *TestAST) NodeID {
-				return a.file_with_imports([]NodeID{a.import_("foo.bar.baz")})
+				return a.file_with_imports([]NodeID{a.import_("foo", "bar", "baz")})
 			},
 		},
 		{
-			"use with alias", "file", `use b = foo.bar`,
+			"use with alias", "file", `use b = foo::bar`,
 			func(a *TestAST) NodeID {
-				return a.file_with_imports([]NodeID{a.import_alias("b", "foo.bar")})
+				return a.file_with_imports([]NodeID{a.import_alias("b", "foo", "bar")})
 			},
 		},
 		{
-			"use local import", "file", `use .foo.bar`,
+			"use local import", "file", `use local::foo::bar`,
 			func(a *TestAST) NodeID {
-				return a.file_with_imports([]NodeID{a.import_(".foo.bar")})
+				return a.file_with_imports([]NodeID{a.import_("local", "foo", "bar")})
 			},
 		},
 		{
-			"use local import with alias", "file", `use b = .foo.bar`,
+			"use local import with alias", "file", `use b = local::foo::bar`,
 			func(a *TestAST) NodeID {
-				return a.file_with_imports([]NodeID{a.import_alias("b", ".foo.bar")})
+				return a.file_with_imports([]NodeID{a.import_alias("b", "local", "foo", "bar")})
+			},
+		},
+
+		{
+			"path expression", "expr", `math::pow`,
+			func(a *TestAST) NodeID {
+				return a.path_("math", "pow")
+			},
+		},
+		{
+			"path expression call", "expr", `math::pow(2, 5)`,
+			func(a *TestAST) NodeID {
+				return a.call(a.path_("math", "pow"), a.int_(2), a.int_(5))
+			},
+		},
+		{
+			"path expression with type ident", "expr", `lib::Point(1, 2)`,
+			func(a *TestAST) NodeID {
+				return a.struct_lit(a.path_("lib", "Point"), a.int_(1), a.int_(2))
+			},
+		},
+		{
+			"path struct literal with type args", "expr", `lib::Foo<Int>(42)`,
+			func(a *TestAST) NodeID {
+				return a.struct_lit(a.path_type_args([]string{"lib", "Foo"}, a.int_typ()), a.int_(42))
+			},
+		},
+		{
+			"path struct literal nested type args", "expr", `lib::Foo<Bar<Int>>(42)`,
+			func(a *TestAST) NodeID {
+				return a.struct_lit(
+					a.path_type_args([]string{"lib", "Foo"}, a.typ_args("Bar", a.int_typ())),
+					a.int_(42),
+				)
+			},
+		},
+		{
+			"path call with type args", "expr", `lib::foo<Int>(42)`,
+			func(a *TestAST) NodeID {
+				return a.call(a.path_type_args([]string{"lib", "foo"}, a.int_typ()), a.int_(42))
+			},
+		},
+		{
+			"path in let binding", "expr", `let x = math::pow`,
+			func(a *TestAST) NodeID {
+				return a.var_("x", a.path_("math", "pow"))
 			},
 		},
 		{
@@ -639,14 +685,14 @@ func TestParseErr(t *testing.T) {
 				"                             ^^",
 		}},
 
-		{"use in expression", "expr", `use foo.bar`, []string{
+		{"use in expression", "expr", `use foo::bar`, []string{
 			"test.met:1:1: unexpected token: expected start of an expression, got <use>\n" +
-				"    use foo.bar\n" +
+				"    use foo::bar\n" +
 				"    ^^^",
 		}},
-		{"use after decl", "file", `fun main() void {} use foo.bar`, []string{
+		{"use after decl", "file", `fun main() void {} use foo::bar`, []string{
 			"test.met:1:20: unexpected token: <use>\n" +
-				"    fun main() void {} use foo.bar\n" +
+				"    fun main() void {} use foo::bar\n" +
 				"                       ^^^",
 		}},
 	}
@@ -719,13 +765,21 @@ func (a *TestAST) file_with_imports(imports []NodeID, decls ...NodeID) NodeID {
 	return a.NewModule("test.met", "test", true, imports, decls, a.span)
 }
 
-func (a *TestAST) import_(fqn string) NodeID {
-	return a.NewImport(nil, Name{fqn, a.span}, a.span)
+func (a *TestAST) path_(segments ...string) NodeID {
+	return a.NewPath(segments, nil, a.span)
 }
 
-func (a *TestAST) import_alias(alias string, fqn string) NodeID {
+func (a *TestAST) path_type_args(segments []string, typeArgs ...NodeID) NodeID {
+	return a.NewPath(segments, typeArgs, a.span)
+}
+
+func (a *TestAST) import_(segments ...string) NodeID {
+	return a.NewImport(nil, segments, a.span)
+}
+
+func (a *TestAST) import_alias(alias string, segments ...string) NodeID {
 	n := Name{alias, a.span}
-	return a.NewImport(&n, Name{fqn, a.span}, a.span)
+	return a.NewImport(&n, segments, a.span)
 }
 
 func (a *TestAST) fun_param(name string, typ NodeID) NodeID {
@@ -1020,13 +1074,13 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case Import:
-			kind.FQN.Span = base.Span{}
 			if kind.Alias != nil {
 				a := *kind.Alias
 				a.Span = base.Span{}
 				kind.Alias = &a
 			}
 			node.Kind = kind
+		case Path:
 		case Ref:
 		}
 		nodes = append(nodes, node)

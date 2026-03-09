@@ -11,6 +11,7 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/gen"
+	"github.com/flunderpero/metall/metallc/internal/modules"
 	"github.com/flunderpero/metall/metallc/internal/token"
 	"github.com/flunderpero/metall/metallc/internal/types"
 )
@@ -36,6 +37,8 @@ var ErrAbort = base.Errorf("aborted by listener")
 const DefaultLLVMPasses = "mem2reg,sroa,instcombine,simplifycfg"
 
 type CompileOpts struct {
+	ProjectRoot         string
+	IncludePaths        []string
 	Listener            CompileListener
 	Output              string
 	KeepIR              bool
@@ -78,14 +81,21 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	parser := ast.NewParser(tokens, ast.NewAST(1))
 	fileID, _ := parser.ParseModule()
-	if listener != nil && !listener.OnParse(parser.AST, fileID, parser.Diagnostics) {
+	var moduleResolution *modules.ModuleResolution
+	parseDiagnostics := parser.Diagnostics
+	if len(parseDiagnostics) == 0 {
+		var moduleDiags base.Diagnostics
+		moduleResolution, moduleDiags = resolveModules(parser.AST, opts)
+		parseDiagnostics = append(parseDiagnostics, moduleDiags...)
+	}
+	if listener != nil && !listener.OnParse(parser.AST, fileID, parseDiagnostics) {
 		return ErrAbort
 	}
-	if len(parser.Diagnostics) > 0 {
-		return parser.Diagnostics
+	if len(parseDiagnostics) > 0 {
+		return parseDiagnostics
 	}
 	preludeAST, _ := ast.PreludeAST()
-	engine := types.NewEngine(parser.AST, preludeAST)
+	engine := types.NewEngine(parser.AST, preludeAST, moduleResolution)
 	engine.Query(fileID)
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
 		return ErrAbort
@@ -211,6 +221,16 @@ func CompileAndRun(
 		listener.OnRun(exitCode, output)
 	}
 	return exitCode, output, nil
+}
+
+func resolveModules(
+	a *ast.AST, opts CompileOpts,
+) (*modules.ModuleResolution, base.Diagnostics) {
+	res, diags := modules.ResolveModules(a, opts.ProjectRoot, opts.IncludePaths, os.ReadFile)
+	if len(diags) > 0 {
+		return nil, diags
+	}
+	return res, nil
 }
 
 func ModuleNameFromPath(path string) string {

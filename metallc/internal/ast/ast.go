@@ -48,11 +48,18 @@ type Module struct {
 func (Module) isKind() {}
 
 type Import struct {
-	Alias *Name
-	FQN   Name
+	Alias    *Name
+	Segments []string
 }
 
 func (Import) isKind() {}
+
+type Path struct {
+	Segments []string
+	TypeArgs []NodeID
+}
+
+func (Path) isKind() {}
 
 type SimpleType struct {
 	Name     Name
@@ -442,8 +449,12 @@ func (a *AST) NewModule(
 	return node
 }
 
-func (a *AST) NewImport(alias *Name, fqn Name, span base.Span) NodeID {
-	return a.node(Import{Alias: alias, FQN: fqn}, span)
+func (a *AST) NewImport(alias *Name, segments []string, span base.Span) NodeID {
+	return a.node(Import{Alias: alias, Segments: segments}, span)
+}
+
+func (a *AST) NewPath(segments []string, typeArgs []NodeID, span base.Span) NodeID {
+	return a.node(Path{Segments: segments, TypeArgs: typeArgs}, span)
 }
 
 func (a *AST) NewFunDecl(
@@ -588,6 +599,10 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Deref:
 		f(kind.Expr)
 	case Import:
+	case Path:
+		for i := range len(kind.TypeArgs) {
+			f(kind.TypeArgs[i])
+		}
 	case Module:
 		for i := range len(kind.Imports) {
 			f(kind.Imports[i])
@@ -835,9 +850,16 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		}
 	case Break, Continue:
 	case Import:
-		addAttr("fqn", fmt.Sprintf("%q", kind.FQN.Name))
 		if kind.Alias != nil {
 			addAttr("alias", fmt.Sprintf("%q", kind.Alias.Name))
+		}
+		addAttr("path", strings.Join(kind.Segments, "::"))
+	case Path:
+		addAttr("segments", strings.Join(kind.Segments, "::"))
+		if children {
+			for _, arg := range kind.TypeArgs {
+				addChild("typeArg", arg)
+			}
 		}
 	case Module:
 		addAttr("fileName", fmt.Sprintf("%q", kind.FileName))

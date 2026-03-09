@@ -29,7 +29,7 @@ type moduleResolver struct {
 
 func ResolveModules(
 	a *ast.AST, projectRoot string, includePaths []string, readFile ReadFileFn,
-) (ModuleResolution, base.Diagnostics) {
+) (*ModuleResolution, base.Diagnostics) {
 	m := moduleResolver{
 		diagnostics:  base.Diagnostics{},
 		readFile:     readFile,
@@ -51,7 +51,10 @@ func ResolveModules(
 	for _, root := range a.Roots {
 		m.resolveImports(root)
 	}
-	return m.resolution, m.diagnostics
+	if len(m.diagnostics) > 0 {
+		return nil, m.diagnostics
+	}
+	return &m.resolution, nil
 }
 
 func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
@@ -67,13 +70,13 @@ func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
 	for _, importNodeID := range mod.Imports {
 		importNode := m.ast.Node(importNodeID)
 		imp := base.Cast[ast.Import](importNode.Kind)
-		fqn := imp.FQN.Name
+		fqn := strings.Join(imp.Segments, "::")
 		if seen[fqn] {
 			m.diag(importNode.Span, "duplicate import: %s", fqn)
 			continue
 		}
 		seen[fqn] = true
-		name := importName(imp)
+		name := m.importName(imp)
 		if _, exists := importMap[name]; exists {
 			m.diag(importNode.Span, "import name `%s` already used", name)
 			continue
@@ -117,8 +120,8 @@ func (m *moduleResolver) resolveModule(fqn string, span base.Span) (ast.NodeID, 
 }
 
 func (m *moduleResolver) findModuleFile(fqn string, span base.Span) (string, bool) {
-	local := strings.HasPrefix(fqn, ".")
-	rel := strings.ReplaceAll(strings.TrimPrefix(fqn, "."), ".", "/") + ".met"
+	local := strings.HasPrefix(fqn, "local::")
+	rel := strings.ReplaceAll(strings.TrimPrefix(fqn, "local::"), "::", "/") + ".met"
 	if local {
 		path := filepath.Join(m.projectRoot, rel)
 		if _, err := m.readFile(path); err == nil {
@@ -137,12 +140,11 @@ func (m *moduleResolver) findModuleFile(fqn string, span base.Span) (string, boo
 	return "", false
 }
 
-func importName(imp ast.Import) string {
+func (m *moduleResolver) importName(imp ast.Import) string {
 	if imp.Alias != nil {
 		return imp.Alias.Name
 	}
-	parts := strings.Split(imp.FQN.Name, ".")
-	return parts[len(parts)-1]
+	return imp.Segments[len(imp.Segments)-1]
 }
 
 func (m *moduleResolver) diag(span base.Span, msg string, args ...any) {

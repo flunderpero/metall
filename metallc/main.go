@@ -5,10 +5,19 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/compiler"
 )
+
+type includeFlags []string
+
+func (f *includeFlags) String() string { return fmt.Sprintf("%v", *f) }
+func (f *includeFlags) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
 
 func main() {
 	flag.Usage = func() {
@@ -28,7 +37,9 @@ func main() {
 		os.Exit(1)
 	case "run":
 		var opts compiler.CompileOpts
+		var includes includeFlags
 		flags := flag.NewFlagSet("run", flag.ExitOnError)
+		flags.Var(&includes, "I", "add include path (can be given multiple times)")
 		flags.BoolVar(&opts.DebugArenaAllocator, "arena-debug", false, "print arena allocations to stderr")
 		flags.IntVar(&opts.ArenaStackBufSize, "arena-stack", 0, "arena inline stack buffer size (default 32)")
 		flags.IntVar(&opts.ArenaPageMinSize, "arena-min", 0, "arena min overflow page size (default 256)")
@@ -43,6 +54,8 @@ func main() {
 			os.Exit(1)
 		}
 		fileName := flags.Arg(0)
+		opts.ProjectRoot = filepath.Dir(fileName)
+		opts.IncludePaths = includes
 		src, err := os.ReadFile(fileName)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "failed to read file:", err)

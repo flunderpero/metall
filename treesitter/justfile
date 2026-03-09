@@ -1,0 +1,10 @@
+all: generate test build
+
+generate:
+    tree-sitter generate
+
+test:
+    tree-sitter test
+
+build:
+    cc -shared -fPIC -O2 -o parser/metall.so src/parser.c -I src

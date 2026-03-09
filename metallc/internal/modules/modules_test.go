@@ -45,52 +45,52 @@ func TestResolveModules(t *testing.T) {
 	}{
 		{
 			name:         "single import from include path",
-			src:          `use std.collections.map`,
+			src:          `use std::collections::map`,
 			files:        map[string]string{"lib/std/collections/map.met": `fun get() void {}`},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
-			wantImports:  map[string]string{"map": "std.collections.map"},
-			wantModules:  []string{"main", "std.collections.map"},
+			wantImports:  map[string]string{"map": "std::collections::map"},
+			wantModules:  []string{"main", "std::collections::map"},
 		},
 		{
 			name:         "aliased import",
-			src:          `use m = std.collections.map`,
+			src:          `use m = std::collections::map`,
 			files:        map[string]string{"lib/std/collections/map.met": `fun get() void {}`},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
-			wantImports:  map[string]string{"m": "std.collections.map"},
-			wantModules:  []string{"main", "std.collections.map"},
+			wantImports:  map[string]string{"m": "std::collections::map"},
+			wantModules:  []string{"main", "std::collections::map"},
 		},
 		{
 			name:         "local import",
-			src:          `use .util`,
+			src:          `use local::util`,
 			files:        map[string]string{"/project/util.met": `fun helper() void {}`},
 			projectRoot:  "/project",
 			includePaths: nil,
-			wantImports:  map[string]string{"util": ".util"},
-			wantModules:  []string{"main", ".util"},
+			wantImports:  map[string]string{"util": "local::util"},
+			wantModules:  []string{"main", "local::util"},
 		},
 		{
 			name:         "local import with alias",
-			src:          `use u = .util`,
+			src:          `use u = local::util`,
 			files:        map[string]string{"/project/util.met": `fun helper() void {}`},
 			projectRoot:  "/project",
 			includePaths: nil,
-			wantImports:  map[string]string{"u": ".util"},
-			wantModules:  []string{"main", ".util"},
+			wantImports:  map[string]string{"u": "local::util"},
+			wantModules:  []string{"main", "local::util"},
 		},
 		{
 			name: "two modules import same dependency",
-			src:  `use std.a use std.b`,
+			src:  `use std::a use std::b`,
 			files: map[string]string{
-				"lib/std/a.met":      `use std.shared`,
-				"lib/std/b.met":      `use std.shared`,
+				"lib/std/a.met":      `use std::shared`,
+				"lib/std/b.met":      `use std::shared`,
 				"lib/std/shared.met": `fun common() void {}`,
 			},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
-			wantImports:  map[string]string{"a": "std.a", "b": "std.b"},
-			wantModules:  []string{"main", "std.a", "std.b", "std.shared"},
+			wantImports:  map[string]string{"a": "std::a", "b": "std::b"},
+			wantModules:  []string{"main", "std::a", "std::b", "std::shared"},
 		},
 		{
 			name:         "no imports",
@@ -103,15 +103,15 @@ func TestResolveModules(t *testing.T) {
 		},
 		{
 			name: "transitive import",
-			src:  `use std.a`,
+			src:  `use std::a`,
 			files: map[string]string{
-				"lib/std/a.met": `use std.b fun foo() void {}`,
+				"lib/std/a.met": `use std::b fun foo() void {}`,
 				"lib/std/b.met": `fun bar() void {}`,
 			},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
-			wantImports:  map[string]string{"a": "std.a"},
-			wantModules:  []string{"main", "std.a", "std.b"},
+			wantImports:  map[string]string{"a": "std::a"},
+			wantModules:  []string{"main", "std::a", "std::b"},
 		},
 	}
 
@@ -134,12 +134,12 @@ func TestResolveModules(t *testing.T) {
 			assert.Equal(0, len(diags), "diagnostics: %s", diags)
 			mainImports := res.Imports[mainID]
 			assert.Equal(len(tt.wantImports), len(mainImports), "import count")
-			for wantName, wantFQN := range tt.wantImports {
+			for wantName, wantPath := range tt.wantImports {
 				depID, ok := mainImports[wantName]
 				assert.Equal(true, ok, "import %q not found", wantName)
 				if ok {
 					depMod := base.Cast[ast.Module](res.AST.Node(depID).Kind)
-					assert.Equal(wantFQN, depMod.Name)
+					assert.Equal(wantPath, depMod.Name)
 				}
 			}
 			moduleNames := make([]string, 0, len(res.AST.Roots))
@@ -168,31 +168,31 @@ func TestResolveModulesErr(t *testing.T) {
 	}{
 		{
 			name:         "module not found",
-			src:          `use std.missing`,
+			src:          `use std::missing`,
 			files:        nil,
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
-			want:         []string{"module not found: std.missing (include paths: lib)"},
+			want:         []string{"module not found: std::missing (include paths: lib)"},
 		},
 		{
 			name:         "local module not found",
-			src:          `use .missing`,
+			src:          `use local::missing`,
 			files:        nil,
 			projectRoot:  "/project",
 			includePaths: nil,
-			want:         []string{"module not found: .missing (project root: /project)"},
+			want:         []string{"module not found: local::missing (project root: /project)"},
 		},
 		{
 			name:         "duplicate import",
-			src:          `use std.a use std.a`,
+			src:          `use std::a use std::a`,
 			files:        map[string]string{"lib/std/a.met": `fun foo() void {}`},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
-			want:         []string{"duplicate import: std.a"},
+			want:         []string{"duplicate import: std::a"},
 		},
 		{
 			name: "duplicate import name",
-			src:  `use std.a use other.a`,
+			src:  `use std::a use other::a`,
 			files: map[string]string{
 				"lib/std/a.met":   `fun foo() void {}`,
 				"lib/other/a.met": `fun bar() void {}`,
@@ -203,14 +203,14 @@ func TestResolveModulesErr(t *testing.T) {
 		},
 		{
 			name: "circular import",
-			src:  `use std.a`,
+			src:  `use std::a`,
 			files: map[string]string{
-				"lib/std/a.met": `use std.b`,
-				"lib/std/b.met": `use std.a`,
+				"lib/std/a.met": `use std::b`,
+				"lib/std/b.met": `use std::a`,
 			},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
-			want:         []string{"circular import: std.a"},
+			want:         []string{"circular import: std::a"},
 		},
 	}
 

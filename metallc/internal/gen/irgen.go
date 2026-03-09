@@ -160,7 +160,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		ast.ArrayType,
 		ast.SliceType,
 		ast.FunType,
-		ast.NewArray:
+		ast.NewArray,
+		ast.Path:
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -481,8 +482,8 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	if !ok {
 		panic(base.Errorf("expected fun type, got %T", typ.Kind))
 	}
-	name := work.Name
-	isMain := g.module.Main && name == g.module.Name+".main"
+	name := irName(work.Name)
+	isMain := g.module.Main && name == irName(g.module.Name+".main")
 	if isMain {
 		name = "main"
 	}
@@ -817,7 +818,7 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 	}
 	// Resolve the callee. Direct calls use @name, indirect calls go through a loaded ptr.
 	if funName, ok := g.env.NamedFunRef(call.Callee); ok {
-		fmt.Fprintf(&sb, " @%s", funName)
+		fmt.Fprintf(&sb, " @%s", irName(funName))
 	} else {
 		g.Gen(call.Callee)
 		fmt.Fprintf(&sb, " %s", g.lookupCode(call.Callee))
@@ -848,7 +849,7 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	// Named function reference — emit @name directly (no load needed).
 	if name, ok := g.env.NamedFunRef(id); ok {
-		g.setCode(id, "@%s", name)
+		g.setCode(id, "@%s", irName(name))
 		return
 	}
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
@@ -1017,6 +1018,10 @@ func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
 	default:
 		return false
 	}
+}
+
+func irName(name string) string {
+	return strings.ReplaceAll(name, "::", "$")
 }
 
 func irType(env *types.TypeEnv, typeID types.TypeID) string {

@@ -1434,6 +1434,22 @@ func TestCompile(t *testing.T) {
 				print_str(display<Guitar>(Guitar("Telecaster")))
 			}
 			`, "Telecaster\n"},
+
+		{
+			"import local module", `
+			use local::e2e
+
+			fun main() void {
+				e2e::say_hello()
+
+				mut f = e2e::Foo(123)
+				f.print()
+
+				f.one = 321
+				e2e::Foo.print(f)
+			}
+			`, "hello\n123\n321\n",
+		},
 	}
 
 	assert := base.NewAssert(t)
@@ -1459,6 +1475,7 @@ func TestCompile(t *testing.T) {
 			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
 			timing := newTimingListener()
 			opts := CompileOpts{ //nolint:exhaustruct
+				ProjectRoot:      ".",
 				Listener:         timing,
 				Output:           outputPath,
 				KeepIR:           true,

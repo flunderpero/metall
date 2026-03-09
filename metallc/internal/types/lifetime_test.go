@@ -6,6 +6,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/modules"
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
@@ -1362,11 +1363,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			assert.Equal(true, parseOK)
 			preludeAST, _ := ast.PreludeAST()
 			parser.Roots = append(parser.Roots, exprID)
-			e := NewEngine(parser.AST, preludeAST)
+			e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
 			e.Query(exprID)
 			assert.Equal(0, len(e.diagnostics), "type check failed: %s", e.diagnostics)
 			a := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env())
-			a.Debug = base.NewStdoutDebug("lifetime")
+			// a.Debug = base.NewStdoutDebug("lifetime")
 			a.Check(exprID)
 			for i, want := range tt.want {
 				if i >= len(a.Diagnostics) {

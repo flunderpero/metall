@@ -3,6 +3,7 @@
 [
   "fun"
   "struct"
+  "use"
   "let"
   "if"
   "else"
@@ -63,6 +64,19 @@
 (qualified_name (type_identifier) @type)
 (qualified_name (identifier) @function)
 
+; >>> Imports
+
+(import_declaration "use" @keyword.import)
+(import_declaration alias: (identifier) @variable)
+(import_path (identifier) @module)
+
+; >>> Path expressions (lib::foo, lib::Foo.bar)
+
+(path_expression "::" @punctuation.delimiter)
+(path_expression module: (identifier) @module)
+(path_expression member: (type_identifier) @type)
+(path_expression member: (identifier) @function)
+
 ; >>> Bindings
 
 (let_binding name: (identifier) @variable)
@@ -106,4 +120,4 @@
 ; >>> Punctuation
 
 ["(" ")" "{" "}" "[" "]"] @punctuation.bracket
-["," "."] @punctuation.delimiter
+["," "." "::"] @punctuation.delimiter

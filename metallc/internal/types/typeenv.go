@@ -219,6 +219,8 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		return kind.Name
 	case AllocatorType:
 		return fmt.Sprintf("alloc(%s)", kind.Impl)
+	case ModuleType:
+		return kind.Name
 	default:
 		panic(base.Errorf("unknown type kind: %T", kind))
 	}
@@ -448,6 +450,8 @@ func (e *TypeEnv) substituteFunType(funType FunType, searchTypeID, replaceTypeID
 
 func (e *TypeEnv) typeName(typ *Type) string {
 	switch kind := typ.Kind.(type) {
+	case ModuleType:
+		return kind.Name
 	case StructType:
 		return kind.Name
 	case IntType:

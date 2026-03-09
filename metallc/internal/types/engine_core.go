@@ -73,6 +73,20 @@ func (c *EngineCore) namespacedName(nodeID ast.NodeID, name string) string {
 	return c.scopeGraph.NodeScope(nodeID).NamespacedName(name)
 }
 
+func (c *EngineCore) moduleOf(nodeID ast.NodeID) (*ast.Node, ast.Module) {
+	scope := c.scopeGraph.NodeScope(nodeID)
+	for {
+		scopeNode := c.ast.Node(scope.Node)
+		if mod, ok := scopeNode.Kind.(ast.Module); ok {
+			return scopeNode, mod
+		}
+		scope = scope.Parent
+		if scope == nil {
+			panic(base.Errorf("no module found for node %s", nodeID))
+		}
+	}
+}
+
 func (c *EngineCore) updateCachedType(
 	node *ast.Node, typeID TypeID, status TypeStatus,
 ) (TypeID, TypeStatus) {
