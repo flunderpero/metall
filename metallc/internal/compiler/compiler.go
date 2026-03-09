@@ -1,4 +1,4 @@
-package internal
+package compiler
 
 import (
 	"context"

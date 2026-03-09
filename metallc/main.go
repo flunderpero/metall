@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/flunderpero/metall/metallc/internal"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/compiler"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "build is not implemented yet")
 		os.Exit(1)
 	case "run":
-		var opts internal.CompileOpts
+		var opts compiler.CompileOpts
 		flags := flag.NewFlagSet("run", flag.ExitOnError)
 		flags.BoolVar(&opts.DebugArenaAllocator, "arena-debug", false, "print arena allocations to stderr")
 		flags.IntVar(&opts.ArenaStackBufSize, "arena-stack", 0, "arena inline stack buffer size (default 32)")
@@ -48,12 +48,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "failed to read file:", err)
 			os.Exit(1)
 		}
-		moduleName := internal.ModuleNameFromPath(fileName)
+		moduleName := compiler.ModuleNameFromPath(fileName)
 		source := base.NewSource(fileName, moduleName, true, []rune(string(src)))
 		opts.KeepIR = true
 		opts.AddressSanitizer = true
-		opts.LLVMPasses = internal.DefaultLLVMPasses
-		exitCode, output, err := internal.CompileAndRun(context.Background(), source, opts)
+		opts.LLVMPasses = compiler.DefaultLLVMPasses
+		exitCode, output, err := compiler.CompileAndRun(context.Background(), source, opts)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "failed to run:", err)
 			os.Exit(1)
