@@ -62,6 +62,7 @@ const (
 	True
 	TypeIdent
 	Unknown
+	Use
 	Void
 	Whitespace
 )
@@ -118,6 +119,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	True:                  "true",
 	TypeIdent:             "<type identifier>",
 	Unknown:               "<unknown>",
+	Use:                   "<use>",
 	Void:                  "<void>",
 	Whitespace:            "<whitespace>",
 }
@@ -157,6 +159,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"shape":    Shape,
 	"struct":   Struct,
 	"true":     True,
+	"use":      Use,
 	"void":     Void,
 }
 

@@ -34,7 +34,7 @@ var preludeRenames = map[string]string{ //nolint:gochecknoglobals
 func PreludeAST() (*AST, NodeID) {
 	source := base.NewSource("prelude", "", false, []rune(Prelude))
 	tokens := token.Lex(source)
-	parser := NewParser(tokens, PreludeFirstID)
+	parser := NewParser(tokens, NewAST(PreludeFirstID))
 	moduleID, ok := parser.ParseModule()
 	if !ok || len(parser.Diagnostics) > 0 {
 		panic("failed to parse prelude: " + parser.Diagnostics.Error())

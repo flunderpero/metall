@@ -76,7 +76,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if listener != nil && !listener.OnLex(tokens) {
 		return ErrAbort
 	}
-	parser := ast.NewParser(tokens, 1)
+	parser := ast.NewParser(tokens, ast.NewAST(1))
 	fileID, _ := parser.ParseModule()
 	if listener != nil && !listener.OnParse(parser.AST, fileID, parser.Diagnostics) {
 		return ErrAbort

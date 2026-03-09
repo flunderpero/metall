@@ -1165,7 +1165,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := ast.NewParser(tokens, 1)
+			parser := ast.NewParser(tokens, ast.NewAST(1))
 			exprID, parseOK := parser.ParseExpr(0)
 			assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 			assert.Equal(true, parseOK, "ParseExpr returned false")
@@ -1884,7 +1884,7 @@ func TestTypeCheckErr(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := ast.NewParser(tokens, 1)
+			parser := ast.NewParser(tokens, ast.NewAST(1))
 			var nodeID ast.NodeID
 			if strings.HasSuffix(name, "(module)") {
 				nodeID, _ = parser.ParseModule()
@@ -1984,7 +1984,7 @@ func TestIntTypes(t *testing.T) {
 		t.Helper()
 		source := base.NewSource("test.met", "test", true, []rune(src))
 		tokens := token.Lex(source)
-		parser := ast.NewParser(tokens, 1)
+		parser := ast.NewParser(tokens, ast.NewAST(1))
 		exprID, parseOK := parser.ParseExpr(0)
 		if !parseOK || len(parser.Diagnostics) > 0 {
 			t.Fatalf("parse failed: %s", parser.Diagnostics)

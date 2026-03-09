@@ -473,6 +473,36 @@ func TestParseOK(t *testing.T) {
 			},
 		},
 		{
+			"use simple fqn", "file", `use foo.bar`,
+			func(a *TestAST) NodeID {
+				return a.file_with_imports([]NodeID{a.import_("foo.bar")})
+			},
+		},
+		{
+			"use deep fqn", "file", `use foo.bar.baz`,
+			func(a *TestAST) NodeID {
+				return a.file_with_imports([]NodeID{a.import_("foo.bar.baz")})
+			},
+		},
+		{
+			"use with alias", "file", `use b = foo.bar`,
+			func(a *TestAST) NodeID {
+				return a.file_with_imports([]NodeID{a.import_alias("b", "foo.bar")})
+			},
+		},
+		{
+			"use local import", "file", `use .foo.bar`,
+			func(a *TestAST) NodeID {
+				return a.file_with_imports([]NodeID{a.import_(".foo.bar")})
+			},
+		},
+		{
+			"use local import with alias", "file", `use b = .foo.bar`,
+			func(a *TestAST) NodeID {
+				return a.file_with_imports([]NodeID{a.import_alias("b", ".foo.bar")})
+			},
+		},
+		{
 			"namespaced fun in file", "file", `fun Foo.bar(f Foo) Int { 123 }`,
 			func(a *TestAST) NodeID {
 				return a.file(
@@ -501,7 +531,7 @@ func TestParseOK(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := NewParser(tokens, 1)
+			parser := NewParser(tokens, NewAST(1))
 			var gotRoot NodeID
 			var ok bool
 			switch tt.kind {
@@ -526,86 +556,98 @@ func TestParseOK(t *testing.T) {
 func TestParseErr(t *testing.T) {
 	tests := []struct {
 		name string
+		kind string
 		src  string
 		want []string
 	}{
-		{"unexpected token", `=`, []string{
+		{"unexpected token", "expr", `=`, []string{
 			"test.met:1:1: unexpected token: expected start of an expression, got =\n" +
 				`    =` + "\n" +
 				"    ^",
 		}},
 		// Type names can't appear on the left side of an assignment.
-		{"assign to type name", `{ Str = "hello" }`, []string{
+		{"assign to type name", "expr", `{ Str = "hello" }`, []string{
 			"test.met:1:7: unexpected token: expected (, got =\n" +
 				`    { Str = "hello" }` + "\n" +
 				"          ^",
 		}},
-		{"nested &ref", `{ &&x }`, []string{
+		{"nested &ref", "expr", `{ &&x }`, []string{
 			"test.met:1:4: expected a place expression (variable, field, index, or deref)\n" +
 				`    { &&x }` + "\n" +
 				"       ^^",
 		}},
-		{"&ref of literal", `{ &123 }`, []string{
+		{"&ref of literal", "expr", `{ &123 }`, []string{
 			"test.met:1:4: expected a place expression (variable, field, index, or deref)\n" +
 				`    { &123 }` + "\n" +
 				"       ^^^",
 		}},
 
-		{"return expects expr", `{ return }`, []string{
+		{"return expects expr", "expr", `{ return }`, []string{
 			"test.met:1:10: unexpected token: expected start of an expression, got }\n" +
 				`    { return }` + "\n" +
 				"             ^",
 		}},
 
-		{"reserved word Arena", `struct Arena{one Str}`, []string{
+		{"reserved word Arena", "expr", `struct Arena{one Str}`, []string{
 			"test.met:1:8: reserved word: Arena\n" +
 				`    struct Arena{one Str}` + "\n" +
 				"           ^^^^^",
 		}},
-		{"mut allocator var", `mut @a = Arena()`, []string{
+		{"mut allocator var", "expr", `mut @a = Arena()`, []string{
 			"test.met:1:5: allocator variables cannot be mutable\n" +
 				`    mut @a = Arena()` + "\n" +
 				"        ^^",
 		}},
-		{"heap alloc without target", `new(@myalloc)`, []string{
+		{"heap alloc without target", "expr", `new(@myalloc)`, []string{
 			"test.met:1:13: unexpected token: expected ,, got )\n" +
 				`    new(@myalloc)` + "\n" +
 				"                ^",
 		}},
-		{"method fun missing method name", `fun Foo.() void {}`, []string{
+		{"method fun missing method name", "expr", `fun Foo.() void {}`, []string{
 			"test.met:1:9: unexpected token: expected <identifier>, got (\n" +
 				"    fun Foo.() void {}\n" +
 				"            ^",
 		}},
-		{"nested type param in struct", `struct Foo<T<A>> {}`, []string{
+		{"nested type param in struct", "expr", `struct Foo<T<A>> {}`, []string{
 			"test.met:1:13: unexpected token: expected ,, got <<immediate>\n" +
 				"    struct Foo<T<A>> {}\n" +
 				"                ^",
 		}},
-		{"nested type param in fun", `fun foo<T<A>>() void {}`, []string{
+		{"nested type param in fun", "expr", `fun foo<T<A>>() void {}`, []string{
 			"test.met:1:10: unexpected token: expected ,, got <<immediate>\n" +
 				"    fun foo<T<A>>() void {}\n" +
 				"             ^",
 		}},
-		{"empty type params in struct", `struct Foo<> {}`, []string{
+		{"empty type params in struct", "expr", `struct Foo<> {}`, []string{
 			"test.met:1:11: empty type parameter list\n" +
 				"    struct Foo<> {}\n" +
 				"              ^^",
 		}},
-		{"empty type params in fun", `fun foo<>() void {}`, []string{
+		{"empty type params in fun", "expr", `fun foo<>() void {}`, []string{
 			"test.met:1:8: empty type parameter list\n" +
 				"    fun foo<>() void {}\n" +
 				"           ^^",
 		}},
-		{"empty type args in struct literal", `{ struct Foo<T> { value T } Foo<>(42) }`, []string{
+		{"empty type args in struct literal", "expr", `{ struct Foo<T> { value T } Foo<>(42) }`, []string{
 			"test.met:1:32: empty type argument list\n" +
 				"    { struct Foo<T> { value T } Foo<>(42) }\n" +
 				"                                   ^^",
 		}},
-		{"empty type args in type position", `struct Foo<T> { value Foo<> }`, []string{
+		{"empty type args in type position", "expr", `struct Foo<T> { value Foo<> }`, []string{
 			"test.met:1:26: empty type argument list\n" +
 				"    struct Foo<T> { value Foo<> }\n" +
 				"                             ^^",
+		}},
+
+		{"use in expression", "expr", `use foo.bar`, []string{
+			"test.met:1:1: unexpected token: expected start of an expression, got <use>\n" +
+				"    use foo.bar\n" +
+				"    ^^^",
+		}},
+		{"use after decl", "file", `fun main() void {} use foo.bar`, []string{
+			"test.met:1:20: unexpected token: <use>\n" +
+				"    fun main() void {} use foo.bar\n" +
+				"                       ^^^",
 		}},
 	}
 
@@ -625,8 +667,20 @@ func TestParseErr(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := NewParser(tokens, 1)
-			_, parseOK := parser.ParseExpr(0)
+			parser := NewParser(tokens, NewAST(1))
+			var parseOK bool
+			kind := tt.kind
+			if kind == "" {
+				kind = "expr"
+			}
+			switch kind {
+			case "expr":
+				_, parseOK = parser.ParseExpr(0)
+			case "file":
+				_, parseOK = parser.ParseModule()
+			default:
+				t.Fatalf("unknown kind: %s", kind)
+			}
 			diagnostics := parser.Diagnostics
 			for i, want := range tt.want {
 				if i >= len(diagnostics) {
@@ -637,7 +691,7 @@ func TestParseErr(t *testing.T) {
 			if len(diagnostics) > len(tt.want) {
 				t.Fatalf("there are more diagnostics than expected: %s", diagnostics[len(tt.want):])
 			}
-			assert.Equal(false, parseOK, "ParseExpr should have failed")
+			assert.Equal(false, parseOK, "parse should have failed")
 		})
 	}
 }
@@ -652,7 +706,26 @@ func NewTestAST() *TestAST {
 }
 
 func (a *TestAST) file(decls ...NodeID) NodeID {
-	return a.NewModule("test.met", "test", true, decls, a.span)
+	return a.NewModule("test.met", "test", true, nil, decls, a.span)
+}
+
+func (a *TestAST) file_with_imports(imports []NodeID, decls ...NodeID) NodeID {
+	if imports == nil {
+		imports = []NodeID{}
+	}
+	if decls == nil {
+		decls = []NodeID{}
+	}
+	return a.NewModule("test.met", "test", true, imports, decls, a.span)
+}
+
+func (a *TestAST) import_(fqn string) NodeID {
+	return a.NewImport(nil, Name{fqn, a.span}, a.span)
+}
+
+func (a *TestAST) import_alias(alias string, fqn string) NodeID {
+	n := Name{alias, a.span}
+	return a.NewImport(&n, Name{fqn, a.span}, a.span)
 }
 
 func (a *TestAST) fun_param(name string, typ NodeID) NodeID {
@@ -945,6 +1018,14 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			node.Kind = kind
 		case Var:
 			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case Import:
+			kind.FQN.Span = base.Span{}
+			if kind.Alias != nil {
+				a := *kind.Alias
+				a.Span = base.Span{}
+				kind.Alias = &a
+			}
 			node.Kind = kind
 		case Ref:
 		}

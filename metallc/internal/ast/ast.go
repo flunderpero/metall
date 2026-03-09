@@ -41,10 +41,18 @@ type Module struct {
 	FileName string
 	Name     string
 	Main     bool
+	Imports  []NodeID
 	Decls    []NodeID
 }
 
 func (Module) isKind() {}
+
+type Import struct {
+	Alias *Name
+	FQN   Name
+}
+
+func (Import) isKind() {}
 
 type SimpleType struct {
 	Name     Name
@@ -421,10 +429,21 @@ func (a *AST) NewUnary(op UnaryOp, expr NodeID, span base.Span) NodeID {
 	return a.node(Unary{Expr: expr, Op: op}, span)
 }
 
-func (a *AST) NewModule(fileName string, name string, main bool, decls []NodeID, span base.Span) NodeID {
-	node := a.node(Module{FileName: fileName, Name: name, Main: main, Decls: decls}, span)
+func (a *AST) NewModule(
+	fileName string,
+	name string,
+	main bool,
+	imports []NodeID,
+	decls []NodeID,
+	span base.Span,
+) NodeID {
+	node := a.node(Module{FileName: fileName, Name: name, Main: main, Imports: imports, Decls: decls}, span)
 	a.Roots = append(a.Roots, node)
 	return node
+}
+
+func (a *AST) NewImport(alias *Name, fqn Name, span base.Span) NodeID {
+	return a.node(Import{Alias: alias, FQN: fqn}, span)
 }
 
 func (a *AST) NewFunDecl(
@@ -568,7 +587,11 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 	case Deref:
 		f(kind.Expr)
+	case Import:
 	case Module:
+		for i := range len(kind.Imports) {
+			f(kind.Imports[i])
+		}
 		for i := range len(kind.Decls) {
 			f(kind.Decls[i])
 		}
@@ -811,13 +834,24 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("expr", kind.Expr)
 		}
 	case Break, Continue:
+	case Import:
+		addAttr("fqn", fmt.Sprintf("%q", kind.FQN.Name))
+		if kind.Alias != nil {
+			addAttr("alias", fmt.Sprintf("%q", kind.Alias.Name))
+		}
 	case Module:
 		addAttr("fileName", fmt.Sprintf("%q", kind.FileName))
 		addAttr("name", fmt.Sprintf("%q", kind.Name))
 		addAttr("main", fmt.Sprintf("%t", kind.Main))
 		if !children {
+			if len(kind.Imports) > 0 {
+				addAttr("imports", nodeIDList(kind.Imports))
+			}
 			addAttr("decls", nodeIDList(kind.Decls))
 		} else {
+			if len(kind.Imports) > 0 {
+				addChild("imports", kind.Imports...)
+			}
 			addChild("decls", kind.Decls...)
 		}
 	case FunDecl:

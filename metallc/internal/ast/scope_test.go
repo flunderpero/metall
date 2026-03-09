@@ -143,7 +143,7 @@ func TestScopes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := base.NewSource("test.met", "test", true, []rune(tt.src))
 			tokens := token.Lex(source)
-			parser := NewParser(tokens, 1)
+			parser := NewParser(tokens, NewAST(1))
 			nodeID, parseOK := parser.ParseExpr(0)
 			assert.Equal(0, len(parser.Diagnostics), "parse errors: %s", parser.Diagnostics)
 			assert.Equal(true, parseOK, "parser returned false")

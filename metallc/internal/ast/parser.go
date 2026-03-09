@@ -3,6 +3,7 @@ package ast
 import (
 	"math/big"
 	"slices"
+	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -19,7 +20,7 @@ type Parser struct {
 	pos         int
 }
 
-func NewParser(tokens []token.Token, firstNodeID NodeID) *Parser {
+func NewParser(tokens []token.Token, a *AST) *Parser {
 	// Strip comments and whitespace tokens.
 	stripped := []token.Token{}
 	for _, t := range tokens {
@@ -29,17 +30,29 @@ func NewParser(tokens []token.Token, firstNodeID NodeID) *Parser {
 			stripped = append(stripped, t)
 		}
 	}
-	return &Parser{NewAST(firstNodeID), base.Diagnostics{}, stripped, 0}
+	return &Parser{a, base.Diagnostics{}, stripped, 0}
 }
 
 func (p *Parser) ParseModule() (NodeID, bool) {
 	span := p.span()
 	source := span.Source
+	var imports []NodeID
+	for {
+		t, ok := p.mayPeek()
+		if !ok || t.Kind != token.Use {
+			break
+		}
+		imp, ok := p.ParseImport()
+		if !ok {
+			return ParseFailed, false
+		}
+		imports = append(imports, imp)
+	}
 	decls, ok := p.ParseDecls()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewModule(source.FileName, source.Module, source.Main, decls, span.Combine(p.span())), ok
+	return p.NewModule(source.FileName, source.Module, source.Main, imports, decls, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseDecls() ([]NodeID, bool) {
@@ -68,6 +81,32 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			return decls, false
 		}
 	}
+}
+
+func (p *Parser) ParseImport() (NodeID, bool) {
+	t, ok := p.expect(token.Use)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	next, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	var alias *Name
+	if next.Kind == token.Ident {
+		if peek1, ok := p.mayPeek1(); ok && peek1.Kind == token.Eq {
+			p.next()
+			p.next()
+			a := Name{next.Value, next.Span}
+			alias = &a
+		}
+	}
+	fqn, ok := p.parseFQN(true)
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewImport(alias, fqn, span.Combine(span)), true
 }
 
 func (p *Parser) ParseFunType() (NodeID, bool) {
@@ -1069,6 +1108,41 @@ func (p *Parser) ParseNumber() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewInt(n, p.span()), true
+}
+
+func (p *Parser) parseFQN(mayStartWithDot bool) (Name, bool) {
+	t, ok := p.mayPeek()
+	if !ok {
+		return Name{}, false
+	}
+	span := t.Span
+	segments := []string{}
+	if t.Kind == token.Dot {
+		if !mayStartWithDot {
+			p.diagnostic(span, "unexpected token: %s", t.Kind)
+			return Name{}, false
+		}
+		p.next()
+		segments = append(segments, t.Value)
+	}
+	for {
+		_, ok := p.mayPeek()
+		if !ok {
+			break
+		}
+		seg, ok := p.expect(token.Ident)
+		if !ok {
+			return Name{}, false
+		}
+		segments = append(segments, seg.Value)
+		t, ok = p.mayPeek()
+		if !ok || t.Kind != token.Dot {
+			break
+		}
+		p.next()
+	}
+	fqn := strings.Join(segments, ".")
+	return Name{fqn, span.Combine(p.span())}, true
 }
 
 // parseAllocator parses `@a` or a field access chain ending in an
