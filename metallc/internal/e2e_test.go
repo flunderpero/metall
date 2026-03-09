@@ -1458,7 +1458,7 @@ func TestCompile(t *testing.T) {
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
 			timing := newTimingListener()
-			opts := CompileOpts{
+			opts := CompileOpts{ //nolint:exhaustruct
 				Listener:         timing,
 				Output:           outputPath,
 				KeepIR:           true,
@@ -1515,7 +1515,7 @@ func TestCompilePanic(t *testing.T) {
 			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
 			outputPath := "./.build/" + reg.ReplaceAllString(name, "_")
 			timing := newTimingListener()
-			opts := CompileOpts{
+			opts := CompileOpts{ //nolint:exhaustruct
 				Listener:         timing,
 				Output:           outputPath,
 				KeepIR:           true,

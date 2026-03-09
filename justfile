@@ -35,34 +35,6 @@ examples:
         go run ./metallc/... run "$file"
     done
 
-# Compile the C runtime to LLVM IR. We use -O0 so the output is clean and
-# readable; the existing `opt` pipeline in the compiler will optimize it.
-# The sed pipeline strips module-level metadata (target triple, attributes,
-# loop metadata, etc.) so the .ll can be embedded into the generated IR.
-compile-runtime:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    $LLVM_HOME/bin/clang -x c -S -emit-llvm -O0 -fno-strict-aliasing \
-        -Xclang -disable-llvm-passes \
-        -o - metallc/internal/gen/arena.c_ \
-    | sed -E \
-        -e '/^; ModuleID/d' \
-        -e '/^source_filename/d' \
-        -e '/^target datalayout/d' \
-        -e '/^target triple/d' \
-        -e '/^attributes #/d' \
-        -e '/^!/d' \
-        -e '/^; Function Attrs:/d' \
-        -e 's/ #[0-9]+//g' \
-        -e 's/, !llvm\.loop ![0-9]+//g' \
-        -e 's/^define (internal )?/define internal /' \
-        -e 's/^(define internal) (ptr @arena_create\()/\1 noalias \2/' \
-        -e 's/(@arena_create\(i64 noundef %[0-9]+\)) \{/\1 allockind("alloc") "alloc-family"="arena" allocsize(0) {/' \
-        -e 's/^(define internal) (ptr @arena_alloc\()/\1 noalias \2/' \
-        -e 's/(@arena_alloc\(ptr noundef %[0-9]+, i64 noundef %[0-9]+\)) \{/\1 allockind("alloc") allocsize(1) {/' \
-        -e 's/(@arena_destroy\()(ptr noundef %[0-9]+\)) \{/\1ptr allocptr nocapture noundef %0) allockind("free") "alloc-family"="arena" {/' \
-    > metallc/internal/gen/arena.ll
-
 test-linux arch=host_arch:
     #!/usr/bin/env bash
     set -euo pipefail

@@ -11,7 +11,7 @@ import (
 )
 
 //go:embed arena.ll
-var arenaRuntime string
+var arenaRuntimeTemplate string
 
 type CodeWriter struct {
 	indent int
@@ -953,7 +953,8 @@ func (g *IRFunGen) genDeref(id ast.NodeID, deref ast.Deref) {
 
 func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 	reg := g.reg()
-	g.write("%s = call ptr @arena_create(i64 4096)", reg)
+	g.write("%s = alloca %%struct.Arena", reg)
+	g.write("call void @arena_create(ptr %s)", reg)
 	g.blockAllocatorRegs = append(g.blockAllocatorRegs, reg)
 	g.setCode(id, reg)
 	g.setSymbol(id, alloc.Name.Name, reg, "ptr")
@@ -1125,7 +1126,12 @@ func indexOfStructField(s types.StructType, name string) int {
 }
 
 type IROpts struct {
-	AddressSanitizer bool
+	AddressSanitizer    bool
+	ArenaDebug          bool
+	ArenaStackBufSize   int
+	ArenaPageMinSize    int
+	ArenaPageMaxSize    int
+	ArenaPageHeaderSize int
 }
 
 func GenIR(
@@ -1137,7 +1143,12 @@ func GenIR(
 	g.write(`source_filename = "%s"`, module.FileName)
 	g.write("")
 	// Emit the Str type definition (built-in struct, no AST node).
-	g.write("%Str = type { {ptr, i64} }\n")
+	g.write("%Str = type { {ptr, i64} }")
+	// Emit arena type definitions.
+	g.write("%struct.PageHeader = type { ptr, ptr, ptr }") //nolint:dupword
+	g.write("%%struct.FirstPage = type { %%struct.PageHeader, [%d x i8] }", opts.ArenaStackBufSize)
+	g.write("%struct.Arena = type { i64, ptr, %struct.FirstPage }")
+	g.write("")
 	// Emit struct type definitions.
 	for _, s := range structs {
 		g.genStruct(s.Env, s)
@@ -1172,8 +1183,39 @@ func GenIR(
 	}
 	g.write(builtinFill("i1"))
 	g.write("; >>> Arena runtime")
-	g.write(arenaRuntime)
+	g.write(arenaRuntimeIR(opts))
 	return g.sb.String(), nil
+}
+
+func arenaRuntimeIR(opts IROpts) string {
+	onCreate, onAlloc, onPageAlloc, onDestroy := "", "", "", ""
+	declarations := ""
+	if opts.ArenaDebug {
+		declarations = `
+@arena.fmt.create = private unnamed_addr constant [20 x i8] c"arena [%p]: create\0A\00"
+@arena.fmt.alloc = private unnamed_addr constant [29 x i8] c"arena [%p]: alloc size=%llu\0A\00"
+@arena.fmt.page_alloc = private unnamed_addr constant [54 x i8] c"arena [%p]: page_alloc size=%llu free_prev_page=%llu\0A\00"
+@arena.fmt.destroy = private unnamed_addr constant [21 x i8] c"arena [%p]: destroy\0A\00"
+declare i32 @dprintf(i32, ptr, ...)`
+		onCreate = `call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.create, ptr %a)`
+		onAlloc = `call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.alloc, ptr %a, i64 %size)`
+		onPageAlloc = `%__dbg_end_i = ptrtoint ptr %end to i64
+  %__dbg_cur_i = ptrtoint ptr %cursor to i64
+  %__dbg_waste = sub i64 %__dbg_end_i, %__dbg_cur_i
+  call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.page_alloc, ptr %a, i64 %alloc_cap, i64 %__dbg_waste)`
+		onDestroy = `call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.destroy, ptr %a)`
+	}
+	r := strings.NewReplacer(
+		"${arena.stack_buf_size}", fmt.Sprintf("%d", opts.ArenaStackBufSize),
+		"${arena.page_min_size}", fmt.Sprintf("%d", opts.ArenaPageMinSize),
+		"${arena.page_max_size}", fmt.Sprintf("%d", opts.ArenaPageMaxSize),
+		"${arena.page_header_size}", fmt.Sprintf("%d", opts.ArenaPageHeaderSize),
+		"${arena.on_create}", onCreate,
+		"${arena.on_alloc}", onAlloc,
+		"${arena.on_page_alloc}", onPageAlloc,
+		"${arena.on_destroy}", onDestroy,
+	)
+	return declarations + "\n" + r.Replace(arenaRuntimeTemplate)
 }
 
 func builtinSafeDiv(irType string, op string) string {

@@ -36,14 +36,36 @@ var ErrAbort = base.Errorf("aborted by listener")
 const DefaultLLVMPasses = "mem2reg,sroa,instcombine,simplifycfg"
 
 type CompileOpts struct {
-	Listener         CompileListener
-	Output           string
-	KeepIR           bool
-	LLVMPasses       string
-	AddressSanitizer bool
+	Listener            CompileListener
+	Output              string
+	KeepIR              bool
+	LLVMPasses          string
+	AddressSanitizer    bool
+	DebugArenaAllocator bool
+	ArenaStackBufSize   int
+	ArenaPageMinSize    int
+	ArenaPageMaxSize    int
+	ArenaPageHeaderSize int
+}
+
+func (o CompileOpts) WithDefaults() CompileOpts {
+	if o.ArenaStackBufSize == 0 {
+		o.ArenaStackBufSize = 32
+	}
+	if o.ArenaPageMinSize == 0 {
+		o.ArenaPageMinSize = 256
+	}
+	if o.ArenaPageMaxSize == 0 {
+		o.ArenaPageMaxSize = 65536
+	}
+	if o.ArenaPageHeaderSize == 0 {
+		o.ArenaPageHeaderSize = 24
+	}
+	return o
 }
 
 func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error { //nolint:funlen
+	opts = opts.WithDefaults()
 	llvmHome := os.Getenv("LLVM_HOME")
 	if llvmHome == "" {
 		return base.Errorf("LLVM_HOME not set")
@@ -82,7 +104,14 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	module := base.Cast[ast.Module](engine.AST().Node(fileID).Kind)
 	ir, err := gen.GenIR(
 		engine.AST(), module, engine.Funs(), engine.Structs(),
-		gen.IROpts{AddressSanitizer: opts.AddressSanitizer},
+		gen.IROpts{
+			AddressSanitizer:    opts.AddressSanitizer,
+			ArenaDebug:          opts.DebugArenaAllocator,
+			ArenaStackBufSize:   opts.ArenaStackBufSize,
+			ArenaPageMinSize:    opts.ArenaPageMinSize,
+			ArenaPageMaxSize:    opts.ArenaPageMaxSize,
+			ArenaPageHeaderSize: opts.ArenaPageHeaderSize,
+		},
 	)
 	if err != nil {
 		return err //nolint:wrapcheck
