@@ -35,17 +35,17 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"empty block is void", `{ }`, void, nil},
 		{"let binding", `let x = 123`, void, func(e *Engine, id ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, ok := e.c.lookup(id, "x")
+			b, ok := e.lookup(id, "x")
 			assert.Equal(true, ok)
-			bindingType := e.c.env.Type(b.TypeID)
+			bindingType := e.env.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
 			assert.Equal(false, b.Mut)
 		}},
 		{"mut binding", `mut x = 123`, void, func(e *Engine, id ast.NodeID, assert base.Assert) {
 			// Make sure the binding type is set correctly.
-			b, ok := e.c.lookup(id, "x")
+			b, ok := e.lookup(id, "x")
 			assert.Equal(true, ok)
-			bindingType := e.c.env.Type(b.TypeID)
+			bindingType := e.env.Type(b.TypeID)
 			assert.Equal(Int, bindingType)
 			assert.Equal(true, b.Mut)
 		}},
@@ -54,10 +54,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ mut x = 321 x = 123 }`,
 			void,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block, ok := e.c.ast.Node(id).Kind.(ast.Block)
+				block, ok := e.ast.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
 				assignID := block.Exprs[1]
-				typ := e.c.env.TypeOfNode(assignID)
+				typ := e.env.TypeOfNode(assignID)
 				assert.Equal(void, typ)
 			},
 		},
@@ -84,20 +84,20 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`fun foo() Int { return 123 }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				fun, ok := e.c.ast.Node(id).Kind.(ast.Fun)
+				fun, ok := e.ast.Node(id).Kind.(ast.Fun)
 				assert.Equal(true, ok)
-				block, ok := e.c.ast.Node(fun.Block).Kind.(ast.Block)
+				block, ok := e.ast.Node(fun.Block).Kind.(ast.Block)
 				assert.Equal(true, ok)
-				_, ok = e.c.ast.Node(block.Exprs[0]).Kind.(ast.Return)
+				_, ok = e.ast.Node(block.Exprs[0]).Kind.(ast.Return)
 				assert.Equal(true, ok)
-				retTyp := e.c.env.TypeOfNode(block.Exprs[0])
+				retTyp := e.env.TypeOfNode(block.Exprs[0])
 				assert.Equal(void, retTyp)
 			},
 		},
 
 		{"fun type", `fun foo(bar fun(Int) Str) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
-			outer := base.Cast[FunType](e.c.env.TypeOfNode(id).Kind)
-			inner := base.Cast[FunType](e.c.env.Type(outer.Params[0]).Kind)
+			outer := base.Cast[FunType](e.env.TypeOfNode(id).Kind)
+			inner := base.Cast[FunType](e.env.Type(outer.Params[0]).Kind)
 			assert.Equal(Int.ID, inner.Params[0])
 			assert.Equal(Str.ID, inner.Return)
 		}},
@@ -110,15 +110,15 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
-				fooTyp := e.c.env.TypeOfNode(block.Exprs[0])
-				barTyp := e.c.env.TypeOfNode(block.Exprs[1])
-				applyFT := base.Cast[FunType](e.c.env.TypeOfNode(block.Exprs[2]).Kind)
-				fTyp := e.c.env.Type(applyFT.Params[0])
-				gTyp := e.c.env.Type(applyFT.Params[1])
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				fooTyp := e.env.TypeOfNode(block.Exprs[0])
+				barTyp := e.env.TypeOfNode(block.Exprs[1])
+				applyFT := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[2]).Kind)
+				fTyp := e.env.Type(applyFT.Params[0])
+				gTyp := e.env.Type(applyFT.Params[1])
 				assert.Equal(fTyp, gTyp)
-				h := base.Cast[FunType](e.c.env.Type(applyFT.Params[2]).Kind)
-				hParamTyp := e.c.env.Type(h.Params[0])
+				h := base.Cast[FunType](e.env.Type(applyFT.Params[2]).Kind)
+				hParamTyp := e.env.Type(h.Params[0])
 				assert.Equal(fTyp, hParamTyp)
 				assert.Equal(fooTyp, barTyp)
 				assert.Equal(fooTyp, fTyp)
@@ -146,12 +146,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			"forward declare struct type", `{ fun foo(a Foo) void {} struct Foo { one Str } }`,
 			struct_t("Foo", "one", Str),
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block, ok := e.c.ast.Node(id).Kind.(ast.Block)
+				block, ok := e.ast.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
 				funID := block.Exprs[0]
-				typ, ok := e.c.env.TypeOfNode(funID).Kind.(FunType)
-				assert.Equal(true, ok, e.c.env.TypeOfNode(funID).ID)
-				paramTyp := e.c.env.Type(typ.Params[0])
+				typ, ok := e.env.TypeOfNode(funID).Kind.(FunType)
+				assert.Equal(true, ok, e.env.TypeOfNode(funID).ID)
+				paramTyp := e.env.Type(typ.Params[0])
 				foo := base.Cast[StructType](paramTyp.Kind)
 				assert.Equal("Foo", foo.Name)
 				assert.Equal(1, len(foo.Fields))
@@ -170,10 +170,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			// That's why we verify in the check function.
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				got := e.c.env.TypeOfNode(id)
+				got := e.env.TypeOfNode(id)
 				ref, ok := got.Kind.(RefType)
 				assert.Equal(true, ok)
-				inner := e.c.env.Type(ref.Type)
+				inner := e.env.Type(ref.Type)
 				foo := base.Cast[StructType](inner.Kind)
 				assert.Equal("Foo", foo.Name)
 				assert.Equal(1, len(foo.Fields))
@@ -216,12 +216,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`fun foo() Int { if true { return 123 } else { "hello" } 321 }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				fun := base.Cast[ast.Fun](e.c.ast.Node(id).Kind)
-				block := base.Cast[ast.Block](e.c.ast.Node(fun.Block).Kind)
-				if_ := base.Cast[ast.If](e.c.ast.Node(block.Exprs[0]).Kind)
-				assert.Equal(void, e.c.env.TypeOfNode(if_.Then))
-				assert.Equal(Str, e.c.env.TypeOfNode(*if_.Else))
-				assert.Equal(void, e.c.env.TypeOfNode(block.Exprs[0]), "if expr should be void")
+				fun := base.Cast[ast.Fun](e.ast.Node(id).Kind)
+				block := base.Cast[ast.Block](e.ast.Node(fun.Block).Kind)
+				if_ := base.Cast[ast.If](e.ast.Node(block.Exprs[0]).Kind)
+				assert.Equal(void, e.env.TypeOfNode(if_.Then))
+				assert.Equal(Str, e.env.TypeOfNode(*if_.Else))
+				assert.Equal(void, e.env.TypeOfNode(block.Exprs[0]), "if expr should be void")
 			},
 		},
 		{
@@ -308,22 +308,22 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"mutual recursion", `{ fun foo(a Int) Int { bar(a) } fun bar(a Int) Int { foo(a) } foo(10) }`, Int, nil},
 
 		{"allocator var", `let @myalloc = Arena()`, void, func(e *Engine, id ast.NodeID, assert base.Assert) {
-			b, ok := e.c.lookup(id, "@myalloc")
+			b, ok := e.lookup(id, "@myalloc")
 			assert.Equal(true, ok)
-			typ, ok := e.c.env.Type(b.TypeID).Kind.(AllocatorType)
+			typ, ok := e.env.Type(b.TypeID).Kind.(AllocatorType)
 			assert.Equal(true, ok)
 			assert.Equal(AllocatorArena, typ.Impl)
 		}},
 		{
 			"heap alloc struct", `{ let @myalloc = Arena() struct Foo{one Str} let x = new(@myalloc, Foo("hello")) x }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block, ok := e.c.ast.Node(id).Kind.(ast.Block)
+				block, ok := e.ast.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.c.env.TypeOfNode(lastExpr).Kind.(RefType)
+				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
 				assert.Equal(false, ref.Mut)
-				foo := base.Cast[StructType](e.c.env.Type(ref.Type).Kind)
+				foo := base.Cast[StructType](e.env.Type(ref.Type).Kind)
 				assert.Equal("Foo", foo.Name)
 				assert.Equal(1, len(foo.Fields))
 				assert.Equal("one", foo.Fields[0].Name)
@@ -335,12 +335,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			"heap alloc mut struct",
 			`{ let @a = Arena() struct Bar{one Str} new_mut(@a, Bar("hello")) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.c.env.TypeOfNode(lastExpr).Kind.(RefType)
+				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
 				assert.Equal(true, ref.Mut)
-				bar := base.Cast[StructType](e.c.env.Type(ref.Type).Kind)
+				bar := base.Cast[StructType](e.env.Type(ref.Type).Kind)
 				assert.Equal("Bar", bar.Name)
 				assert.Equal(1, len(bar.Fields))
 				assert.Equal("one", bar.Fields[0].Name)
@@ -351,22 +351,22 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			"heap alloc mut array",
 			`{ let @a = Arena() new_mut(@a, [5]Int()) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.c.env.TypeOfNode(lastExpr).Kind.(RefType)
+				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
 				assert.Equal(true, ref.Mut)
-				arr, ok := e.c.env.Type(ref.Type).Kind.(ArrayType)
+				arr, ok := e.env.Type(ref.Type).Kind.(ArrayType)
 				assert.Equal(true, ok)
 				assert.Equal(int64(5), arr.Len)
 			},
 		},
 
 		{"array type", `fun foo(a [5]Int) void {}`, nil, func(e *Engine, id ast.NodeID, assert base.Assert) {
-			fun, ok := e.c.env.TypeOfNode(id).Kind.(FunType)
+			fun, ok := e.env.TypeOfNode(id).Kind.(FunType)
 			assert.Equal(true, ok)
 			assert.Equal(1, len(fun.Params))
-			arr, ok := e.c.env.Type(fun.Params[0]).Kind.(ArrayType)
+			arr, ok := e.env.Type(fun.Params[0]).Kind.(ArrayType)
 			assert.Equal(true, ok)
 			assert.Equal(int64(5), arr.Len)
 			assert.Equal(Int.ID, arr.Elem)
@@ -376,22 +376,22 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`fun foo(a [5]Int, b [5]Int, c [6]Int) void { [1, 2, 3, 4, 5]}`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				funNode, ok := e.c.ast.Node(id).Kind.(ast.Fun)
+				funNode, ok := e.ast.Node(id).Kind.(ast.Fun)
 				assert.Equal(ok, true)
-				fun, ok := e.c.env.TypeOfNode(id).Kind.(FunType)
+				fun, ok := e.env.TypeOfNode(id).Kind.(FunType)
 				assert.Equal(true, ok)
 				assert.Equal(3, len(fun.Params))
 				for _, elem := range fun.Params {
-					_, ok := e.c.env.Type(elem).Kind.(ArrayType)
+					_, ok := e.env.Type(elem).Kind.(ArrayType)
 					assert.Equal(true, ok)
 				}
 				assert.Equal(fun.Params[0], fun.Params[1])
 				assert.NotEqual(fun.Params[0], fun.Params[2])
 				// The array literal in the body should have the same type as param 0.
-				block, ok := e.c.ast.Node(funNode.Block).Kind.(ast.Block)
+				block, ok := e.ast.Node(funNode.Block).Kind.(ast.Block)
 				assert.Equal(true, ok)
-				literalTyp := e.c.env.TypeOfNode(block.Exprs[0])
-				paramTyp := e.c.env.Type(fun.Params[0])
+				literalTyp := e.env.TypeOfNode(block.Exprs[0])
+				paramTyp := e.env.Type(fun.Params[0])
 				assert.Equal(paramTyp, literalTyp)
 			},
 		},
@@ -399,15 +399,15 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			"struct with allocator field",
 			`{ struct Foo { @myalloc Arena } let @myalloc = Arena() let x = Foo(@myalloc) }`, void,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				// The `let x = Foo(@myalloc)` is the last expr; its type is void.
 				// Inspect the Foo struct literal inside the var.
-				varNode := base.Cast[ast.Var](e.c.ast.Node(block.Exprs[len(block.Exprs)-1]).Kind)
-				st, ok := e.c.env.TypeOfNode(varNode.Expr).Kind.(StructType)
+				varNode := base.Cast[ast.Var](e.ast.Node(block.Exprs[len(block.Exprs)-1]).Kind)
+				st, ok := e.env.TypeOfNode(varNode.Expr).Kind.(StructType)
 				assert.Equal(true, ok)
 				assert.Equal(1, len(st.Fields))
 				assert.Equal("@myalloc", st.Fields[0].Name)
-				_, ok = e.c.env.Type(st.Fields[0].Type).Kind.(AllocatorType)
+				_, ok = e.env.Type(st.Fields[0].Type).Kind.(AllocatorType)
 				assert.Equal(true, ok)
 			},
 		},
@@ -420,12 +420,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			"heap alloc array",
 			`{ let @myalloc = Arena() new(@myalloc, [5]Int()) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.c.env.TypeOfNode(lastExpr).Kind.(RefType)
+				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
 				assert.Equal(false, ref.Mut)
-				arr, ok := e.c.env.Type(ref.Type).Kind.(ArrayType)
+				arr, ok := e.env.Type(ref.Type).Kind.(ArrayType)
 				assert.Equal(true, ok)
 				assert.Equal(int64(5), arr.Len)
 			},
@@ -433,11 +433,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{
 			"new array default", `{ let @myalloc = Arena() new(@myalloc, [5]Int(42)) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.c.env.TypeOfNode(lastExpr).Kind.(RefType)
+				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
 				assert.Equal(true, ok)
-				arr, ok := e.c.env.Type(ref.Type).Kind.(ArrayType)
+				arr, ok := e.env.Type(ref.Type).Kind.(ArrayType)
 				assert.Equal(true, ok)
 				assert.Equal(int64(5), arr.Len)
 			},
@@ -480,10 +480,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ let @a = Arena() let x = make(@a, []Int(3)) &x }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				got := e.c.env.TypeOfNode(id)
+				got := e.env.TypeOfNode(id)
 				ref, ok := got.Kind.(RefType)
 				assert.Equal(true, ok)
-				assert.Equal("[]Int", e.c.env.TypeDisplay(ref.Type))
+				assert.Equal("[]Int", e.env.TypeDisplay(ref.Type))
 			},
 		},
 		{
@@ -524,7 +524,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ struct Foo { items []Int } Foo([]) }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				got := e.c.env.TypeOfNode(id)
+				got := e.env.TypeOfNode(id)
 				_, ok := got.Kind.(StructType)
 				assert.Equal(true, ok)
 			},
@@ -537,12 +537,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{
 			"multidimensional array type", `fun foo(a [3][4]Int) void {}`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				fun, ok := e.c.env.TypeOfNode(id).Kind.(FunType)
+				fun, ok := e.env.TypeOfNode(id).Kind.(FunType)
 				assert.Equal(true, ok)
-				outer, ok := e.c.env.Type(fun.Params[0]).Kind.(ArrayType)
+				outer, ok := e.env.Type(fun.Params[0]).Kind.(ArrayType)
 				assert.Equal(true, ok)
 				assert.Equal(int64(3), outer.Len)
-				inner, ok := e.c.env.Type(outer.Elem).Kind.(ArrayType)
+				inner, ok := e.env.Type(outer.Elem).Kind.(ArrayType)
 				assert.Equal(true, ok)
 				assert.Equal(int64(4), inner.Len)
 				assert.Equal(Int.ID, inner.Elem)
@@ -551,11 +551,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{
 			"multidimensional slice type", `fun foo(a [][]Int) void {}`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				fun, ok := e.c.env.TypeOfNode(id).Kind.(FunType)
+				fun, ok := e.env.TypeOfNode(id).Kind.(FunType)
 				assert.Equal(true, ok)
-				outer, ok := e.c.env.Type(fun.Params[0]).Kind.(SliceType)
+				outer, ok := e.env.Type(fun.Params[0]).Kind.(SliceType)
 				assert.Equal(true, ok)
-				inner, ok := e.c.env.Type(outer.Elem).Kind.(SliceType)
+				inner, ok := e.env.Type(outer.Elem).Kind.(SliceType)
 				assert.Equal(true, ok)
 				assert.Equal(Int.ID, inner.Elem)
 			},
@@ -563,12 +563,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{
 			"mixed array slice type", `fun foo(a [3][]Int) void {}`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				fun, ok := e.c.env.TypeOfNode(id).Kind.(FunType)
+				fun, ok := e.env.TypeOfNode(id).Kind.(FunType)
 				assert.Equal(true, ok)
-				outer, ok := e.c.env.Type(fun.Params[0]).Kind.(ArrayType)
+				outer, ok := e.env.Type(fun.Params[0]).Kind.(ArrayType)
 				assert.Equal(true, ok)
 				assert.Equal(int64(3), outer.Len)
-				inner, ok := e.c.env.Type(outer.Elem).Kind.(SliceType)
+				inner, ok := e.env.Type(outer.Elem).Kind.(SliceType)
 				assert.Equal(true, ok)
 				assert.Equal(Int.ID, inner.Elem)
 			},
@@ -624,9 +624,9 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			// The result of the block is the method declaration, which has FunType.
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				funID := block.Exprs[1]
-				typ, ok := e.c.env.TypeOfNode(funID).Kind.(FunType)
+				typ, ok := e.env.TypeOfNode(funID).Kind.(FunType)
 				assert.Equal(true, ok)
 				// Method has one param (Foo) and returns Int.
 				assert.Equal(1, len(typ.Params))
@@ -659,7 +659,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`fun ns() Int { struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) x.get() }`,
 			nil,
 			func(e *Engine, _ ast.NodeID, assert base.Assert) {
-				assert.Equal(0, len(e.c.diagnostics))
+				assert.Equal(0, len(e.diagnostics))
 			},
 		},
 		{
@@ -667,7 +667,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`fun ns() Int { struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) Foo.get(x) }`,
 			nil,
 			func(e *Engine, _ ast.NodeID, assert base.Assert) {
-				assert.Equal(0, len(e.c.diagnostics))
+				assert.Equal(0, len(e.diagnostics))
 			},
 		},
 		{
@@ -723,16 +723,16 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			func(e *Engine, _ ast.NodeID, assert base.Assert) {
 				structs := e.Structs()
 				assert.Equal(1, len(structs))
-				st := base.Cast[StructType](e.c.env.Type(structs[0].TypeID).Kind)
-				base.Cast[IntType](e.c.env.Type(st.Fields[0].Type).Kind)
+				st := base.Cast[StructType](e.env.Type(structs[0].TypeID).Kind)
+				base.Cast[IntType](e.env.Type(st.Fields[0].Type).Kind)
 				funs := e.Funs()
 				assert.Equal(1, len(funs))
-				ft := base.Cast[FunType](e.c.env.Type(funs[0].TypeID).Kind)
+				ft := base.Cast[FunType](e.env.Type(funs[0].TypeID).Kind)
 				assert.Equal(3, len(ft.Params))
-				base.Cast[StructType](e.c.env.Type(ft.Params[0]).Kind)
-				base.Cast[IntType](e.c.env.Type(ft.Params[1]).Kind)
-				base.Cast[BoolType](e.c.env.Type(ft.Params[2]).Kind)
-				base.Cast[IntType](e.c.env.Type(ft.Return).Kind)
+				base.Cast[StructType](e.env.Type(ft.Params[0]).Kind)
+				base.Cast[IntType](e.env.Type(ft.Params[1]).Kind)
+				base.Cast[BoolType](e.env.Type(ft.Params[2]).Kind)
+				base.Cast[IntType](e.env.Type(ft.Return).Kind)
 			},
 		},
 		{
@@ -759,12 +759,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(2, len(structs), "Foo<Int> and Str")
 				funs := e.Funs()
 				assert.Equal(1, len(funs))
-				ft := base.Cast[FunType](e.c.env.Type(funs[0].TypeID).Kind)
+				ft := base.Cast[FunType](e.env.Type(funs[0].TypeID).Kind)
 				assert.Equal(2, len(ft.Params))
-				paramStruct := base.Cast[StructType](e.c.env.Type(ft.Params[0]).Kind)
-				base.Cast[IntType](e.c.env.Type(paramStruct.Fields[0].Type).Kind)
-				base.Cast[StructType](e.c.env.Type(ft.Params[1]).Kind)
-				base.Cast[StructType](e.c.env.Type(ft.Return).Kind)
+				paramStruct := base.Cast[StructType](e.env.Type(ft.Params[0]).Kind)
+				base.Cast[IntType](e.env.Type(paramStruct.Fields[0].Type).Kind)
+				base.Cast[StructType](e.env.Type(ft.Params[1]).Kind)
+				base.Cast[StructType](e.env.Type(ft.Return).Kind)
 			},
 		},
 		{
@@ -849,13 +849,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ struct Foo<T> { value T } let a = Foo<Int>(1) let b = Foo<Int>(2) let c = Foo<Str>("x") }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				block := base.Cast[ast.Block](e.c.ast.Node(id).Kind)
-				aVar := base.Cast[ast.Var](e.c.ast.Node(block.Exprs[1]).Kind)
-				bVar := base.Cast[ast.Var](e.c.ast.Node(block.Exprs[2]).Kind)
-				cVar := base.Cast[ast.Var](e.c.ast.Node(block.Exprs[3]).Kind)
-				aName := base.Cast[StructType](e.c.env.TypeOfNode(aVar.Expr).Kind).Name
-				bName := base.Cast[StructType](e.c.env.TypeOfNode(bVar.Expr).Kind).Name
-				cName := base.Cast[StructType](e.c.env.TypeOfNode(cVar.Expr).Kind).Name
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				aVar := base.Cast[ast.Var](e.ast.Node(block.Exprs[1]).Kind)
+				bVar := base.Cast[ast.Var](e.ast.Node(block.Exprs[2]).Kind)
+				cVar := base.Cast[ast.Var](e.ast.Node(block.Exprs[3]).Kind)
+				aName := base.Cast[StructType](e.env.TypeOfNode(aVar.Expr).Kind).Name
+				bName := base.Cast[StructType](e.env.TypeOfNode(bVar.Expr).Kind).Name
+				cName := base.Cast[StructType](e.env.TypeOfNode(cVar.Expr).Kind).Name
 				assert.Equal(aName, bName, "Foo<Int> should be the same type")
 				assert.NotEqual(aName, cName, "Foo<Int> and Foo<Str> should be distinct")
 			},
@@ -868,14 +868,14 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
-				funTyp := base.Cast[FunType](e.c.env.TypeOfNode(id).Kind)
+				funTyp := base.Cast[FunType](e.env.TypeOfNode(id).Kind)
 				assert.Equal(1, len(funTyp.Params))
-				ref := base.Cast[RefType](e.c.env.Type(funTyp.Params[0]).Kind)
-				node := base.Cast[StructType](e.c.env.Type(ref.Type).Kind)
+				ref := base.Cast[RefType](e.env.Type(funTyp.Params[0]).Kind)
+				node := base.Cast[StructType](e.env.Type(ref.Type).Kind)
 				assert.Equal(2, len(node.Fields))
 				assert.Equal("value", node.Fields[0].Name)
 				assert.Equal("next", node.Fields[1].Name)
-				nextRef := base.Cast[RefType](e.c.env.Type(node.Fields[1].Type).Kind)
+				nextRef := base.Cast[RefType](e.env.Type(node.Fields[1].Type).Kind)
 				assert.Equal(ref.Type, nextRef.Type, "recursive: next field should be same type")
 			},
 		},
@@ -1040,7 +1040,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}`,
 			nil,
 			func(e *Engine, _ ast.NodeID, assert base.Assert) {
-				assert.Equal(0, len(e.c.diagnostics))
+				assert.Equal(0, len(e.diagnostics))
 			},
 		},
 		{
@@ -1173,14 +1173,14 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			parser.Roots = append(parser.Roots, exprID)
 			e := NewEngine(parser.AST, preludeAST)
 			e.Query(exprID)
-			assert.Equal(0, len(e.c.diagnostics), "diagnostics:\n%s", e.c.diagnostics)
-			got := e.c.env.TypeOfNode(exprID)
+			assert.Equal(0, len(e.diagnostics), "diagnostics:\n%s", e.diagnostics)
+			got := e.env.TypeOfNode(exprID)
 			if tt.want != nil {
 				assert.NotEqual(InvalidTypeID, got.ID, "result type is invalid")
-				e.c.env.IterTypes(zeroIDAndSpan)
+				e.env.IterTypes(zeroIDAndSpan)
 				assert.Equal(tt.want, got)
 			} else {
-				e.c.env.IterTypes(zeroIDAndSpan)
+				e.env.IterTypes(zeroIDAndSpan)
 				assert.NotNil(tt.check, "`tt.check` cannot be nil if `tt.want` is already nil")
 			}
 			if tt.check != nil {
@@ -1188,21 +1188,21 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}
 			// Check that fun- and struct-work does not contain type parameters.
 			for _, f := range e.Funs() {
-				ft := base.Cast[FunType](e.c.env.Type(f.TypeID).Kind)
+				ft := base.Cast[FunType](e.env.Type(f.TypeID).Kind)
 				for _, p := range ft.Params {
-					assert.Equal(false, e.c.env.containsTypeParam(p),
+					assert.Equal(false, e.env.containsTypeParam(p),
 						"Funs() should not contain type params in params: %s", f.Name)
 				}
-				assert.Equal(false, e.c.env.containsTypeParam(ft.Return),
+				assert.Equal(false, e.env.containsTypeParam(ft.Return),
 					"Funs() should not contain type params in return: %s", f.Name)
 			}
 			for _, s := range e.Structs() {
-				st := base.Cast[StructType](e.c.env.Type(s.TypeID).Kind)
-				assert.Equal(false, e.c.env.hasTypeParam(st.TypeArgs),
+				st := base.Cast[StructType](e.env.Type(s.TypeID).Kind)
+				assert.Equal(false, e.env.hasTypeParam(st.TypeArgs),
 					"Structs() should not contain type params: %s", st.Name)
 			}
 			if !slices.Contains(skipLifetimeCheck, name) {
-				a := NewLifetimeAnalyzer(e.c.ast, e.c.scopeGraph, e.Env())
+				a := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env())
 				// a.Debug = base.NewStdoutDebug("lifetime")
 				a.Check(exprID)
 				assert.Equal(0, len(a.Diagnostics), "lifetime check failed: %s", a.Diagnostics)
@@ -1897,13 +1897,13 @@ func TestTypeCheckErr(t *testing.T) {
 			e := NewEngine(parser.AST, preludeAST)
 			e.Query(nodeID)
 			for i, want := range tt.want {
-				if i >= len(e.c.diagnostics) {
+				if i >= len(e.diagnostics) {
 					t.Fatalf("no more diagnostics, but wanted: %s", want)
 				}
-				assert.Equal(want, e.c.diagnostics[i].Display())
+				assert.Equal(want, e.diagnostics[i].Display())
 			}
-			if len(e.c.diagnostics) > len(tt.want) {
-				t.Fatalf("there are more diagnostics than expected: %s", e.c.diagnostics[len(tt.want):])
+			if len(e.diagnostics) > len(tt.want) {
+				t.Fatalf("there are more diagnostics than expected: %s", e.diagnostics[len(tt.want):])
 			}
 		})
 	}
@@ -2002,7 +2002,7 @@ func TestIntTypes(t *testing.T) {
 			for _, val := range []string{"0", info.Max.String()} {
 				src := fmt.Sprintf("%s(%s)", info.Name, val)
 				e := typeCheck(t, src)
-				assert.Equal(0, len(e.c.diagnostics), "%s(%s) should be valid: %s", info.Name, val, e.c.diagnostics)
+				assert.Equal(0, len(e.diagnostics), "%s(%s) should be valid: %s", info.Name, val, e.diagnostics)
 			}
 		}
 		// NOTE: Signed min values (e.g. I8(-128)) can't be expressed as
@@ -2015,8 +2015,8 @@ func TestIntTypes(t *testing.T) {
 			aboveMax := new(big.Int).Add(typ.Max, big.NewInt(1))
 			src := fmt.Sprintf("%s(%s)", typ.Name, aboveMax)
 			e := typeCheck(t, src)
-			assert.Equal(1, len(e.c.diagnostics), "%s(%s) diagnostics: %s", typ.Name, aboveMax, e.c.diagnostics)
-			assert.Contains(e.c.diagnostics[0].Display(), "out of range", "%s(%s)", typ.Name, aboveMax)
+			assert.Equal(1, len(e.diagnostics), "%s(%s) diagnostics: %s", typ.Name, aboveMax, e.diagnostics)
+			assert.Contains(e.diagnostics[0].Display(), "out of range", "%s(%s)", typ.Name, aboveMax)
 		}
 	})
 
@@ -2025,7 +2025,7 @@ func TestIntTypes(t *testing.T) {
 			for _, name := range allIntTypes {
 				src := fmt.Sprintf("%[1]s(1) %[2]s %[1]s(1)", name, op)
 				e := typeCheck(t, src)
-				assert.Equal(0, len(e.c.diagnostics), "%s: %s", src, e.c.diagnostics)
+				assert.Equal(0, len(e.diagnostics), "%s: %s", src, e.diagnostics)
 			}
 		}
 	})
@@ -2035,23 +2035,23 @@ func TestIntTypes(t *testing.T) {
 			for _, name := range allIntTypes {
 				src := fmt.Sprintf("%[1]s(1) %[2]s %[1]s(1)", name, op)
 				e := typeCheck(t, src)
-				assert.Equal(0, len(e.c.diagnostics), "%s: %s", src, e.c.diagnostics)
+				assert.Equal(0, len(e.diagnostics), "%s: %s", src, e.diagnostics)
 			}
 		}
 	})
 
 	t.Run("mixed types rejected in binary ops", func(t *testing.T) {
 		e := typeCheck(t, `{ let x = I32(1) let y = U8(1) x + y }`)
-		assert.Equal(1, len(e.c.diagnostics), "diagnostics: %s", e.c.diagnostics)
-		assert.Contains(e.c.diagnostics[0].Display(), "type mismatch")
+		assert.Equal(1, len(e.diagnostics), "diagnostics: %s", e.diagnostics)
+		assert.Contains(e.diagnostics[0].Display(), "type mismatch")
 	})
 
 	t.Run("non-integer rejected", func(t *testing.T) {
 		for _, name := range allIntTypes {
 			src := fmt.Sprintf(`%s("hello")`, name)
 			e := typeCheck(t, src)
-			assert.Equal(1, len(e.c.diagnostics), "%s(Str) diagnostics: %s", name, e.c.diagnostics)
-			assert.Contains(e.c.diagnostics[0].Display(), "cannot convert", name)
+			assert.Equal(1, len(e.diagnostics), "%s(Str) diagnostics: %s", name, e.diagnostics)
+			assert.Contains(e.diagnostics[0].Display(), "cannot convert", name)
 		}
 	})
 
@@ -2059,8 +2059,8 @@ func TestIntTypes(t *testing.T) {
 		for _, name := range allIntTypes {
 			src := fmt.Sprintf("%s(1, 2)", name)
 			e := typeCheck(t, src)
-			assert.Equal(1, len(e.c.diagnostics), "%s(1,2) diagnostics: %s", name, e.c.diagnostics)
-			assert.Contains(e.c.diagnostics[0].Display(), "takes exactly 1 argument", name)
+			assert.Equal(1, len(e.diagnostics), "%s(1,2) diagnostics: %s", name, e.diagnostics)
+			assert.Contains(e.diagnostics[0].Display(), "takes exactly 1 argument", name)
 		}
 	})
 
@@ -2149,16 +2149,16 @@ func TestIntTypes(t *testing.T) {
 				if tt.ok {
 					assert.Equal(
 						0,
-						len(e.c.diagnostics),
+						len(e.diagnostics),
 						"%s(%s) should be allowed: %s",
 						tt.to,
 						tt.from,
-						e.c.diagnostics,
+						e.diagnostics,
 					)
 				} else {
-					assert.NotEqual(0, len(e.c.diagnostics), "%s(%s) should be rejected", tt.to, tt.from)
-					if len(e.c.diagnostics) > 0 {
-						assert.Contains(e.c.diagnostics[0].Display(), "cannot convert", "%s → %s", tt.from, tt.to)
+					assert.NotEqual(0, len(e.diagnostics), "%s(%s) should be rejected", tt.to, tt.from)
+					if len(e.diagnostics) > 0 {
+						assert.Contains(e.diagnostics[0].Display(), "cannot convert", "%s → %s", tt.from, tt.to)
 					}
 				}
 			})
@@ -2169,7 +2169,7 @@ func TestIntTypes(t *testing.T) {
 		for _, name := range allIntTypes {
 			src := fmt.Sprintf("{ let @a = Arena() let x = new(@a, [5]%s()) }", name)
 			e := typeCheck(t, src)
-			assert.Equal(0, len(e.c.diagnostics), "%s should be safe uninitialized: %s", name, e.c.diagnostics)
+			assert.Equal(0, len(e.diagnostics), "%s should be safe uninitialized: %s", name, e.diagnostics)
 		}
 	})
 }
