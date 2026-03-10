@@ -2007,6 +2007,18 @@ func TestTypeCheckErr(t *testing.T) {
 			},
 		},
 		{
+			"method on unconstrained type param (module)",
+			"shape X { fun X.to_str(x X) Str }\n" +
+				"struct Value<T X> { value T }\n" +
+				"fun Value.to_str<T>(v Value<T>) Str { v.value.to_str() }",
+			[]string{
+				"test.met:3:47: unconstrained type parameter has no fields or methods: T\n" +
+					"    struct Value<T X> { value T }\n" +
+					"    fun Value.to_str<T>(v Value<T>) Str { v.value.to_str() }\n" +
+					"                                                  ^^^^^^",
+			},
+		},
+		{
 			"shape duplicate method",
 			`{ shape S { fun S.foo(s S) Int fun S.foo(s S) Str } }`,
 			[]string{

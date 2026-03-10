@@ -803,6 +803,11 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	switch targetTyp.Kind.(type) {
 	case StructType, IntType, BoolType:
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
+	case TypeParamType:
+		e.diag(
+			fieldAccess.Field.Span,
+			"unconstrained type parameter has no fields or methods: %s", typeName,
+		)
 	default:
 		targetSpan := e.ast.Node(fieldAccess.Target).Span
 		e.diag(targetSpan, "cannot access field on non-struct type: %s", typeName)
@@ -815,6 +820,9 @@ func (e *Engine) resolveMethod(
 	fieldAccess ast.FieldAccess,
 	targetTyp *Type,
 ) (TypeID, TypeStatus, bool) {
+	if tpt, ok := targetTyp.Kind.(TypeParamType); ok && tpt.Shape == nil {
+		return InvalidTypeID, TypeFailed, false
+	}
 	methodName := fieldAccess.Field.Name
 	lookupName := e.env.typeName(targetTyp) + "." + methodName
 	binding, ok := e.lookup(nodeID, lookupName)
