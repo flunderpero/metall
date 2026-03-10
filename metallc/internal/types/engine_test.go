@@ -1909,10 +1909,10 @@ func TestTypeCheckErr(t *testing.T) {
 			"method on generic struct wrong first param type",
 			`{ struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }`,
 			[]string{
-				"test.met:1:53: return type mismatch: expected <typeparam>, got Int\n" +
+				"test.met:1:53: return type mismatch: expected T, got Int\n" +
 					"    { struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }\n" +
 					"                                                        ^",
-				"test.met:1:77: type mismatch at receiver: expected Int, got Foo.t18.t7\n" +
+				"test.met:1:77: type mismatch at receiver: expected Int, got Foo<Int>\n" +
 					"    { struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }\n" +
 					"                                                                                ^",
 			},
@@ -1921,7 +1921,7 @@ func TestTypeCheckErr(t *testing.T) {
 			"method on generic struct type param must be in first position",
 			`{ struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo<V>, a U) U { a } let x = Foo<Int>(1) x.bar<Str>("hi") }`,
 			[]string{
-				"test.met:1:88: type mismatch at receiver: expected Foo.t18.t12, got Foo.t18.t7\n" +
+				"test.met:1:88: type mismatch at receiver: expected Foo<Str>, got Foo<Int>\n" +
 					"    { struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo<V>, a U) U { a } let x = Foo<Int>(1) x.bar<Str>(\"hi\") }\n" +
 					"                                                                                           ^",
 			},

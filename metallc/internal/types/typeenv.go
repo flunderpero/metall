@@ -216,7 +216,9 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		sb.WriteString(e.TypeDisplay(kind.Return))
 		return sb.String()
 	case StructType:
-		return kind.Name
+		astStruct := base.Cast[ast.Struct](e.ast.Node(cached.Type.NodeID).Kind)
+		scope := e.scopeGraph.NodeScope(cached.Type.NodeID)
+		return e.typeNameAndTypeArgsString(scope.NamespacedName(astStruct.Name.Name), kind.TypeArgs)
 	case ArrayType:
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case SliceType:
@@ -225,11 +227,12 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		}
 		return fmt.Sprintf("[]%s", e.TypeDisplay(kind.Elem))
 	case TypeParamType:
-		return "<typeparam>"
+		astTypeParam := base.Cast[ast.TypeParam](e.ast.Node(cached.Type.NodeID).Kind)
+		return astTypeParam.Name.Name
 	case ShapeType:
 		return kind.Name
 	case AllocatorType:
-		return fmt.Sprintf("alloc(%s)", kind.Impl)
+		return fmt.Sprint(kind.Impl)
 	case ModuleType:
 		return kind.Name
 	default:
@@ -259,6 +262,22 @@ func (e *TypeEnv) IterTypes(f func(*Type, TypeStatus) bool) {
 			return
 		}
 	}
+}
+
+func (e *TypeEnv) typeNameAndTypeArgsString(name string, typeArgs []TypeID) string {
+	var sb strings.Builder
+	sb.WriteString(name)
+	if len(typeArgs) > 0 {
+		sb.WriteString("<")
+		for i, typeID := range typeArgs {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(e.TypeDisplay(typeID))
+		}
+		sb.WriteString(">")
+	}
+	return sb.String()
 }
 
 func (e *TypeEnv) newType(kind TypeKind, nodeID ast.NodeID, span base.Span, status TypeStatus) TypeID {
