@@ -1275,7 +1275,7 @@ func TestCompile(t *testing.T) {
 				print_int(3 * 3)
 				print_int(9 / 3)
 				print_int(10 % 3)
-				print_int(Int(U8(10) % 3))
+				print_int((U8(10) % 3).to_int())
 			}
 			`, "123\n42\n9\n3\n1\n1\n"},
 
@@ -1383,100 +1383,63 @@ func TestCompile(t *testing.T) {
 			}
 			`, "99\n"},
 
-		// Integer types: I8, I16, I32, U8, U16, U32, U64.
-		{"I8", `
+		// Integer types and conversions.
+		{"integer types", `
 			fun main() void {
-				let x = I8(127)
-				let y = I8(0) - I8(1)
-				print_int(Int(x))
-				print_int(Int(y))
+				print_int(I8(127).to_int())
+				print_int((I8(0) - I8(1)).to_int())
+				print_int(I16(32767).to_int())
+				print_int(I32(2147483647).to_int())
+				print_int(U8(255).to_int())
+				print_int(U16(65535).to_int())
+				print_int(U32(4294967295).to_int())
+				print_uint(U64(18446744073709551615))
 			}
-			`, "127\n-1\n"},
-		{"I16", `
-			fun main() void {
-				let x = I16(32767)
-				let y = I16(0) - I16(1)
-				print_int(Int(x))
-				print_int(Int(y))
-			}
-			`, "32767\n-1\n"},
-		{"I32", `
-			fun main() void {
-				let x = I32(2147483647)
-				let y = I32(0) - I32(1)
-				print_int(Int(x))
-				print_int(Int(y))
-			}
-			`, "2147483647\n-1\n"},
-		{"U8", `
-			fun main() void {
-				let x = U8(255)
-				let y = U8(0)
-				print_int(Int(x))
-				print_int(Int(y))
-			}
-			`, "255\n0\n"},
-		{"U16", `
-			fun main() void {
-				let x = U16(65535)
-				let y = U16(0)
-				print_int(Int(x))
-				print_int(Int(y))
-			}
-			`, "65535\n0\n"},
-		{"U32", `
-			fun main() void {
-				let x = U32(4294967295)
-				let y = U32(0)
-				print_int(Int(x))
-				print_int(Int(y))
-			}
-			`, "4294967295\n0\n"},
-		{"U64", `
-			fun main() void {
-				let x = U64(18446744073709551615)
-				let y = U64(0)
-				print_uint(x)
-				print_uint(y)
-			}
-			`, "18446744073709551615\n0\n"},
-		// Integer type conversions.
-		{"widening U8 to I32", `
-			fun main() void {
-				let x = U8(200)
-				let y = I32(x)
-				print_int(Int(y))
-			}
-			`, "200\n"},
-		{"widening I8 to I32", `
+			`, "127\n-1\n32767\n2147483647\n255\n65535\n4294967295\n18446744073709551615\n"},
+		{"widening conversions", `
 			fun main() void {
 				let x = I8(42)
-				let y = I32(x)
-				print_int(Int(y))
+				print_int(x.to_i16().to_int())
+				print_int(x.to_i32().to_int())
+				print_int(x.to_int())
+				print_uint(U8(200).to_u16().to_u32().to_u64())
+				print_int(U8(200).to_i32().to_int())
+				print_int((I8(0) - I8(1)).to_i32().to_int())
 			}
-			`, "42\n"},
-		{"sign-extend I8 to I32", `
+			`, "42\n42\n42\n200\n200\n-1\n"},
+		{"wrapping conversions", `
 			fun main() void {
-				let x = I8(0) - I8(1)
-				let y = I32(x)
-				print_int(Int(y))
+				print_int(I32(200).to_i8_wrapping().to_int())
+				print_int(2147483648.to_i32_wrapping().to_int())
+				print_int(U16(300).to_u8_wrapping().to_int())
+				print_int(U64(4294967296).to_u32_wrapping().to_int())
+				print_int((I8(0) - I8(1)).to_u8_wrapping().to_int())
+				print_uint((0 - 1).to_u64_wrapping())
 			}
-			`, "-1\n"},
+			`, "-56\n-2147483648\n44\n0\n255\n18446744073709551615\n"},
+		{"clamped conversions", `
+			fun main() void {
+				print_int(I32(200).to_i8_clamped().to_int())
+				print_int((I32(0) - I32(200)).to_i8_clamped().to_int())
+				print_int(U16(300).to_u8_clamped().to_int())
+				print_int(U16(100).to_u8_clamped().to_int())
+				print_uint((0 - 1).to_u64_clamped())
+				print_uint(42.to_u64_clamped())
+				print_int(U8(200).to_i8_clamped().to_int())
+				print_int(U8(50).to_i8_clamped().to_int())
+			}
+			`, "127\n-128\n255\n100\n0\n42\n127\n50\n"},
 
 		// Arithmetic on integer types.
-		{"I32 arithmetic", `
+		{"typed int arithmetic", `
 			fun main() void {
-				print_int(Int(I32(10) + I32(20)))
-				print_int(Int(I32(50) - I32(8)))
-				print_int(Int(I32(6) * I32(7)))
-				print_int(Int(I32(100) / I32(3)))
+				print_int((I32(10) + I32(20)).to_int())
+				print_int((I32(50) - I32(8)).to_int())
+				print_int((I32(6) * I32(7)).to_int())
+				print_int((I32(100) / I32(3)).to_int())
+				print_int((U8(255) / U8(2)).to_int())
 			}
-			`, "30\n42\n42\n33\n"},
-		{"U8 division is unsigned", `
-			fun main() void {
-				print_int(Int(U8(255) / U8(2)))
-			}
-			`, "127\n"},
+			`, "30\n42\n42\n33\n127\n"},
 
 		// Method syntax.
 		{"method call on struct", `
@@ -1529,17 +1492,6 @@ func TestCompile(t *testing.T) {
 				print_int("abc".byte_len())
 			}
 			`, "5\n0\n3\n"},
-		{"Str from []U8 slice", `
-			fun Str.byte_len(self Str) Int { self.data.len }
-			fun main() void {
-				let @a = Arena()
-				let data = make(@a, []U8(3, U8(65)))
-				let s = Str(data)
-				print_str(s)
-				print_int(s.byte_len())
-			}
-			`, "AAA\n3\n"},
-
 		{"shape field access", `
 			shape HasPair { one Str two Int }
 			struct Pair { one Str two Int }

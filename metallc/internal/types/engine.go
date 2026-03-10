@@ -159,7 +159,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.StructField:
 		typeID, status = e.checkStructField(nodeKind)
 	case ast.StructLiteral:
-		typeID, status = e.checkStructLiteral(nodeKind, node.Span)
+		typeID, status = e.checkStructLiteral(nodeID, nodeKind, node.Span)
 	case ast.New:
 		typeID, status = e.checkNew(nodeID, nodeKind, node.Span)
 	case ast.ArrayType:
@@ -698,7 +698,9 @@ func (e *Engine) checkNew(nodeID ast.NodeID, alloc ast.New, span base.Span) (Typ
 	return e.env.buildRefType(nodeID, typeID, alloc.Mut, span), TypeOK
 }
 
-func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkStructLiteral(
+	nodeID ast.NodeID, lit ast.StructLiteral, span base.Span,
+) (TypeID, TypeStatus) {
 	targetTypeID, status := e.Query(lit.Target)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -706,8 +708,12 @@ func (e *Engine) checkStructLiteral(lit ast.StructLiteral, span base.Span) (Type
 	targetTyp := e.env.Type(targetTypeID)
 	switch kind := targetTyp.Kind.(type) {
 	case IntType:
-		return e.checkTypeConstructor(kind, targetTypeID, lit, span)
+		return e.checkIntLiteral(kind, targetTypeID, lit, span)
 	case StructType:
+		if kind.Name == "Str" && nodeID < ast.PreludeFirstID {
+			e.diag(span, "Str cannot be constructed directly; use Str.from_utf8_lossy() instead")
+			return InvalidTypeID, TypeFailed
+		}
 		return e.checkStructLiteralFields(kind, targetTypeID, lit, span)
 	default:
 		calleeSpan := e.ast.Node(lit.Target).Span
@@ -743,7 +749,7 @@ func (e *Engine) checkStructLiteralFields(
 	return structTypeID, TypeOK
 }
 
-func (e *Engine) checkTypeConstructor(
+func (e *Engine) checkIntLiteral(
 	targetTyp IntType, targetTypeID TypeID, lit ast.StructLiteral, span base.Span,
 ) (TypeID, TypeStatus) {
 	if len(lit.Args) != 1 {
@@ -755,27 +761,10 @@ func (e *Engine) checkTypeConstructor(
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if argTypeID == targetTypeID {
-		return targetTypeID, TypeOK
-	}
-	argInfo, ok := e.env.Type(argTypeID).Kind.(IntType)
-	if !ok {
+	if argTypeID != targetTypeID {
 		argSpan := e.ast.Node(argNodeID).Span
-		e.diag(argSpan, "cannot convert %s to %s", e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	allowed := false
-	switch {
-	case argInfo.Signed == targetTyp.Signed:
-		allowed = targetTyp.Bits >= argInfo.Bits
-	case !argInfo.Signed && targetTyp.Signed:
-		allowed = targetTyp.Bits > argInfo.Bits
-	case argInfo.Signed && !targetTyp.Signed:
-		allowed = false
-	}
-	if !allowed {
-		argSpan := e.ast.Node(argNodeID).Span
-		e.diag(argSpan, "cannot convert %s to %s", e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
+		e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
+			e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
 		return InvalidTypeID, TypeFailed
 	}
 	return targetTypeID, TypeOK
@@ -811,9 +800,10 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	if typeID, status, ok := e.resolveMethod(nodeID, fieldAccess, targetTyp); ok {
 		return typeID, status
 	}
-	if _, ok := targetTyp.Kind.(StructType); ok {
+	switch targetTyp.Kind.(type) {
+	case StructType, IntType, BoolType:
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
-	} else {
+	default:
 		targetSpan := e.ast.Node(fieldAccess.Target).Span
 		e.diag(targetSpan, "cannot access field on non-struct type: %s", typeName)
 	}
@@ -1280,11 +1270,11 @@ func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeSt
 		e.diag(span, "return outside of function")
 		return InvalidTypeID, TypeFailed
 	}
-	exprTypeID, status := e.Query(return_.Expr)
+	funType := base.Cast[FunType](e.env.Type(e.funStack[len(e.funStack)-1]).Kind)
+	exprTypeID, status := e.queryWithHint(return_.Expr, funType.Return)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	funType := base.Cast[FunType](e.env.Type(e.funStack[len(e.funStack)-1]).Kind)
 	if exprTypeID != funType.Return {
 		span := e.ast.Node(return_.Expr).Span
 		e.diag(

@@ -11,7 +11,10 @@ import (
 )
 
 //go:embed arena.ll
-var arenaRuntimeTemplate string
+var arenaRuntimeIRTemplate string
+
+//go:embed builtins.ll
+var builtinsIR string
 
 type CodeWriter struct {
 	indent int
@@ -332,38 +335,15 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 func (g *IRFunGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
 	targetTyp := g.env.TypeOfNode(lit.Target)
 	if _, ok := targetTyp.Kind.(types.IntType); ok {
-		g.genTypeConstructor(id, lit)
+		g.Gen(lit.Target)
+		g.Gen(lit.Args[0])
+		g.setCode(id, g.lookupCode(lit.Args[0]))
 		return
 	}
 	irTyp := g.irType(targetTyp.ID)
 	reg := g.reg()
 	g.write("%s = alloca %s", reg, irTyp)
 	g.genStructLiteralFields(id, lit, reg)
-}
-
-func (g *IRFunGen) genTypeConstructor(id ast.NodeID, lit ast.StructLiteral) {
-	g.Gen(lit.Target)
-	g.Gen(lit.Args[0])
-	argReg := g.lookupCode(lit.Args[0])
-	targetTyp := base.Cast[types.IntType](g.env.TypeOfNode(lit.Target).Kind)
-	argTyp := base.Cast[types.IntType](g.env.TypeOfNode(lit.Args[0]).Kind)
-	if targetTyp.Bits == argTyp.Bits {
-		g.setCode(id, argReg)
-		return
-	}
-	reg := g.reg()
-	srcIR := fmt.Sprintf("i%d", argTyp.Bits)
-	dstIR := fmt.Sprintf("i%d", targetTyp.Bits)
-	if targetTyp.Bits > argTyp.Bits {
-		op := "zext"
-		if argTyp.Signed {
-			op = "sext"
-		}
-		g.write("%[1]s = %[2]s %[3]s %[4]s to %[5]s", reg, op, srcIR, argReg, dstIR)
-	} else {
-		g.write("%[1]s = trunc %[2]s %[3]s to %[4]s", reg, srcIR, argReg, dstIR)
-	}
-	g.setCode(id, reg)
 }
 
 func (g *IRFunGen) genNew(id ast.NodeID, alloc ast.New) {
@@ -1311,8 +1291,7 @@ func GenIR(
 		g.write(`@str.%d.data = private constant [%d x i8] c"%s"`, id, n, value)
 		g.write(`@str.%d = private constant %%Str { {ptr, i64} { ptr @str.%d.data, i64 %d } }`, id, id, n)
 	}
-	g.write(builtins)
-	g.write(builtinPrintStr)
+	g.write(builtinsIR)
 	for _, bits := range []int{8, 16, 32, 64} {
 		irType := fmt.Sprintf("i%d", bits)
 		g.write(builtinSafeDiv(irType, "sdiv"))
@@ -1355,7 +1334,7 @@ declare i32 @dprintf(i32, ptr, ...)`
 		"${arena.on_page_alloc}", onPageAlloc,
 		"${arena.on_destroy}", onDestroy,
 	)
-	return declarations + "\n" + r.Replace(arenaRuntimeTemplate)
+	return declarations + "\n" + r.Replace(arenaRuntimeIRTemplate)
 }
 
 func builtinSafeDiv(irType string, op string) string {
@@ -1396,68 +1375,3 @@ exit:
 }
 `, irType, valType)
 }
-
-const builtinPrintStr = `
-@fmt_str = private constant [6 x i8] c"%.*s\0A\00"
-define internal void @print_str(ptr byval(%Str) %s) {
-    %data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
-    %data = load ptr, ptr %data_field
-    %len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
-    %len = load i64, ptr %len_field
-    %len32 = trunc i64 %len to i32
-    call i32 (ptr, ...) @printf(ptr @fmt_str, i32 %len32, ptr %data)
-    ret void
-}
-`
-
-const builtins = `
-; >>> Runtime
-
-;     External functions.
-
-declare i32 @puts(ptr)
-declare i32 @printf(ptr, ...)
-
-;      Builtin functions.
-
-@fmt_int = private constant [6 x i8] c"%lld\0A\00"
-define internal void @print_int(i64 %n) {
-    call i32 (ptr, ...) @printf(ptr @fmt_int, i64 %n)
-    ret void
-}
-
-@fmt_uint = private constant [6 x i8] c"%llu\0A\00"
-define internal void @print_uint(i64 %n) {
-    call i32 (ptr, ...) @printf(ptr @fmt_uint, i64 %n)
-    ret void
-}
-
-@str_true = private constant [5 x i8] c"true\00"
-@str_false = private constant [6 x i8] c"false\00"
-define internal void @print_bool(i1 %n) {
-	br i1 %n, label %true, label %false
-	true:
-	    call i32 @puts(ptr @str_true)
-	    ret void
-	false:
-		call i32 @puts(ptr @str_false)
-		ret void
-}
-
-define internal void @__fill_cpy(ptr %dst, ptr %val, i64 %elem_size, i64 %count) {
-entry:
-    br label %loop
-loop:
-    %i = phi i64 [ 0, %entry ], [ %next_i, %body ]
-    %curr_ptr = phi ptr [ %dst, %entry ], [ %next_ptr, %body ] 
-    %done = icmp sge i64 %i, %count
-    br i1 %done, label %exit, label %body
-body:
-    call void @llvm.memcpy.p0.p0.i64(ptr %curr_ptr, ptr %val, i64 %elem_size, i1 false)
-    %next_i = add i64 %i, 1
-    %next_ptr = getelementptr i8, ptr %curr_ptr, i64 %elem_size
-    br label %loop
-exit:
-    ret void
-}
-`

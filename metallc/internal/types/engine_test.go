@@ -21,7 +21,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	U8 := &Type{8, 0, base.Span{}, lookupIntType("U8")}
 	Str := &Type{12, 0, base.Span{}, StructType{
 		Name:   "Str",
-		Fields: []StructField{{Name: "data", Type: TypeID(17), Mut: false}},
+		Fields: []StructField{{Name: "data", Type: TypeID(71), Mut: false}},
 	}}
 
 	tests := []struct {
@@ -1392,9 +1392,9 @@ func TestTypeCheckErr(t *testing.T) {
 		}},
 
 		{"field access on non-struct", `123.one`, []string{
-			"test.met:1:1: cannot access field on non-struct type: Int\n" +
+			"test.met:1:5: unknown field: Int.one\n" +
 				`    123.one` + "\n" +
-				`    ^^^`,
+				`        ^^^`,
 		}},
 		{
 			"field access unknown field",
@@ -1415,6 +1415,12 @@ func TestTypeCheckErr(t *testing.T) {
 					"                             ^^^^",
 			},
 		},
+
+		{"Str cannot be constructed directly", `{ let @a = Arena() let d = make(@a, []U8(1)) Str(d) }`, []string{
+			"test.met:1:46: Str cannot be constructed directly; use Str.from_utf8_lossy() instead\n" +
+				`    { let @a = Arena() let d = make(@a, []U8(1)) Str(d) }` + "\n" +
+				"                                                 ^^^^^^",
+		}},
 
 		{"if condition must be bool", `{ if 123 { } }`, []string{
 			"test.met:1:6: if condition must evaluate to a boolean value, got Int\n" +
@@ -2198,7 +2204,7 @@ func TestIntTypes(t *testing.T) {
 			src := fmt.Sprintf(`%s("hello")`, name)
 			e := typeCheck(t, src)
 			assert.Equal(1, len(e.diagnostics), "%s(Str) diagnostics: %s", name, e.diagnostics)
-			assert.Contains(e.diagnostics[0].Display(), "cannot convert", name)
+			assert.Contains(e.diagnostics[0].Display(), "use conversion methods instead", name)
 		}
 	})
 
@@ -2211,104 +2217,54 @@ func TestIntTypes(t *testing.T) {
 		}
 	})
 
-	t.Run("type conversions", func(t *testing.T) {
-		type convTest struct {
-			from, to string
-			ok       bool
+	t.Run("type constructor rejects cross-type conversions", func(t *testing.T) {
+		crossTypeTests := []struct{ from, to string }{
+			{"I8", "I16"},
+			{"I8", "I32"},
+			{"I8", "Int"},
+			{"I16", "I32"},
+			{"I16", "Int"},
+			{"I32", "Int"},
+			{"U8", "U16"},
+			{"U8", "U32"},
+			{"U8", "U64"},
+			{"U16", "U32"},
+			{"U16", "U64"},
+			{"U32", "U64"},
+			{"U8", "I16"},
+			{"U8", "I32"},
+			{"U8", "Int"},
+			{"U16", "I32"},
+			{"U16", "Int"},
+			{"U32", "Int"},
+			{"I16", "I8"},
+			{"I32", "I8"},
+			{"Int", "I8"},
+			{"I8", "U8"},
+			{"I8", "U64"},
+			{"U64", "Int"},
+			{"U64", "I32"},
 		}
-		tests := []convTest{
-			// Identity — always ok.
-			{"I8", "I8", true},
-			{"U8", "U8", true},
-			{"Int", "Int", true},
-			{"U64", "U64", true},
-
-			// Same signedness, widening — ok.
-			{"I8", "I16", true},
-			{"I8", "I32", true},
-			{"I8", "Int", true},
-			{"I16", "I32", true},
-			{"I16", "Int", true},
-			{"I32", "Int", true},
-			{"U8", "U16", true},
-			{"U8", "U32", true},
-			{"U8", "U64", true},
-			{"U16", "U32", true},
-			{"U16", "U64", true},
-			{"U32", "U64", true},
-
-			// Same signedness, narrowing — rejected.
-			{"I16", "I8", false},
-			{"I32", "I8", false},
-			{"Int", "I8", false},
-			{"I32", "I16", false},
-			{"Int", "I16", false},
-			{"Int", "I32", false},
-			{"U16", "U8", false},
-			{"U32", "U8", false},
-			{"U64", "U8", false},
-			{"U32", "U16", false},
-			{"U64", "U16", false},
-			{"U64", "U32", false},
-
-			// Unsigned → signed, strictly more bits — ok.
-			{"U8", "I16", true},
-			{"U8", "I32", true},
-			{"U8", "Int", true},
-			{"U16", "I32", true},
-			{"U16", "Int", true},
-			{"U32", "Int", true},
-
-			// Unsigned → signed, same or fewer bits — rejected.
-			{"U8", "I8", false},
-			{"U16", "I16", false},
-			{"U16", "I8", false},
-			{"U32", "I32", false},
-			{"U32", "I16", false},
-			{"U32", "I8", false},
-			{"U64", "Int", false},
-			{"U64", "I32", false},
-
-			// Signed → unsigned — always rejected.
-			{"I8", "U8", false},
-			{"I8", "U16", false},
-			{"I8", "U32", false},
-			{"I8", "U64", false},
-			{"I16", "U8", false},
-			{"I16", "U16", false},
-			{"I16", "U32", false},
-			{"I16", "U64", false},
-			{"I32", "U8", false},
-			{"I32", "U16", false},
-			{"I32", "U32", false},
-			{"I32", "U64", false},
-			{"Int", "U8", false},
-			{"Int", "U16", false},
-			{"Int", "U32", false},
-			{"Int", "U64", false},
-		}
-
-		for _, tt := range tests {
+		for _, tt := range crossTypeTests {
 			name := fmt.Sprintf("%s_to_%s", tt.from, tt.to)
 			t.Run(name, func(t *testing.T) {
 				src := fmt.Sprintf("{ let x = %s(1) %s(x) }", tt.from, tt.to)
 				e := typeCheck(t, src)
-				if tt.ok {
-					assert.Equal(
-						0,
-						len(e.diagnostics),
-						"%s(%s) should be allowed: %s",
-						tt.to,
-						tt.from,
-						e.diagnostics,
+				assert.NotEqual(0, len(e.diagnostics), "%s(%s) should be rejected", tt.to, tt.from)
+				if len(e.diagnostics) > 0 {
+					assert.Contains(
+						e.diagnostics[0].Display(), "use conversion methods instead", "%s → %s", tt.from, tt.to,
 					)
-				} else {
-					assert.NotEqual(0, len(e.diagnostics), "%s(%s) should be rejected", tt.to, tt.from)
-					if len(e.diagnostics) > 0 {
-						assert.Contains(e.diagnostics[0].Display(), "cannot convert", "%s → %s", tt.from, tt.to)
-					}
 				}
 			})
+		}
+	})
+
+	t.Run("type constructor allows identity", func(t *testing.T) {
+		for _, name := range allIntTypes {
+			src := fmt.Sprintf("{ let x = %s(1) %s(x) }", name, name)
+			e := typeCheck(t, src)
+			assert.Equal(0, len(e.diagnostics), "%s(%s) identity should be allowed: %s", name, name, e.diagnostics)
 		}
 	})
 

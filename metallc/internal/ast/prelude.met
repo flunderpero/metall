@@ -1,3 +1,13 @@
+--- Replace illegal utf8 sequences with the replacement character U+FFFD. 
+    todo: Actually do that. :-) ---
+fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
+	mut copy = make(@a, []mut U8(data.len))
+	for i in 0..data.len {
+		copy[i] = data[i]
+	}
+	Str(copy)
+}
+
 fun Str.eq(s Str, other Str) Bool {
     if s.data.len != other.data.len {
         return false
