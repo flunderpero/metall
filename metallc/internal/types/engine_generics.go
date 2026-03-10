@@ -113,7 +113,8 @@ func (g *GenericsEngine) instantiateFun(
 	}
 	genericName, ok := g.env.NamedFunRef(funNodeID)
 	if !ok {
-		panic(base.Errorf("no namespaced name for function node %s", funNodeID))
+		// This can happen when a duplicate function was declared.
+		return InvalidTypeID, "", TypeFailed
 	}
 	mangledName = fmt.Sprintf("%s.%s.%s", genericName, genericTypeID, strings.Join(mangledParts, "."))
 	if cached, ok := g.funs[mangledName]; ok {

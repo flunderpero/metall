@@ -1297,6 +1297,20 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { fun foo() void {} fun foo() void {} }` + "\n" +
 				"                            ^^^",
 		}},
+		{
+			"duplicate generic method called (module)",
+			"struct Foo<T> { one T }\n" +
+				"fun Foo.bar<T>(f &Foo<T>) T { f.one }\n" +
+				"fun Foo.bar<T>(f &Foo<T>) T { f.one }\n" +
+				"fun main() void { let f = Foo<Int>(42) let r = &f r.bar() }",
+			[]string{
+				"test.met:3:5: symbol already defined: test.Foo.bar\n" +
+					"    fun Foo.bar<T>(f &Foo<T>) T { f.one }\n" +
+					"    fun Foo.bar<T>(f &Foo<T>) T { f.one }\n" +
+					"        ^^^^^^^\n" +
+					"    fun main() void { let f = Foo<Int>(42) let r = &f r.bar() }\n",
+			},
+		},
 		{"fun return mismatch", `fun foo() Str { 123 }`, []string{
 			"test.met:1:17: return type mismatch: expected Str, got Int\n" +
 				"    fun foo() Str { 123 }\n" +
