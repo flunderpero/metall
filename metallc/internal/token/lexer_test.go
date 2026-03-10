@@ -25,25 +25,37 @@ func TestLexer(t *testing.T) {
 		{"brackets", "[]", []want{{LBracket, "", "1:1"}, {RBracket, "", "1:2"}}},
 		{
 			"lbracket vs lbracketimmediate",
-			"a[ [ ([ [[ {[",
+			"a[ s1[ [ ([ )[ ][ [[ {[",
 			[]want{
 				{Ident, "a", "1:1"},
 				{LBracketImmediate, "", "1:2"},
 				{Whitespace, " ", "1:3"},
 
-				{LBracket, "", "1:4"},
-				{Whitespace, " ", "1:5"},
+				{Ident, "s1", "1:4-1:5"},
+				{LBracketImmediate, "", "1:6"},
+				{Whitespace, " ", "1:7"},
 
-				{LParen, "", "1:6"},
-				{LBracket, "", "1:7"},
-				{Whitespace, " ", "1:8"},
+				{LBracket, "", "1:8"},
+				{Whitespace, " ", "1:9"},
 
-				{LBracket, "", "1:9"},
-				{LBracket, "", "1:10"},
-				{Whitespace, " ", "1:11"},
+				{LParen, "", "1:10"},
+				{LBracket, "", "1:11"},
+				{Whitespace, " ", "1:12"},
 
-				{LCurly, "", "1:12"},
-				{LBracket, "", "1:13"},
+				{RParen, "", "1:13"},
+				{LBracketImmediate, "", "1:14"},
+				{Whitespace, " ", "1:15"},
+
+				{RBracket, "", "1:16"},
+				{LBracketImmediate, "", "1:17"},
+				{Whitespace, " ", "1:18"},
+
+				{LBracket, "", "1:19"},
+				{LBracket, "", "1:20"},
+				{Whitespace, " ", "1:21"},
+
+				{LCurly, "", "1:22"},
+				{LBracket, "", "1:23"},
 			},
 		},
 		{"plus", "+", []want{{Plus, "", "1:1"}}},
@@ -53,24 +65,28 @@ func TestLexer(t *testing.T) {
 		{"lt", "<", []want{{Lt, "", "1:1"}}},
 		{
 			"lt vs ltimmediate",
-			"a< < )< a<= <=",
+			"a< s1< < )< a<= <=",
 			[]want{
 				{Ident, "a", "1:1"},
 				{LtImmediate, "", "1:2"},
 				{Whitespace, " ", "1:3"},
 
-				{Lt, "", "1:4"},
-				{Whitespace, " ", "1:5"},
+				{Ident, "s1", "1:4-1:5"},
+				{LtImmediate, "", "1:6"},
+				{Whitespace, " ", "1:7"},
 
-				{RParen, "", "1:6"},
-				{Lt, "", "1:7"},
-				{Whitespace, " ", "1:8"},
+				{Lt, "", "1:8"},
+				{Whitespace, " ", "1:9"},
 
-				{Ident, "a", "1:9"},
-				{Lte, "", "1:10-1:11"},
+				{RParen, "", "1:10"},
+				{Lt, "", "1:11"},
 				{Whitespace, " ", "1:12"},
 
-				{Lte, "", "1:13-1:14"},
+				{Ident, "a", "1:13"},
+				{Lte, "", "1:14-1:15"},
+				{Whitespace, " ", "1:16"},
+
+				{Lte, "", "1:17-1:18"},
 			},
 		},
 		{"lte", "<=", []want{{Lte, "", "1:1-1:2"}}},

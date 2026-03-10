@@ -237,7 +237,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		kind := Lt
 		if idx > 1 {
 			prev := source.Content[idx-2]
-			if unicode.IsLetter(prev) || prev == '_' {
+			if unicode.IsLetter(prev) || unicode.IsDigit(prev) || prev == '_' {
 				kind = LtImmediate
 			}
 		}
@@ -289,7 +289,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		kind := LBracket
 		if idx > 1 {
 			prev := source.Content[idx-2]
-			if unicode.IsLetter(prev) || prev == '_' || prev == ')' || prev == ']' {
+			if unicode.IsLetter(prev) || unicode.IsDigit(prev) || prev == '_' || prev == ')' || prev == ']' {
 				kind = LBracketImmediate
 			}
 		}
