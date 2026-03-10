@@ -641,7 +641,8 @@ func (e *Engine) checkSubSlice(nodeID ast.NodeID, subSlice ast.SubSlice) (TypeID
 		}
 		return true
 	}
-	if !checkBound(subSlice.Lo) || !checkBound(subSlice.Hi) {
+	range_ := base.Cast[ast.Range](e.ast.Node(subSlice.Range).Kind)
+	if !checkBound(range_.Lo) || !checkBound(range_.Hi) {
 		return InvalidTypeID, TypeFailed
 	}
 	span := e.ast.Node(nodeID).Span

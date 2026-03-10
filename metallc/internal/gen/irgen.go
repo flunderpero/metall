@@ -163,7 +163,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		ast.SliceType,
 		ast.FunType,
 		ast.NewArray,
-		ast.Path:
+		ast.Path,
+		ast.Range:
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -249,12 +250,13 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		targetType = g.env.Type(refTyp.Type)
 	}
+	range_ := base.Cast[ast.Range](g.ast.Node(sub.Range).Kind)
 	reg := g.reg()
 	// Resolve lo bound (default 0).
 	var loReg string
-	if sub.Lo != nil {
-		g.Gen(*sub.Lo)
-		loReg = g.lookupCode(*sub.Lo)
+	if range_.Lo != nil {
+		g.Gen(*range_.Lo)
+		loReg = g.lookupCode(*range_.Lo)
 	} else {
 		loReg = "0"
 	}
@@ -269,9 +271,9 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 			"%s = getelementptr %s, %s* %s, i64 0, i64 0",
 			basePtrReg, arrIRType, arrIRType, targetReg,
 		)
-		if sub.Hi != nil {
-			g.Gen(*sub.Hi)
-			hiReg = g.lookupCode(*sub.Hi)
+		if range_.Hi != nil {
+			g.Gen(*range_.Hi)
+			hiReg = g.lookupCode(*range_.Hi)
 		} else {
 			hiReg = fmt.Sprintf("%d", kind.Len)
 		}
@@ -283,9 +285,9 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 			basePtrReg, targetReg,
 		)
 		g.write("%s = load ptr, ptr %s_field", basePtrReg, basePtrReg)
-		if sub.Hi != nil {
-			g.Gen(*sub.Hi)
-			hiReg = g.lookupCode(*sub.Hi)
+		if range_.Hi != nil {
+			g.Gen(*range_.Hi)
+			hiReg = g.lookupCode(*range_.Hi)
 		} else {
 			// Default hi is slice.len.
 			hiReg = g.reg()
@@ -299,7 +301,7 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 		panic(base.Errorf("genSubSlice: unsupported target type %T", targetType.Kind))
 	}
 	// Inclusive: hi = hi + 1.
-	if sub.Inclusive {
+	if range_.Inclusive {
 		incReg := g.reg()
 		g.write("%s = add i64 %s, 1", incReg, hiReg)
 		hiReg = incReg

@@ -32,6 +32,7 @@ const (
 	Gte
 	Ident
 	If
+	In
 	InvalidAllocatorIdent
 	LBracket
 	LBracketImmediate
@@ -91,6 +92,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Fun:                   "<fun>",
 	Ident:                 "<identifier>",
 	If:                    "<if>",
+	In:                    "<in>",
 	InvalidAllocatorIdent: "<invalid allocation identifier>",
 	LBracket:              "[",
 	LBracketImmediate:     "<[immediate>",
@@ -151,6 +153,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"for":      For,
 	"fun":      Fun,
 	"if":       If,
+	"in":       In,
 	"let":      Let,
 	"make":     Make,
 	"mut":      Mut,

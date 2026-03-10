@@ -123,13 +123,19 @@ type Index struct {
 func (Index) isKind() {}
 
 type SubSlice struct {
-	Target    NodeID
+	Target NodeID
+	Range  NodeID
+}
+
+func (SubSlice) isKind() {}
+
+type Range struct {
 	Lo        *NodeID
 	Hi        *NodeID
 	Inclusive bool
 }
 
-func (SubSlice) isKind() {}
+func (Range) isKind() {}
 
 type RefType struct {
 	Type NodeID
@@ -294,8 +300,9 @@ type If struct {
 func (If) isKind() {}
 
 type For struct {
-	Cond *NodeID
-	Body NodeID
+	Binding *Name
+	Cond    *NodeID
+	Body    NodeID
 }
 
 func (For) isKind() {}
@@ -398,8 +405,8 @@ func (a *AST) NewIf(cond NodeID, then NodeID, else_ *NodeID, span base.Span) Nod
 	return a.node(If{Cond: cond, Then: then, Else: else_}, span)
 }
 
-func (a *AST) NewFor(cond *NodeID, body NodeID, span base.Span) NodeID {
-	return a.node(For{Cond: cond, Body: body}, span)
+func (a *AST) NewFor(binding *Name, cond *NodeID, body NodeID, span base.Span) NodeID {
+	return a.node(For{Binding: binding, Cond: cond, Body: body}, span)
 }
 
 func (a *AST) NewBreak(span base.Span) NodeID {
@@ -562,8 +569,12 @@ func (a *AST) NewIndex(target NodeID, index NodeID, span base.Span) NodeID {
 	return a.node(Index{Target: target, Index: index}, span)
 }
 
-func (a *AST) NewSubSlice(target NodeID, lo *NodeID, hi *NodeID, inclusive bool, span base.Span) NodeID {
-	return a.node(SubSlice{Target: target, Lo: lo, Hi: hi, Inclusive: inclusive}, span)
+func (a *AST) NewSubSlice(target NodeID, range_ NodeID, span base.Span) NodeID {
+	return a.node(SubSlice{Target: target, Range: range_}, span)
+}
+
+func (a *AST) NewRange(lo *NodeID, hi *NodeID, inclusive bool, span base.Span) NodeID {
+	return a.node(Range{Lo: lo, Hi: hi, Inclusive: inclusive}, span)
 }
 
 func (a *AST) NewRefType(type_ NodeID, mut bool, span base.Span) NodeID {
@@ -635,6 +646,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 			f(*kind.Cond)
 		}
 		f(kind.Body)
+
 	case FunDecl:
 		for i := range len(kind.TypeParams) {
 			f(kind.TypeParams[i])
@@ -722,6 +734,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Index)
 	case SubSlice:
 		f(kind.Target)
+		f(kind.Range)
+	case Range:
 		if kind.Lo != nil {
 			f(*kind.Lo)
 		}
@@ -853,6 +867,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			}
 		}
 	case For:
+		if kind.Binding != nil {
+			addAttr("binding", kind.Binding.Name)
+		}
 		if !children {
 			if kind.Cond != nil {
 				addAttr("cond", nodeIDKind(*kind.Cond))
@@ -1100,9 +1117,16 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("index", kind.Index)
 		}
 	case SubSlice:
-		addAttr("inclusive", fmt.Sprintf("%t", kind.Inclusive))
 		if !children {
 			addAttr("target", nodeIDKind(kind.Target))
+			addAttr("range", nodeIDKind(kind.Range))
+		} else {
+			addChild("target", kind.Target)
+			addChild("range", kind.Range)
+		}
+	case Range:
+		addAttr("inclusive", fmt.Sprintf("%t", kind.Inclusive))
+		if !children {
 			if kind.Lo != nil {
 				addAttr("lo", nodeIDKind(*kind.Lo))
 			}
@@ -1110,7 +1134,6 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 				addAttr("hi", nodeIDKind(*kind.Hi))
 			}
 		} else {
-			addChild("target", kind.Target)
 			if kind.Lo != nil {
 				addChild("lo", *kind.Lo)
 			}

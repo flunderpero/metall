@@ -109,6 +109,7 @@ func TestLexer(t *testing.T) {
 		{"invalid alloc ident (uppercase)", "@Myalloc", []want{{InvalidAllocatorIdent, "@Myalloc", "1:1-1:8"}}},
 		{"fun", `fun`, []want{{Fun, "", "1:1-1:3"}}},
 		{"if", "if", []want{{If, "", "1:1-1:2"}}},
+		{"in", "in", []want{{In, "", "1:1-1:2"}}},
 		{"else", "else", []want{{Else, "", "1:1-1:4"}}},
 		{"true", "true", []want{{True, "", "1:1-1:4"}}},
 		{"false", "false", []want{{False, "", "1:1-1:5"}}},

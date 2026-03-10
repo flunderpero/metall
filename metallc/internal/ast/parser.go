@@ -1072,6 +1072,28 @@ func (p *Parser) ParseFor() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	// `for x in <range> { ... }`
+	if t.Kind == token.Ident {
+		if next, ok := p.mayPeek1(); ok && next.Kind == token.In {
+			ident := t
+			p.next()
+			p.next()
+			binding := Name{Name: ident.Value, Span: ident.Span}
+			range_, isRange, ok := p.ParseRange()
+			if !ok {
+				return ParseFailed, false
+			}
+			if !isRange {
+				p.diagnostic(p.span(), "expected range expression (e.g. 0..10)")
+				return ParseFailed, false
+			}
+			body, ok := p.ParseBlock()
+			if !ok {
+				return ParseFailed, false
+			}
+			return p.NewFor(&binding, &range_, body, span.Combine(p.span())), true
+		}
+	}
 	var cond *NodeID
 	if t.Kind != token.LCurly {
 		expr, ok := p.ParseExpr(0)
@@ -1084,7 +1106,7 @@ func (p *Parser) ParseFor() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFor(cond, body, span.Combine(p.span())), true
+	return p.NewFor(nil, cond, body, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseIf() (NodeID, bool) {
@@ -1180,49 +1202,66 @@ func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bo
 	if _, ok := p.expect(token.LBracketImmediate); !ok {
 		return ParseFailed, false
 	}
-	isDotDot := func() bool {
-		next, ok := p.mayPeek()
-		return ok && next.Kind == token.DotDot
-	}
-	parseSubSlice := func(lo *NodeID) (NodeID, bool) {
-		p.next() // consume `..`
-		dotDotSpan := p.span()
-		inclusive := false
-		if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
-			p.next()
-			inclusive = true
-		}
-		var hi *NodeID
-		if next, ok := p.mayPeek(); ok && next.Kind != token.RBracket {
-			hiExpr, ok := p.ParseExpr(0)
-			if !ok {
-				return ParseFailed, false
-			}
-			hi = &hiExpr
-		}
-		if inclusive && hi == nil {
-			p.diagnostic(dotDotSpan, "inclusive range (..=) requires an upper bound")
-			return ParseFailed, false
-		}
-		if _, ok := p.expect(token.RBracket); !ok {
-			return ParseFailed, false
-		}
-		return p.NewSubSlice(target, lo, hi, inclusive, span.Combine(p.span())), true
-	}
-	if isDotDot() {
-		return parseSubSlice(nil)
-	}
-	lo, ok := p.ParseExpr(0)
+	range_, isRange, ok := p.ParseRange()
 	if !ok {
 		return ParseFailed, false
-	}
-	if isDotDot() {
-		return parseSubSlice(&lo)
 	}
 	if _, ok := p.expect(token.RBracket); !ok {
 		return ParseFailed, false
 	}
-	return p.NewIndex(target, lo, span.Combine(p.span())), true
+	if isRange {
+		return p.NewSubSlice(target, range_, span.Combine(p.span())), true
+	}
+	return p.NewIndex(target, range_, span.Combine(p.span())), true
+}
+
+// ParseRange parses a range (`..hi`, `lo..hi`, `lo..=hi`, `lo..`) or a plain expression.
+// Returns (nodeID, isRange, ok). When isRange is false, nodeID is the parsed expression.
+func (p *Parser) ParseRange() (nodeID NodeID, isRange bool, ok bool) {
+	// `..hi` or `..=hi` — range without lo.
+	if next, ok := p.mayPeek(); ok && next.Kind == token.DotDot {
+		range_, ok := p.parseRangeRHS(nil)
+		return range_, true, ok
+	}
+	lo, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false, false
+	}
+	if next, ok := p.mayPeek(); ok && next.Kind == token.DotDot {
+		range_, ok := p.parseRangeRHS(&lo)
+		return range_, true, ok
+	}
+	return lo, false, true
+}
+
+func (p *Parser) parseRangeRHS(lo *NodeID) (NodeID, bool) {
+	dotDot, ok := p.expect(token.DotDot)
+	if !ok {
+		return ParseFailed, false
+	}
+	rangeSpan := dotDot.Span
+	if lo != nil {
+		rangeSpan = p.Node(*lo).Span.Combine(rangeSpan)
+	}
+	inclusive := false
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
+		p.next()
+		inclusive = true
+	}
+	var hi *NodeID
+	if next, ok := p.mayPeek(); ok && next.Kind != token.RBracket && next.Kind != token.LCurly {
+		hiExpr, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		hi = &hiExpr
+		rangeSpan = rangeSpan.Combine(p.Node(hiExpr).Span)
+	}
+	if inclusive && hi == nil {
+		p.diagnostic(dotDot.Span, "inclusive range (..=) requires an upper bound")
+		return ParseFailed, false
+	}
+	return p.NewRange(lo, hi, inclusive, rangeSpan), true
 }
 
 func (p *Parser) isStructTarget(nodeID NodeID) bool {

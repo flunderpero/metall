@@ -424,6 +424,12 @@ func TestParseOK(t *testing.T) {
 		{"continue", "expr", "continue", func(a *TestAST) NodeID {
 			return a.continue_()
 		}},
+		{"for in range", "expr", "for x in 0..10 { 1 }", func(a *TestAST) NodeID {
+			return a.for_in("x", a.range_(a.int_(0), a.int_(10)), a.block(a.int_(1)))
+		}},
+		{"for in range inclusive", "expr", "for x in 0..=10 { 1 }", func(a *TestAST) NodeID {
+			return a.for_in("x", a.range_inclusive(a.int_(0), a.int_(10)), a.block(a.int_(1)))
+		}},
 
 		{"generic struct", "expr", `struct Foo<T> { value T }`, func(a *TestAST) NodeID {
 			return a.generic_struct("Foo", []NodeID{a.type_param("T")}, a.struct_field("value", a.typ("T")))
@@ -737,6 +743,17 @@ func TestParseErr(t *testing.T) {
 				"         ^",
 		}},
 
+		{"for in missing dotdot", "expr", `for x in 0 { 1 }`, []string{
+			"test.met:1:10: expected range expression (e.g. 0..10)\n" +
+				"    for x in 0 { 1 }\n" +
+				"             ^",
+		}},
+		{"for in inclusive range without hi", "expr", `for x in 0..= { 1 }`, []string{
+			"test.met:1:11: inclusive range (..=) requires an upper bound\n" +
+				"    for x in 0..= { 1 }\n" +
+				"              ^^",
+		}},
+
 		{"use in expression", "expr", `use foo::bar`, []string{
 			"test.met:1:1: unexpected token: expected start of an expression, got <use>\n" +
 				"    use foo::bar\n" +
@@ -927,11 +944,24 @@ func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {
 }
 
 func (a *TestAST) for_(block NodeID) NodeID {
-	return a.NewFor(nil, block, a.span)
+	return a.NewFor(nil, nil, block, a.span)
 }
 
 func (a *TestAST) for_cond(cond NodeID, block NodeID) NodeID {
-	return a.NewFor(&cond, block, a.span)
+	return a.NewFor(nil, &cond, block, a.span)
+}
+
+func (a *TestAST) for_in(name string, iter NodeID, block NodeID) NodeID {
+	binding := Name{Name: name, Span: a.span}
+	return a.NewFor(&binding, &iter, block, a.span)
+}
+
+func (a *TestAST) range_(lo NodeID, hi NodeID) NodeID {
+	return a.NewRange(&lo, &hi, false, a.span)
+}
+
+func (a *TestAST) range_inclusive(lo NodeID, hi NodeID) NodeID {
+	return a.NewRange(&lo, &hi, true, a.span)
 }
 
 func (a *TestAST) break_() NodeID {
@@ -1019,7 +1049,8 @@ func (a *TestAST) index(base NodeID, index NodeID) NodeID {
 }
 
 func (a *TestAST) sub_slice(target NodeID, lo *NodeID, hi *NodeID, inclusive bool) NodeID {
-	return a.NewSubSlice(target, lo, hi, inclusive, a.span)
+	range_ := a.NewRange(lo, hi, inclusive, a.span)
+	return a.NewSubSlice(target, range_, a.span)
 }
 
 func (a *TestAST) void_typ() NodeID {
@@ -1133,6 +1164,11 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 		case Var:
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
+		case For:
+			if kind.Binding != nil {
+				kind.Binding.Span = base.Span{}
+				node.Kind = kind
+			}
 		case Import:
 			if kind.Alias != nil {
 				a := *kind.Alias
