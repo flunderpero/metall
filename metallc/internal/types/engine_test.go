@@ -505,6 +505,20 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let x = [1, 2, 3] x[1] }`, Int, nil},
 		{"index write", `{ mut x = [1, 2, 3] x[1] = 5 }`, void, nil},
+		{"subslice array lo..hi", `{ let x = [1, 2, 3] x[0..2] }`, slice_t(Int), nil},
+		{"subslice array lo..=hi", `{ let x = [1, 2, 3] x[0..=2] }`, slice_t(Int), nil},
+		{"subslice array ..hi", `{ let x = [1, 2, 3] x[..2] }`, slice_t(Int), nil},
+		{"subslice array lo..", `{ let x = [1, 2, 3] x[1..] }`, slice_t(Int), nil},
+		{
+			"subslice slice",
+			`{ let @a = Arena() let x = make(@a, []Int(5)) x[1..3] }`,
+			slice_t(Int), nil,
+		},
+		{
+			"subslice through ref",
+			`{ let x = [1, 2, 3] let y = &x y[0..2] }`,
+			slice_t(Int), nil,
+		},
 		{
 			"empty slice in make",
 			`{ let @a = Arena() let x = make(@a, [][]Int(2, [])) }`,
@@ -1148,6 +1162,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"empty slice as fun arg",
 		"empty slice in struct literal",
 		"empty slice in new array default",
+		"subslice array lo..hi",
+		"subslice array lo..=hi",
+		"subslice array ..hi",
+		"subslice array lo..",
+		"subslice slice",
+		"subslice through ref",
 	}
 
 	assert := base.NewAssert(t)
@@ -1480,6 +1500,21 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:23: index type mismatch: expected Int, got Str\n" +
 				`    { let x = [1, 2, 3] x["hello"] }` + "\n" +
 				`                          ^^^^^^^`,
+		}},
+		{"subslice on non-array", `{ let x = 123 x[0..1] }`, []string{
+			"test.met:1:15: not an array or slice: Int\n" +
+				"    { let x = 123 x[0..1] }\n" +
+				"                  ^",
+		}},
+		{"subslice with non-int lo", `{ let x = [1, 2, 3] x["a"..2] }`, []string{
+			"test.met:1:23: subslice bound must be Int, got Str\n" +
+				`    { let x = [1, 2, 3] x["a"..2] }` + "\n" +
+				`                          ^^^`,
+		}},
+		{"subslice with non-int hi", `{ let x = [1, 2, 3] x[0.."b"] }`, []string{
+			"test.met:1:26: subslice bound must be Int, got Str\n" +
+				`    { let x = [1, 2, 3] x[0.."b"] }` + "\n" +
+				`                             ^^^`,
 		}},
 
 		{"add with non-int", `1 + "hello"`, []string{

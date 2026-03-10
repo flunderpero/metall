@@ -131,6 +131,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genEmptySlice(id)
 	case ast.Index:
 		g.genIndex(id, kind)
+	case ast.SubSlice:
+		g.genSubSlice(id, kind)
 	case ast.FieldAccess:
 		g.genFieldAccess(id, kind)
 	case ast.Ident:
@@ -238,6 +240,91 @@ func (g *IRFunGen) genIndex(id ast.NodeID, index ast.Index) {
 	default:
 		panic(base.Errorf("genIndex: unsupported target type %T", targetType.Kind))
 	}
+}
+
+func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funlen
+	g.Gen(sub.Target)
+	targetReg := g.lookupCode(sub.Target)
+	targetType := g.env.TypeOfNode(sub.Target)
+	if refTyp, ok := targetType.Kind.(types.RefType); ok {
+		targetType = g.env.Type(refTyp.Type)
+	}
+	reg := g.reg()
+	// Resolve lo bound (default 0).
+	var loReg string
+	if sub.Lo != nil {
+		g.Gen(*sub.Lo)
+		loReg = g.lookupCode(*sub.Lo)
+	} else {
+		loReg = "0"
+	}
+	// Resolve hi bound and base data pointer.
+	var hiReg string
+	var basePtrReg string
+	switch kind := targetType.Kind.(type) {
+	case types.ArrayType:
+		basePtrReg = g.reg()
+		arrIRType := g.irType(targetType.ID)
+		g.write(
+			"%s = getelementptr %s, %s* %s, i64 0, i64 0",
+			basePtrReg, arrIRType, arrIRType, targetReg,
+		)
+		if sub.Hi != nil {
+			g.Gen(*sub.Hi)
+			hiReg = g.lookupCode(*sub.Hi)
+		} else {
+			hiReg = fmt.Sprintf("%d", kind.Len)
+		}
+	case types.SliceType:
+		// Extract data pointer from {ptr, i64}.
+		basePtrReg = g.reg()
+		g.write(
+			"%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0",
+			basePtrReg, targetReg,
+		)
+		g.write("%s = load ptr, ptr %s_field", basePtrReg, basePtrReg)
+		if sub.Hi != nil {
+			g.Gen(*sub.Hi)
+			hiReg = g.lookupCode(*sub.Hi)
+		} else {
+			// Default hi is slice.len.
+			hiReg = g.reg()
+			g.write(
+				"%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1",
+				hiReg, targetReg,
+			)
+			g.write("%s = load i64, ptr %s_field", hiReg, hiReg)
+		}
+	default:
+		panic(base.Errorf("genSubSlice: unsupported target type %T", targetType.Kind))
+	}
+	// Inclusive: hi = hi + 1.
+	if sub.Inclusive {
+		incReg := g.reg()
+		g.write("%s = add i64 %s, 1", incReg, hiReg)
+		hiReg = incReg
+	}
+	// GEP to lo element.
+	elemTypeID := base.Cast[types.SliceType](g.env.TypeOfNode(id).Kind).Elem
+	elemIRType := g.irType(elemTypeID)
+	dataPtrReg := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i64 %s", dataPtrReg, elemIRType, basePtrReg, loReg)
+	// Compute len = hi - lo.
+	lenReg := g.reg()
+	g.write("%s = sub i64 %s, %s", lenReg, hiReg, loReg)
+	// Build {ptr, i64} on the stack.
+	g.write("%s = alloca {ptr, i64}", reg)
+	g.write(
+		"%s_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0",
+		reg, reg,
+	)
+	g.write("store ptr %s, ptr %s_ptr_field", dataPtrReg, reg)
+	g.write(
+		"%s_len_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1",
+		reg, reg,
+	)
+	g.write("store i64 %s, ptr %s_len_field", lenReg, reg)
+	g.setCode(id, reg)
 }
 
 func (g *IRFunGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral) {
@@ -968,7 +1055,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 	if g.isAggregateType(exprType.ID) {
 		exprNode := g.ast.Node(v.Expr)
 		switch exprNode.Kind.(type) {
-		case ast.StructLiteral, ast.ArrayLiteral, ast.EmptySlice, ast.MakeSlice, ast.Call:
+		case ast.StructLiteral, ast.ArrayLiteral, ast.EmptySlice, ast.MakeSlice, ast.SubSlice, ast.Call:
 			// The result value is already a copy.
 			g.setCode(id, exprReg)
 			g.setSymbol(id, v.Name.Name, exprReg, "ptr")

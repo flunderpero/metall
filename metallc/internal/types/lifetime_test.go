@@ -851,6 +851,66 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			}
 			`, []string{}},
 
+		{"valid subslice same scope", `
+			{
+				mut x = [1, 2, 3, 4, 5]
+				let s = x[1..3]
+				print_int(s[0])
+			}
+			`, []string{}},
+		{"subslice escapes scope", `
+			{
+				let s = {
+					let x = [1, 2, 3, 4, 5]
+					x[1..3]
+				}
+			}
+			`, []string{
+			"test.met:5:21: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let x = [1, 2, 3, 4, 5]
+				        x[1..3]
+				        ^^^^^^^
+				    }
+				`, "\n"),
+		}},
+		{"ref of subslice element escapes", `
+			{
+				let y = {
+					mut x = [1, 2, 3, 4, 5]
+					let s = x[1..3]
+					&s[0]
+				}
+			}
+			`, []string{
+			"test.met:5:29: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        mut x = [1, 2, 3, 4, 5]
+				        let s = x[1..3]
+				                ^^^^^^^
+				        &s[0]
+				`, "\n"),
+		}},
+		{"subslice propagates taint", `
+			{
+				mut outer = 0
+				mut r = &outer
+				{
+					mut x = [1, 2, 3]
+					let s = x[0..2]
+					r = &s[0]
+				}
+			}
+			`, []string{
+			"test.met:7:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+				        mut x = [1, 2, 3]
+				        let s = x[0..2]
+				                ^^^^^^^
+				        r = &s[0]
+				`, "\n"),
+		}},
+
 		// Function returns ref to a local that was reassigned from a deref.
 		{"return ref to reassigned local", `
 			{

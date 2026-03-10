@@ -217,6 +217,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		// No children to analyze.
 	case ast.Index:
 		a.analyzeIndex(nodeID, kind)
+	case ast.SubSlice:
+		a.analyzeSubSlice(nodeID, kind)
 	case ast.Call:
 		a.analyzeCall(nodeID, kind)
 	case ast.For:
@@ -386,6 +388,26 @@ func (a *LifetimeCheck) analyzeIndex(nodeID ast.NodeID, index ast.Index) {
 	flow := a.flow(index.Target)
 	a.flows[nodeID] = flow
 	a.debug(1, nodeID, "analyzeIndex: %s", flow)
+}
+
+// analyzeSubSlice: `arr[lo..hi]` produces a fat pointer into the target's storage.
+// Like a ref, it must carry the target's storage taint so it can't outlive the source.
+func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
+	a.ast.Walk(nodeID, a.Check)
+	targetFlow := a.flow(sub.Target)
+	storageTaint, _ := a.placeStorage(sub.Target)
+	taints := targetFlow.Taints
+	if storageTaint != 0 {
+		taints = taints.Merge(TaintSet{storageTaint})
+	}
+	for _, t := range taints {
+		if _, ok := a.taintOrigin[t]; !ok {
+			a.taintOrigin[t] = nodeID
+		}
+	}
+	flow := Flow{Taints: taints, PointsTo: targetFlow.PointsTo}
+	a.flows[nodeID] = flow
+	a.debug(1, nodeID, "analyzeSubSlice: %s storageTaint=%s", flow, storageTaint)
 }
 
 // analyzeCall applies the callee's FunEffects to map argument flows into

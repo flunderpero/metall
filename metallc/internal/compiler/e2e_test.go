@@ -1191,6 +1191,83 @@ func TestCompile(t *testing.T) {
 			}
 			`, "42\n"},
 
+		{"subslice exclusive range", `
+			fun main() void {
+				let arr = [10, 20, 30, 40, 50]
+				let s = arr[1..3]
+				print_int(s.len)
+				print_int(s[0])
+				print_int(s[1])
+			}
+			`, "2\n20\n30\n"},
+		{"subslice inclusive range", `
+			fun main() void {
+				let arr = [10, 20, 30, 40, 50]
+				let s = arr[1..=3]
+				print_int(s.len)
+				print_int(s[0])
+				print_int(s[2])
+			}
+			`, "3\n20\n40\n"},
+		{"subslice open lo", `
+			fun main() void {
+				let arr = [10, 20, 30, 40, 50]
+				let s = arr[..2]
+				print_int(s.len)
+				print_int(s[0])
+				print_int(s[1])
+			}
+			`, "2\n10\n20\n"},
+		{"subslice open hi", `
+			fun main() void {
+				let arr = [10, 20, 30, 40, 50]
+				let s = arr[3..]
+				print_int(s.len)
+				print_int(s[0])
+				print_int(s[1])
+			}
+			`, "2\n40\n50\n"},
+		{"subslice of slice", `
+			fun main() void {
+				let @a = Arena()
+				mut sl = make(@a, []Int(5))
+				sl[0] = 100
+				sl[1] = 200
+				sl[2] = 300
+				sl[3] = 400
+				sl[4] = 500
+				let s = sl[2..4]
+				print_int(s.len)
+				print_int(s[0])
+				print_int(s[1])
+			}
+			`, "2\n300\n400\n"},
+		{"mutate array through subslice", `
+			fun main() void {
+				mut arr = [10, 20, 30, 40, 50]
+				mut s = arr[1..4]
+				s[0] = 99
+				s[2] = 88
+				print_int(arr[1])
+				print_int(arr[3])
+			}
+			`, "99\n88\n"},
+		{"mutate slice through subslice", `
+			fun main() void {
+				let @a = Arena()
+				mut sl = make(@a, []Int(4))
+				sl[0] = 1
+				sl[1] = 2
+				sl[2] = 3
+				sl[3] = 4
+				mut sub = sl[1..3]
+				sub[0] = 77
+				sub[1] = 88
+				print_int(sl[1])
+				print_int(sl[2])
+			}
+			`, "77\n88\n"},
+
 		{"int arithmetic", `
 			fun main() void {
 				print_int(120 + 3)

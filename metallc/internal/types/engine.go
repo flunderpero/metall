@@ -178,6 +178,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkEmptySlice(node.Span, typeHint)
 	case ast.Index:
 		typeID, status = e.checkIndex(nodeKind)
+	case ast.SubSlice:
+		typeID, status = e.checkSubSlice(nodeID, nodeKind)
 	case ast.AllocatorVar:
 		typeID, status = e.checkAllocatorVar(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
@@ -589,6 +591,48 @@ func (e *Engine) checkIndex(index ast.Index) (TypeID, TypeStatus) {
 		return InvalidTypeID, TypeFailed
 	}
 	return elemTypeID, TypeOK
+}
+
+func (e *Engine) checkSubSlice(nodeID ast.NodeID, subSlice ast.SubSlice) (TypeID, TypeStatus) {
+	targetTypeID, status := e.Query(subSlice.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	targetTyp := e.env.Type(targetTypeID)
+	if refTyp, ok := targetTyp.Kind.(RefType); ok {
+		targetTyp = e.env.Type(refTyp.Type)
+	}
+	var elemTypeID TypeID
+	switch kind := targetTyp.Kind.(type) {
+	case ArrayType:
+		elemTypeID = kind.Elem
+	case SliceType:
+		elemTypeID = kind.Elem
+	default:
+		targetSpan := e.ast.Node(subSlice.Target).Span
+		e.diag(targetSpan, "not an array or slice: %s", e.env.TypeDisplay(targetTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	checkBound := func(bound *ast.NodeID) bool {
+		if bound == nil {
+			return true
+		}
+		boundTypeID, s := e.Query(*bound)
+		if s.Failed() {
+			return false
+		}
+		if boundTypeID != e.intTyp {
+			boundSpan := e.ast.Node(*bound).Span
+			e.diag(boundSpan, "subslice bound must be Int, got %s", e.env.TypeDisplay(boundTypeID))
+			return false
+		}
+		return true
+	}
+	if !checkBound(subSlice.Lo) || !checkBound(subSlice.Hi) {
+		return InvalidTypeID, TypeFailed
+	}
+	span := e.ast.Node(nodeID).Span
+	return e.env.buildSliceType(elemTypeID, nodeID, span), TypeOK
 }
 
 func (e *Engine) checkNew(nodeID ast.NodeID, alloc ast.New, span base.Span) (TypeID, TypeStatus) {
