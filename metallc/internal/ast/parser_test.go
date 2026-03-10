@@ -278,6 +278,14 @@ func TestParseOK(t *testing.T) {
 				a.block(),
 			)
 		}},
+		{"mut slice type", "expr", `fun foo(a []mut Int) void {}}`, func(a *TestAST) NodeID {
+			return a.fun(
+				"foo",
+				a.fun_param("a", a.mut_slice_typ(a.int_typ())),
+				a.void_typ(),
+				a.block(),
+			)
+		}},
 		{"array literal", "expr", `[1, 2, 3]`, func(a *TestAST) NodeID {
 			return a.arr_lit(a.int_(1), a.int_(2), a.int_(3))
 		}},
@@ -980,7 +988,11 @@ func (a *TestAST) fun_typ(paramsAndReturn ...NodeID) NodeID {
 }
 
 func (a *TestAST) slice_typ(typ NodeID) NodeID {
-	return a.NewSliceType(typ, a.span)
+	return a.NewSliceType(typ, false, a.span)
+}
+
+func (a *TestAST) mut_slice_typ(typ NodeID) NodeID {
+	return a.NewSliceType(typ, true, a.span)
 }
 
 func (a *TestAST) new_array(arrType NodeID, defaultValue *NodeID) NodeID {

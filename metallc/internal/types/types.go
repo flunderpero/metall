@@ -87,6 +87,7 @@ func (ArrayType) isTypeKind() {}
 
 type SliceType struct {
 	Elem TypeID
+	Mut  bool
 }
 
 func (SliceType) isTypeKind() {}

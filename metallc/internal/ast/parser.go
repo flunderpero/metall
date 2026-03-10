@@ -1009,12 +1009,19 @@ func (p *Parser) ParseArrayOrSliceType() (NodeID, bool) {
 	if _, ok := p.expect(token.RBracket); !ok {
 		return ParseFailed, false
 	}
+	mut := false
+	if len_ == nil {
+		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
+			mut = true
+			p.next()
+		}
+	}
 	typ, ok := p.ParseType()
 	if !ok {
 		return ParseFailed, false
 	}
 	if len_ == nil {
-		return p.NewSliceType(typ, span.Combine(p.span())), true
+		return p.NewSliceType(typ, mut, span.Combine(p.span())), true
 	}
 	return p.NewArrayType(typ, *len_, span.Combine(p.span())), true
 }

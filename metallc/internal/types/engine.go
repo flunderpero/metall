@@ -445,7 +445,7 @@ func (e *Engine) checkSliceType(nodeID ast.NodeID, sliceType ast.SliceType, span
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	return e.env.buildSliceType(elemTypeID, nodeID, span), TypeOK
+	return e.env.buildSliceType(elemTypeID, sliceType.Mut, nodeID, span), TypeOK
 }
 
 func (e *Engine) checkNewArray(alloc ast.NewArray) (TypeID, TypeStatus) {
@@ -599,15 +599,28 @@ func (e *Engine) checkSubSlice(nodeID ast.NodeID, subSlice ast.SubSlice) (TypeID
 		return InvalidTypeID, TypeDepFailed
 	}
 	targetTyp := e.env.Type(targetTypeID)
+	var throughRef *RefType
 	if refTyp, ok := targetTyp.Kind.(RefType); ok {
+		throughRef = &refTyp
 		targetTyp = e.env.Type(refTyp.Type)
 	}
 	var elemTypeID TypeID
+	var mut bool
 	switch kind := targetTyp.Kind.(type) {
 	case ArrayType:
 		elemTypeID = kind.Elem
+		if throughRef != nil {
+			mut = throughRef.Mut
+		} else {
+			_, mut = e.isPlaceMutable(subSlice.Target)
+		}
 	case SliceType:
 		elemTypeID = kind.Elem
+		if throughRef != nil {
+			mut = throughRef.Mut && kind.Mut
+		} else {
+			mut = kind.Mut
+		}
 	default:
 		targetSpan := e.ast.Node(subSlice.Target).Span
 		e.diag(targetSpan, "not an array or slice: %s", e.env.TypeDisplay(targetTypeID))
@@ -632,7 +645,7 @@ func (e *Engine) checkSubSlice(nodeID ast.NodeID, subSlice ast.SubSlice) (TypeID
 		return InvalidTypeID, TypeFailed
 	}
 	span := e.ast.Node(nodeID).Span
-	return e.env.buildSliceType(elemTypeID, nodeID, span), TypeOK
+	return e.env.buildSliceType(elemTypeID, mut, nodeID, span), TypeOK
 }
 
 func (e *Engine) checkNew(nodeID ast.NodeID, alloc ast.New, span base.Span) (TypeID, TypeStatus) {
@@ -1496,7 +1509,7 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 			e.diag(node.Span, "cannot assign to field of immutable value")
 		}
 	case ast.Index:
-		e.diag(node.Span, "cannot assign to element of immutable array")
+		e.diag(node.Span, "cannot assign to element of immutable array or slice")
 	default:
 		e.diag(node.Span, "cannot assign to left-hand-side expression of type: %T", kind)
 	}
@@ -1528,19 +1541,29 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 		if status.Failed() {
 			return InvalidTypeID, false
 		}
-		var mut bool
 		targetTyp := e.env.Type(targetTypeID)
+		var throughRef *RefType
 		if ref, ok := targetTyp.Kind.(RefType); ok {
-			mut = ref.Mut
+			throughRef = &ref
 			targetTyp = e.env.Type(ref.Type)
-		} else {
-			_, mut = e.isPlaceMutable(kind.Target)
 		}
 		switch k := targetTyp.Kind.(type) {
 		case ArrayType:
+			var mut bool
+			if throughRef != nil {
+				mut = throughRef.Mut
+			} else {
+				_, mut = e.isPlaceMutable(kind.Target)
+			}
 			return k.Elem, mut
 		case SliceType:
-			return k.Elem, mut
+			// Slice element mutability comes from the slice type's Mut flag,
+			// not from the binding's mut. When accessed through a ref, both
+			// the ref and the slice must be mutable.
+			if throughRef != nil {
+				return k.Elem, throughRef.Mut && k.Mut
+			}
+			return k.Elem, k.Mut
 		default:
 			return InvalidTypeID, false
 		}

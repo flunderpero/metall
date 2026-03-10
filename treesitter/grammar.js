@@ -80,7 +80,7 @@ module.exports = grammar({
 
     array_type: ($) => seq("[", $.integer_literal, "]", $._type),
 
-    slice_type: ($) => seq("[", "]", $._type),
+    slice_type: ($) => seq("[", "]", optional("mut"), $._type),
 
     reference_type: ($) => seq("&", optional("mut"), $._type),
 

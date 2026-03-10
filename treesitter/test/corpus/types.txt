@@ -31,6 +31,22 @@ fun f(a []Str) void {}
     body: (block)))
 
 ================================================================================
+Mutable slice type
+================================================================================
+
+fun f(a []mut Int) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (slice_type (simple_type (type_identifier)))))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
 Reference types
 ================================================================================
 

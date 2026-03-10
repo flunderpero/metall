@@ -77,6 +77,7 @@ func (ArrayType) isKind() {}
 
 type SliceType struct {
 	Elem NodeID
+	Mut  bool
 }
 
 func (SliceType) isKind() {}
@@ -533,8 +534,8 @@ func (a *AST) NewArrayType(elemType NodeID, len_ int64, span base.Span) NodeID {
 	return a.node(ArrayType{elemType, len_}, span)
 }
 
-func (a *AST) NewSliceType(elemType NodeID, span base.Span) NodeID {
-	return a.node(SliceType{Elem: elemType}, span)
+func (a *AST) NewSliceType(elemType NodeID, mut bool, span base.Span) NodeID {
+	return a.node(SliceType{Elem: elemType, Mut: mut}, span)
 }
 
 func (a *AST) NewFunType(params []NodeID, returnType NodeID, span base.Span) NodeID {
@@ -1047,6 +1048,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("type", kind.Elem)
 		}
 	case SliceType:
+		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 		if !children {
 			addAttr("type", nodeIDKind(kind.Elem))
 		} else {

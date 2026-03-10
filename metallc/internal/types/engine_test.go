@@ -459,7 +459,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"new array Bool with default", `{ let @a = Arena() let x = new(@a, [5]Bool(false)) }`, void, nil},
 		{"make slice Bool with default", `{ let @a = Arena() let x = make(@a, []Bool(5, false)) }`, void, nil},
 		{"slice index read", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x[1] }`, Int, nil},
-		{"slice index write", `{ let @myalloc = Arena() mut x = make(@myalloc, []Int(3)) x[1] = 5 }`, void, nil},
+		{"slice index write", `{ let @myalloc = Arena() let x = make(@myalloc, []mut Int(3)) x[1] = 5 }`, void, nil},
 		{"slice len", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x.len }`, Int, nil},
 		{
 			"slice as fun param",
@@ -499,8 +499,39 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"mut ref slice index write",
-			`{ let @a = Arena() mut x = make(@a, []Int(3)) let y = &mut x y[0] = 42 }`,
+			`{ let @a = Arena() mut x = make(@a, []mut Int(3)) let y = &mut x y[0] = 42 }`,
 			void, nil,
+		},
+		{"make mut slice", `{ let @a = Arena() make(@a, []mut Int(5)) }`, mut_slice_t(Int), nil},
+		{
+			"mut slice assignable to immutable",
+			`{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = make(@a, []mut Int(3)) foo(x) }`,
+			Int, nil,
+		},
+		{
+			"mut slice index write no mut binding",
+			`{ let @a = Arena() let x = make(@a, []mut Int(3)) x[0] = 5 }`,
+			void, nil,
+		},
+		{
+			"subslice mut array",
+			`{ mut x = [1, 2, 3] x[0..2] }`,
+			mut_slice_t(Int), nil,
+		},
+		{
+			"subslice mut slice",
+			`{ let @a = Arena() let x = make(@a, []mut Int(5)) x[1..3] }`,
+			mut_slice_t(Int), nil,
+		},
+		{
+			"subslice mut slice through mut ref",
+			`{ let @a = Arena() mut x = make(@a, []mut Int(5)) let y = &mut x y[1..3] }`,
+			mut_slice_t(Int), nil,
+		},
+		{
+			"subslice mut slice through immutable ref",
+			`{ let @a = Arena() let x = make(@a, []mut Int(5)) let y = &x y[1..3] }`,
+			slice_t(Int), nil,
 		},
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
 		{"index read", `{ let x = [1, 2, 3] x[1] }`, Int, nil},
@@ -1168,6 +1199,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"subslice array lo..",
 		"subslice slice",
 		"subslice through ref",
+		"make mut slice",
+		"mut slice assignable to immutable",
+		"mut slice index write no mut binding",
+		"subslice mut array",
+		"subslice mut slice",
+		"subslice mut slice through mut ref",
+		"subslice mut slice through immutable ref",
 	}
 
 	assert := base.NewAssert(t)
@@ -1617,6 +1655,33 @@ func TestTypeCheckErr(t *testing.T) {
 				"    let x = []\n" +
 				"            ^^",
 		}},
+		{
+			"write to immutable slice element",
+			`{ let @a = Arena() let x = make(@a, []Int(3)) x[0] = 5 }`,
+			[]string{
+				"test.met:1:47: cannot assign to element of immutable array or slice\n" +
+					`    { let @a = Arena() let x = make(@a, []Int(3)) x[0] = 5 }` + "\n" +
+					"                                                  ^^^^",
+			},
+		},
+		{
+			"write through mut ref to immutable slice",
+			`{ let @a = Arena() mut x = make(@a, []Int(3)) let y = &mut x y[0] = 5 }`,
+			[]string{
+				"test.met:1:62: cannot assign to element of immutable array or slice\n" +
+					`    { let @a = Arena() mut x = make(@a, []Int(3)) let y = &mut x y[0] = 5 }` + "\n" +
+					"                                                                 ^^^^",
+			},
+		},
+		{
+			"immutable slice not assignable to mut slice param",
+			`{ let @a = Arena() fun foo(s []mut Int) void {} foo(make(@a, []Int(3))) }`,
+			[]string{
+				"test.met:1:53: type mismatch at argument 1: expected []mut Int, got []Int\n" +
+					`    { let @a = Arena() fun foo(s []mut Int) void {} foo(make(@a, []Int(3))) }` + "\n" +
+					"                                                        ^^^^^^^^^^^^^^^^^^",
+			},
+		},
 		{"cannot return allocator from fun", `fun foo() Arena { }`, []string{
 			"test.met:1:11: cannot return an allocator from a function\n" +
 				`    fun foo() Arena { }` + "\n" +
@@ -1996,7 +2061,11 @@ func arr_t(typ *Type, size int) *Type {
 }
 
 func slice_t(typ *Type) *Type {
-	return &Type{Kind: SliceType{typ.ID}}
+	return &Type{Kind: SliceType{Elem: typ.ID, Mut: false}}
+}
+
+func mut_slice_t(typ *Type) *Type {
+	return &Type{Kind: SliceType{Elem: typ.ID, Mut: true}}
 }
 
 func fun_t(types ...*Type) *Type {

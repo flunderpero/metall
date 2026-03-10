@@ -959,9 +959,9 @@ func TestCompile(t *testing.T) {
 		{"slice copy aliases underlying data", `
 			fun main() void {
 				let @a = Arena()
-				mut x = make(@a, []Int(3))
+				let x = make(@a, []mut Int(3))
 				x[0] = 42
-				mut y = x
+				let y = x
 				y[0] = 99
 				print_int(x[0])
 				print_int(y[0])
@@ -972,7 +972,7 @@ func TestCompile(t *testing.T) {
 			fun main() void {
 				let @myalloc = Arena()
 				let size = 3
-				mut x = make(@myalloc, []Int(size))
+				let x = make(@myalloc, []mut Int(size))
 				x[0] = 10
 				x[1] = 20
 				x[2] = 30
@@ -987,7 +987,7 @@ func TestCompile(t *testing.T) {
 		{"slice index with variable", `
 			fun main() void {
 				let @a = Arena()
-				mut x = make(@a, []Int(3))
+				let x = make(@a, []mut Int(3))
 				x[0] = 10
 				x[1] = 20
 				x[2] = 30
@@ -1033,7 +1033,7 @@ func TestCompile(t *testing.T) {
 		{"make slice no default then write", `
 			fun main() void {
 				let @a = Arena()
-				mut x = make(@a, []Int(100))
+				let x = make(@a, []mut Int(100))
 				x[99] = 42
 				print_int(x[99])
 			}
@@ -1131,7 +1131,7 @@ func TestCompile(t *testing.T) {
 		{"make multidimensional slice", `
 			fun main() void {
 				let @a = Arena()
-				mut m = make(@a, [][]Int(2, []))
+				let m = make(@a, []mut []Int(2, []))
 				m[0] = make(@a, []Int(3, 20))
 				m[1] = make(@a, []Int(3, 60))
 				print_int(m[0][1])
@@ -1162,7 +1162,7 @@ func TestCompile(t *testing.T) {
 			fun main() void {
 				let @a = Arena()
 				struct Foo { mut one Int }
-				mut a = make(@a, []Foo(1))
+				let a = make(@a, []mut Foo(1))
 				a[0] = Foo(1)
 				a[0].one = 42
 				print_int(a[0].one)
@@ -1183,7 +1183,7 @@ func TestCompile(t *testing.T) {
 			fun main() void {
 				let @a = Arena()
 				struct Foo { mut one Int }
-				mut a = make(@a, []Foo(1))
+				let a = make(@a, []mut Foo(1))
 				a[0] = Foo(1)
 				let b = &mut a[0]
 				b.one = 42
@@ -1230,7 +1230,7 @@ func TestCompile(t *testing.T) {
 		{"subslice of slice", `
 			fun main() void {
 				let @a = Arena()
-				mut sl = make(@a, []Int(5))
+				let sl = make(@a, []mut Int(5))
 				sl[0] = 100
 				sl[1] = 200
 				sl[2] = 300
@@ -1255,12 +1255,12 @@ func TestCompile(t *testing.T) {
 		{"mutate slice through subslice", `
 			fun main() void {
 				let @a = Arena()
-				mut sl = make(@a, []Int(4))
+				let sl = make(@a, []mut Int(4))
 				sl[0] = 1
 				sl[1] = 2
 				sl[2] = 3
 				sl[3] = 4
-				mut sub = sl[1..3]
+				let sub = sl[1..3]
 				sub[0] = 77
 				sub[1] = 88
 				print_int(sl[1])

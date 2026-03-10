@@ -67,6 +67,28 @@ fun f(@a Arena) void { make(@a, []Int(10, 0)) }
           default_value: (integer_literal))))))
 
 ================================================================================
+Make mutable slice
+================================================================================
+
+fun f(@a Arena) void { make(@a, []mut Int(10, 0)) }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (allocator_identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (make_expression
+        allocator: (allocator_identifier)
+        value: (make_slice
+          type: (slice_type (simple_type (type_identifier)))
+          length: (integer_literal)
+          default_value: (integer_literal))))))
+
+================================================================================
 Allocator from field access
 ================================================================================
 

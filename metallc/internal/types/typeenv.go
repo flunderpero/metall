@@ -9,7 +9,10 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
-const mutableRefFlag = 1 << 62
+const (
+	mutableRefFlag   TypeID = 1 << 62
+	mutableSliceFlag TypeID = 1 << 61
+)
 
 type Binding struct {
 	*ast.Binding
@@ -55,6 +58,11 @@ type refTypeCacheKey struct {
 	Mut bool
 }
 
+type sliceTypeCacheKey struct {
+	TypeID
+	Mut bool
+}
+
 type arrayTypeCacheKey struct {
 	Elem TypeID
 	Len  int64
@@ -64,7 +72,7 @@ type TypeRegistry struct {
 	types         map[TypeID]*cachedType
 	refTypes      map[refTypeCacheKey]*cachedType
 	arrayTypes    map[arrayTypeCacheKey]*cachedType
-	sliceTypes    map[TypeID]*cachedType
+	sliceTypes    map[sliceTypeCacheKey]*cachedType
 	funTypes      map[string]*cachedType
 	genericOrigin map[TypeID]TypeID // monomorphized type ID → generic type ID
 	nextID        TypeID
@@ -90,7 +98,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 			types:         map[TypeID]*cachedType{},
 			refTypes:      map[refTypeCacheKey]*cachedType{},
 			arrayTypes:    map[arrayTypeCacheKey]*cachedType{},
-			sliceTypes:    map[TypeID]*cachedType{},
+			sliceTypes:    map[sliceTypeCacheKey]*cachedType{},
 			funTypes:      map[string]*cachedType{},
 			genericOrigin: map[TypeID]TypeID{},
 			nextID:        1,
@@ -212,6 +220,9 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 	case ArrayType:
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case SliceType:
+		if kind.Mut {
+			return fmt.Sprintf("[]mut %s", e.TypeDisplay(kind.Elem))
+		}
 		return fmt.Sprintf("[]%s", e.TypeDisplay(kind.Elem))
 	case TypeParamType:
 		return "<typeparam>"
@@ -296,13 +307,21 @@ func (e *TypeEnv) buildArrayType(elemTypeID TypeID, length int64, nodeID ast.Nod
 	return typeID
 }
 
-func (e *TypeEnv) buildSliceType(elemTypeID TypeID, nodeID ast.NodeID, span base.Span) TypeID {
-	if cached, ok := e.reg.sliceTypes[elemTypeID]; ok {
+func (e *TypeEnv) buildSliceType(elemTypeID TypeID, mut bool, nodeID ast.NodeID, span base.Span) TypeID {
+	cacheKey := sliceTypeCacheKey{elemTypeID, mut}
+	if cached, ok := e.reg.sliceTypes[cacheKey]; ok {
 		return cached.Type.ID
 	}
-	typeID := e.newType(SliceType{Elem: elemTypeID}, nodeID, span, TypeOK)
-	e.reg.sliceTypes[elemTypeID] = e.reg.types[typeID]
-	return typeID
+	if !mut {
+		typeID := e.newType(SliceType{Elem: elemTypeID, Mut: false}, nodeID, span, TypeOK)
+		e.reg.sliceTypes[cacheKey] = e.reg.types[typeID]
+		return typeID
+	}
+	immutableID := e.buildSliceType(elemTypeID, false, 0, span)
+	mutableID := immutableID | mutableSliceFlag
+	e.newTypeWithID(mutableID, SliceType{Elem: elemTypeID, Mut: true}, nodeID, span, TypeOK)
+	e.reg.sliceTypes[cacheKey] = e.reg.types[mutableID]
+	return mutableID
 }
 
 func (e *TypeEnv) bind(decl ast.NodeID, name string, mut bool, typeID TypeID) bool {
@@ -373,7 +392,11 @@ func (e *TypeEnv) isAssignableTo(got TypeID, expected TypeID) bool {
 		return true
 	}
 	// A &mut T is assignable to &T (coerce by masking off the mutable flag).
-	return got&mutableRefFlag != 0 && got&^mutableRefFlag == expected
+	if got&mutableRefFlag != 0 && got&^mutableRefFlag == expected {
+		return true
+	}
+	// A []mut T is assignable to []T (coerce by masking off the mutable slice flag).
+	return got&mutableSliceFlag != 0 && got&^mutableSliceFlag == expected
 }
 
 func (e *TypeEnv) isIntType(typeID TypeID) bool {

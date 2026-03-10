@@ -27,7 +27,7 @@ fun Str.starts_with(s Str, other Str) Bool {
 }
 
 fun Str.concat(s Str, other Str, @a Arena) Str {
-    mut data = make(@a, []U8(s.data.len + other.data.len))
+    let data = make(@a, []mut U8(s.data.len + other.data.len))
     mut i = 0
     for i != s.data.len {
         data[i] = s.data[i]
