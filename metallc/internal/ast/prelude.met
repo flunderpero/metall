@@ -2,12 +2,10 @@ fun Str.eq(s Str, other Str) Bool {
     if s.data.len != other.data.len {
         return false
     }
-    mut i = 0
-    for i != s.data.len {
+    for i in 0..s.data.len {
         if s.data[i] != other.data[i] {
             return false
         }
-        i = i + 1
     }
     return true
 }
@@ -16,28 +14,21 @@ fun Str.starts_with(s Str, other Str) Bool {
     if s.data.len < other.data.len {
         return false
     }
-    mut i = 0
-    for i != other.data.len {
+    for i in 0..other.data.len {
         if s.data[i] != other.data[i] {
             return false
         }
-        i = i + 1
     }
     return true
 }
 
 fun Str.concat(s Str, other Str, @a Arena) Str {
     let data = make(@a, []mut U8(s.data.len + other.data.len))
-    mut i = 0
-    for i != s.data.len {
+    for i in 0..s.data.len {
         data[i] = s.data[i]
-        i = i + 1
     }
-    mut j = 0
-    for j != other.data.len {
-        data[i] = other.data[j]
-        j = j + 1
-        i = i + 1
+    for j in 0..other.data.len {
+        data[s.data.len + j] = other.data[j]
     }
     Str(data)
 }

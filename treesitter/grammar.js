@@ -325,6 +325,20 @@ module.exports = grammar({
         // parsed as a block expression in condition position.
         prec(1, seq("for", field("body", $.block))),
         seq("for", field("condition", $._expression), field("body", $.block)),
+        seq(
+          "for",
+          field("binding", $.identifier),
+          "in",
+          field("range", $.range),
+          field("body", $.block),
+        ),
+      ),
+
+    range: ($) =>
+      seq(
+        field("lo", $._expression),
+        choice("..", "..="),
+        field("hi", $._expression),
       ),
 
     return_expression: ($) =>

@@ -516,6 +516,10 @@ func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 // CreateScope=true blocks. For-loops are always void, so there is no
 // result flow to check.
 func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
+	if forNode.Binding != nil {
+		forScope := a.scopeState(forNode.Body)
+		forScope.Vars[forNode.Binding.Name] = &VarTaint{nodeID, forScope.ScopeTaint, Flow{}}
+	}
 	a.ast.Walk(nodeID, a.Check)
 	outerScope := a.scopeGraph.NodeScope(nodeID)
 	ss := a.scopeState(forNode.Body)
@@ -525,6 +529,9 @@ func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
 	for name, vt := range ss.Vars {
 		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
 			continue
+		}
+		if forNode.Binding != nil && vt.Flow.Taints.ContainsAny(ss.LocalTaints) {
+			a.diagEscape(vt.DiagNode, vt.Flow.Taints, ss, "via mutation of outer variable")
 		}
 		if pvt, ok := parentState.Vars[name]; ok {
 			pvt.Flow = pvt.Flow.Merge(vt.Flow)

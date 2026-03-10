@@ -1331,6 +1331,57 @@ func TestCompile(t *testing.T) {
 				}
 			}
 			`, "1\n3\n"},
+		{"for-in range", `
+			fun main() void {
+				for i in 0..5 {
+					print_int(i)
+				}
+			}
+			`, "0\n1\n2\n3\n4\n"},
+		{"for-in range inclusive", `
+			fun main() void {
+				for i in 0..=3 {
+					print_int(i)
+				}
+			}
+			`, "0\n1\n2\n3\n"},
+		{"for-in range with expressions", `
+			fun main() void {
+				let start = 2
+				let end = 5
+				for i in start..end {
+					print_int(i)
+				}
+			}
+			`, "2\n3\n4\n"},
+		{"for-in range with break", `
+			fun main() void {
+				for i in 0..10 {
+					if i == 3 {
+						break
+					}
+					print_int(i)
+				}
+			}
+			`, "0\n1\n2\n"},
+		{"for-in range with continue", `
+			fun main() void {
+				for i in 0..5 {
+					if i == 2 {
+						continue
+					}
+					print_int(i)
+				}
+			}
+			`, "0\n1\n3\n4\n"},
+		{"for-in range zero iterations", `
+			fun main() void {
+				for i in 5..5 {
+					print_int(i)
+				}
+				print_int(99)
+			}
+			`, "99\n"},
 
 		// Integer types: I8, I16, I32, U8, U16, U32, U64.
 		{"I8", `

@@ -701,6 +701,10 @@ func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
 }
 
 func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
+	if forNode.Binding != nil {
+		g.genForIn(id, forNode)
+		return
+	}
 	labelStart := g.label("for", id)
 	labelBody := g.label("body", id)
 	labelEnd := g.label("endfor", id)
@@ -716,6 +720,48 @@ func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
 	g.Gen(forNode.Body)
 	g.write("br label %%%s", labelStart)
+	g.writeLabel(labelEnd)
+	g.setCode(id, "void")
+}
+
+func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
+	range_ := base.Cast[ast.Range](g.ast.Node(*forNode.Cond).Kind)
+	g.Gen(*range_.Lo)
+	g.Gen(*range_.Hi)
+	loReg := g.lookupCode(*range_.Lo)
+	hiReg := g.lookupCode(*range_.Hi)
+	if range_.Inclusive {
+		incReg := g.reg()
+		g.write("%s = add i64 %s, 1", incReg, hiReg)
+		hiReg = incReg
+	}
+	counterReg := g.reg()
+	g.write("%s = alloca i64", counterReg)
+	g.write("store i64 %s, ptr %s", loReg, counterReg)
+	g.setSymbol(forNode.Body, forNode.Binding.Name, counterReg, "i64")
+	labelCond := g.label("for", id)
+	labelBody := g.label("body", id)
+	labelIncr := g.label("incr", id)
+	labelEnd := g.label("endfor", id)
+	g.write("br label %%%s", labelCond)
+	g.writeLabel(labelCond)
+	iReg := g.reg()
+	g.write("%s = load i64, ptr %s", iReg, counterReg)
+	condReg := g.reg()
+	g.write("%s = icmp slt i64 %s, %s", condReg, iReg, hiReg)
+	g.write("br i1 %s, label %%%s, label %%%s", condReg, labelBody, labelEnd)
+	g.writeLabel(labelBody)
+	g.loopStack = append(g.loopStack, LoopLabels{labelIncr, labelEnd})
+	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
+	g.Gen(forNode.Body)
+	g.write("br label %%%s", labelIncr)
+	g.writeLabel(labelIncr)
+	nextReg := g.reg()
+	g.write("%s = load i64, ptr %s", nextReg, counterReg)
+	incrReg := g.reg()
+	g.write("%s = add i64 %s, 1", incrReg, nextReg)
+	g.write("store i64 %s, ptr %s", incrReg, counterReg)
+	g.write("br label %%%s", labelCond)
 	g.writeLabel(labelEnd)
 	g.setCode(id, "void")
 }

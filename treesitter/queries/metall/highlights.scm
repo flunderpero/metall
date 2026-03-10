@@ -9,6 +9,7 @@
   "if"
   "else"
   "for"
+  "in"
   "return"
   "new"
   "new_mut"
@@ -93,6 +94,10 @@
 (allocator_binding name: (allocator_identifier) @attribute)
 (allocator_binding type: (type_identifier) @type)
 
+; >>> For-in binding
+
+(for_expression binding: (identifier) @variable)
+
 ; >>> Assignment
 
 (assignment target: (identifier) @variable)
@@ -124,7 +129,7 @@
 
 ; >>> Operators
 
-["+" "-" "*" "/" "%" "==" "!=" "<" "<=" ">" ">=" "="] @operator
+["+" "-" "*" "/" "%" "==" "!=" "<" "<=" ">" ">=" "=" ".." "..="] @operator
 
 ; >>> Punctuation
 

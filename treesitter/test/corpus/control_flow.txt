@@ -69,6 +69,69 @@ fun f() void { for { break } }
       (for_expression body: (block (break_expression))))))
 
 ================================================================================
+For-in range
+================================================================================
+
+fun f() void { for i in 0..10 { print_int(i) } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        binding: (identifier)
+        range: (range lo: (integer_literal) hi: (integer_literal))
+        body: (block
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list (identifier))))))))
+
+================================================================================
+For-in inclusive range
+================================================================================
+
+fun f() void { for i in 0..=10 { print_int(i) } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        binding: (identifier)
+        range: (range lo: (integer_literal) hi: (integer_literal))
+        body: (block
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list (identifier))))))))
+
+================================================================================
+For-in range with expressions
+================================================================================
+
+fun f() void { for i in start..end { print_int(i) } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        binding: (identifier)
+        range: (range lo: (identifier) hi: (identifier))
+        body: (block
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list (identifier))))))))
+
+================================================================================
 Return, break, continue
 ================================================================================
 

@@ -644,9 +644,26 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"int materialization array literal", `[U8(1), 2, 3]`, arr_t(U8, 3), nil},
 		{"int materialization struct literal", `{ struct Foo { one U8 two U8 } let x = Foo(1, 2) }`, void, nil},
 
-		{"conditional for loop", `for true { 1 }`, void, nil},
-		{"unconditional for loop", `for { 1 }`, void, nil},
+		{"conditional for loop", `for true { }`, void, nil},
+		{"unconditional for loop", `for { }`, void, nil},
 		{"for body must be scoped", `{ let a = 1 for { let a = "hello" }}`, void, nil},
+		{"for in range", `{ for x in 0..10 { } }`, void, nil},
+		{"for in range inclusive", `{ for x in 0..=9 { } }`, void, nil},
+		{
+			"for in range with break",
+			`{ for x in 0..10 { if x == 5 { break } } }`,
+			void, nil,
+		},
+		{
+			"for in range binding is Int",
+			`{ for x in 0..10 { let y = x + 1 } }`,
+			void, nil,
+		},
+		{
+			"for in range binding shadows outer",
+			`{ let i = 0 for i in 0..1 { } }`,
+			void, nil,
+		},
 
 		// Method syntax.
 		{
@@ -1559,12 +1576,12 @@ func TestTypeCheckErr(t *testing.T) {
 				"                  ^",
 		}},
 		{"subslice with non-int lo", `{ let x = [1, 2, 3] x["a"..2] }`, []string{
-			"test.met:1:23: subslice bound must be Int, got Str\n" +
+			"test.met:1:23: range bound must be Int, got Str\n" +
 				`    { let x = [1, 2, 3] x["a"..2] }` + "\n" +
 				`                          ^^^`,
 		}},
 		{"subslice with non-int hi", `{ let x = [1, 2, 3] x[0.."b"] }`, []string{
-			"test.met:1:26: subslice bound must be Int, got Str\n" +
+			"test.met:1:26: range bound must be Int, got Str\n" +
 				`    { let x = [1, 2, 3] x[0.."b"] }` + "\n" +
 				`                             ^^^`,
 		}},
@@ -1595,6 +1612,17 @@ func TestTypeCheckErr(t *testing.T) {
 				`    for 123 {}` + "\n" +
 				"        ^^^",
 		}},
+		{"for in range bound not Int", `{ for x in "a".."z" {} }`, []string{
+			"test.met:1:12: range bound must be Int, got Str\n" +
+				`    { for x in "a".."z" {} }` + "\n" +
+				`               ^^^`,
+		}},
+		{"for in binding is immutable", `{ for x in 0..10 { x = 5 } }`, []string{
+			"test.met:1:20: cannot assign to immutable variable: x\n" +
+				`    { for x in 0..10 { x = 5 } }` + "\n" +
+				"                       ^",
+		}},
+
 		{"break outside loop", `{ break }`, []string{
 			"test.met:1:3: break statement outside of loop\n" +
 				`    { break }` + "\n" +

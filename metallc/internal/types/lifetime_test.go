@@ -1378,6 +1378,23 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				print_int(y.one.*)
 			}
 			`, nil},
+		{"for-in ref to binding escapes via outer assignment", `
+			{
+				mut x = 0
+				mut r = &x
+				for i in 0..10 {
+					r = &i
+				}
+			}
+			`, []string{
+			"test.met:6:25: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+				    for i in 0..10 {
+				        r = &i
+				            ^^
+				    }
+				`, "\n"),
+		}},
 		{"shape value param ref escapes via side effect", `
 			{
 				shape HasRef { one &Int }
