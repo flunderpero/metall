@@ -1,0 +1,10 @@
+fun print(s Str) void {
+    print_str(s)
+}
+
+fun print_fmt<T FmtStr>(s T) void {
+    let @a = Arena()
+    let sb = StrBuilder.init(32, @a)
+    s.fmt_str(sb)
+    print(sb.to_str())
+}

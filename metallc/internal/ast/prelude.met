@@ -52,8 +52,178 @@ fun Str.concat(s Str, other Str, @a Arena) Str {
     Str(data)
 }
 
-fun Str.to_str(s Str, @a Arena) Str { s }
-
-shape ToStr {
-    fun ToStr.to_str(t ToStr, @a Arena) Str
+--- Return a slice to the underlying utf8 data. ---
+fun Str.utf8_bytes(s Str) []U8 {
+    s.data
 }
+
+--- A convenient way to build strings. ---
+struct StrBuilder {
+    mut out []mut U8
+    mut len Int
+    @a Arena
+}
+
+fun StrBuilder.init(capacity Int, @a Arena) &mut StrBuilder {
+    let out = @a.slice_uninit_mut<U8>(capacity)
+    @a.new_mut<StrBuilder>(StrBuilder(out, 0, @a))
+}
+
+fun StrBuilder.u64(sb &mut StrBuilder, v U64) &mut StrBuilder {
+    if v == 0 {
+        sb.rune('0')
+        return sb
+    }
+    mut x = v
+    mut digits = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    mut i = 19
+    for x > 0 {
+        let digit = '0'.to_u32().to_u8_wrapping() + (x % 10).to_u8_wrapping()
+        digits[i] = digit
+        i = i - 1
+        x = x / 10
+    }
+    sb.private_slice(digits[(i+1)..20])
+    sb
+}
+
+fun StrBuilder.int(sb &mut StrBuilder, v Int) &mut StrBuilder {
+    if v == 0 {
+        sb.rune('0')
+        return sb
+    }
+    -- todo: We do not support negative int literals yet.
+    if v == 0 - 9223372036854775807 {
+        sb.str("-9223372036854775807")
+        return sb
+    } 
+    mut x = v
+    if v < 0 {
+        x = x * (0 - 1)
+    }
+    mut digits = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    mut i = 19
+    for x > 0 {
+        let digit = '0'.to_u32().to_u8_wrapping() + (x % 10).to_u8_wrapping()
+        digits[i] = digit
+        i = i - 1
+        x = x / 10
+    }
+    if v < 0 {
+        digits[i] = '-'.to_u32().to_u8_wrapping()
+        i = i - 1
+    }
+    sb.private_slice(digits[(i+1)..20])
+    sb
+}
+
+fun StrBuilder.u32(sb &mut StrBuilder, v U32) &mut StrBuilder { sb.u64(v.to_u64()) sb }
+fun StrBuilder.u16(sb &mut StrBuilder, v U16) &mut StrBuilder { sb.u64(v.to_u64()) sb }
+fun StrBuilder.u8(sb &mut StrBuilder, v U8) &mut StrBuilder { sb.u64(v.to_u64()) sb }
+fun StrBuilder.i32(sb &mut StrBuilder, v I32) &mut StrBuilder { sb.int(v.to_int()) sb }
+fun StrBuilder.i16(sb &mut StrBuilder, v I16) &mut StrBuilder { sb.int(v.to_int()) sb }
+fun StrBuilder.i8(sb &mut StrBuilder, v I8) &mut StrBuilder { sb.int(v.to_int()) sb }
+
+fun StrBuilder.str(sb &mut StrBuilder, s Str) &mut StrBuilder {
+    sb.private_slice(s.utf8_bytes())
+    sb
+}
+
+fun StrBuilder.bool(sb &mut StrBuilder, b Bool) &mut StrBuilder {
+    if b {
+        sb.str("true")
+    } else {
+        sb.str("false")
+    }
+}
+
+fun StrBuilder.rune(sb &mut StrBuilder, r Rune) &mut StrBuilder {
+    let u = r.to_u32()
+    if u < U32(1) << 7 {
+        sb.ensure_capacity(1)
+        sb.out[sb.len] = u.to_u8_wrapping()
+        sb.len = sb.len + 1
+        return sb
+    }
+    if u < U32(1) << 11 {
+        sb.ensure_capacity(2)
+        sb.out[sb.len] = (U32(192) | (u >> 6)).to_u8_wrapping()
+        sb.out[sb.len + 1] = (U32(128) | (u & 63)).to_u8_wrapping()
+        sb.len = sb.len + 2
+        return sb
+    }
+    if u < U32(1) << 16 {
+        sb.ensure_capacity(3)
+        sb.out[sb.len]     = (U32(224) | (u >> 12)).to_u8_wrapping()
+        sb.out[sb.len + 1] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
+        sb.out[sb.len + 2] = (U32(128) | (u & 63)).to_u8_wrapping()
+        sb.len = sb.len + 3
+        return sb
+    }
+    sb.ensure_capacity(4)
+    sb.out[sb.len]     = (U32(240) | (u >> 18)).to_u8_wrapping()
+    sb.out[sb.len + 1] = (U32(128) | ((u >> 12) & 63)).to_u8_wrapping()
+    sb.out[sb.len + 2] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
+    sb.out[sb.len + 3] = (U32(128) | (u & 63)).to_u8_wrapping()
+    sb.len = sb.len + 4
+    sb
+}
+
+fun StrBuilder.fmt<T FmtStr>(sb &mut StrBuilder, t T) &mut StrBuilder { t.fmt_str(sb) sb }
+
+fun StrBuilder.nl(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(10) sb }
+
+fun StrBuilder.space(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(32) sb }
+
+fun StrBuilder.tab(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(9) sb }
+
+fun StrBuilder.slice<T FmtStr>(sb &mut StrBuilder, v []T, sep Str) &mut StrBuilder {
+    for i in 0..v.len {
+        if i > 0 {
+            sb.str(sep)
+        }
+        let x = sb.fmt<T>(v[i]) -- todo: We need a better way to force `void`.
+    } 
+    sb
+}
+
+fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
+    if sb.out.len - sb.len < capacity {
+        let new_out = sb.@a.slice_uninit_mut<U8>(sb.len + capacity)
+        for i in 0..sb.len {
+            new_out[i] = sb.out[i]
+        }
+        sb.out = new_out
+    }
+}
+
+fun StrBuilder.to_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
+
+fun StrBuilder.private_slice(sb &mut StrBuilder, s []U8) void {
+    sb.ensure_capacity(s.len)
+    for i in 0..s.len {
+        sb.out[sb.len + i] = s[i]
+    }
+    sb.len = sb.len + s.len
+}
+
+fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) void {
+    sb.ensure_capacity(1)
+    sb.out[sb.len] = b
+    sb.len = sb.len + 1
+}
+
+shape FmtStr {
+    fun FmtStr.fmt_str(f FmtStr, sb &mut StrBuilder) void
+}
+
+fun Str.fmt_str(s Str, sb &mut StrBuilder) void { sb.str(s) }
+fun Int.fmt_str(i Int, sb &mut StrBuilder) void { sb.int(i) }
+fun I32.fmt_str(i I32, sb &mut StrBuilder) void { sb.i32(i) }
+fun I16.fmt_str(i I16, sb &mut StrBuilder) void { sb.i16(i) }
+fun I8.fmt_str(i I8, sb &mut StrBuilder) void { sb.i8(i) }
+fun U64.fmt_str(i U64, sb &mut StrBuilder) void { sb.u64(i) }
+fun U32.fmt_str(i U32, sb &mut StrBuilder) void { sb.u32(i) }
+fun U16.fmt_str(i U16, sb &mut StrBuilder) void { sb.u16(i) }
+fun U8.fmt_str(i U8, sb &mut StrBuilder) void { sb.u8(i) }
+fun Bool.fmt_str(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
