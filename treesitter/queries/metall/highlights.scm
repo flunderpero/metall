@@ -29,6 +29,7 @@
 
 (integer_literal) @number
 (string_literal) @string
+(rune_literal) @character
 (boolean_literal) @constant.builtin
 (void) @type
 
@@ -129,7 +130,7 @@
 
 ; >>> Operators
 
-["+" "-" "*" "/" "%" "==" "!=" "<" "<=" ">" ">=" "=" ".." "..="] @operator
+["+" "-" "*" "/" "%" "==" "!=" "<" "<=" ">" ">=" "=" ".." "..=" "|" "^" "&" "<<" ">>" "~"] @operator
 
 ; >>> Punctuation
 

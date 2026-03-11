@@ -11,11 +11,15 @@ const PREC = {
   ASSIGN: 1,
   OR: 2,
   AND: 3,
-  COMPARE: 4,
-  ADD: 5,
-  MUL: 6,
-  UNARY: 7,
-  POSTFIX: 8,
+  BIT_OR: 4,
+  BIT_XOR: 5,
+  BIT_AND: 6,
+  COMPARE: 7,
+  SHIFT: 8,
+  ADD: 9,
+  MUL: 10,
+  UNARY: 11,
+  POSTFIX: 12,
 };
 
 module.exports = grammar({
@@ -66,6 +70,8 @@ module.exports = grammar({
     integer_literal: (_) => /[0-9]+/,
 
     string_literal: (_) => seq('"', /[^"]*/, '"'),
+
+    rune_literal: (_) => seq("'", /[^']/, "'"),
 
     boolean_literal: (_) => choice("true", "false"),
 
@@ -156,6 +162,7 @@ module.exports = grammar({
         // Literals and atoms.
         $.integer_literal,
         $.string_literal,
+        $.rune_literal,
         $.boolean_literal,
         $.void,
         $.identifier,
@@ -264,12 +271,17 @@ module.exports = grammar({
       choice(
         prec.left(PREC.OR, seq($._expression, "or", $._expression)),
         prec.left(PREC.AND, seq($._expression, "and", $._expression)),
+        prec.left(PREC.BIT_OR, seq($._expression, "|", $._expression)),
+        prec.left(PREC.BIT_XOR, seq($._expression, "^", $._expression)),
+        prec.left(PREC.BIT_AND, seq($._expression, "&", $._expression)),
         prec.left(PREC.COMPARE, seq($._expression, "==", $._expression)),
         prec.left(PREC.COMPARE, seq($._expression, "!=", $._expression)),
         prec.left(PREC.COMPARE, seq($._expression, "<", $._expression)),
         prec.left(PREC.COMPARE, seq($._expression, "<=", $._expression)),
         prec.left(PREC.COMPARE, seq($._expression, ">", $._expression)),
         prec.left(PREC.COMPARE, seq($._expression, ">=", $._expression)),
+        prec.left(PREC.SHIFT, seq($._expression, "<<", $._expression)),
+        prec.left(PREC.SHIFT, seq($._expression, ">>", $._expression)),
         prec.left(PREC.ADD, seq($._expression, "+", $._expression)),
         prec.left(PREC.ADD, seq($._expression, "-", $._expression)),
         prec.left(PREC.MUL, seq($._expression, "*", $._expression)),
@@ -278,7 +290,10 @@ module.exports = grammar({
       ),
 
     unary_expression: ($) =>
-      prec.right(PREC.UNARY, seq("not", $._expression)),
+      choice(
+        prec.right(PREC.UNARY, seq("not", $._expression)),
+        prec.right(PREC.UNARY, seq("~", $._expression)),
+      ),
 
     // >>> Postfix expressions
 
@@ -304,7 +319,7 @@ module.exports = grammar({
         "[", field("index", $._expression), "]",
       )),
 
-    reference: ($) => seq("&", optional("mut"), $.identifier),
+    reference: ($) => prec(PREC.UNARY, seq("&", optional("mut"), $.identifier)),
 
     dereference: ($) =>
       prec.left(PREC.POSTFIX, seq($._expression, ".", "*")),

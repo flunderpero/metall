@@ -52,6 +52,76 @@ fun f() Bool { a != b == c }
         (identifier)))))
 
 ================================================================================
+Bitwise operators
+================================================================================
+
+fun f() Int { a & b | c ^ d }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (binary_expression
+          (identifier)
+          (identifier))
+        (binary_expression
+          (identifier)
+          (identifier))))))
+
+================================================================================
+Shift operators
+================================================================================
+
+fun f() Int { a << 2 + b >> 1 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (binary_expression
+          (identifier)
+          (binary_expression (integer_literal) (identifier)))
+        (integer_literal)))))
+
+================================================================================
+Bitwise not
+================================================================================
+
+fun f() Int { ~a }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (unary_expression (identifier)))))
+
+================================================================================
+Rune literal
+================================================================================
+
+fun f() Rune { 'a' }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (rune_literal))))
+
+================================================================================
 Grouped expression
 ================================================================================
 

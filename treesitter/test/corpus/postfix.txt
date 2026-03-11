@@ -81,10 +81,10 @@ fun f() void { arr[i] }
       (index_expression object: (identifier) index: (identifier)))))
 
 ================================================================================
-Reference and dereference
+Reference
 ================================================================================
 
-fun f() void { &x  &mut y  r.*.* }
+fun f() void { &x }
 
 --------------------------------------------------------------------------------
 
@@ -93,8 +93,36 @@ fun f() void { &x  &mut y  r.*.* }
     name: (function_name (identifier))
     return_type: (simple_type)
     body: (block
-      (reference (identifier))
-      (reference (identifier))
+      (reference (identifier)))))
+
+================================================================================
+Mutable reference
+================================================================================
+
+fun f() void { &mut y }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (reference (identifier)))))
+
+================================================================================
+Dereference
+================================================================================
+
+fun f() void { r.*.* }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
       (dereference (dereference (identifier))))))
 
 ================================================================================
