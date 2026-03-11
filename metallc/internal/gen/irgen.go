@@ -832,6 +832,12 @@ func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.setCode(id, "void")
 }
 
+func (g *IRFunGen) runeCheckIfNeeded(nodeID ast.NodeID, reg string) {
+	if intTyp, ok := g.env.TypeOfNode(nodeID).Kind.(types.IntType); ok && intTyp.Name == "Rune" {
+		g.write("call void @__rune_check(i32 %s)", reg)
+	}
+}
+
 func (g *IRFunGen) genUnary(id ast.NodeID, unary ast.Unary) {
 	g.Gen(unary.Expr)
 	expr := g.lookupCode(unary.Expr)
@@ -839,13 +845,17 @@ func (g *IRFunGen) genUnary(id ast.NodeID, unary ast.Unary) {
 	switch unary.Op {
 	case ast.UnaryOpNot:
 		g.write("%s = xor i1 %s, 1", reg, expr)
+	case ast.UnaryOpBitNot:
+		irTyp := g.irTypeOfNode(unary.Expr)
+		g.write("%s = xor %s %s, -1", reg, irTyp, expr)
+		g.runeCheckIfNeeded(unary.Expr, reg)
 	default:
 		panic(base.Errorf("unknown unary operator: %s", unary.Op))
 	}
 	g.setCode(id, reg)
 }
 
-func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
+func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 	g.Gen(binary.LHS)
 	g.Gen(binary.RHS)
 	lhs := g.lookupCode(binary.LHS)
@@ -892,14 +902,27 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 		g.write("%s = and %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpOr:
 		g.write("%s = or %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpBitAnd:
+		g.write("%s = and %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpBitOr:
+		g.write("%s = or %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpBitXor:
+		g.write("%s = xor %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpShl:
+		g.write("%s = shl %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpShr:
+		shrOp := "ashr"
+		if intTyp, ok := g.env.TypeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
+			shrOp = "lshr"
+		}
+		g.write("%s = %s %s %s, %s", reg, shrOp, irTyp, lhs, rhs)
 	default:
 		panic(base.Errorf("unknown binary operator: %s", binary.Op))
 	}
-	if intTyp, ok := g.env.TypeOfNode(binary.LHS).Kind.(types.IntType); ok && intTyp.Name == "Rune" {
-		switch binary.Op { //nolint:exhaustive
-		case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpDiv, ast.BinaryOpMul, ast.BinaryOpMod:
-			g.write("call void @__rune_check(i32 %s)", reg)
-		}
+	switch binary.Op { //nolint:exhaustive
+	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpDiv, ast.BinaryOpMul, ast.BinaryOpMod,
+		ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
+		g.runeCheckIfNeeded(binary.LHS, reg)
 	}
 	g.setCode(id, reg)
 }

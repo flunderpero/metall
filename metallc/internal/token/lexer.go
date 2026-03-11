@@ -13,8 +13,10 @@ type TokenKind int
 const (
 	AllocatorIdent TokenKind = iota + 1
 	Amp
+	AmpInfix
 	And
 	Break
+	Caret
 	ColonColon
 	Comma
 	Comment
@@ -30,6 +32,7 @@ const (
 	Fun
 	Gt
 	Gte
+	GtGt
 	Ident
 	If
 	In
@@ -52,6 +55,7 @@ const (
 	Number
 	Or
 	Percent
+	Pipe
 	Plus
 	RBracket
 	RCurly
@@ -59,10 +63,12 @@ const (
 	RParen
 	Rune
 	Shape
+	LtLt
 	Slash
 	Star
 	String
 	Struct
+	Tilde
 	True
 	TypeIdent
 	Unknown
@@ -74,8 +80,10 @@ const (
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AllocatorIdent:        "<allocator identifier>",
 	Amp:                   "&",
+	AmpInfix:              "<&infix>",
 	And:                   "<and>",
 	Break:                 "<break>",
+	Caret:                 "^",
 	ColonColon:            "::",
 	Comma:                 ",",
 	Comment:               "<comment>",
@@ -90,6 +98,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	For:                   "<for>",
 	Gt:                    ">",
 	Gte:                   ">=",
+	GtGt:                  ">>",
 	Fun:                   "<fun>",
 	Ident:                 "<identifier>",
 	If:                    "<if>",
@@ -113,6 +122,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Number:                "<number>",
 	Or:                    "<or>",
 	Percent:               "%",
+	Pipe:                  "|",
 	Plus:                  "+",
 	RBracket:              "]",
 	RCurly:                "}",
@@ -120,9 +130,11 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	RParen:                ")",
 	Rune:                  "<rune>",
 	Shape:                 "<shape>",
+	LtLt:                  "<<",
 	Slash:                 "/",
 	Star:                  "*",
 	String:                "<string>",
+	Tilde:                 "~",
 	Struct:                "<struct>",
 	True:                  "true",
 	TypeIdent:             "<type identifier>",
@@ -133,17 +145,19 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 }
 
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
-	'&': Amp,
+	'^': Caret,
 	',': Comma,
 	'{': LCurly,
 	'(': LParen,
 	'%': Percent,
+	'|': Pipe,
 	'+': Plus,
 	']': RBracket,
 	'}': RCurly,
 	')': RParen,
 	'/': Slash,
 	'*': Star,
+	'~': Tilde,
 }
 
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
@@ -249,6 +263,9 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		if idx < len(source.Content) && source.Content[idx] == '=' {
 			return Token{Kind: Lte, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
+		if idx < len(source.Content) && source.Content[idx] == '<' {
+			return Token{Kind: LtLt, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
 		kind := Lt
 		if idx > 1 {
 			prev := source.Content[idx-2]
@@ -258,12 +275,13 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		return Token{Kind: kind, Value: "", Span: span}
 	case c == '>':
-		kind := Gt
 		if idx < len(source.Content) && source.Content[idx] == '=' {
-			kind = Gte
-			span = base.NewSpan(source, start, idx)
+			return Token{Kind: Gte, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		return Token{Kind: kind, Value: "", Span: span}
+		if idx < len(source.Content) && source.Content[idx] == '>' {
+			return Token{Kind: GtGt, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Gt, Value: "", Span: span}
 	case c == '-':
 		if idx >= len(source.Content) || source.Content[idx] != '-' {
 			return Token{Kind: Minus, Value: "", Span: span}
@@ -300,6 +318,12 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			return Token{Kind: Neq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		return Token{Kind: Unknown, Value: fmt.Sprint(c), Span: span}
+	case c == '&':
+		kind := Amp
+		if idx < len(source.Content) && unicode.IsSpace(source.Content[idx]) {
+			kind = AmpInfix
+		}
+		return Token{Kind: kind, Value: "", Span: span}
 	case c == '[':
 		kind := LBracket
 		if idx > 1 {

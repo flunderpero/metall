@@ -2231,6 +2231,47 @@ func TestIntTypes(t *testing.T) {
 		}
 	})
 
+	t.Run("bitwise binary", func(t *testing.T) {
+		for _, op := range []string{"|", "^", "<<", ">>"} {
+			for _, name := range allIntTypes {
+				src := fmt.Sprintf("%s %s %s", lit(name), op, lit(name))
+				e := typeCheck(t, src)
+				assert.Equal(0, len(e.diagnostics), "%s: %s", src, e.diagnostics)
+			}
+		}
+	})
+
+	t.Run("bitwise and", func(t *testing.T) {
+		for _, name := range allIntTypes {
+			src := fmt.Sprintf("%s & %s", lit(name), lit(name))
+			e := typeCheck(t, src)
+			assert.Equal(0, len(e.diagnostics), "%s & %s: %s", lit(name), lit(name), e.diagnostics)
+		}
+	})
+
+	t.Run("bitwise not", func(t *testing.T) {
+		for _, name := range allIntTypes {
+			src := fmt.Sprintf("~%s", lit(name))
+			e := typeCheck(t, src)
+			assert.Equal(0, len(e.diagnostics), "~%s: %s", lit(name), e.diagnostics)
+		}
+	})
+
+	t.Run("bitwise on Bool rejected", func(t *testing.T) {
+		for _, op := range []string{"|", "^", "<<", ">>"} {
+			src := fmt.Sprintf("true %s false", op)
+			e := typeCheck(t, src)
+			assert.Equal(1, len(e.diagnostics), "%s: %s", src, e.diagnostics)
+			assert.Contains(e.diagnostics[0].Display(), "an integer")
+		}
+	})
+
+	t.Run("bitwise not on Bool rejected", func(t *testing.T) {
+		e := typeCheck(t, "~true")
+		assert.Equal(1, len(e.diagnostics), "diagnostics: %s", e.diagnostics)
+		assert.Contains(e.diagnostics[0].Display(), "an integer")
+	})
+
 	t.Run("mixed types rejected in binary ops", func(t *testing.T) {
 		e := typeCheck(t, `{ let x = I32(1) let y = U8(1) x + y }`)
 		assert.Equal(1, len(e.diagnostics), "diagnostics: %s", e.diagnostics)

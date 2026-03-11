@@ -1307,6 +1307,115 @@ func TestCompile(t *testing.T) {
 			}
 			`, "true\nfalse\ntrue\nfalse\ntrue\nfalse\ntrue\nfalse\ntrue\n"},
 
+		{"bitwise I8", `
+			fun main() void {
+				let a = I8(90)
+				let b = I8(60)
+				print_int((a & b).to_int())
+				print_int((a | b).to_int())
+				print_int((a ^ b).to_int())
+				print_int((a << I8(1)).to_int())
+				print_int((a >> I8(2)).to_int())
+				print_int((~a).to_int())
+				let c = I8(0) - I8(100)
+				print_int((c >> I8(2)).to_int())
+				print_int((~c).to_int())
+			}
+			`, "24\n126\n102\n-76\n22\n-91\n-25\n99\n"},
+		{"bitwise I16", `
+			fun main() void {
+				let a = I16(90)
+				let b = I16(60)
+				print_int((a & b).to_int())
+				print_int((a | b).to_int())
+				print_int((a ^ b).to_int())
+				print_int((a << I16(4)).to_int())
+				print_int((a >> I16(2)).to_int())
+				print_int((~a).to_int())
+				let c = I16(0) - I16(1000)
+				print_int((c >> I16(3)).to_int())
+				print_int((~c).to_int())
+			}
+			`, "24\n126\n102\n1440\n22\n-91\n-125\n999\n"},
+		{"bitwise I32", `
+			fun main() void {
+				let a = I32(65280)
+				let b = I32(4080)
+				print_int((a & b).to_int())
+				print_int((a | b).to_int())
+				print_int((a ^ b).to_int())
+				print_int((a << I32(4)).to_int())
+				print_int((a >> I32(8)).to_int())
+				print_int((~a).to_int())
+				let c = I32(0) - I32(1)
+				print_int((c >> I32(16)).to_int())
+				print_int((~c).to_int())
+			}
+			`, "3840\n65520\n61680\n1044480\n255\n-65281\n-1\n0\n"},
+		{"bitwise Int", `
+			fun main() void {
+				let a = 3735928559
+				let b = 4294901760
+				print_int(a & b)
+				print_int(a | b)
+				print_int(a ^ b)
+				print_int(1 << 32)
+				print_int(a >> 16)
+				print_int(~a)
+				let c = 0 - 1
+				print_int(c >> 32)
+				print_int(~c)
+			}
+			`, "3735879680\n4294950639\n559070959\n4294967296\n57005\n-3735928560\n-1\n0\n"},
+		{"bitwise U8", `
+			fun main() void {
+				let a = U8(172)
+				let b = U8(58)
+				print_uint((a & b).to_u64())
+				print_uint((a | b).to_u64())
+				print_uint((a ^ b).to_u64())
+				print_uint((a << U8(1)).to_u64())
+				print_uint((a >> U8(3)).to_u64())
+				print_uint((~a).to_u64())
+			}
+			`, "40\n190\n150\n88\n21\n83\n"},
+		{"bitwise U16", `
+			fun main() void {
+				let a = U16(43981)
+				let b = U16(255)
+				print_uint((a & b).to_u64())
+				print_uint((a | b).to_u64())
+				print_uint((a ^ b).to_u64())
+				print_uint((a << U16(4)).to_u64())
+				print_uint((a >> U16(8)).to_u64())
+				print_uint((~a).to_u64())
+			}
+			`, "205\n44031\n43826\n48336\n171\n21554\n"},
+		{"bitwise U32", `
+			fun main() void {
+				let a = U32(3735928559)
+				let b = U32(4294901760)
+				print_uint((a & b).to_u64())
+				print_uint((a | b).to_u64())
+				print_uint((a ^ b).to_u64())
+				print_uint((U32(1) << U32(16)).to_u64())
+				print_uint((a >> U32(16)).to_u64())
+				print_uint((~a).to_u64())
+			}
+			`, "3735879680\n4294950639\n559070959\n65536\n57005\n559038736\n"},
+		{"bitwise U64", `
+			fun main() void {
+				let a = U64(16045690984503098046)
+				let b = U64(18446744069414584320)
+				print_uint(a & b)
+				print_uint(a | b)
+				print_uint(a ^ b)
+				print_uint(U64(1) << U64(48))
+				print_uint(a >> U64(32))
+				print_uint(~a)
+			}
+			`, "16045690981097406464\n18446744072820275902\n2401053091722869438\n281474976710656\n3735928559\n2401053089206453569\n"},
+
 		{"conditional for loop", `
 			fun main() void {
 				mut x = 0

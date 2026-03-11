@@ -408,6 +408,37 @@ func TestParseOK(t *testing.T) {
 			return a.binary(BinaryOpOr, t, and)
 		}},
 
+		{"bitwise and", "expr", "1 & 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpBitAnd, a.int_(1), a.int_(2))
+		}},
+		{"bitwise or", "expr", "1 | 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpBitOr, a.int_(1), a.int_(2))
+		}},
+		{"bitwise xor", "expr", "1 ^ 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpBitXor, a.int_(1), a.int_(2))
+		}},
+		{"shift left", "expr", "1 << 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpShl, a.int_(1), a.int_(2))
+		}},
+		{"shift right", "expr", "1 >> 2", func(a *TestAST) NodeID {
+			return a.binary(BinaryOpShr, a.int_(1), a.int_(2))
+		}},
+		{"bitwise not", "expr", "~1", func(a *TestAST) NodeID {
+			return a.unary(UnaryOpBitNot, a.int_(1))
+		}},
+		{"bitwise precedence", "expr", "1 | 2 ^ 3 & 4", func(a *TestAST) NodeID {
+			one := a.int_(1)
+			two := a.int_(2)
+			band := a.binary(BinaryOpBitAnd, a.int_(3), a.int_(4))
+			bxor := a.binary(BinaryOpBitXor, two, band)
+			return a.binary(BinaryOpBitOr, one, bxor)
+		}},
+		{"shift precedence vs add", "expr", "1 + 2 << 3 + 4", func(a *TestAST) NodeID {
+			add1 := a.binary(BinaryOpAdd, a.int_(1), a.int_(2))
+			add2 := a.binary(BinaryOpAdd, a.int_(3), a.int_(4))
+			return a.binary(BinaryOpShl, add1, add2)
+		}},
+
 		{"grouped expressions", "expr", "(1 + 2) * 3 + 4", func(a *TestAST) NodeID {
 			add := a.binary(BinaryOpAdd, a.int_(1), a.int_(2))
 			mul := a.binary(BinaryOpMul, add, a.int_(3))

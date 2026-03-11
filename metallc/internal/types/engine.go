@@ -260,6 +260,17 @@ func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
 			return InvalidTypeID, TypeDepFailed
 		}
 		return e.boolTyp, TypeOK
+	case ast.UnaryOpBitNot:
+		if !e.env.isIntType(exprTypeID) {
+			span := e.ast.Node(unary.Expr).Span
+			e.diag(
+				span,
+				"type mismatch: bitwise NOT expects an integer, got %s",
+				e.env.TypeDisplay(exprTypeID),
+			)
+			return InvalidTypeID, TypeDepFailed
+		}
+		return exprTypeID, TypeOK
 	default:
 		panic(base.Errorf("unknown unary operator: %s", unary.Op))
 	}
@@ -283,6 +294,9 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 		valid = lhsTypeID == e.boolTyp
 		expected = "Bool"
 	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod:
+		valid = e.env.isIntType(lhsTypeID)
+		expected = "an integer"
+	case ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
 		valid = e.env.isIntType(lhsTypeID)
 		expected = "an integer"
 	default:

@@ -505,13 +505,17 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	if !ok {
 		return ParseFailed, false
 	}
-	if t.Kind == token.Not {
+	if t.Kind == token.Not || t.Kind == token.Tilde {
 		p.next()
 		expr, ok := p.ParseExpr(0)
 		if !ok {
 			return ParseFailed, false
 		}
-		return p.NewUnary(UnaryOpNot, expr, t.Span.Combine(p.span())), true
+		op := UnaryOpNot
+		if t.Kind == token.Tilde {
+			op = UnaryOpBitNot
+		}
+		return p.NewUnary(op, expr, t.Span.Combine(p.span())), true
 	}
 	span := t.Span
 	lhs, ok := p.ParsePostfixExpr(0)
@@ -550,24 +554,35 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			token.Gte:  BinaryOpGte,
 			token.And:  BinaryOpAnd,
 			token.Or:   BinaryOpOr,
+
+			token.AmpInfix: BinaryOpBitAnd,
+			token.Pipe:     BinaryOpBitOr,
+			token.Caret:    BinaryOpBitXor,
+			token.LtLt:     BinaryOpShl,
+			token.GtGt:     BinaryOpShr,
 		}[t.Kind]
 		if !ok {
 			return lhs, true
 		}
 		precedence := map[BinaryOp]int{
-			BinaryOpOr:  0,
-			BinaryOpAnd: 1,
-			BinaryOpEq:  2,
-			BinaryOpNeq: 2,
-			BinaryOpLt:  2,
-			BinaryOpLte: 2,
-			BinaryOpGt:  2,
-			BinaryOpGte: 2,
-			BinaryOpAdd: 3,
-			BinaryOpSub: 3,
-			BinaryOpMul: 4,
-			BinaryOpDiv: 4,
-			BinaryOpMod: 4,
+			BinaryOpOr:     0,
+			BinaryOpAnd:    1,
+			BinaryOpBitOr:  2,
+			BinaryOpBitXor: 3,
+			BinaryOpBitAnd: 4,
+			BinaryOpEq:     5,
+			BinaryOpNeq:    5,
+			BinaryOpLt:     5,
+			BinaryOpLte:    5,
+			BinaryOpGt:     5,
+			BinaryOpGte:    5,
+			BinaryOpShl:    6,
+			BinaryOpShr:    6,
+			BinaryOpAdd:    7,
+			BinaryOpSub:    7,
+			BinaryOpMul:    8,
+			BinaryOpDiv:    8,
+			BinaryOpMod:    8,
 		}[op]
 		if precedence < minPrecedence {
 			return lhs, true
@@ -1373,12 +1388,16 @@ func (p *Parser) parseTypeArgs() ([]NodeID, bool) {
 		if !ok {
 			return nil, false
 		}
-		if t.Kind == token.Gt {
+		if t.Kind == token.Gt || t.Kind == token.GtGt {
 			if len(args) == 0 {
 				p.diagnostic(open.Span.Combine(t.Span), "empty type argument list")
 				return nil, false
 			}
-			p.next()
+			if t.Kind == token.GtGt {
+				p.tokens[p.pos].Kind = token.Gt
+			} else {
+				p.next()
+			}
 			return args, true
 		}
 		if len(args) > 0 {

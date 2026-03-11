@@ -254,6 +254,12 @@ const (
 	BinaryOpGte BinaryOp = ">="
 	BinaryOpAnd BinaryOp = "and"
 	BinaryOpOr  BinaryOp = "or"
+
+	BinaryOpBitAnd BinaryOp = "&"
+	BinaryOpBitOr  BinaryOp = "|"
+	BinaryOpBitXor BinaryOp = "^"
+	BinaryOpShl    BinaryOp = "<<"
+	BinaryOpShr    BinaryOp = ">>"
 )
 
 type Binary struct {
@@ -267,7 +273,8 @@ func (Binary) isKind() {}
 type UnaryOp string
 
 const (
-	UnaryOpNot UnaryOp = "not"
+	UnaryOpNot    UnaryOp = "not"
+	UnaryOpBitNot UnaryOp = "~"
 )
 
 type Unary struct {
