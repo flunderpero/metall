@@ -7,4 +7,5 @@ test:
     tree-sitter test
 
 build:
+    mkdir -p parser
     cc -shared -fPIC -O2 -o parser/metall.so src/parser.c -I src
