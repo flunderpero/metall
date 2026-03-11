@@ -1,8 +1,6 @@
 package types
 
 import (
-	"slices"
-
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
@@ -53,61 +51,16 @@ func (c *EngineCore) enterChildEnv() func() {
 }
 
 func (c *EngineCore) registerFun(nodeID ast.NodeID) {
+	funNode, ok := c.ast.Node(nodeID).Kind.(ast.Fun)
+	if !ok {
+		return
+	}
+	if funNode.Extern {
+		return
+	}
 	name, ok := c.env.NamedFunRef(nodeID)
 	if !ok {
 		panic(base.Errorf("no namespaced name for function node %s", nodeID))
-	}
-	// todo: Once we don't use the print_xxx functions anymore we can remove this.
-	if slices.Contains([]string{
-		"print_int", "print_uint", "print_str", "print_bool",
-		"I8.to_i16", "I8.to_i32", "I8.to_int",
-		"I16.to_i32", "I16.to_int",
-		"I32.to_int",
-		"U8.to_u16", "U8.to_u32", "U8.to_u64",
-		"U16.to_u32", "U16.to_u64",
-		"U32.to_u64",
-		"U8.to_i16", "U8.to_i32", "U8.to_int",
-		"U16.to_i32", "U16.to_int",
-		"U32.to_int",
-		"I16.to_i8_wrapping", "I16.to_i8_clamped",
-		"I32.to_i8_wrapping", "I32.to_i8_clamped",
-		"Int.to_i8_wrapping", "Int.to_i8_clamped",
-		"I32.to_i16_wrapping", "I32.to_i16_clamped",
-		"Int.to_i16_wrapping", "Int.to_i16_clamped",
-		"Int.to_i32_wrapping", "Int.to_i32_clamped",
-		"U16.to_u8_wrapping", "U16.to_u8_clamped",
-		"U32.to_u8_wrapping", "U32.to_u8_clamped",
-		"U64.to_u8_wrapping", "U64.to_u8_clamped",
-		"U32.to_u16_wrapping", "U32.to_u16_clamped",
-		"U64.to_u16_wrapping", "U64.to_u16_clamped",
-		"U64.to_u32_wrapping", "U64.to_u32_clamped",
-		"U8.to_i8_wrapping", "U8.to_i8_clamped",
-		"U16.to_i16_wrapping", "U16.to_i16_clamped",
-		"U16.to_i8_wrapping", "U16.to_i8_clamped",
-		"U32.to_i32_wrapping", "U32.to_i32_clamped",
-		"U32.to_i16_wrapping", "U32.to_i16_clamped",
-		"U32.to_i8_wrapping", "U32.to_i8_clamped",
-		"U64.to_int_wrapping", "U64.to_int_clamped",
-		"U64.to_i32_wrapping", "U64.to_i32_clamped",
-		"I8.to_u8_wrapping", "I8.to_u8_clamped",
-		"I8.to_u16_wrapping", "I8.to_u16_clamped",
-		"I8.to_u32_wrapping", "I8.to_u32_clamped",
-		"I8.to_u64_wrapping", "I8.to_u64_clamped",
-		"I16.to_u8_wrapping", "I16.to_u8_clamped",
-		"I16.to_u16_wrapping", "I16.to_u16_clamped",
-		"I16.to_u32_wrapping", "I16.to_u32_clamped",
-		"I16.to_u64_wrapping", "I16.to_u64_clamped",
-		"I32.to_u8_wrapping", "I32.to_u8_clamped",
-		"I32.to_u16_wrapping", "I32.to_u16_clamped",
-		"I32.to_u32_wrapping", "I32.to_u32_clamped",
-		"I32.to_u64_wrapping", "I32.to_u64_clamped",
-		"Int.to_u8_wrapping", "Int.to_u8_clamped",
-		"Int.to_u16_wrapping", "Int.to_u16_clamped",
-		"Int.to_u32_wrapping", "Int.to_u32_clamped",
-		"Int.to_u64_wrapping", "Int.to_u64_clamped",
-		"Rune.to_u32",
-	}, name) {
-		return
 	}
 	if _, ok := c.funs[name]; !ok {
 		c.funs[name] = FunWork{NodeID: nodeID, TypeID: c.env.TypeOfNode(nodeID).ID, Name: name, Env: c.env}
@@ -115,6 +68,10 @@ func (c *EngineCore) registerFun(nodeID ast.NodeID) {
 }
 
 func (c *EngineCore) registerStruct(structType StructType, nodeID ast.NodeID, typeID TypeID) {
+	structNode, ok := c.ast.Node(nodeID).Kind.(ast.Struct)
+	if !ok || structNode.Extern {
+		return
+	}
 	if _, ok := c.structs[structType.Name]; !ok {
 		c.structs[structType.Name] = StructWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
 	}

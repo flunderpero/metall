@@ -1711,6 +1711,51 @@ func TestCompile(t *testing.T) {
 	}
 }
 
+func TestCompileFullPrelude(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		src        string
+		wantOutput string
+	}{
+		{"prelude struct via qualified method call", `
+			fun main() void {
+				let @a = Arena()
+				let sb = StrBuilder.init(16, @a)
+			}
+			`, ""},
+	}
+
+	assert := base.NewAssert(t)
+	if err := os.MkdirAll(".build", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
+			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+			outputPath := "./.build/" + reg.ReplaceAllString(tt.name, "_")
+			timing := newTimingListener()
+			opts := CompileOpts{ //nolint:exhaustruct
+				ProjectRoot:      ".",
+				Listener:         timing,
+				Output:           outputPath,
+				KeepIR:           true,
+				LLVMPasses:       "verify," + DefaultLLVMPasses,
+				AddressSanitizer: true,
+				MinimalPrelude:   false,
+			}
+			exitCode, output, err := CompileAndRun(t.Context(), source, opts)
+			timing.Log(t)
+			assert.NoError(err)
+			assert.Equal(0, exitCode, "exit code")
+			assert.Equal(tt.wantOutput, output, "output")
+		})
+	}
+}
+
 func TestCompilePanic(t *testing.T) {
 	t.Parallel()
 

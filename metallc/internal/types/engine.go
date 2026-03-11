@@ -52,8 +52,6 @@ func NewEngine(a *ast.AST, preludeAST *ast.AST, moduleResolution *modules.Module
 	for _, root := range preludeAST.Roots {
 		e.Query(root)
 	}
-	e.funs = map[string]FunWork{}
-	e.structs = map[string]StructWork{}
 	if len(e.diagnostics) > 0 {
 		panic(base.Errorf("prelude type-check failed: %s", e.diagnostics))
 	}
@@ -725,13 +723,13 @@ func (e *Engine) checkStructLiteral(
 	targetTyp := e.env.Type(targetTypeID)
 	switch kind := targetTyp.Kind.(type) {
 	case IntType:
-		if kind.Name == "Rune" && nodeID < ast.PreludeFirstID {
+		if kind.Name == "Rune" && !ast.IsPreludeNode(nodeID) {
 			e.diag(span, "Rune cannot be constructed directly; use Rune.from_u32_lossy() instead")
 			return InvalidTypeID, TypeFailed
 		}
 		return e.checkIntLiteral(nodeID, kind, targetTypeID, lit, span)
 	case StructType:
-		if kind.Name == "Str" && nodeID < ast.PreludeFirstID {
+		if kind.Name == "Str" && !ast.IsPreludeNode(nodeID) {
 			e.diag(span, "Str cannot be constructed directly; use Str.from_utf8_lossy() instead")
 			return InvalidTypeID, TypeFailed
 		}
@@ -783,7 +781,7 @@ func (e *Engine) checkIntLiteral(
 		return InvalidTypeID, TypeDepFailed
 	}
 	if argTypeID != targetTypeID {
-		if targetTyp.Name != "Rune" || nodeID < ast.PreludeFirstID {
+		if targetTyp.Name != "Rune" || !ast.IsPreludeNode(nodeID) {
 			argSpan := e.ast.Node(argNodeID).Span
 			e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
 				e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
@@ -886,7 +884,7 @@ func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
 		return nil, false
 	}
 	declNodeID := e.env.DeclNode(typ.ID)
-	if declNodeID == 0 || declNodeID >= ast.PreludeFirstID {
+	if declNodeID == 0 || ast.IsPreludeNode(declNodeID) {
 		return nil, false
 	}
 	_, typModule := e.moduleOf(declNodeID)
@@ -1001,7 +999,8 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 	if depFailed {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if nodeID >= ast.PreludeFirstID {
+	if module.Name == "" {
+		// This is from the prelude which lives in the global namespace.
 		return e.voidTyp, TypeOK
 	}
 	typeID := e.env.newType(ModuleType{Name: module.Name}, nodeID, span, TypeOK)
@@ -1099,7 +1098,7 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		structNode := base.Cast[ast.Struct](decl.node.Kind)
 		decl.status, decl.cachedType.Type.Kind = e.checkStructCompleteType(structNode, structType)
 		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
-		if decl.node.ID >= ast.PreludeFirstID {
+		if ast.IsPreludeNode(decl.node.ID) {
 			e.fixPreludeType(decl.node, decl.cachedType)
 		}
 	}

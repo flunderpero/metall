@@ -97,9 +97,9 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 		case For:
 			defer enterScope(nodeID, "")()
 		case Module:
-			// TODO: The prelude module binds into the root scope so all user code can
-			// see its types. This needs a proper module/import system.
-			if nodeID < PreludeFirstID {
+			// Modules with an empty name (prelude) bind into the root
+			// scope so all user code can see their declarations.
+			if kind.Name != "" {
 				defer enterScope(nodeID, kind.Name)()
 			}
 		case Struct:

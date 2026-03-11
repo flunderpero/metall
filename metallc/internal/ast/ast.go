@@ -162,7 +162,8 @@ func (FunDecl) isKind() {}
 
 type Fun struct {
 	FunDecl
-	Block NodeID
+	Block  NodeID
+	Extern bool
 }
 
 func (Fun) isKind() {}
@@ -179,6 +180,7 @@ type Struct struct {
 	Name       Name
 	TypeParams []NodeID
 	Fields     []NodeID
+	Extern     bool
 }
 
 func (Struct) isKind() {}
@@ -497,7 +499,11 @@ func (a *AST) NewFun(
 	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID, span base.Span,
 ) NodeID {
 	return a.node(
-		Fun{FunDecl: FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType}, Block: block},
+		Fun{
+			FunDecl: FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType},
+			Extern:  false,
+			Block:   block,
+		},
 		span,
 	)
 }
@@ -507,7 +513,7 @@ func (a *AST) NewFunParam(name Name, type_ NodeID, span base.Span) NodeID {
 }
 
 func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, span base.Span) NodeID {
-	return a.node(Struct{Name: name, TypeParams: typeParams, Fields: fields}, span)
+	return a.node(Struct{Name: name, TypeParams: typeParams, Fields: fields, Extern: false}, span)
 }
 
 func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) NodeID {

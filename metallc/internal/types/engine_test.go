@@ -822,7 +822,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			nil,
 			func(e *Engine, _ ast.NodeID, assert base.Assert) {
 				structs := e.Structs()
-				assert.Equal(2, len(structs), "Foo<Int> and Str")
+				assert.Equal(1, len(structs), "Foo<Int>")
 				funs := e.Funs()
 				assert.Equal(1, len(funs))
 				ft := base.Cast[FunType](e.env.Type(funs[0].TypeID).Kind)
@@ -2074,7 +2074,7 @@ func TestTypeCheckErr(t *testing.T) {
 }
 
 func zeroIDAndSpan(typ *Type, _ TypeStatus) bool {
-	isPrelude := typ.NodeID >= ast.PreludeFirstID
+	isPrelude := ast.IsPreludeNode(typ.NodeID)
 	typ.NodeID = ast.NodeID(0)
 	typ.Span = base.Span{}
 	switch typ.Kind.(type) {

@@ -7,6 +7,9 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
+//go:embed prelude.met
+var stdlibPreludeSrc string
+
 const minimalPrelude = `
 struct Void________ {}
 struct Arena_______ {}
@@ -118,41 +121,54 @@ fun Int.to_u64_wrapping(self Int) U64 { return 1 }
 fun Int.to_u64_clamped(self Int) U64 { return 1 }
 `
 
-//go:embed prelude.met
-var fullPreludeSrc string
-
 const PreludeFirstID = NodeID(1_000_000_000)
+
+func IsPreludeNode(id NodeID) bool {
+	return id >= PreludeFirstID
+}
 
 var preludeRenames = map[string]string{ //nolint:gochecknoglobals
 	"Void________": "void",
 	"Arena_______": "Arena",
 }
 
+// PreludeAST parses the minimal prelude (built-in types and extern function
+// stubs) and, when minimal is false, also the stdlib prelude (prelude.met).
 func PreludeAST(minimal bool) (*AST, NodeID) {
-	src := minimalPrelude
-	if !minimal {
-		src += fullPreludeSrc
-	}
-	source := base.NewSource("prelude", "", false, []rune(src))
+	source := base.NewSource("prelude", "", false, []rune(minimalPrelude))
 	tokens := token.Lex(source)
-	parser := NewParser(tokens, NewAST(PreludeFirstID))
+	a := NewAST(PreludeFirstID)
+	parser := NewParser(tokens, a)
 	moduleID, ok := parser.ParseModule()
 	if !ok || len(parser.Diagnostics) > 0 {
 		panic("failed to parse prelude: " + parser.Diagnostics.Error())
 	}
-	preludeRenameKeywords(parser.AST)
-	return parser.AST, moduleID
+	updateMinimalPrelude(a)
+	if !minimal {
+		stdlibSource := base.NewSource("prelude.met", "", false, []rune(stdlibPreludeSrc))
+		stdlibTokens := token.Lex(stdlibSource)
+		stdlibParser := NewParser(stdlibTokens, a)
+		if _, ok := stdlibParser.ParseModule(); !ok || len(stdlibParser.Diagnostics) > 0 {
+			panic("failed to parse stdlib prelude: " + stdlibParser.Diagnostics.Error())
+		}
+	}
+
+	return a, moduleID
 }
 
-func preludeRenameKeywords(a *AST) {
+func updateMinimalPrelude(a *AST) {
 	a.Iter(func(id NodeID) bool {
 		node := a.Node(id)
 		switch kind := node.Kind.(type) {
 		case Struct:
 			if renamed, ok := preludeRenames[kind.Name.Name]; ok {
 				kind.Name.Name = renamed
-				node.Kind = kind
 			}
+			kind.Extern = true
+			node.Kind = kind
+		case Fun:
+			kind.Extern = true
+			node.Kind = kind
 		case SimpleType:
 			if renamed, ok := preludeRenames[kind.Name.Name]; ok {
 				kind.Name.Name = renamed
