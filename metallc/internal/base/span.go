@@ -78,7 +78,7 @@ func (s Span) StringWithSource(surroundingLines int) string {
 					sb.WriteString("\n")
 				}
 			} else {
-				sb.WriteString("^n")
+				sb.WriteString("^\n")
 			}
 		}
 		if i == erow-1 && erow != srow {
