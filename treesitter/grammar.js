@@ -29,6 +29,10 @@ module.exports = grammar({
 
   word: ($) => $.identifier,
 
+  conflicts: ($) => [
+    [$.qualified_name],
+  ],
+
   rules: {
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
@@ -77,12 +81,42 @@ module.exports = grammar({
 
     void: (_) => "void",
 
+    // >>> Generics
+    // Type parameters on declarations: fun foo<T Showable>(...) ...
+    // Type arguments on expressions/types: foo<Int>(...), Box<Int>
+    //
+    // The opening `<` uses token.immediate to require no whitespace before
+    // it, mirroring the real parser's LtImmediate token. This disambiguates
+    // `foo<Int>(x)` (type args) from `foo < Int` (comparison).
+
+    type_parameters: ($) => seq(
+      token.immediate("<"),
+      $.type_parameter,
+      repeat(seq(",", $.type_parameter)),
+      ">",
+    ),
+
+    type_parameter: ($) => seq(
+      field("name", $.type_identifier),
+      field("constraint", optional($.type_identifier)),
+    ),
+
+    type_arguments: ($) => seq(
+      token.immediate("<"),
+      $._type,
+      repeat(seq(",", $._type)),
+      ">",
+    ),
+
     // >>> Types
 
     _type: ($) =>
       choice($.simple_type, $.array_type, $.slice_type, $.reference_type),
 
-    simple_type: ($) => choice($.type_identifier, "void"),
+    simple_type: ($) => choice(
+      seq($.type_identifier, optional($.type_arguments)),
+      "void",
+    ),
 
     array_type: ($) => seq("[", $.integer_literal, "]", $._type),
 
@@ -96,6 +130,7 @@ module.exports = grammar({
       seq(
         "fun",
         field("name", $.function_name),
+        optional(field("type_parameters", $.type_parameters)),
         "(", field("parameters", optional($.parameter_list)), ")",
         field("return_type", $._type),
         field("body", $.block),
@@ -121,6 +156,7 @@ module.exports = grammar({
       seq(
         "struct",
         field("name", $.type_identifier),
+        optional(field("type_parameters", $.type_parameters)),
         "{", repeat($.struct_field), "}",
       ),
 
@@ -147,6 +183,7 @@ module.exports = grammar({
       seq(
         "fun",
         field("name", $.function_name),
+        optional(field("type_parameters", $.type_parameters)),
         "(", field("parameters", optional($.parameter_list)), ")",
         field("return_type", $._type),
       ),
@@ -205,18 +242,16 @@ module.exports = grammar({
         $.return_expression,
         $.break_expression,
         $.continue_expression,
-
-        // Allocation.
-        $.new_expression,
-        $.new_mut_expression,
-        $.make_expression,
       ),
 
     // >>> Type-prefixed expressions
 
-    // TypeName.methodName
+    // TypeName.methodName or TypeName.methodName<Args>
     qualified_name: ($) =>
-      prec(PREC.POSTFIX, seq($.type_identifier, ".", $.identifier)),
+      prec(PREC.POSTFIX, seq(
+        $.type_identifier, ".", $.identifier,
+        optional($.type_arguments),
+      )),
 
     // module::member or module::Type (method access like lib::Foo.bar
     // is handled by field_access on the path_expression)
@@ -225,12 +260,14 @@ module.exports = grammar({
         field("module", $.identifier),
         "::",
         field("member", choice($.type_identifier, $.identifier)),
+        optional($.type_arguments),
       )),
 
-    // TypeName(args...)
+    // TypeName(args...) or TypeName<Args>(args...)
     struct_literal: ($) =>
       prec(PREC.POSTFIX, seq(
         field("type", $.type_identifier),
+        optional(field("type_arguments", $.type_arguments)),
         "(", field("arguments", optional($.argument_list)), ")",
       )),
 
@@ -300,6 +337,7 @@ module.exports = grammar({
     call_expression: ($) =>
       prec(PREC.POSTFIX, seq(
         field("callee", $._expression),
+        optional(field("type_arguments", $.type_arguments)),
         "(", field("arguments", optional($.argument_list)), ")",
       )),
 
@@ -362,46 +400,6 @@ module.exports = grammar({
     break_expression: (_) => "break",
 
     continue_expression: (_) => "continue",
-
-    // >>> Allocation
-
-    new_expression: ($) => seq(
-      "new", "(",
-      field("allocator", $._allocator_expr), ",",
-      field("value", $._new_target),
-      ")",
-    ),
-
-    new_mut_expression: ($) => seq(
-      "new_mut", "(",
-      field("allocator", $._allocator_expr), ",",
-      field("value", $._new_target),
-      ")",
-    ),
-
-    _new_target: ($) => choice($.struct_literal, $.new_array),
-
-    new_array: ($) => seq(
-      field("type", $.array_type),
-      "(", field("default_value", optional($._expression)), ")",
-    ),
-
-    make_expression: ($) => seq(
-      "make", "(",
-      field("allocator", $._allocator_expr), ",",
-      field("value", $.make_slice),
-      ")",
-    ),
-
-    make_slice: ($) => seq(
-      field("type", $.slice_type),
-      "(",
-      field("length", $._expression),
-      optional(seq(",", field("default_value", $._expression))),
-      ")",
-    ),
-
-    _allocator_expr: ($) => choice($.allocator_identifier, $.field_access),
 
     // >>> Array literal
 

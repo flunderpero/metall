@@ -11,9 +11,6 @@
   "for"
   "in"
   "return"
-  "new"
-  "new_mut"
-  "make"
   "and"
   "or"
   "not"
@@ -43,6 +40,12 @@
 (simple_type (type_identifier) @type)
 (simple_type "void" @type)
 (reference_type "&" @operator)
+
+; >>> Generics
+
+(type_parameter name: (type_identifier) @type.definition)
+(type_parameter constraint: (type_identifier) @type)
+(type_arguments (simple_type (type_identifier) @type))
 
 ; >>> Functions
 
@@ -134,5 +137,5 @@
 
 ; >>> Punctuation
 
-["(" ")" "{" "}" "[" "]"] @punctuation.bracket
+["(" ")" "{" "}" "[" "]" "<" ">"] @punctuation.bracket
 ["," "." "::"] @punctuation.delimiter
