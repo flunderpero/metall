@@ -98,6 +98,7 @@ func (g *GenericsEngine) resolveTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID,
 func (g *GenericsEngine) instantiateFun(
 	genericTypeID TypeID,
 	argTypeIDs []TypeID,
+	callSiteNodeID ast.NodeID,
 	span base.Span,
 ) (typeID TypeID, mangledName string, status TypeStatus) {
 	funNodeID := g.env.DeclNode(genericTypeID)
@@ -126,7 +127,7 @@ func (g *GenericsEngine) instantiateFun(
 		g.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
 		if typeParamNode.Constraint != nil {
 			constraintTypeID, _ := g.query(*typeParamNode.Constraint)
-			if !g.satisfiesShape(argTypeIDs[i], constraintTypeID, typeParamNodeID, span) {
+			if !g.satisfiesShape(argTypeIDs[i], constraintTypeID, callSiteNodeID, span) {
 				return InvalidTypeID, "", TypeFailed
 			}
 		}
@@ -152,64 +153,106 @@ func (g *GenericsEngine) instantiateFun(
 	return funTypeID, mangledName, TypeOK
 }
 
-func (g *GenericsEngine) satisfiesShape(
-	concreteTypeID TypeID, shapeTypeID TypeID, scopeNodeID ast.NodeID, span base.Span,
+func (g *GenericsEngine) satisfiesShape( //nolint:funlen
+	concreteTypeID TypeID,
+	shapeTypeID TypeID,
+	scopeNodeID ast.NodeID,
+	span base.Span,
 ) bool {
 	shapeType := base.Cast[ShapeType](g.env.Type(shapeTypeID).Kind)
 	concreteTyp := g.env.Type(concreteTypeID)
-	structType, isStruct := concreteTyp.Kind.(StructType)
-	if !isStruct {
-		g.diag(span, "type %s does not satisfy shape %s: not a struct",
-			g.env.TypeDisplay(concreteTypeID), shapeType.DeclName)
-		return false
+	// A type parameter constrained by the same shape trivially satisfies it.
+	if tpt, ok := concreteTyp.Kind.(TypeParamType); ok && tpt.Shape != nil && *tpt.Shape == shapeTypeID {
+		return true
 	}
-	for _, reqField := range shapeType.Fields {
-		found := false
-		for _, field := range structType.Fields {
-			if field.Name == reqField.Name {
-				found = true
-				if field.Type != reqField.Type {
-					g.diag(span, "type %s does not satisfy shape %s: field %s has type %s, expected %s",
-						structType.Name, shapeType.DeclName, field.Name,
-						g.env.TypeDisplay(field.Type), g.env.TypeDisplay(reqField.Type))
-					return false
-				}
-				if reqField.Mut && !field.Mut {
-					g.diag(span, "type %s does not satisfy shape %s: field %s must be mut",
-						structType.Name, shapeType.DeclName, field.Name)
-					return false
-				}
-				break
-			}
-		}
-		if !found {
-			g.diag(span, "type %s does not satisfy shape %s: missing field %s",
-				structType.Name, shapeType.DeclName, reqField.Name)
+	concreteDisplay := g.env.TypeDisplay(concreteTypeID)
+	// For method lookup we need the scope-resolvable name. For monomorphized
+	// generics (e.g. Pair<Str, Int>) methods are defined on the generic type
+	// (Pair), so we look up via the origin type's name.
+	methodLookupName := g.env.typeName(concreteTyp)
+	if originID, ok := g.env.GenericOrigin(concreteTypeID); ok {
+		methodLookupName = g.env.typeName(g.env.Type(originID))
+	}
+	// Field requirements need a StructType.
+	if len(shapeType.Fields) > 0 {
+		structType, isStruct := concreteTyp.Kind.(StructType)
+		if !isStruct {
+			g.diag(span, "type %s does not satisfy shape %s: not a struct",
+				concreteDisplay, shapeType.DeclName)
 			return false
 		}
+		for _, reqField := range shapeType.Fields {
+			found := false
+			for _, field := range structType.Fields {
+				if field.Name == reqField.Name {
+					found = true
+					if field.Type != reqField.Type {
+						g.diag(span, "type %s does not satisfy shape %s: field %s has type %s, expected %s",
+							concreteDisplay, shapeType.DeclName, field.Name,
+							g.env.TypeDisplay(field.Type), g.env.TypeDisplay(reqField.Type))
+						return false
+					}
+					if reqField.Mut && !field.Mut {
+						g.diag(span, "type %s does not satisfy shape %s: field %s must be mut",
+							concreteDisplay, shapeType.DeclName, field.Name)
+						return false
+					}
+					break
+				}
+			}
+			if !found {
+				g.diag(span, "type %s does not satisfy shape %s: missing field %s",
+					concreteDisplay, shapeType.DeclName, reqField.Name)
+				return false
+			}
+		}
 	}
+	// Method requirements — any type can have methods.
 	shapeNodeID := g.env.DeclNode(shapeTypeID)
 	shapeNode := base.Cast[ast.Shape](g.ast.Node(shapeNodeID).Kind)
-	concreteName := g.env.typeName(concreteTyp)
+	// For monomorphized generic structs, the concrete type args need to be
+	// applied to generic methods defined on the struct.
+	var structTypeArgs []TypeID
+	if structType, ok := concreteTyp.Kind.(StructType); ok {
+		structTypeArgs = structType.TypeArgs
+	}
 	for _, funDeclNodeID := range shapeNode.Funs {
 		funDecl := base.Cast[ast.FunDecl](g.ast.Node(funDeclNodeID).Kind)
 		_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
-		binding, ok := g.lookup(scopeNodeID, concreteName+"."+methodName)
+		binding, ok := g.lookup(scopeNodeID, methodLookupName+"."+methodName)
 		if !ok {
 			g.diag(span, "type %s does not satisfy shape %s: missing method %s",
-				structType.Name, shapeType.DeclName, methodName)
+				concreteDisplay, shapeType.DeclName, methodName)
 			return false
 		}
 		shapeFunBinding, _ := g.lookup(scopeNodeID, shapeType.DeclName+"."+methodName)
 		shapeFunType := base.Cast[FunType](g.env.Type(shapeFunBinding.TypeID).Kind)
 		expectedFunType := g.env.substituteFunType(shapeFunType, shapeTypeID, concreteTypeID)
-		concreteFunType := base.Cast[FunType](g.env.Type(binding.TypeID).Kind)
-		if !expectedFunType.Equal(concreteFunType) {
-			g.diag(span,
-				"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
-				structType.Name, shapeType.DeclName, methodName,
-				g.env.TypeDisplay(binding.TypeID), g.env.TypeDisplay(shapeFunBinding.TypeID))
-			return false
+		// When the method is a generic function on a generic struct, instantiate
+		// it with the struct's type args to get the concrete signature.
+		methodFunNode, isFun := g.ast.Node(binding.Decl).Kind.(ast.Fun)
+		if isFun && len(methodFunNode.TypeParams) > 0 && len(structTypeArgs) > 0 {
+			methodTypeID, _, status := g.instantiateFun(binding.TypeID, structTypeArgs, scopeNodeID, span)
+			if status.Failed() {
+				return false
+			}
+			concreteFunType := base.Cast[FunType](g.env.Type(methodTypeID).Kind)
+			if !expectedFunType.Equal(concreteFunType) {
+				g.diag(span,
+					"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
+					concreteDisplay, shapeType.DeclName, methodName,
+					g.env.TypeDisplay(methodTypeID), g.env.TypeDisplay(shapeFunBinding.TypeID))
+				return false
+			}
+		} else {
+			concreteFunType := base.Cast[FunType](g.env.Type(binding.TypeID).Kind)
+			if !expectedFunType.Equal(concreteFunType) {
+				g.diag(span,
+					"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
+					concreteDisplay, shapeType.DeclName, methodName,
+					g.env.TypeDisplay(binding.TypeID), g.env.TypeDisplay(shapeFunBinding.TypeID))
+				return false
+			}
 		}
 	}
 	return true
@@ -345,7 +388,7 @@ func (g *GenericsEngine) resolveGenericMethod(
 		return InvalidTypeID, status, true
 	}
 	argTypeIDs = append(argTypeIDs, extraArgs...)
-	typeID, mangledName, status := g.instantiateFun(binding.TypeID, argTypeIDs, fieldAccess.Field.Span)
+	typeID, mangledName, status := g.instantiateFun(binding.TypeID, argTypeIDs, nodeID, fieldAccess.Field.Span)
 	if status.Failed() {
 		return InvalidTypeID, status, true
 	}

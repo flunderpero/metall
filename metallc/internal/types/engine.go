@@ -1399,7 +1399,7 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
-				typeID, mangledName, status := e.generics.instantiateFun(binding.TypeID, argTypeIDs, span)
+				typeID, mangledName, status := e.generics.instantiateFun(binding.TypeID, argTypeIDs, nodeID, span)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}

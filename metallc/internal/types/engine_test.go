@@ -1170,6 +1170,45 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			}`,
 			Str, nil,
 		},
+		{
+			"shape satisfied by non-struct type",
+			`{
+				shape Displayable {
+					fun Displayable.display(self Displayable) Int
+				}
+				fun Int.display(i Int) Int { i }
+				fun show<T Displayable>(t T) Int { t.display() }
+				show<Int>(42)
+			}`,
+			Int, nil,
+		},
+		{
+			"type param satisfies its own constraint",
+			`{
+				shape Displayable {
+					fun Displayable.display(self Displayable) Int
+				}
+				fun Int.display(i Int) Int { i }
+				fun show<T Displayable>(t T) Int { t.display() }
+				fun wrap<K Displayable>(k K) Int { show<K>(k) }
+				wrap<Int>(7)
+			}`,
+			Int, nil,
+		},
+		{
+			"shape satisfied by generic struct",
+			`{
+				shape Displayable {
+					fun Displayable.display(self Displayable) Int
+				}
+				struct Wrapper<T> { value T }
+				fun Wrapper.display<T Displayable>(w Wrapper<T>) Int { w.value.display() }
+				fun Int.display(i Int) Int { i }
+				fun show<T Displayable>(t T) Int { t.display() }
+				show<Wrapper<Int>>(Wrapper<Int>(42))
+			}`,
+			Int, nil,
+		},
 	}
 
 	// We need a little hack here, because the "ref" and "mut ref" tests
