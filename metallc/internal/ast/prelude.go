@@ -19,11 +19,13 @@ struct U8 {}
 struct U16 {}
 struct U32 {}
 struct U64 {}
+struct Rune {}
 struct Str { data []U8 }
 fun print_str(s Str) void {}
 fun print_int(n Int) void {}
 fun print_uint(n U64) void {}
 fun print_bool(b Bool) void {}
+fun Rune.to_u32(r Rune) U32 { return 1 }
 fun I8.to_i16(self I8) I16 { return 1 }
 fun I8.to_i32(self I8) I32 { return 1 }
 fun I8.to_int(self I8) Int { return 1 }

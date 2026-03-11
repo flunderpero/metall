@@ -19,9 +19,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	Bool := &Type{3, 0, base.Span{}, BoolType{}}
 	Int := &Type{7, 0, base.Span{}, lookupIntType("Int")}
 	U8 := &Type{8, 0, base.Span{}, lookupIntType("U8")}
-	Str := &Type{12, 0, base.Span{}, StructType{
+	Rune := &Type{12, 0, base.Span{}, lookupIntType("Rune")}
+	Str := &Type{13, 0, base.Span{}, StructType{
 		Name:   "Str",
-		Fields: []StructField{{Name: "data", Type: TypeID(71), Mut: false}},
+		Fields: []StructField{{Name: "data", Type: TypeID(73), Mut: false}},
 	}}
 
 	tests := []struct {
@@ -32,6 +33,8 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	}{
 		{"int literal", `123`, Int, nil},
 		{"str literal", `"hello"`, Str, nil},
+		{"rune literal", `'a'`, Rune, nil},
+		{"rune literal unicode", `'é'`, Rune, nil},
 		{"block", `{ 123 "hello" }`, Str, nil},
 		{"empty block is void", `{ }`, void, nil},
 		{"let binding", `let x = 123`, void, func(e *Engine, id ast.NodeID, assert base.Assert) {
@@ -2143,7 +2146,16 @@ func fun_t(types ...*Type) *Type {
 
 func TestIntTypes(t *testing.T) {
 	assert := base.NewAssert(t)
-	allIntTypes := []string{"I8", "I16", "I32", "Int", "U8", "U16", "U32", "U64"}
+	allIntTypes := []string{"I8", "I16", "I32", "Int", "U8", "U16", "U32", "U64", "Rune"}
+
+	// lit returns a source expression that produces a value of the given int type.
+	// For Rune this is a rune literal ('a'), for all others it's the type constructor (e.g. I32(1)).
+	lit := func(name string) string {
+		if name == "Rune" {
+			return "'a'"
+		}
+		return name + "(1)"
+	}
 
 	typeCheck := func(t *testing.T, src string) *Engine {
 		t.Helper()
@@ -2163,7 +2175,11 @@ func TestIntTypes(t *testing.T) {
 
 	t.Run("literal range", func(t *testing.T) {
 		// Each type constructor accepts 0 and its max literal value.
+		// Rune is tested separately because Rune(...) is prelude-only.
 		for _, info := range intTypes {
+			if info.Name == "Rune" {
+				continue
+			}
 			for _, val := range []string{"0", info.Max.String()} {
 				src := fmt.Sprintf("%s(%s)", info.Name, val)
 				e := typeCheck(t, src)
@@ -2176,7 +2192,11 @@ func TestIntTypes(t *testing.T) {
 	})
 
 	t.Run("literal out of range", func(t *testing.T) {
+		// Rune is tested separately because Rune(...) is prelude-only.
 		for _, typ := range intTypes {
+			if typ.Name == "Rune" {
+				continue
+			}
 			aboveMax := new(big.Int).Add(typ.Max, big.NewInt(1))
 			src := fmt.Sprintf("%s(%s)", typ.Name, aboveMax)
 			e := typeCheck(t, src)
@@ -2185,10 +2205,16 @@ func TestIntTypes(t *testing.T) {
 		}
 	})
 
+	t.Run("Rune constructor is prelude-only", func(t *testing.T) {
+		e := typeCheck(t, `{ let r = 'a' Rune(r) }`)
+		assert.Equal(1, len(e.diagnostics), "Rune() diagnostics: %s", e.diagnostics)
+		assert.Contains(e.diagnostics[0].Display(), "Rune cannot be constructed directly")
+	})
+
 	t.Run("arithmetic", func(t *testing.T) {
 		for _, op := range []string{"+", "-", "*", "/"} {
 			for _, name := range allIntTypes {
-				src := fmt.Sprintf("%[1]s(1) %[2]s %[1]s(1)", name, op)
+				src := fmt.Sprintf("%s %s %s", lit(name), op, lit(name))
 				e := typeCheck(t, src)
 				assert.Equal(0, len(e.diagnostics), "%s: %s", src, e.diagnostics)
 			}
@@ -2198,7 +2224,7 @@ func TestIntTypes(t *testing.T) {
 	t.Run("comparison", func(t *testing.T) {
 		for _, op := range []string{"==", "!="} {
 			for _, name := range allIntTypes {
-				src := fmt.Sprintf("%[1]s(1) %[2]s %[1]s(1)", name, op)
+				src := fmt.Sprintf("%s %s %s", lit(name), op, lit(name))
 				e := typeCheck(t, src)
 				assert.Equal(0, len(e.diagnostics), "%s: %s", src, e.diagnostics)
 			}
@@ -2211,8 +2237,18 @@ func TestIntTypes(t *testing.T) {
 		assert.Contains(e.diagnostics[0].Display(), "type mismatch")
 	})
 
+	t.Run("Rune mixed with U32 rejected", func(t *testing.T) {
+		e := typeCheck(t, `{ let r = 'a' let u = U32(1) r + u }`)
+		assert.Equal(1, len(e.diagnostics), "diagnostics: %s", e.diagnostics)
+		assert.Contains(e.diagnostics[0].Display(), "type mismatch")
+	})
+
 	t.Run("non-integer rejected", func(t *testing.T) {
+		// Rune is excluded because Rune(...) is prelude-only.
 		for _, name := range allIntTypes {
+			if name == "Rune" {
+				continue
+			}
 			src := fmt.Sprintf(`%s("hello")`, name)
 			e := typeCheck(t, src)
 			assert.Equal(1, len(e.diagnostics), "%s(Str) diagnostics: %s", name, e.diagnostics)
@@ -2221,7 +2257,11 @@ func TestIntTypes(t *testing.T) {
 	})
 
 	t.Run("wrong arg count", func(t *testing.T) {
+		// Rune is excluded because Rune(...) is prelude-only.
 		for _, name := range allIntTypes {
+			if name == "Rune" {
+				continue
+			}
 			src := fmt.Sprintf("%s(1, 2)", name)
 			e := typeCheck(t, src)
 			assert.Equal(1, len(e.diagnostics), "%s(1,2) diagnostics: %s", name, e.diagnostics)
@@ -2273,7 +2313,11 @@ func TestIntTypes(t *testing.T) {
 	})
 
 	t.Run("type constructor allows identity", func(t *testing.T) {
+		// Rune is excluded because Rune(...) is prelude-only.
 		for _, name := range allIntTypes {
+			if name == "Rune" {
+				continue
+			}
 			src := fmt.Sprintf("{ let x = %s(1) %s(x) }", name, name)
 			e := typeCheck(t, src)
 			assert.Equal(0, len(e.diagnostics), "%s(%s) identity should be allowed: %s", name, name, e.diagnostics)

@@ -135,6 +135,8 @@ func TestParseOK(t *testing.T) {
 
 		{"bool true", "expr", "true", func(a *TestAST) NodeID { return a.bool_(true) }},
 		{"bool false", "expr", "false", func(a *TestAST) NodeID { return a.bool_(false) }},
+		{"rune literal", "expr", `'a'`, func(a *TestAST) NodeID { return a.rune_('a') }},
+		{"rune literal unicode", "expr", `'é'`, func(a *TestAST) NodeID { return a.rune_('é') }},
 		{
 			"if then else", "expr", `if a { 42 } else { 123 }`,
 			func(a *TestAST) NodeID {
@@ -986,6 +988,10 @@ func (a *TestAST) string_(value string) NodeID {
 
 func (a *TestAST) int_(value int64) NodeID {
 	return a.NewInt(big.NewInt(value), a.span)
+}
+
+func (a *TestAST) rune_(value rune) NodeID {
+	return a.NewRuneLiteral(uint32(value), a.span)
 }
 
 func (a *TestAST) block(exprs ...NodeID) NodeID {

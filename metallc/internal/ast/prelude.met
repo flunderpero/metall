@@ -1,3 +1,12 @@
+--- Replace an illegal unicode codepoint with the replacement character U+FFFD. 
+    Valid codepoints range from U+0000 to U+10FFFF excluding the surrogate 
+    codepoints U+D800 to U+DFFF. ---
+fun Rune.from_u32_lossy(n U32) Rune { 
+    if n > U32(1114111) { return Rune(65533) }
+    if n >= U32(55296) and n <= U32(57343) { return Rune(65533) }
+    Rune(n)
+}
+
 --- Replace illegal utf8 sequences with the replacement character U+FFFD. 
     todo: Actually do that. :-) ---
 fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
@@ -41,4 +50,10 @@ fun Str.concat(s Str, other Str, @a Arena) Str {
         data[s.data.len + j] = other.data[j]
     }
     Str(data)
+}
+
+fun Str.to_str(s Str, @a Arena) Str { s }
+
+shape ToStr {
+    fun ToStr.to_str(t ToStr, @a Arena) Str
 }

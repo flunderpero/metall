@@ -224,6 +224,12 @@ type String struct {
 
 func (String) isKind() {}
 
+type RuneLiteral struct {
+	Value uint32
+}
+
+func (RuneLiteral) isKind() {}
+
 type Assign struct {
 	LHS NodeID
 	RHS NodeID
@@ -533,6 +539,10 @@ func (a *AST) NewString(value string, span base.Span) NodeID {
 	return a.node(String{Value: value}, span)
 }
 
+func (a *AST) NewRuneLiteral(value uint32, span base.Span) NodeID {
+	return a.node(RuneLiteral{Value: value}, span)
+}
+
 func (a *AST) NewSimpleType(name Name, typeArgs []NodeID, span base.Span) NodeID {
 	return a.node(SimpleType{Name: name, TypeArgs: typeArgs}, span)
 }
@@ -753,6 +763,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Int:
 	case Bool:
 	case String:
+	case RuneLiteral:
 	case Var:
 		f(kind.Expr)
 	case SimpleType:
@@ -1049,6 +1060,8 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		addAttr("value", fmt.Sprintf("%t", kind.Value))
 	case String:
 		addAttr("value", fmt.Sprintf("%q", kind.Value))
+	case RuneLiteral:
+		addAttr("value", fmt.Sprintf("'%c'(%d)", rune(kind.Value), kind.Value))
 	case Var:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		addAttr("mut", fmt.Sprintf("%t", kind.Mut))

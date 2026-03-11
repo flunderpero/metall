@@ -32,6 +32,7 @@ type Engine struct {
 	voidTyp   TypeID
 	boolTyp   TypeID
 	strTyp    TypeID
+	runeTyp   TypeID
 	arenaTyp  TypeID
 	intTyp    TypeID
 }
@@ -202,6 +203,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkSimpleType(nodeID, nodeKind, node.Span)
 	case ast.String:
 		typeID, status = e.checkString()
+	case ast.RuneLiteral:
+		typeID, status = e.checkRuneLiteral(nodeKind, node.Span)
 	case ast.Var:
 		typeID, status = e.checkVar(nodeID, nodeKind, node.Span)
 	default:
@@ -708,7 +711,11 @@ func (e *Engine) checkStructLiteral(
 	targetTyp := e.env.Type(targetTypeID)
 	switch kind := targetTyp.Kind.(type) {
 	case IntType:
-		return e.checkIntLiteral(kind, targetTypeID, lit, span)
+		if kind.Name == "Rune" && nodeID < ast.PreludeFirstID {
+			e.diag(span, "Rune cannot be constructed directly; use Rune.from_u32_lossy() instead")
+			return InvalidTypeID, TypeFailed
+		}
+		return e.checkIntLiteral(nodeID, kind, targetTypeID, lit, span)
 	case StructType:
 		if kind.Name == "Str" && nodeID < ast.PreludeFirstID {
 			e.diag(span, "Str cannot be constructed directly; use Str.from_utf8_lossy() instead")
@@ -750,7 +757,7 @@ func (e *Engine) checkStructLiteralFields(
 }
 
 func (e *Engine) checkIntLiteral(
-	targetTyp IntType, targetTypeID TypeID, lit ast.StructLiteral, span base.Span,
+	nodeID ast.NodeID, targetTyp IntType, targetTypeID TypeID, lit ast.StructLiteral, span base.Span,
 ) (TypeID, TypeStatus) {
 	if len(lit.Args) != 1 {
 		e.diag(span, "%s() takes exactly 1 argument, got %d", targetTyp.Name, len(lit.Args))
@@ -762,10 +769,12 @@ func (e *Engine) checkIntLiteral(
 		return InvalidTypeID, TypeDepFailed
 	}
 	if argTypeID != targetTypeID {
-		argSpan := e.ast.Node(argNodeID).Span
-		e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
-			e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
-		return InvalidTypeID, TypeFailed
+		if targetTyp.Name != "Rune" || nodeID < ast.PreludeFirstID {
+			argSpan := e.ast.Node(argNodeID).Span
+			e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
+				e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
+			return InvalidTypeID, TypeFailed
+		}
 	}
 	return targetTypeID, TypeOK
 }
@@ -1180,6 +1189,9 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 				if intTyp.Name == "Int" {
 					e.intTyp = typ.Type.ID
 				}
+				if intTyp.Name == "Rune" {
+					e.runeTyp = typ.Type.ID
+				}
 			}
 		}
 	}
@@ -1469,6 +1481,21 @@ func (e *Engine) checkSimpleType(nodeID ast.NodeID, simpleType ast.SimpleType, s
 
 func (e *Engine) checkString() (TypeID, TypeStatus) {
 	return e.strTyp, TypeOK
+}
+
+func (e *Engine) checkRuneLiteral(lit ast.RuneLiteral, span base.Span) (TypeID, TypeStatus) {
+	const maxUnicodeCodepoint = 0x10FFFF
+	const surrogateMin = 0xD800
+	const surrogateMax = 0xDFFF
+	if lit.Value > maxUnicodeCodepoint {
+		e.diag(span, "invalid rune literal: value U+%04X exceeds maximum Unicode codepoint U+10FFFF", lit.Value)
+		return InvalidTypeID, TypeFailed
+	}
+	if lit.Value >= surrogateMin && lit.Value <= surrogateMax {
+		e.diag(span, "invalid rune literal: value U+%04X is in the surrogate range (U+D800..U+DFFF)", lit.Value)
+		return InvalidTypeID, TypeFailed
+	}
+	return e.runeTyp, TypeOK
 }
 
 func (e *Engine) checkVar(

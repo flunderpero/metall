@@ -146,6 +146,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genBool(id, kind)
 	case ast.String:
 		g.genString(id, kind)
+	case ast.RuneLiteral:
+		g.genRuneLiteral(id, kind)
 	case ast.Var:
 		g.genVar(id, kind)
 	case ast.Ref:
@@ -893,6 +895,12 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	default:
 		panic(base.Errorf("unknown binary operator: %s", binary.Op))
 	}
+	if intTyp, ok := g.env.TypeOfNode(binary.LHS).Kind.(types.IntType); ok && intTyp.Name == "Rune" {
+		switch binary.Op { //nolint:exhaustive
+		case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpDiv, ast.BinaryOpMul, ast.BinaryOpMod:
+			g.write("call void @__rune_check(i32 %s)", reg)
+		}
+	}
 	g.setCode(id, reg)
 }
 
@@ -984,6 +992,10 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 
 func (g *IRFunGen) genInt(id ast.NodeID, int_ ast.Int) {
 	g.setCode(id, int_.Value.String())
+}
+
+func (g *IRFunGen) genRuneLiteral(id ast.NodeID, lit ast.RuneLiteral) {
+	g.setCode(id, "%d", lit.Value)
 }
 
 func (g *IRFunGen) genBool(id ast.NodeID, bool_ ast.Bool) {

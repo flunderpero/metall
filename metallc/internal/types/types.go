@@ -143,4 +143,5 @@ var intTypes = []IntType{
 	{"U16", false, 16, big.NewInt(0), big.NewInt(65535)},
 	{"U32", false, 32, big.NewInt(0), big.NewInt(4294967295)},
 	{"U64", false, 64, big.NewInt(0), new(big.Int).SetUint64(18446744073709551615)},
+	{"Rune", false, 32, big.NewInt(0), big.NewInt(4294967295)},
 }

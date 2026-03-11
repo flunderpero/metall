@@ -1441,6 +1441,36 @@ func TestCompile(t *testing.T) {
 			}
 			`, "30\n42\n42\n33\n127\n"},
 
+		// Rune type.
+		{"rune literal and to_u32", `
+			fun main() void {
+				print_uint('a'.to_u32().to_u64())
+				print_uint('z'.to_u32().to_u64())
+				print_uint('é'.to_u32().to_u64())
+			}
+			`, "97\n122\n233\n"},
+		{"rune comparison", `
+			fun main() void {
+				print_bool('a' == 'a')
+				print_bool('a' != 'b')
+				print_bool('a' == 'b')
+			}
+			`, "true\ntrue\nfalse\n"}, //nolint:dupword
+		{"rune arithmetic", `
+			fun main() void {
+				let next = 'a' + 1
+				print_uint(next.to_u32().to_u64())
+				let diff = 'z' - 'a'
+				print_uint(diff.to_u32().to_u64())
+			}
+			`, "98\n25\n"},
+		{"rune let binding", `
+			fun main() void {
+				let r = 'x'
+				print_uint(r.to_u32().to_u64())
+			}
+			`, "120\n"},
+
 		// Method syntax.
 		{"method call on struct", `
 			struct Foo { x Int }
@@ -1587,6 +1617,21 @@ func TestCompilePanic(t *testing.T) {
 		{"int modulo by zero", `
 			fun main() void {
 				1 % 0
+			}
+		`},
+		{"rune arithmetic overflow", `
+			fun main() void {
+				'😀' * 9
+			}
+		`},
+		{"rune arithmetic underflow", `
+			fun main() void {
+				'a' - 'b'
+			}
+		`},
+		{"rune arithmetic into surrogate", `
+			fun main() void {
+				'퟿' + 1
 			}
 		`},
 	}

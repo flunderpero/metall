@@ -794,6 +794,10 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	case token.String:
 		p.next()
 		expr = p.NewString(t.Value, t.Span.Combine(p.span()))
+	case token.Rune:
+		p.next()
+		runes := []rune(t.Value)
+		expr = p.NewRuneLiteral(uint32(runes[0]), t.Span.Combine(p.span()))
 	case token.LCurly:
 		block, ok := p.ParseBlock()
 		if !ok {

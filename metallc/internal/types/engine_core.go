@@ -105,6 +105,7 @@ func (c *EngineCore) registerFun(nodeID ast.NodeID) {
 		"Int.to_u16_wrapping", "Int.to_u16_clamped",
 		"Int.to_u32_wrapping", "Int.to_u32_clamped",
 		"Int.to_u64_wrapping", "Int.to_u64_clamped",
+		"Rune.to_u32",
 	}, name) {
 		return
 	}

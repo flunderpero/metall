@@ -529,3 +529,24 @@ define internal i64 @"Int.to_u64_clamped"(i64 %v) alwaysinline {
     %r = select i1 %neg, i64 0, i64 %v
     ret i64 %r
 }
+
+; >>> Rune builtins.
+
+define internal void @__rune_check(i32 %v) alwaysinline {
+    %above_max = icmp ugt i32 %v, 1114111
+    br i1 %above_max, label %panic, label %check_surrogate
+check_surrogate:
+    %above_d7ff = icmp ugt i32 %v, 55295
+    %below_e000 = icmp ult i32 %v, 57344
+    %in_surrogate = and i1 %above_d7ff, %below_e000
+    br i1 %in_surrogate, label %panic, label %ok
+panic:
+    call void @llvm.trap()
+    unreachable
+ok:
+    ret void
+}
+
+define internal i32 @"Rune.to_u32"(i32 %v) alwaysinline {
+    ret i32 %v
+}

@@ -57,6 +57,7 @@ const (
 	RCurly
 	Return
 	RParen
+	Rune
 	Shape
 	Slash
 	Star
@@ -117,6 +118,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	RCurly:                "}",
 	Return:                "return",
 	RParen:                ")",
+	Rune:                  "<rune>",
 	Shape:                 "<shape>",
 	Slash:                 "/",
 	Star:                  "*",
@@ -226,6 +228,16 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			value = append(value, c)
 		}
 		return Token{EOF, "", span}
+	case c == '\'':
+		if idx < len(source.Content) && source.Content[idx] != '\'' {
+			value := source.Content[idx]
+			idx += 1
+			if idx < len(source.Content) && source.Content[idx] == '\'' {
+				span.End = idx
+				return Token{Rune, string(value), span}
+			}
+		}
+		return Token{Unknown, string(c), span}
 	case c == '=':
 		kind := Eq
 		if idx < len(source.Content) && source.Content[idx] == '=' {
