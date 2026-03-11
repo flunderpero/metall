@@ -22,7 +22,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 	Rune := &Type{12, 0, base.Span{}, lookupIntType("Rune")}
 	Str := &Type{13, 0, base.Span{}, StructType{
 		Name:   "Str",
-		Fields: []StructField{{Name: "data", Type: TypeID(73), Mut: false}},
+		Fields: []StructField{{Name: "data", Type: TypeID(91), Mut: false}},
 	}}
 
 	tests := []struct {
@@ -319,7 +319,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			assert.Equal(AllocatorArena, typ.Impl)
 		}},
 		{
-			"heap alloc struct", `{ let @myalloc = Arena() struct Foo{one Str} let x = new(@myalloc, Foo("hello")) x }`, nil,
+			"heap alloc struct", `{ let @myalloc = Arena() struct Foo{one Str} let x = @myalloc.new<Foo>(Foo("hello")) x }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block, ok := e.ast.Node(id).Kind.(ast.Block)
 				assert.Equal(true, ok)
@@ -334,10 +334,10 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				assert.Equal(Str.ID, foo.Fields[0].Type)
 			},
 		},
-		{"pass alloc to fun", `{ fun foo(@myalloc Arena) void {} let @myalloc = Arena() foo(@myalloc) }`, void, nil},
+		{"pass alloc to fun", `{ fun foo(@a Arena) void {} let @a = Arena() foo(@a) }`, void, nil},
 		{
 			"heap alloc mut struct",
-			`{ let @a = Arena() struct Bar{one Str} new_mut(@a, Bar("hello")) }`, nil,
+			`{ let @a = Arena() struct Bar{one Str} @a.new_mut<Bar>(Bar("hello")) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
@@ -352,17 +352,14 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			},
 		},
 		{
-			"heap alloc mut array",
-			`{ let @a = Arena() new_mut(@a, [5]Int()) }`, nil,
+			"make uninit slice",
+			`{ let @a = Arena() @a.slice_uninit_mut<Int>(5) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
+				sl, ok := e.env.TypeOfNode(lastExpr).Kind.(SliceType)
 				assert.Equal(true, ok)
-				assert.Equal(true, ref.Mut)
-				arr, ok := e.env.Type(ref.Type).Kind.(ArrayType)
-				assert.Equal(true, ok)
-				assert.Equal(int64(5), arr.Len)
+				assert.Equal(true, sl.Mut)
 			},
 		},
 
@@ -417,71 +414,69 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"heap alloc from struct field",
-			`{ struct Foo{one Str} struct Bar { @myalloc Arena } let @myalloc = Arena() let x = Bar(@myalloc) let y = new(x.@myalloc, Foo("hello")) }`,
+			`{ struct Foo{one Str} struct Bar { @myalloc Arena } let @myalloc = Arena() let x = Bar(@myalloc) let y = x.@myalloc.new<Foo>(Foo("hello")) }`,
 			void, nil,
 		},
 		{
-			"heap alloc array",
-			`{ let @myalloc = Arena() new(@myalloc, [5]Int()) }`, nil,
+			"make uninit immutable slice",
+			`{ let @myalloc = Arena() @myalloc.slice_uninit<Int>(5) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
+				sl, ok := e.env.TypeOfNode(lastExpr).Kind.(SliceType)
 				assert.Equal(true, ok)
-				assert.Equal(false, ref.Mut)
-				arr, ok := e.env.Type(ref.Type).Kind.(ArrayType)
-				assert.Equal(true, ok)
-				assert.Equal(int64(5), arr.Len)
+				assert.Equal(false, sl.Mut)
 			},
 		},
 		{
-			"new array default", `{ let @myalloc = Arena() new(@myalloc, [5]Int(42)) }`, nil,
+			"make slice with default", `{ let @myalloc = Arena() @myalloc.slice<Int>(5, 42) }`, nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				lastExpr := block.Exprs[len(block.Exprs)-1]
-				ref, ok := e.env.TypeOfNode(lastExpr).Kind.(RefType)
+				sl, ok := e.env.TypeOfNode(lastExpr).Kind.(SliceType)
 				assert.Equal(true, ok)
-				arr, ok := e.env.Type(ref.Type).Kind.(ArrayType)
-				assert.Equal(true, ok)
-				assert.Equal(int64(5), arr.Len)
+				assert.Equal(false, sl.Mut)
 			},
 		},
-		{"make slice", `{ let @myalloc = Arena() make(@myalloc, []Int(5)) }`, slice_t(Int), nil},
-		{"make slice default", `{ let @myalloc = Arena() make(@myalloc, []Int(5, 42)) }`, slice_t(Int), nil},
+		{"make slice", `{ let @myalloc = Arena() @myalloc.slice_uninit<Int>(5) }`, slice_t(Int), nil},
+		{"make slice default", `{ let @myalloc = Arena() @myalloc.slice<Int>(5, 42) }`, slice_t(Int), nil},
 		// Int is safe uninitialized — no default required.
-		{"new array Int no default", `{ let @a = Arena() let x = new(@a, [5]Int()) }`, void, nil},
-		{"make slice Int no default", `{ let @a = Arena() let x = make(@a, []Int(5)) }`, void, nil},
+		{"make uninit Int slice", `{ let @a = Arena() let x = @a.slice_uninit<Int>(5) }`, void, nil},
 		// Struct with only Int fields is safe uninitialized.
 		{
-			"new array safe struct no default",
-			`{ struct Foo{one Int two Int} let @a = Arena() let x = new(@a, [3]Foo()) }`,
+			"make uninit safe struct slice",
+			`{ struct Foo{one Int two Int} let @a = Arena() let x = @a.slice_uninit<Foo>(3) }`,
 			void,
 			nil,
 		},
 		// Bool is unsafe, but providing a default makes it OK.
-		{"new array Bool with default", `{ let @a = Arena() let x = new(@a, [5]Bool(false)) }`, void, nil},
-		{"make slice Bool with default", `{ let @a = Arena() let x = make(@a, []Bool(5, false)) }`, void, nil},
-		{"slice index read", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x[1] }`, Int, nil},
-		{"slice index write", `{ let @myalloc = Arena() let x = make(@myalloc, []mut Int(3)) x[1] = 5 }`, void, nil},
-		{"slice len", `{ let @myalloc = Arena() let x = make(@myalloc, []Int(3)) x.len }`, Int, nil},
+		{"make slice Bool with default", `{ let @a = Arena() let x = @a.slice<Bool>(5, false) }`, void, nil},
+		{"slice index read", `{ let @myalloc = Arena() let x = @myalloc.slice_uninit<Int>(3) x[1] }`, Int, nil},
+		{
+			"slice index write",
+			`{ let @myalloc = Arena() let x = @myalloc.slice_uninit_mut<Int>(3) x[1] = 5 }`,
+			void,
+			nil,
+		},
+		{"slice len", `{ let @myalloc = Arena() let x = @myalloc.slice_uninit<Int>(3) x.len }`, Int, nil},
 		{
 			"slice as fun param",
-			`{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = make(@a, []Int(3)) foo(x) }`,
+			`{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = @a.slice_uninit<Int>(3) foo(x) }`,
 			Int, nil,
 		},
 		{
 			"slice as fun param and return",
-			`{ let @a = Arena() fun foo(s []Int) []Int { s } let x = make(@a, []Int(3)) foo(x) }`,
+			`{ let @a = Arena() fun foo(s []Int) []Int { s } let x = @a.slice_uninit<Int>(3) foo(x) }`,
 			slice_t(Int), nil,
 		},
 		{
 			"struct with slice field",
-			`{ let @a = Arena() struct Foo { one []Int } let s = make(@a, []Int(3)) let x = Foo(s) x.one[0] }`,
+			`{ let @a = Arena() struct Foo { one []Int } let s = @a.slice_uninit<Int>(3) let x = Foo(s) x.one[0] }`,
 			Int, nil,
 		},
 		{
 			"ref to slice",
-			`{ let @a = Arena() let x = make(@a, []Int(3)) &x }`,
+			`{ let @a = Arena() let x = @a.slice_uninit<Int>(3) &x }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				got := e.env.TypeOfNode(id)
@@ -492,28 +487,28 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"slice index through ref",
-			`{ let @a = Arena() let x = make(@a, []Int(3)) let y = &x y[0] }`,
+			`{ let @a = Arena() let x = @a.slice_uninit<Int>(3) let y = &x y[0] }`,
 			Int, nil,
 		},
 		{
 			"slice len through ref",
-			`{ let @a = Arena() let x = make(@a, []Int(3)) let y = &x y.len }`,
+			`{ let @a = Arena() let x = @a.slice_uninit<Int>(3) let y = &x y.len }`,
 			Int, nil,
 		},
 		{
 			"mut ref slice index write",
-			`{ let @a = Arena() mut x = make(@a, []mut Int(3)) let y = &mut x y[0] = 42 }`,
+			`{ let @a = Arena() mut x = @a.slice_uninit_mut<Int>(3) let y = &mut x y[0] = 42 }`,
 			void, nil,
 		},
-		{"make mut slice", `{ let @a = Arena() make(@a, []mut Int(5)) }`, mut_slice_t(Int), nil},
+		{"make mut slice", `{ let @a = Arena() @a.slice_uninit_mut<Int>(5) }`, mut_slice_t(Int), nil},
 		{
 			"mut slice assignable to immutable",
-			`{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = make(@a, []mut Int(3)) foo(x) }`,
+			`{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = @a.slice_uninit_mut<Int>(3) foo(x) }`,
 			Int, nil,
 		},
 		{
 			"mut slice index write no mut binding",
-			`{ let @a = Arena() let x = make(@a, []mut Int(3)) x[0] = 5 }`,
+			`{ let @a = Arena() let x = @a.slice_uninit_mut<Int>(3) x[0] = 5 }`,
 			void, nil,
 		},
 		{
@@ -523,17 +518,17 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"subslice mut slice",
-			`{ let @a = Arena() let x = make(@a, []mut Int(5)) x[1..3] }`,
+			`{ let @a = Arena() let x = @a.slice_uninit_mut<Int>(5) x[1..3] }`,
 			mut_slice_t(Int), nil,
 		},
 		{
 			"subslice mut slice through mut ref",
-			`{ let @a = Arena() mut x = make(@a, []mut Int(5)) let y = &mut x y[1..3] }`,
+			`{ let @a = Arena() mut x = @a.slice_uninit_mut<Int>(5) let y = &mut x y[1..3] }`,
 			mut_slice_t(Int), nil,
 		},
 		{
 			"subslice mut slice through immutable ref",
-			`{ let @a = Arena() let x = make(@a, []mut Int(5)) let y = &x y[1..3] }`,
+			`{ let @a = Arena() let x = @a.slice_uninit_mut<Int>(5) let y = &x y[1..3] }`,
 			slice_t(Int), nil,
 		},
 		{"array literal", `[1, 2, 3]`, arr_t(Int, 3), nil},
@@ -545,7 +540,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"subslice array lo..", `{ let x = [1, 2, 3] x[1..] }`, slice_t(Int), nil},
 		{
 			"subslice slice",
-			`{ let @a = Arena() let x = make(@a, []Int(5)) x[1..3] }`,
+			`{ let @a = Arena() let x = @a.slice_uninit<Int>(5) x[1..3] }`,
 			slice_t(Int), nil,
 		},
 		{
@@ -555,12 +550,12 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		},
 		{
 			"empty slice in make",
-			`{ let @a = Arena() let x = make(@a, [][]Int(2, [])) }`,
+			`{ let @a = Arena() let x = @a.slice<[]Int>(2, []) }`,
 			void, nil,
 		},
 		{
 			"empty slice in assignment",
-			`{ let @a = Arena() mut x = make(@a, []Int(3)) x = [] }`,
+			`{ let @a = Arena() mut x = @a.slice_uninit<Int>(3) x = [] }`,
 			void, nil,
 		},
 		{
@@ -579,8 +574,8 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			},
 		},
 		{
-			"empty slice in new array default",
-			`{ let @a = Arena() let x = new(@a, [3][]Int([])) }`,
+			"empty slice in make default",
+			`{ let @a = Arena() let x = @a.slice<[]Int>(3, []) }`,
 			void, nil,
 		},
 		{
@@ -988,7 +983,8 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				fun Bag.len<V>(b &Bag<V>) Int { b.items.len }
 				fun count<V>(b &Bag<V>) Int { b.len() }
 				let @a = Arena()
-				let b = Bag<Str>(make(@a, []Str(2, "")))
+				let items = @a.slice<Str>(2, "")
+				let b = Bag<Str>(items)
 				count<Str>(&b)
 			}`,
 			Int,
@@ -1226,15 +1222,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"fun returns ref",
 		"heap alloc struct",
 		"heap alloc mut struct",
-		"heap alloc array",
-		"new array default",
-		"heap alloc mut array",
+		"make uninit immutable slice",
+		"make slice with default",
+		"make uninit slice",
 		"make slice",
 		"make slice default",
-		"new array Int no default",
-		"make slice Int no default",
-		"new array safe struct no default",
-		"new array Bool with default",
+		"make uninit Int slice",
+		"make uninit safe struct slice",
 		"make slice Bool with default",
 		"slice index read",
 		"slice index write",
@@ -1246,12 +1240,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"slice index through ref",
 		"slice len through ref",
 		"mut ref slice index write",
-		"new array U8 no default",
 		"empty slice in make",
 		"empty slice in assignment",
 		"empty slice as fun arg",
 		"empty slice in struct literal",
-		"empty slice in new array default",
+		"empty slice in make default",
 		"subslice array lo..hi",
 		"subslice array lo..=hi",
 		"subslice array ..hi",
@@ -1458,10 +1451,10 @@ func TestTypeCheckErr(t *testing.T) {
 			},
 		},
 
-		{"Str cannot be constructed directly", `{ let @a = Arena() let d = make(@a, []U8(1)) Str(d) }`, []string{
-			"test.met:1:46: Str cannot be constructed directly; use Str.from_utf8_lossy() instead\n" +
-				`    { let @a = Arena() let d = make(@a, []U8(1)) Str(d) }` + "\n" +
-				"                                                 ^^^^^^",
+		{"Str cannot be constructed directly", `{ let @a = Arena() let d = @a.slice_uninit<U8>(1) Str(d) }`, []string{
+			"test.met:1:51: Str cannot be constructed directly; use Str.from_utf8_lossy() instead\n" +
+				`    { let @a = Arena() let d = @a.slice_uninit<U8>(1) Str(d) }` + "\n" +
+				"                                                      ^^^^^^",
 		}},
 
 		{"if condition must be bool", `{ if 123 { } }`, []string{
@@ -1603,10 +1596,10 @@ func TestTypeCheckErr(t *testing.T) {
 					"                                           ^",
 			},
 		},
-		{"non-existing allocator", `{ struct Foo{one Str} let x = new(@myalloc, Foo("hello")) }`, []string{
-			"test.met:1:35: symbol not defined: @myalloc\n" +
-				`    { struct Foo{one Str} let x = new(@myalloc, Foo("hello")) }` + "\n" +
-				`                                      ^^^^^^^^`,
+		{"non-existing allocator", `{ struct Foo{one Str} let x = @myalloc.new<Foo>(Foo("hello")) }`, []string{
+			"test.met:1:31: symbol not defined: @myalloc\n" +
+				`    { struct Foo{one Str} let x = @myalloc.new<Foo>(Foo("hello")) }` + "\n" +
+				`                                  ^^^^^^^^`,
 		}},
 		{"index on non-array", `{ let x = 123 x[0] }`, []string{
 			"test.met:1:15: not an array or slice: Int\n" +
@@ -1681,60 +1674,50 @@ func TestTypeCheckErr(t *testing.T) {
 				`    { continue }` + "\n" +
 				"      ^^^^^^^^",
 		}},
-		{"unknown field on slice", `{ let @a = Arena() let x = make(@a, []Int(3)) x.foo }`, []string{
-			"test.met:1:49: unknown field on slice: foo\n" +
-				`    { let @a = Arena() let x = make(@a, []Int(3)) x.foo }` + "\n" +
-				"                                                    ^^^",
+		{"unknown field on slice", `{ let @a = Arena() let x = @a.slice_uninit<Int>(3) x.foo }`, []string{
+			"test.met:1:54: unknown field on slice: foo\n" +
+				`    { let @a = Arena() let x = @a.slice_uninit<Int>(3) x.foo }` + "\n" +
+				"                                                         ^^^",
 		}},
-		{"make slice non-int length", `{ let @a = Arena() make(@a, []Int("hello")) }`, []string{
-			"test.met:1:35: type mismatch: expected Int, got Str\n" +
-				`    { let @a = Arena() make(@a, []Int("hello")) }` + "\n" +
-				`                                      ^^^^^^^`,
+		{"make slice non-int length", `{ let @a = Arena() @a.slice_uninit<Int>("hello") }`, []string{
+			"test.met:1:41: type mismatch at argument 1: expected Int, got Str\n" +
+				"    { let @a = Arena() @a.slice_uninit<Int>(\"hello\") }\n" +
+				"                                            ^^^^^^^",
 		}},
-		{"new array wrong default type", `{ let @a = Arena() new(@a, [5]Int("hello")) }`, []string{
-			"test.met:1:35: type mismatch: expected Int, got Str\n" +
-				`    { let @a = Arena() new(@a, [5]Int("hello")) }` + "\n" +
-				`                                      ^^^^^^^`,
+		{"make wrong default type", `{ let @a = Arena() @a.slice<Int>(5, "hello") }`, []string{
+			"test.met:1:37: type mismatch at argument 2: expected Int, got Str\n" +
+				`    { let @a = Arena() @a.slice<Int>(5, "hello") }` + "\n" +
+				`                                        ^^^^^^^`,
 		}},
-		{"make slice wrong default type", `{ let @a = Arena() make(@a, []Int(3, "hello")) }`, []string{
-			"test.met:1:38: type mismatch: expected Int, got Str\n" +
-				`    { let @a = Arena() make(@a, []Int(3, "hello")) }` + "\n" +
-				`                                         ^^^^^^^`,
+		{"make wrong default type 2", `{ let @a = Arena() @a.slice<Int>(3, "hello") }`, []string{
+			"test.met:1:37: type mismatch at argument 2: expected Int, got Str\n" +
+				`    { let @a = Arena() @a.slice<Int>(3, "hello") }` + "\n" +
+				`                                        ^^^^^^^`,
 		}},
-		{"new array Bool uninitialized", `{ let @a = Arena() new(@a, [5]Bool()) }`, []string{
-			"test.met:1:28: Bool is not safe to leave uninitialized, provide a default value\n" +
-				`    { let @a = Arena() new(@a, [5]Bool()) }` + "\n" +
-				`                               ^^^^^^^`,
+		{"make uninit Bool", `{ let @a = Arena() @a.slice_uninit<Bool>(3) }`, []string{
+			"test.met:1:36: Bool is not safe to leave uninitialized, use slice with a default value\n" +
+				"    { let @a = Arena() @a.slice_uninit<Bool>(3) }\n" +
+				"                                       ^^^^",
 		}},
-		{"new array Str uninitialized", `{ let @a = Arena() new(@a, [5]Str()) }`, []string{
-			"test.met:1:28: Str is not safe to leave uninitialized, provide a default value\n" +
-				`    { let @a = Arena() new(@a, [5]Str()) }` + "\n" +
-				`                               ^^^^^^`,
+		{"make uninit Str", `{ let @a = Arena() @a.slice_uninit<Str>(3) }`, []string{
+			"test.met:1:36: Str is not safe to leave uninitialized, use slice with a default value\n" +
+				"    { let @a = Arena() @a.slice_uninit<Str>(3) }\n" +
+				"                                       ^^^",
 		}},
-		{"new array ref uninitialized", `{ struct Foo{one Int} let @a = Arena() new(@a, [5]&Foo()) }`, []string{
-			"test.met:1:48: &Foo is not safe to leave uninitialized, provide a default value\n" +
-				`    { struct Foo{one Int} let @a = Arena() new(@a, [5]&Foo()) }` + "\n" +
-				`                                                   ^^^^^^^`,
+		{"make uninit ref", `{ struct Foo{one Int} let @a = Arena() @a.slice_uninit<&Foo>(3) }`, []string{
+			"test.met:1:56: &Foo is not safe to leave uninitialized, use slice with a default value\n" +
+				"    { struct Foo{one Int} let @a = Arena() @a.slice_uninit<&Foo>(3) }\n" +
+				"                                                           ^^^^",
 		}},
 		{
-			"new array struct with ref field uninitialized",
-			`{ struct Foo{one &Int} let @a = Arena() new(@a, [5]Foo()) }`,
+			"make uninit struct with ref field",
+			`{ struct Foo{one &Int} let @a = Arena() @a.slice_uninit<Foo>(3) }`,
 			[]string{
-				"test.met:1:49: Foo is not safe to leave uninitialized, provide a default value\n" +
-					`    { struct Foo{one &Int} let @a = Arena() new(@a, [5]Foo()) }` + "\n" +
-					`                                                    ^^^^^^`,
+				"test.met:1:57: Foo is not safe to leave uninitialized, use slice with a default value\n" +
+					"    { struct Foo{one &Int} let @a = Arena() @a.slice_uninit<Foo>(3) }\n" +
+					"                                                            ^^^",
 			},
 		},
-		{"make slice Bool uninitialized", `{ let @a = Arena() make(@a, []Bool(3)) }`, []string{
-			"test.met:1:29: Bool is not safe to leave uninitialized, provide a default value\n" +
-				`    { let @a = Arena() make(@a, []Bool(3)) }` + "\n" +
-				`                                ^^^^^^`,
-		}},
-		{"make slice ref uninitialized", `{ struct Foo{one Int} let @a = Arena() make(@a, []&Foo(3)) }`, []string{
-			"test.met:1:49: &Foo is not safe to leave uninitialized, provide a default value\n" +
-				`    { struct Foo{one Int} let @a = Arena() make(@a, []&Foo(3)) }` + "\n" +
-				`                                                    ^^^^^^`,
-		}},
 		{"empty slice without context", `[]`, []string{
 			"test.met:1:1: cannot infer type of empty slice []\n" +
 				"    []\n" +
@@ -1747,29 +1730,29 @@ func TestTypeCheckErr(t *testing.T) {
 		}},
 		{
 			"write to immutable slice element",
-			`{ let @a = Arena() let x = make(@a, []Int(3)) x[0] = 5 }`,
+			`{ let @a = Arena() let x = @a.slice_uninit<Int>(3) x[0] = 5 }`,
 			[]string{
-				"test.met:1:47: cannot assign to element of immutable array or slice\n" +
-					`    { let @a = Arena() let x = make(@a, []Int(3)) x[0] = 5 }` + "\n" +
-					"                                                  ^^^^",
+				"test.met:1:52: cannot assign to element of immutable array or slice\n" +
+					"    { let @a = Arena() let x = @a.slice_uninit<Int>(3) x[0] = 5 }\n" +
+					"                                                       ^^^^",
 			},
 		},
 		{
 			"write through mut ref to immutable slice",
-			`{ let @a = Arena() mut x = make(@a, []Int(3)) let y = &mut x y[0] = 5 }`,
+			`{ let @a = Arena() mut x = @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }`,
 			[]string{
-				"test.met:1:62: cannot assign to element of immutable array or slice\n" +
-					`    { let @a = Arena() mut x = make(@a, []Int(3)) let y = &mut x y[0] = 5 }` + "\n" +
-					"                                                                 ^^^^",
+				"test.met:1:67: cannot assign to element of immutable array or slice\n" +
+					"    { let @a = Arena() mut x = @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }\n" +
+					"                                                                      ^^^^",
 			},
 		},
 		{
 			"immutable slice not assignable to mut slice param",
-			`{ let @a = Arena() fun foo(s []mut Int) void {} foo(make(@a, []Int(3))) }`,
+			`{ let @a = Arena() fun foo(s []mut Int) void {} let x = @a.slice_uninit<Int>(3) foo(x) }`,
 			[]string{
-				"test.met:1:53: type mismatch at argument 1: expected []mut Int, got []Int\n" +
-					`    { let @a = Arena() fun foo(s []mut Int) void {} foo(make(@a, []Int(3))) }` + "\n" +
-					"                                                        ^^^^^^^^^^^^^^^^^^",
+				"test.met:1:85: type mismatch at argument 1: expected []mut Int, got []Int\n" +
+					"    { let @a = Arena() fun foo(s []mut Int) void {} let x = @a.slice_uninit<Int>(3) foo(x) }\n" +
+					"                                                                                        ^",
 			},
 		},
 		{"cannot return allocator from fun", `fun foo() Arena { }`, []string{
@@ -2119,7 +2102,7 @@ func zeroIDAndSpan(typ *Type, _ TypeStatus) bool {
 	switch typ.Kind.(type) {
 	case IntType, BoolType, VoidType, AllocatorType:
 		return true
-	case StructType, SliceType:
+	case StructType:
 		if isPrelude {
 			return true
 		}
@@ -2406,7 +2389,7 @@ func TestIntTypes(t *testing.T) {
 
 	t.Run("safe uninitialized", func(t *testing.T) {
 		for _, name := range allIntTypes {
-			src := fmt.Sprintf("{ let @a = Arena() let x = new(@a, [5]%s()) }", name)
+			src := fmt.Sprintf("{ let @a = Arena() let x = @a.slice_uninit<%s>(5) }", name)
 			e := typeCheck(t, src)
 			assert.Equal(0, len(e.diagnostics), "%s should be safe uninitialized: %s", name, e.diagnostics)
 		}

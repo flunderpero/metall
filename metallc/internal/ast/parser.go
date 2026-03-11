@@ -314,126 +314,6 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseNew(mut bool) (NodeID, bool) { //nolint:funlen
-	var newToken *token.Token
-	var ok bool
-	if mut {
-		newToken, ok = p.expect(token.NewMut)
-	} else {
-		newToken, ok = p.expect(token.New)
-	}
-	if !ok {
-		return ParseFailed, false
-	}
-	if _, ok := p.expect(token.LParen); !ok {
-		return ParseFailed, false
-	}
-	alloc, ok := p.parseAllocator()
-	if !ok {
-		return ParseFailed, false
-	}
-	if _, ok := p.expect(token.Comma); !ok {
-		return ParseFailed, false
-	}
-	// Parse the target: struct literal or array alloc.
-	t, ok := p.mustPeek()
-	if !ok {
-		return ParseFailed, false
-	}
-	var target NodeID
-	switch t.Kind { //nolint:exhaustive
-	case token.LBracket:
-		arrType, ok := p.ParseArrayOrSliceType()
-		if !ok {
-			return ParseFailed, false
-		}
-		if _, ok := p.Node(arrType).Kind.(ArrayType); !ok {
-			p.diagnostic(p.Node(arrType).Span, "use `make` to allocate slices")
-			return ParseFailed, false
-		}
-		if _, ok := p.expect(token.LParen); !ok {
-			return ParseFailed, false
-		}
-		var defaultValue *NodeID
-		if next, ok := p.mayPeek(); ok && next.Kind != token.RParen {
-			val, ok := p.ParseExpr(0)
-			if !ok {
-				return ParseFailed, false
-			}
-			defaultValue = &val
-		}
-		if _, ok := p.expect(token.RParen); !ok {
-			return ParseFailed, false
-		}
-		target = p.NewNewArray(arrType, defaultValue, t.Span.Combine(p.span()))
-	case token.TypeIdent:
-		target, ok = p.ParseStructLiteral()
-		if !ok {
-			return ParseFailed, false
-		}
-	default:
-		p.diagnostic(
-			t.Span,
-			"unexpected token: expected one of %s, got %s",
-			token.PrettyPrintTokenKinds([]token.TokenKind{token.LBracket, token.TypeIdent}),
-			t.Kind,
-		)
-		return ParseFailed, false
-	}
-	if _, ok := p.expect(token.RParen); !ok {
-		return ParseFailed, false
-	}
-	return p.NewNew(alloc, target, mut, newToken.Span.Combine(p.span())), true
-}
-
-func (p *Parser) ParseMakeSlice() (NodeID, bool) {
-	makeToken, ok := p.expect(token.Make)
-	if !ok {
-		return ParseFailed, false
-	}
-	if _, ok := p.expect(token.LParen); !ok {
-		return ParseFailed, false
-	}
-	alloc, ok := p.parseAllocator()
-	if !ok {
-		return ParseFailed, false
-	}
-	if _, ok := p.expect(token.Comma); !ok {
-		return ParseFailed, false
-	}
-	sliceType, ok := p.ParseArrayOrSliceType()
-	if !ok {
-		return ParseFailed, false
-	}
-	if _, ok := p.Node(sliceType).Kind.(SliceType); !ok {
-		p.diagnostic(p.Node(sliceType).Span, "make only supports slice types")
-		return ParseFailed, false
-	}
-	if _, ok := p.expect(token.LParen); !ok {
-		return ParseFailed, false
-	}
-	lenExpr, ok := p.ParseExpr(0)
-	if !ok {
-		return ParseFailed, false
-	}
-	var defaultValue *NodeID
-	if next, ok := p.mayPeek(); ok && next.Kind == token.Comma {
-		p.next()
-		val, ok := p.ParseExpr(0)
-		if !ok {
-			return ParseFailed, false
-		}
-		defaultValue = &val
-	}
-	if _, ok := p.expect(token.RParen); !ok {
-		return ParseFailed, false
-	}
-	if _, ok := p.expect(token.RParen); !ok {
-		return ParseFailed, false
-	}
-	return p.NewMakeSlice(alloc, sliceType, lenExpr, defaultValue, makeToken.Span.Combine(p.span())), true
-}
-
 func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
 	t, ok := p.expect(token.LBracket)
 	if !ok {
@@ -597,7 +477,7 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	}
 }
 
-func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
+func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
@@ -641,6 +521,11 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) {
 			if next.Kind == token.Star {
 				p.next()
 				expr = p.NewDeref(expr, span.Combine(p.span()))
+				continue
+			}
+			if next.Kind == token.AllocatorIdent {
+				p.next()
+				expr = p.NewFieldAccess(expr, Name{next.Value, next.Span}, nil, span.Combine(p.span()))
 				continue
 			}
 			if next.Kind != token.Ident {
@@ -764,24 +649,9 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			}
 			expr = struct_literal
 		}
-	case token.New:
-		allocation, ok := p.ParseNew(false)
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = allocation
-	case token.NewMut:
-		allocation, ok := p.ParseNew(true)
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = allocation
-	case token.Make:
-		makeSlice, ok := p.ParseMakeSlice()
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = makeSlice
+	case token.AllocatorIdent:
+		p.next()
+		expr = p.NewIdent(t.Value, nil, t.Span)
 	case token.LBracket:
 		if next, ok := p.mayPeek1(); ok && next.Kind == token.RBracket {
 			p.next()
@@ -1293,50 +1163,6 @@ func (p *Parser) isStructTarget(nodeID NodeID) bool {
 		return false
 	}
 	return len(last) > 0 && unicode.IsUpper(rune(last[0]))
-}
-
-// parseAllocator parses `@a` or a field access chain ending in an
-// AllocatorIdent, e.g. `holder.@a` or `a.b.@c`.
-func (p *Parser) parseAllocator() (NodeID, bool) {
-	var alloc NodeID
-	t, ok := p.mustPeek()
-	if !ok {
-		return ParseFailed, false
-	}
-	switch t.Kind { //nolint:exhaustive
-	case token.AllocatorIdent:
-		p.next()
-		alloc = p.NewIdent(t.Value, nil, t.Span)
-	case token.Ident:
-		p.next()
-		alloc = p.NewIdent(t.Value, nil, t.Span)
-		for {
-			if _, ok := p.expect(token.Dot); !ok {
-				return ParseFailed, false
-			}
-			field, ok := p.mustPeek()
-			if !ok {
-				return ParseFailed, false
-			}
-			switch field.Kind { //nolint:exhaustive
-			case token.AllocatorIdent:
-				p.next()
-				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, nil, t.Span.Combine(field.Span))
-			case token.Ident:
-				p.next()
-				alloc = p.NewFieldAccess(alloc, Name{field.Value, field.Span}, nil, t.Span.Combine(field.Span))
-				continue
-			default:
-				p.diagnostic(field.Span, "expected field name or allocator, got %s", field.Kind)
-				return ParseFailed, false
-			}
-			break
-		}
-	default:
-		p.diagnostic(t.Span, "expected allocator, got %s", t.Kind)
-		return ParseFailed, false
-	}
-	return alloc, true
 }
 
 func (p *Parser) parseTypeParams() ([]NodeID, bool) {

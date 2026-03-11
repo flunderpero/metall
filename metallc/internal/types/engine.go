@@ -159,18 +159,12 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkStructField(nodeKind)
 	case ast.StructLiteral:
 		typeID, status = e.checkStructLiteral(nodeID, nodeKind, node.Span)
-	case ast.New:
-		typeID, status = e.checkNew(nodeID, nodeKind, node.Span)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.SliceType:
 		typeID, status = e.checkSliceType(nodeID, nodeKind, node.Span)
 	case ast.FunType:
 		typeID, status = e.checkFunType(nodeID, nodeKind, node.Span)
-	case ast.NewArray:
-		typeID, status = e.checkNewArray(nodeKind)
-	case ast.MakeSlice:
-		typeID, status = e.checkMakeSlice(nodeKind)
 	case ast.ArrayLiteral:
 		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span)
 	case ast.EmptySlice:
@@ -502,77 +496,6 @@ func (e *Engine) checkSliceType(nodeID ast.NodeID, sliceType ast.SliceType, span
 	return e.env.buildSliceType(elemTypeID, sliceType.Mut, nodeID, span), TypeOK
 }
 
-func (e *Engine) checkNewArray(alloc ast.NewArray) (TypeID, TypeStatus) {
-	arrTypeID, status := e.Query(alloc.Type)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	arrType := base.Cast[ArrayType](e.env.Type(arrTypeID).Kind)
-	if alloc.DefaultValue != nil {
-		defTypeID, defStatus := e.queryWithHint(*alloc.DefaultValue, arrType.Elem)
-		if defStatus.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		if !e.env.isAssignableTo(defTypeID, arrType.Elem) {
-			defSpan := e.ast.Node(*alloc.DefaultValue).Span
-			e.diag(defSpan, "type mismatch: expected %s, got %s",
-				e.env.TypeDisplay(arrType.Elem), e.env.TypeDisplay(defTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-	} else if !e.env.isSafeUninitialized(arrType.Elem) {
-		typeSpan := e.ast.Node(alloc.Type).Span
-		e.diag(typeSpan, "%s is not safe to leave uninitialized, provide a default value",
-			e.env.TypeDisplay(arrType.Elem))
-		return InvalidTypeID, TypeFailed
-	}
-	return arrTypeID, TypeOK
-}
-
-func (e *Engine) checkMakeSlice(makeSlice ast.MakeSlice) (TypeID, TypeStatus) {
-	allocTypeID, allocStatus := e.Query(makeSlice.Allocator)
-	if allocStatus.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	allocType := e.env.Type(allocTypeID)
-	if _, ok := allocType.Kind.(AllocatorType); !ok {
-		allocSpan := e.ast.Node(makeSlice.Allocator).Span
-		e.diag(allocSpan, "expected allocator, got %s", e.env.TypeDisplay(allocTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	sliceTypeID, status := e.Query(makeSlice.Type)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	lenTypeID, lenStatus := e.Query(makeSlice.Len)
-	if lenStatus.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if lenTypeID != e.intTyp {
-		lenSpan := e.ast.Node(makeSlice.Len).Span
-		e.diag(lenSpan, "type mismatch: expected Int, got %s", e.env.TypeDisplay(lenTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	sliceType := base.Cast[SliceType](e.env.Type(sliceTypeID).Kind)
-	if makeSlice.DefaultValue != nil {
-		defTypeID, defStatus := e.queryWithHint(*makeSlice.DefaultValue, sliceType.Elem)
-		if defStatus.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		if !e.env.isAssignableTo(defTypeID, sliceType.Elem) {
-			defSpan := e.ast.Node(*makeSlice.DefaultValue).Span
-			e.diag(defSpan, "type mismatch: expected %s, got %s",
-				e.env.TypeDisplay(sliceType.Elem), e.env.TypeDisplay(defTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-	} else if !e.env.isSafeUninitialized(sliceType.Elem) {
-		typeSpan := e.ast.Node(makeSlice.Type).Span
-		e.diag(typeSpan, "%s is not safe to leave uninitialized, provide a default value",
-			e.env.TypeDisplay(sliceType.Elem))
-		return InvalidTypeID, TypeFailed
-	}
-	return sliceTypeID, TypeOK
-}
-
 func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, span base.Span) (TypeID, TypeStatus) {
 	if len(array.Elems) == 0 {
 		e.diag(span, "array literal cannot be empty")
@@ -685,32 +608,6 @@ func (e *Engine) checkSubSlice(nodeID ast.NodeID, subSlice ast.SubSlice) (TypeID
 	}
 	span := e.ast.Node(nodeID).Span
 	return e.env.buildSliceType(elemTypeID, mut, nodeID, span), TypeOK
-}
-
-func (e *Engine) checkNew(nodeID ast.NodeID, alloc ast.New, span base.Span) (TypeID, TypeStatus) {
-	allocTypeID, allocStatus := e.Query(alloc.Allocator)
-	if allocStatus.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	allocType := e.env.Type(allocTypeID)
-	if _, ok := allocType.Kind.(AllocatorType); !ok {
-		allocSpan := e.ast.Node(alloc.Allocator).Span
-		e.diag(allocSpan, "expected allocator, got %s", e.env.TypeDisplay(allocTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	typeID, status := e.Query(alloc.Target)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	typ := e.env.Type(typeID)
-	switch typ.Kind.(type) {
-	case StructType, ArrayType:
-	default:
-		targetSpan := e.ast.Node(alloc.Target).Span
-		e.diag(targetSpan, "only structs and arrays can be allocated, got %s", e.env.TypeDisplay(typeID))
-		return InvalidTypeID, TypeFailed
-	}
-	return e.env.buildRefType(nodeID, typeID, alloc.Mut, span), TypeOK
 }
 
 func (e *Engine) checkStructLiteral(
@@ -944,7 +841,33 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 			return InvalidTypeID, TypeFailed
 		}
 	}
+	if e.checkSliceUninitSafety(call.Callee, fun) {
+		return InvalidTypeID, TypeFailed
+	}
 	return fun.Return, TypeOK
+}
+
+func (e *Engine) checkSliceUninitSafety(calleeID ast.NodeID, fun FunType) bool {
+	name, ok := e.env.NamedFunRef(calleeID)
+	if !ok {
+		return false
+	}
+	if !strings.Contains(name, "Arena.slice_uninit") {
+		return false
+	}
+	retType := e.env.Type(fun.Return)
+	sliceType, ok := retType.Kind.(SliceType)
+	if !ok {
+		return false
+	}
+	if !e.env.isSafeUninitialized(sliceType.Elem) {
+		fa := base.Cast[ast.FieldAccess](e.ast.Node(calleeID).Kind)
+		diagSpan := e.ast.Node(fa.TypeArgs[0]).Span
+		e.diag(diagSpan, "%s is not safe to leave uninitialized, use slice with a default value",
+			e.env.TypeDisplay(sliceType.Elem))
+		return true
+	}
+	return false
 }
 
 func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
@@ -1110,8 +1033,10 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		typeKind := decl.cachedType.Type.Kind
 		switch nodeKind := decl.node.Kind.(type) {
 		case ast.Fun:
-			funType := base.Cast[FunType](typeKind)
-			e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
+			if !nodeKind.Extern {
+				funType := base.Cast[FunType](typeKind)
+				e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
+			}
 		case ast.Struct, ast.Shape:
 		default:
 			panic(base.Errorf("node kind not supported: %T", nodeKind))

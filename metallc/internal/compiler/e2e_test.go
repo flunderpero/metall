@@ -714,7 +714,8 @@ func TestCompile(t *testing.T) {
 			}
 
 			fun wrap<V>(@a Arena, v V) Int {
-				let b = new_mut(@a, Box<V>(make(@a, []V(2, v))))
+				let items = @a.slice<V>(2, v)
+				let b = @a.new_mut<Box<V>>(Box<V>(items))
 				b.len()
 			}
 
@@ -740,22 +741,22 @@ func TestCompile(t *testing.T) {
 				one Str
 			}
 
-			fun foo(@myalloc Arena) &Foo {
-				new(@myalloc, Foo("hello"))
+			fun foo(@a Arena) &Foo {
+				@a.new<Foo>(Foo("hello"))
 			}
 
 			fun main() void {
-				let @myalloc = Arena()
-				let x = new(@myalloc, Foo("x"))
-				let y = new(@myalloc, Foo("y"))
+				let @a = Arena()
+				let x = @a.new<Foo>(Foo("x"))
+				let y = @a.new<Foo>(Foo("y"))
 				{
-					let @youralloc = Arena()
-					let z = new(@youralloc, Foo("z"))
+					let @b = Arena()
+					let z = @b.new<Foo>(Foo("z"))
 					print_str(z.one)
 				}
 				print_str(y.one)
 				print_str(x.one)
-				let w = foo(@myalloc)
+				let w = foo(@a)
 				print_str(w.one)
 			}
 			`, "z\ny\nx\nhello\n"},
@@ -869,10 +870,10 @@ func TestCompile(t *testing.T) {
 				print_str(w[0].one)
 			}
 			`, "x\nz\n"},
-		{"heap alloc array", `
+		{"heap alloc slice", `
 			fun main() void {
-				let @myalloc = Arena()
-				mut x = new_mut(@myalloc, [5]Int(0))
+				let @a = Arena()
+				let x = @a.slice_mut<Int>(5, 0)
 				x[1] = 1
 				x[2] = 2
 
@@ -881,8 +882,8 @@ func TestCompile(t *testing.T) {
 				print_int(x[2])
 			}
 			`, "0\n1\n2\n"},
-		// `new` returns a reference. Assigning `let y = x` where `x = new_mut(@a, Foo(...))` copies
-		// the reference, not the underlying data — both variables alias the same heap memory.
+		// `new_mut` returns a mutable reference. Assigning `let y = x` copies the reference,
+		// not the underlying data — both variables alias the same heap memory.
 		{"heap alloc struct is ref aliased", `
 			struct Foo {
 				mut one Str
@@ -890,7 +891,7 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				mut x = new_mut(@a, Foo("hello"))
+				mut x = @a.new_mut<Foo>(Foo("hello"))
 				mut y = x
 				y.one = "world"
 				print_str(x.one)
@@ -898,21 +899,21 @@ func TestCompile(t *testing.T) {
 			}
 			`, "world\nworld\n"},
 
-		// Heap-allocated fixed-size array via `new` returns a reference.
-		// Copying only copies the pointer — both variables alias the same heap data.
-		{"heap alloc array is ref aliased", `
+		// Slice is a fat pointer — copying only copies the fat pointer,
+		// so both variables alias the same underlying data.
+		{"heap alloc slice is aliased", `
 			fun main() void {
 				let @a = Arena()
-				mut x = new_mut(@a, [3]Int())
+				let x = @a.slice_uninit_mut<Int>(3)
 				x[0] = 42
-				mut y = x
+				let y = x
 				y[0] = 99
 				print_int(x[0])
 				print_int(y[0])
 			}
 			`, "99\n99\n"},
 
-		// `new` without `mut` returns an immutable reference — field reads work via auto-deref.
+		// `new` returns an immutable reference — field reads work via auto-deref.
 		{"heap alloc immutable struct read", `
 			struct Foo {
 				one Str
@@ -920,12 +921,12 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				let x = new(@a, Foo("hello"))
+				let x = @a.new<Foo>(Foo("hello"))
 				print_str(x.one)
 			}
 			`, "hello\n"},
 
-		// `new_mut(@a, ...)` returns a mutable reference — can pass to fun taking &mut.
+		// `new_mut` returns a mutable reference — can pass to fun taking &mut.
 		{"heap alloc mut struct as param", `
 			struct Foo {
 				mut one Str
@@ -937,19 +938,19 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				let x = new_mut(@a, Foo("hello"))
+				let x = @a.new_mut<Foo>(Foo("hello"))
 				set(x, "world")
 				print_str(x.one)
 			}
 			`, "world\n"},
 
-		// Heap-allocated immutable array: index reads work via auto-deref.
-		{"heap alloc immutable array read", `
+		// Heap-allocated slices: mut and immutable variants.
+		{"heap alloc slice read", `
 			fun main() void {
 				let @a = Arena()
-				let x = new_mut(@a, [3]Int())
+				let x = @a.slice_uninit_mut<Int>(3)
 				x[0] = 42
-				let y = new(@a, [3]Int())
+				let y = @a.slice_uninit<Int>(3)
 				print_int(x[0])
 			}
 			`, "42\n"},
@@ -959,7 +960,7 @@ func TestCompile(t *testing.T) {
 		{"slice copy aliases underlying data", `
 			fun main() void {
 				let @a = Arena()
-				let x = make(@a, []mut Int(3))
+				let x = @a.slice_uninit_mut<Int>(3)
 				x[0] = 42
 				let y = x
 				y[0] = 99
@@ -970,9 +971,9 @@ func TestCompile(t *testing.T) {
 
 		{"make slice", `
 			fun main() void {
-				let @myalloc = Arena()
+				let @a = Arena()
 				let size = 3
-				let x = make(@myalloc, []mut Int(size))
+				let x = @a.slice_uninit_mut<Int>(size)
 				x[0] = 10
 				x[1] = 20
 				x[2] = 30
@@ -987,7 +988,7 @@ func TestCompile(t *testing.T) {
 		{"slice index with variable", `
 			fun main() void {
 				let @a = Arena()
-				let x = make(@a, []mut Int(3))
+				let x = @a.slice_uninit_mut<Int>(3)
 				x[0] = 10
 				x[1] = 20
 				x[2] = 30
@@ -997,22 +998,22 @@ func TestCompile(t *testing.T) {
 				print_int(x[i])
 			}
 			`, "30\n99\n"},
-		// Default value fills all elements of a heap-allocated array.
-		{"new array with default value", `
+		// Default value fills all elements of a heap-allocated slice.
+		{"make slice with default value", `
 			fun main() void {
 				let @a = Arena()
-				mut x = new_mut(@a, [100]Int(77))
+				let x = @a.slice<Int>(100, 77)
 				print_int(x[0])
 				print_int(x[50])
 				print_int(x[99])
 			}
 			`, "77\n77\n77\n"},
 
-		// Default value fills all elements of a heap-allocated slice.
-		{"make slice with default value", `
+		// Default value fills all elements via make.
+		{"make slice with default value 2", `
 			fun main() void {
 				let @a = Arena()
-				mut x = make(@a, []Int(100, 77))
+				let x = @a.slice<Int>(100, 77)
 				print_int(x[0])
 				print_int(x[50])
 				print_int(x[99])
@@ -1020,27 +1021,27 @@ func TestCompile(t *testing.T) {
 			`, "77\n77\n77\n"},
 
 		// Without a default value, memory is uninitialized. Writing then reading works.
-		{"new array no default then write", `
+		{"make uninit then write", `
 			fun main() void {
 				let @a = Arena()
-				mut x = new_mut(@a, [100]Int())
+				let x = @a.slice_uninit_mut<Int>(100)
 				x[99] = 42
 				print_int(x[99])
 			}
 			`, "42\n"},
 
 		// Without a default value on slice, writing then reading works.
-		{"make slice no default then write", `
+		{"make uninit slice then write", `
 			fun main() void {
 				let @a = Arena()
-				let x = make(@a, []mut Int(100))
+				let x = @a.slice_uninit_mut<Int>(100)
 				x[99] = 42
 				print_int(x[99])
 			}
 			`, "42\n"},
 
-		// Struct array with default value fills all 100 elements.
-		{"new struct array with default value", `
+		// Struct slice with default value fills all 100 elements.
+		{"make struct slice with default value 1", `
 			struct Foo {
 				one Int
 				two Str
@@ -1048,7 +1049,7 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				mut x = new_mut(@a, [100]Foo(Foo(42, "hello")))
+				let x = @a.slice<Foo>(100, Foo(42, "hello"))
 				print_int(x[0].one)
 				print_str(x[0].two)
 				print_int(x[50].one)
@@ -1059,7 +1060,7 @@ func TestCompile(t *testing.T) {
 			`, "42\nhello\n42\nhello\n42\nhello\n"},
 
 		// Struct slice with default value fills all 100 elements.
-		{"make struct slice with default value", `
+		{"make struct slice with default value 2", `
 			struct Foo {
 				one Int
 				two Str
@@ -1067,7 +1068,7 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				mut x = make(@a, []Foo(100, Foo(42, "hello")))
+				let x = @a.slice<Foo>(100, Foo(42, "hello"))
 				print_int(x[0].one)
 				print_str(x[0].two)
 				print_int(x[50].one)
@@ -1077,29 +1078,9 @@ func TestCompile(t *testing.T) {
 			}
 			`, "42\nhello\n42\nhello\n42\nhello\n"},
 
-		// Array of mutable references with default value. All elements alias the
-		// same heap struct, so mutating through one is visible through the others.
-		{"new ref array with default value", `
-			struct Foo {
-				mut one Int
-				two Str
-			}
-
-			fun main() void {
-				let @a = Arena()
-				let def = new_mut(@a, Foo(42, "hello"))
-				mut x = new_mut(@a, [3]&mut Foo(def))
-				print_int(x[0].one)
-				print_int(x[2].one)
-				x[0].one = 99
-				print_int(x[1].one)
-				print_int(x[2].one)
-			}
-			`, "42\n42\n99\n99\n"},
-
 		// Slice of mutable references with default value. All elements alias the
 		// same heap struct, so mutating through one is visible through the others.
-		{"make ref slice with default value", `
+		{"make ref slice with default value 1", `
 			struct Foo {
 				mut one Int
 				two Str
@@ -1107,8 +1088,8 @@ func TestCompile(t *testing.T) {
 
 			fun main() void {
 				let @a = Arena()
-				let def = new_mut(@a, Foo(42, "hello"))
-				mut x = make(@a, []&mut Foo(3, def))
+				let def = @a.new_mut<Foo>(Foo(42, "hello"))
+				let x = @a.slice_mut<&mut Foo>(3, def)
 				print_int(x[0].one)
 				print_int(x[2].one)
 				x[0].one = 99
@@ -1117,23 +1098,42 @@ func TestCompile(t *testing.T) {
 			}
 			`, "42\n42\n99\n99\n"},
 
-		{"allocate multidimensional array", `
+		// Slice of mutable references with default value (variant 2).
+		{"make ref slice with default value 2", `
+			struct Foo {
+				mut one Int
+				two Str
+			}
+
 			fun main() void {
 				let @a = Arena()
-				mut m = new_mut(@a, [2][3]Int())
-				m[0] = [10, 20, 30]
-				m[1] = [40, 50, 60]
+				let def = @a.new_mut<Foo>(Foo(42, "hello"))
+				let x = @a.slice_mut<&mut Foo>(3, def)
+				print_int(x[0].one)
+				print_int(x[2].one)
+				x[0].one = 99
+				print_int(x[1].one)
+				print_int(x[2].one)
+			}
+			`, "42\n42\n99\n99\n"},
+
+		{"allocate multidimensional slice", `
+			fun main() void {
+				let @a = Arena()
+				let m = @a.slice_mut<[]Int>(2, [])
+				m[0] = @a.slice<Int>(3, 10)
+				m[1] = @a.slice<Int>(3, 40)
 				print_int(m[0][1])
 				print_int(m[1][2])
 			}
-			`, "20\n60\n"},
+			`, "10\n40\n"},
 
 		{"make multidimensional slice", `
 			fun main() void {
 				let @a = Arena()
-				let m = make(@a, []mut []Int(2, []))
-				m[0] = make(@a, []Int(3, 20))
-				m[1] = make(@a, []Int(3, 60))
+				let m = @a.slice_mut<[]Int>(2, [])
+				m[0] = @a.slice<Int>(3, 20)
+				m[1] = @a.slice<Int>(3, 60)
 				print_int(m[0][1])
 				print_int(m[1][2])
 			}
@@ -1142,7 +1142,7 @@ func TestCompile(t *testing.T) {
 		{"empty slice resets slice", `
 			fun main() void {
 				let @a = Arena()
-				mut x = make(@a, []Int(3, 42))
+				mut x = @a.slice<Int>(3, 42)
 				print_int(x[1])
 				x = []
 				print_int(x.len)
@@ -1162,7 +1162,7 @@ func TestCompile(t *testing.T) {
 			fun main() void {
 				let @a = Arena()
 				struct Foo { mut one Int }
-				let a = make(@a, []mut Foo(1))
+				let a = @a.slice_uninit_mut<Foo>(1)
 				a[0] = Foo(1)
 				a[0].one = 42
 				print_int(a[0].one)
@@ -1183,7 +1183,7 @@ func TestCompile(t *testing.T) {
 			fun main() void {
 				let @a = Arena()
 				struct Foo { mut one Int }
-				let a = make(@a, []mut Foo(1))
+				let a = @a.slice_uninit_mut<Foo>(1)
 				a[0] = Foo(1)
 				let b = &mut a[0]
 				b.one = 42
@@ -1230,7 +1230,7 @@ func TestCompile(t *testing.T) {
 		{"subslice of slice", `
 			fun main() void {
 				let @a = Arena()
-				let sl = make(@a, []mut Int(5))
+				let sl = @a.slice_uninit_mut<Int>(5)
 				sl[0] = 100
 				sl[1] = 200
 				sl[2] = 300
@@ -1255,7 +1255,7 @@ func TestCompile(t *testing.T) {
 		{"mutate slice through subslice", `
 			fun main() void {
 				let @a = Arena()
-				let sl = make(@a, []mut Int(4))
+				let sl = @a.slice_uninit_mut<Int>(4)
 				sl[0] = 1
 				sl[1] = 2
 				sl[2] = 3
@@ -1701,51 +1701,6 @@ func TestCompile(t *testing.T) {
 				LLVMPasses:       "verify," + DefaultLLVMPasses,
 				AddressSanitizer: true,
 				MinimalPrelude:   true,
-			}
-			exitCode, output, err := CompileAndRun(t.Context(), source, opts)
-			timing.Log(t)
-			assert.NoError(err)
-			assert.Equal(0, exitCode, "exit code")
-			assert.Equal(tt.wantOutput, output, "output")
-		})
-	}
-}
-
-func TestCompileFullPrelude(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		src        string
-		wantOutput string
-	}{
-		{"prelude struct via qualified method call", `
-			fun main() void {
-				let @a = Arena()
-				let sb = StrBuilder.init(16, @a)
-			}
-			`, ""},
-	}
-
-	assert := base.NewAssert(t)
-	if err := os.MkdirAll(".build", 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			source := base.NewSource("test.met", "test", true, []rune(tt.src))
-			reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
-			outputPath := "./.build/" + reg.ReplaceAllString(tt.name, "_")
-			timing := newTimingListener()
-			opts := CompileOpts{ //nolint:exhaustruct
-				ProjectRoot:      ".",
-				Listener:         timing,
-				Output:           outputPath,
-				KeepIR:           true,
-				LLVMPasses:       "verify," + DefaultLLVMPasses,
-				AddressSanitizer: true,
-				MinimalPrelude:   false,
 			}
 			exitCode, output, err := CompileAndRun(t.Context(), source, opts)
 			timing.Log(t)

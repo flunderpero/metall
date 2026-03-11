@@ -500,6 +500,8 @@ func (e *TypeEnv) typeName(typ *Type) string {
 		return kind.Name
 	case BoolType:
 		return "Bool"
+	case AllocatorType:
+		return "Arena"
 	case TypeParamType:
 		if kind.Shape != nil {
 			return base.Cast[ShapeType](e.Type(*kind.Shape).Kind).DeclName

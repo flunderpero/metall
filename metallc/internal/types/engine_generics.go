@@ -148,8 +148,10 @@ func (g *GenericsEngine) instantiateFun(
 	node := g.ast.Node(funNodeID)
 	funTypeID := g.env.newType(funTyp, node.ID, node.Span, TypeOK)
 	g.env.reg.genericOrigin[funTypeID] = genericTypeID
-	g.funs[mangledName] = FunWork{NodeID: funNodeID, TypeID: funTypeID, Name: mangledName, Env: g.env}
-	g.checkFunBody(funNode, funTypeID, funTyp)
+	if !funNode.Extern {
+		g.funs[mangledName] = FunWork{NodeID: funNodeID, TypeID: funTypeID, Name: mangledName, Env: g.env}
+		g.checkFunBody(funNode, funTypeID, funTyp)
+	}
 	return funTypeID, mangledName, TypeOK
 }
 

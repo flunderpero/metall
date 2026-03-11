@@ -207,10 +207,6 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeAllocatorVar(nodeID, kind)
 	case ast.StructLiteral:
 		a.analyzeStructLiteral(nodeID, kind)
-	case ast.New:
-		a.analyzeNew(nodeID, kind)
-	case ast.MakeSlice:
-		a.analyzeMakeSlice(nodeID, kind)
 	case ast.ArrayLiteral:
 		a.analyzeArrayLiteral(nodeID, kind)
 	case ast.EmptySlice:
@@ -348,28 +344,28 @@ func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLi
 	a.debug(1, nodeID, "analyzeStructLiteral: %s", merged)
 }
 
-// analyzeNew: `new(@alloc, Foo(...))` merges the target's flow with the allocator's.
-func (a *LifetimeCheck) analyzeNew(nodeID ast.NodeID, alloc ast.New) {
-	a.ast.Walk(nodeID, a.Check)
-	merged := a.flow(alloc.Target)
-	merged = merged.Merge(a.flow(alloc.Allocator))
-	if newArr, ok := a.ast.Node(alloc.Target).Kind.(ast.NewArray); ok && newArr.DefaultValue != nil {
-		merged = merged.Merge(a.flow(*newArr.DefaultValue))
+func (a *LifetimeCheck) isArenaAllocCall(nodeID ast.NodeID) bool {
+	call, ok := a.ast.Node(nodeID).Kind.(ast.Call)
+	if !ok {
+		return false
 	}
-	a.flows[nodeID] = merged
-	a.debug(1, nodeID, "analyzeNew: %s", merged)
+	fa, ok := a.ast.Node(call.Callee).Kind.(ast.FieldAccess)
+	if !ok {
+		return false
+	}
+	targetType := a.env.TypeOfNode(fa.Target)
+	_, ok = targetType.Kind.(AllocatorType)
+	return ok
 }
 
-// analyzeMakeSlice: `make(@alloc, []T(len))` or `make(@alloc, []T(len, default))` merges the allocator's flow.
-func (a *LifetimeCheck) analyzeMakeSlice(nodeID ast.NodeID, makeSlice ast.MakeSlice) {
-	a.ast.Walk(nodeID, a.Check)
-	merged := a.flow(makeSlice.Allocator)
-	merged = merged.Merge(a.flow(makeSlice.Len))
-	if makeSlice.DefaultValue != nil {
-		merged = merged.Merge(a.flow(*makeSlice.DefaultValue))
+func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) {
+	fa := base.Cast[ast.FieldAccess](a.ast.Node(call.Callee).Kind)
+	merged := a.flow(fa.Target)
+	for _, argNodeID := range call.Args {
+		merged = merged.Merge(a.flow(argNodeID))
 	}
 	a.flows[nodeID] = merged
-	a.debug(1, nodeID, "analyzeMakeSlice: %s", merged)
+	a.debug(1, nodeID, "analyzeArenaAllocCall: %s", merged)
 }
 
 func (a *LifetimeCheck) analyzeArrayLiteral(nodeID ast.NodeID, lit ast.ArrayLiteral) {
@@ -417,6 +413,10 @@ func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 // If we detect a cycle (mutual recursion), we apply pessimistic effects.
 func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 	a.ast.Walk(nodeID, a.Check)
+	if a.isArenaAllocCall(nodeID) {
+		a.analyzeArenaAllocCall(nodeID, call)
+		return
+	}
 	calleeType := a.env.TypeOfNode(call.Callee)
 	if _, ok := calleeType.Kind.(FunType); !ok {
 		return
@@ -548,8 +548,7 @@ func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 	ss := a.scopeState(nodeID)
 	f := a.flow(varNode.Expr)
 	storageTaint := ss.ScopeTaint
-	switch a.ast.Node(varNode.Expr).Kind.(type) {
-	case ast.New, ast.MakeSlice:
+	if a.isArenaAllocCall(varNode.Expr) {
 		storageTaint = 0
 	}
 	ss.Vars[varNode.Name.Name] = &VarTaint{nodeID, storageTaint, f}
@@ -814,6 +813,9 @@ func (a *LifetimeCheck) analyzeReturn(nodeID ast.NodeID, ret ast.Return) {
 // analyzeFun builds a FunEffects that describes how parameter flows map to the
 // return value and to each other (side effects).
 func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) { //nolint:funlen
+	if fun.Extern {
+		return
+	}
 	// Walk type params and return type (no special handling needed).
 	for _, tp := range fun.TypeParams {
 		a.Check(tp)

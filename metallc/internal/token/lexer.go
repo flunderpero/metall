@@ -45,12 +45,9 @@ const (
 	Lt
 	LtImmediate
 	Lte
-	Make
 	Minus
 	Mut
 	Neq
-	New
-	NewMut
 	Not
 	Number
 	Or
@@ -112,12 +109,9 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Lt:                    "<",
 	LtImmediate:           "<<immediate>",
 	Lte:                   "<=",
-	Make:                  "<make>",
 	Minus:                 "-",
 	Mut:                   "<mut>",
 	Neq:                   "!=",
-	New:                   "<new>",
-	NewMut:                "<new_mut>",
 	Not:                   "<not>",
 	Number:                "<number>",
 	Or:                    "<or>",
@@ -171,10 +165,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"if":       If,
 	"in":       In,
 	"let":      Let,
-	"make":     Make,
 	"mut":      Mut,
-	"new":      New,
-	"new_mut":  NewMut,
 	"not":      Not,
 	"or":       Or,
 	"return":   Return,

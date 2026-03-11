@@ -13,6 +13,12 @@ var stdlibPreludeSrc string
 const minimalPrelude = `
 struct Void________ {}
 struct Arena_______ {}
+fun Arena.new<T>(self Arena_______, value T) &T { value }
+fun Arena.new_mut<T>(self Arena_______, value T) &mut T { value }
+fun Arena.slice<T>(self Arena_______, len Int, default T) []T { default }
+fun Arena.slice_mut<T>(self Arena_______, len Int, default T) []mut T { default }
+fun Arena.slice_uninit<T>(self Arena_______, len Int) []T { len }
+fun Arena.slice_uninit_mut<T>(self Arena_______, len Int) []mut T { len }
 struct Bool {}
 struct I8 {}
 struct I16 {}

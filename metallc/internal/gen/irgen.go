@@ -126,8 +126,6 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genReturn(id, kind)
 	case ast.StructLiteral:
 		g.genStructLiteralOnStack(id, kind)
-	case ast.New:
-		g.genNew(id, kind)
 	case ast.ArrayLiteral:
 		g.genArrayLiteral(id, kind)
 	case ast.EmptySlice:
@@ -152,8 +150,6 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genVar(id, kind)
 	case ast.Ref:
 		g.genRef(id, kind)
-	case ast.MakeSlice:
-		g.genMakeSlice(id, kind)
 	case ast.AllocatorVar:
 		g.genAllocatorVar(id, kind)
 	case ast.Struct,
@@ -167,7 +163,6 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		ast.ArrayType,
 		ast.SliceType,
 		ast.FunType,
-		ast.NewArray,
 		ast.Path,
 		ast.Range:
 	default:
@@ -348,68 +343,43 @@ func (g *IRFunGen) genStructLiteralOnStack(id ast.NodeID, lit ast.StructLiteral)
 	g.genStructLiteralFields(id, lit, reg)
 }
 
-func (g *IRFunGen) genNew(id ast.NodeID, alloc ast.New) {
-	g.Gen(alloc.Allocator)
-	allocReg := g.lookupCode(alloc.Allocator)
-	lit := g.ast.Node(alloc.Target).Kind
-	switch lit := lit.(type) {
-	case ast.NewArray:
-		arrType := base.Cast[ast.ArrayType](g.ast.Node(lit.Type).Kind)
-		reg := g.reg()
-		irTyp := g.irTypeOfNode(arrType.Elem)
-		g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
-		g.write("%s_elm_size = ptrtoint ptr %s_elm_size_ptr to i64", reg, reg)
-		g.write("%s_size = mul i64 %s_elm_size, %d", reg, reg, arrType.Len)
-		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
-		if lit.DefaultValue != nil {
-			if _, ok := g.ast.Node(*lit.DefaultValue).Kind.(ast.EmptySlice); ok {
-				// EmptySlice is all zeros — use memset.
-				g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_size, i1 false)", reg, reg)
-			} else {
-				g.Gen(*lit.DefaultValue)
-				valReg := g.lookupCode(*lit.DefaultValue)
-				elemTypeID := g.env.TypeOfNode(arrType.Elem).ID
-				count := arrType.Len
-				g.genInitializeMemory(reg, irTyp, valReg, elemTypeID, fmt.Sprintf("%d", count), &count)
-			}
-		}
-		g.setCode(id, reg)
-	case ast.StructLiteral:
-		irTyp := g.irTypeOfNode(lit.Target)
-		reg := g.reg()
-		g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
-		g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
-		g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
+func (g *IRFunGen) genArenaNew(id ast.NodeID, call ast.Call, fa ast.FieldAccess) {
+	g.Gen(fa.Target)
+	allocReg := g.lookupCode(fa.Target)
+	valueArg := call.Args[0]
+	valueTypeID := g.env.TypeOfNode(valueArg).ID
+	irTyp := g.irType(valueTypeID)
+	reg := g.reg()
+	g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
+	g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
+	g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
+	if lit, ok := g.ast.Node(valueArg).Kind.(ast.StructLiteral); ok {
 		g.genStructLiteralFields(id, lit, reg)
-	default:
-		panic(base.Errorf("unsupported allocation type %T", lit))
+	} else {
+		g.Gen(valueArg)
+		valReg := g.lookupCode(valueArg)
+		g.storeValue(valReg, reg, valueTypeID)
+		g.setCode(id, reg)
 	}
 }
 
-func (g *IRFunGen) genMakeSlice(id ast.NodeID, makeSlice ast.MakeSlice) {
-	g.Gen(makeSlice.Allocator)
-	allocReg := g.lookupCode(makeSlice.Allocator)
-	sliceType := base.Cast[ast.SliceType](g.ast.Node(makeSlice.Type).Kind)
+func (g *IRFunGen) genArenaSlice(id ast.NodeID, call ast.Call, fa ast.FieldAccess) {
+	g.Gen(fa.Target)
+	allocReg := g.lookupCode(fa.Target)
+	sliceType := base.Cast[types.SliceType](g.env.TypeOfNode(id).Kind)
 	reg := g.reg()
-	irTyp := g.irTypeOfNode(sliceType.Elem)
+	irTyp := g.irType(sliceType.Elem)
 	g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
 	g.write("%s_elm_size = ptrtoint ptr %s_elm_size_ptr to i64", reg, reg)
-	g.Gen(makeSlice.Len)
-	lenReg := g.lookupCode(makeSlice.Len)
+	g.Gen(call.Args[0])
+	lenReg := g.lookupCode(call.Args[0])
 	g.write("%s_size = mul i64 %s_elm_size, %s", reg, reg, lenReg)
 	g.write("%s_data = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
-	if makeSlice.DefaultValue != nil {
-		if _, ok := g.ast.Node(*makeSlice.DefaultValue).Kind.(ast.EmptySlice); ok {
-			// EmptySlice is all zeros — use memset.
-			g.write("call void @llvm.memset.p0.i64(ptr %s_data, i8 0, i64 %s_size, i1 false)", reg, reg)
-		} else {
-			g.Gen(*makeSlice.DefaultValue)
-			valReg := g.lookupCode(*makeSlice.DefaultValue)
-			elemTypeID := g.env.TypeOfNode(sliceType.Elem).ID
-			g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, elemTypeID, lenReg, nil)
-		}
+	if len(call.Args) == 2 { // slice/slice_mut have a default value arg; slice_uninit variants don't
+		g.Gen(call.Args[1])
+		valReg := g.lookupCode(call.Args[1])
+		g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, sliceType.Elem, lenReg, nil)
 	}
-	// Build the slice {ptr, i64} on the stack.
 	g.write("%s = alloca {ptr, i64}", reg)
 	g.write("%s_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", reg, reg)
 	g.write("store ptr %s_data, ptr %s_ptr_field", reg, reg)
@@ -927,7 +897,34 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 	g.setCode(id, reg)
 }
 
+func (g *IRFunGen) arenaAllocMethod(call ast.Call) (string, ast.FieldAccess, bool) {
+	name, ok := g.env.NamedFunRef(call.Callee)
+	if !ok {
+		return "", ast.FieldAccess{}, false
+	}
+	for _, method := range []string{
+		"Arena.new_mut", "Arena.new",
+		"Arena.slice_uninit_mut", "Arena.slice_uninit",
+		"Arena.slice_mut", "Arena.slice",
+	} {
+		if strings.HasPrefix(name, method) {
+			fa := base.Cast[ast.FieldAccess](g.ast.Node(call.Callee).Kind)
+			return method, fa, true
+		}
+	}
+	return "", ast.FieldAccess{}, false
+}
+
 func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
+	if method, fa, ok := g.arenaAllocMethod(call); ok {
+		switch method {
+		case "Arena.new", "Arena.new_mut":
+			g.genArenaNew(id, call, fa)
+		default:
+			g.genArenaSlice(id, call, fa)
+		}
+		return
+	}
 	calleeType := g.env.TypeOfNode(call.Callee)
 	fun, ok := calleeType.Kind.(types.FunType)
 	if !ok {
@@ -1118,7 +1115,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 	if g.isAggregateType(exprType.ID) {
 		exprNode := g.ast.Node(v.Expr)
 		switch exprNode.Kind.(type) {
-		case ast.StructLiteral, ast.ArrayLiteral, ast.EmptySlice, ast.MakeSlice, ast.SubSlice, ast.Call:
+		case ast.StructLiteral, ast.ArrayLiteral, ast.EmptySlice, ast.SubSlice, ast.Call:
 			// The result value is already a copy.
 			g.setCode(id, exprReg)
 			g.setSymbol(id, v.Name.Name, exprReg, "ptr")

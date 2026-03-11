@@ -233,8 +233,11 @@ func TestParseOK(t *testing.T) {
 		{"allocator var", "expr", "let @myalloc = Arena(123)", func(a *TestAST) NodeID {
 			return a.allocator_var("@myalloc", "Arena", a.int_(123))
 		}},
-		{"heap alloc", "expr", `new(@myalloc, Foo())`, func(a *TestAST) NodeID {
-			return a.new_(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
+		{"heap alloc", "expr", `@myalloc.new<Foo>(Foo())`, func(a *TestAST) NodeID {
+			return a.call(
+				a.field_access_t(a.ident("@myalloc"), "new", a.typ("Foo")),
+				a.struct_lit(a.ident("Foo")),
+			)
 		}},
 		{
 			"alloc fun param", "expr", "fun foo(@myalloc Arena, x Str, @youralloc Arena) void {}",
@@ -325,36 +328,29 @@ func TestParseOK(t *testing.T) {
 			hi := a.int_(3)
 			return a.sub_slice(target, nil, &hi, true)
 		}},
-		{"heap alloc from field", "expr", `new(x.@myalloc, Foo("hello"))`, func(a *TestAST) NodeID {
-			return a.new_(a.field_access(a.ident("x"), "@myalloc"), a.struct_lit(a.ident("Foo"), a.string_("hello")))
+		{"heap alloc from field", "expr", `x.@myalloc.new<Foo>(Foo("hello"))`, func(a *TestAST) NodeID {
+			return a.call(
+				a.field_access_t(a.field_access(a.ident("x"), "@myalloc"), "new", a.typ("Foo")),
+				a.struct_lit(a.ident("Foo"), a.string_("hello")),
+			)
 		}},
-		{"heap alloc array", "expr", `new(@myalloc, [5]Int())`, func(a *TestAST) NodeID {
-			return a.new_(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5), nil))
+		{"heap alloc mut struct", "expr", `@myalloc.new_mut<Foo>(Foo())`, func(a *TestAST) NodeID {
+			return a.call(
+				a.field_access_t(a.ident("@myalloc"), "new_mut", a.typ("Foo")),
+				a.struct_lit(a.ident("Foo")),
+			)
 		}},
-		{"heap alloc array default", "expr", `new(@myalloc, [5]Int(42))`, func(a *TestAST) NodeID {
-			alloc := a.ident("@myalloc")
-			arrType := a.arr_typ(a.int_typ(), 5)
-			v := a.int_(42)
-			return a.new_(alloc, a.new_array(arrType, &v))
+		{"make slice", "expr", `@myalloc.make<[]Int>(n, 42)`, func(a *TestAST) NodeID {
+			return a.call(
+				a.field_access_t(a.ident("@myalloc"), "make", a.slice_typ(a.int_typ())),
+				a.ident("n"), a.int_(42),
+			)
 		}},
-		{"heap alloc mut struct", "expr", `new_mut(@myalloc, Foo())`, func(a *TestAST) NodeID {
-			return a.new_mut(a.ident("@myalloc"), a.struct_lit(a.ident("Foo")))
-		}},
-		{"heap alloc mut array", "expr", `new_mut(@myalloc, [5]Int())`, func(a *TestAST) NodeID {
-			return a.new_mut(a.ident("@myalloc"), a.new_array(a.arr_typ(a.int_typ(), 5), nil))
-		}},
-		{"make slice", "expr", `make(@myalloc, []Int(n))`, func(a *TestAST) NodeID {
-			allocIdent := a.ident("@myalloc")
-			sliceType := a.slice_typ(a.int_typ())
-			n := a.ident("n")
-			return a.make_slice(allocIdent, sliceType, n, nil)
-		}},
-		{"make slice default", "expr", `make(@myalloc, []Int(n, 42))`, func(a *TestAST) NodeID {
-			allocIdent := a.ident("@myalloc")
-			sliceType := a.slice_typ(a.int_typ())
-			n := a.ident("n")
-			v := a.int_(42)
-			return a.make_slice(allocIdent, sliceType, n, &v)
+		{"make uninit slice", "expr", `@myalloc.make_uninit<[]Int>(n)`, func(a *TestAST) NodeID {
+			return a.call(
+				a.field_access_t(a.ident("@myalloc"), "make_uninit", a.slice_typ(a.int_typ())),
+				a.ident("n"),
+			)
 		}},
 
 		{"int +", "expr", "1 + 2", func(a *TestAST) NodeID {
@@ -716,11 +712,6 @@ func TestParseErr(t *testing.T) {
 				`    mut @a = Arena()` + "\n" +
 				"        ^^",
 		}},
-		{"heap alloc without target", "expr", `new(@myalloc)`, []string{
-			"test.met:1:13: unexpected token: expected ,, got )\n" +
-				`    new(@myalloc)` + "\n" +
-				"                ^",
-		}},
 		{"method fun missing method name", "expr", `fun Foo.() void {}`, []string{
 			"test.met:1:9: unexpected token: expected <identifier>, got (\n" +
 				"    fun Foo.() void {}\n" +
@@ -952,14 +943,6 @@ func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
 	return a.NewStructLiteral(struct_, args, a.span)
 }
 
-func (a *TestAST) new_(alloc NodeID, target NodeID) NodeID {
-	return a.NewNew(alloc, target, false, a.span)
-}
-
-func (a *TestAST) new_mut(alloc NodeID, target NodeID) NodeID {
-	return a.NewNew(alloc, target, true, a.span)
-}
-
 func (a *TestAST) binary(op BinaryOp, lhs NodeID, rhs NodeID) NodeID {
 	return a.NewBinary(op, lhs, rhs, a.span)
 }
@@ -970,6 +953,10 @@ func (a *TestAST) unary(op UnaryOp, expr NodeID) NodeID {
 
 func (a *TestAST) field_access(base NodeID, field string) NodeID {
 	return a.NewFieldAccess(base, Name{field, a.span}, nil, a.span)
+}
+
+func (a *TestAST) field_access_t(base NodeID, field string, typeArgs ...NodeID) NodeID {
+	return a.NewFieldAccess(base, Name{field, a.span}, typeArgs, a.span)
 }
 
 func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {
@@ -1060,14 +1047,6 @@ func (a *TestAST) slice_typ(typ NodeID) NodeID {
 
 func (a *TestAST) mut_slice_typ(typ NodeID) NodeID {
 	return a.NewSliceType(typ, true, a.span)
-}
-
-func (a *TestAST) new_array(arrType NodeID, defaultValue *NodeID) NodeID {
-	return a.NewNewArray(arrType, defaultValue, a.span)
-}
-
-func (a *TestAST) make_slice(alloc NodeID, sliceType NodeID, len_ NodeID, defaultValue *NodeID) NodeID {
-	return a.NewMakeSlice(alloc, sliceType, len_, defaultValue, a.span)
 }
 
 func (a *TestAST) arr_lit(elems ...NodeID) NodeID {
@@ -1188,8 +1167,6 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case StructLiteral:
-			node.Kind = kind
-		case New:
 			node.Kind = kind
 		case AllocatorVar:
 			kind.Name.Span = base.Span{}

@@ -241,14 +241,14 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			{
 				let y = {
 					let @a = Arena()
-					let x = new(@a, [5]Int(0))
+					let x = @a.slice<Int>(5, 0)
 					&x[0]
 				}
 			}
 			`, []string{
 			"test.met:6:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
-				        let x = new(@a, [5]Int(0))
+				        let x = @a.slice<Int>(5, 0)
 				        &x[0]
 				        ^^^^^
 				    }
@@ -442,7 +442,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Foo { one Str }
 				let x = {
 					let @myalloc = Arena()
-					new(@myalloc, Foo("hello"))
+					@myalloc.new<Foo>(Foo("hello"))
 				}
 				x
 			}
@@ -450,17 +450,17 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:6:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
-				        new(@myalloc, Foo("hello"))
-				        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+				        @myalloc.new<Foo>(Foo("hello"))
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
-		// Heap-allocated array escapes the block where the allocator lives.
-		{"heap alloc array escapes", `
+		// Heap-allocated slice escapes the block where the allocator lives.
+		{"heap alloc slice escapes", `
 			{
 				let x = {
 					let @myalloc = Arena()
-					new(@myalloc, [5]Int())
+					@myalloc.slice_uninit<Int>(5)
 				}
 				x
 			}
@@ -468,8 +468,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:5:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
-				        new(@myalloc, [5]Int())
-				        ^^^^^^^^^^^^^^^^^^^^^^^
+				        @myalloc.slice_uninit<Int>(5)
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -477,9 +477,9 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"valid heap alloc through param", `
 			{
 				struct Foo { one Str }
-				fun foo(@myalloc Arena) &Foo { new(@myalloc, Foo("hello")) }
-				let @myalloc = Arena()
-				let x = foo(@myalloc)
+				fun foo(@a Arena) &Foo { @a.new<Foo>(Foo("hello")) }
+				let @a = Arena()
+				let x = foo(@a)
 			}
 			`, []string{}},
 		// Heap-allocated struct escapes through a nested block result.
@@ -489,7 +489,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				let @youralloc = Arena()
 				let x = {
 					let @myalloc = Arena()
-					new(@myalloc, Foo("hello"))
+					@myalloc.new<Foo>(Foo("hello"))
 				}
 				x
 			}
@@ -497,8 +497,8 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			"test.met:7:21: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let @myalloc = Arena()
-				        new(@myalloc, Foo("hello"))
-				        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+				        @myalloc.new<Foo>(Foo("hello"))
+				        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -506,11 +506,11 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"heap alloc ref assignment escapes", `
 			{
 				struct Foo { one Str }
-				fun foo(@myalloc Arena) &Foo { new(@myalloc, Foo("hello")) }
+				fun foo(@a Arena) &Foo { @a.new<Foo>(Foo("hello")) }
 				fun identity(a &Foo) &Foo { a }
 				let x = {
-					let @myalloc = Arena()
-					let y = foo(@myalloc)
+					let @a = Arena()
+					let y = foo(@a)
 					let z = y
 					identity(z)
 				}
@@ -529,7 +529,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 		{"heap alloc call escape", `
 			{
 				struct Foo { one Str }
-				fun foo(@myalloc Arena) &Foo { new(@myalloc, Foo("hello")) }
+				fun foo(@a Arena) &Foo { @a.new<Foo>(Foo("hello")) }
 				let x = {
 					let @youralloc = Arena()
 					foo(@youralloc)
@@ -550,7 +550,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Foo { one Str }
 				struct Bar { @myalloc Arena }
 				fun foo(a Bar) &Foo {
-					new(a.@myalloc, Foo("hello"))
+					a.@myalloc.new<Foo>(Foo("hello"))
 				}
 				let x = {
 					let @myalloc = Arena()
@@ -576,7 +576,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Bar { @myalloc Arena }
 				let @myalloc = Arena()
 				let x = Bar(@myalloc)
-				let y = new(x.@myalloc, Foo("hello"))
+				let y = x.@myalloc.new<Foo>(Foo("hello"))
 			}
 			`, []string{}},
 
@@ -587,7 +587,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				struct Bar { @myalloc Arena }
 				struct Baz { one Bar }
 				fun foo(a Baz) &Foo {
-					new(a.one.@myalloc, Foo("hello"))
+					a.one.@myalloc.new<Foo>(Foo("hello"))
 				}
 				let x = {
 					let @myalloc = Arena()
@@ -606,78 +606,78 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				`, "\n"),
 		}},
 
-		// Default value in new-array carries a ref that escapes the inner scope.
-		{"new array default ref escapes", `
+		// Default value in make carries a ref that escapes the inner scope.
+		{"make default ref escapes", `
 			{
 				struct Wrapper { one &Int }
 				let @a = Arena()
 				let x = {
 					let local = 123
-					new_mut(@a, [3]Wrapper(Wrapper(&local)))
+					@a.slice_mut<Wrapper>(3, Wrapper(&local))
 				}
 			}
 			`, []string{
-			"test.met:7:52: reference escaping its allocation scope (via block result)\n" +
+			"test.met:7:54: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
-				        new_mut(@a, [3]Wrapper(Wrapper(&local)))
-				                                       ^^^^^^
+				        @a.slice_mut<Wrapper>(3, Wrapper(&local))
+				                                         ^^^^^^
 				    }
 				`, "\n"),
 		}},
-		// Default value in make-slice carries a ref that escapes the inner scope.
-		{"make slice default ref escapes", `
+		// Default value in make carries a ref that escapes the inner scope (immutable slice).
+		{"make default ref escapes immutable", `
 			{
 				struct Wrapper { one &Int }
 				let @a = Arena()
 				let x = {
 					let local = 123
-					make(@a, []Wrapper(3, Wrapper(&local)))
+					@a.slice<Wrapper>(3, Wrapper(&local))
 				}
 			}
 			`, []string{
-			"test.met:7:51: reference escaping its allocation scope (via block result)\n" +
+			"test.met:7:50: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
-				        make(@a, []Wrapper(3, Wrapper(&local)))
-				                                      ^^^^^^
+				        @a.slice<Wrapper>(3, Wrapper(&local))
+				                                     ^^^^^^
 				    }
 				`, "\n"),
 		}},
 
-		// Ref array: default value is a reference to a stack local that escapes.
-		{"new ref array default escapes", `
+		// Ref slice: default value is a reference to a stack local that escapes (mut).
+		{"make ref default escapes", `
 			{
 				let @a = Arena()
 				let x = {
 					let local = 123
-					new_mut(@a, [3]&Int(&local))
+					@a.slice_mut<&Int>(3, &local)
 				}
 			}
 			`, []string{
-			"test.met:6:41: reference escaping its allocation scope (via block result)\n" +
+			"test.met:6:43: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
-				        new_mut(@a, [3]&Int(&local))
-				                            ^^^^^^
+				        @a.slice_mut<&Int>(3, &local)
+				                              ^^^^^^
 				    }
 				`, "\n"),
 		}},
-		// Ref slice: default value is a reference to a stack local that escapes.
-		{"make ref slice default escapes", `
+		// Ref slice: default value is a reference to a stack local that escapes (immutable).
+		{"make ref default escapes immutable", `
 			{
 				let @a = Arena()
 				let x = {
 					let local = 123
-					make(@a, []&Int(3, &local))
+					@a.slice<&Int>(3, &local)
 				}
 			}
 			`, []string{
-			"test.met:6:40: reference escaping its allocation scope (via block result)\n" +
+			"test.met:6:39: reference escaping its allocation scope (via block result)\n" +
 				strings.Trim(`
 				        let local = 123
-				        make(@a, []&Int(3, &local))
-				                           ^^^^^^
+				        @a.slice<&Int>(3, &local)
+				                          ^^^^^^
 				    }
 				`, "\n"),
 		}},
@@ -1052,7 +1052,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				fun foo(a &mut Foo, b &Int) void { a.one = b }
 				let @myalloc = Arena()
 				mut x = 1
-				let y = new_mut(@myalloc, Foo(&mut x))
+				let y = @myalloc.new_mut<Foo>(Foo(&mut x))
 				{
 					mut z = 99
 					foo(y, &z)

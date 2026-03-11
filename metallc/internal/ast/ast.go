@@ -89,22 +89,6 @@ type FunType struct {
 
 func (FunType) isKind() {}
 
-type NewArray struct {
-	Type         NodeID
-	DefaultValue *NodeID
-}
-
-func (NewArray) isKind() {}
-
-type MakeSlice struct {
-	Allocator    NodeID
-	Type         NodeID
-	Len          NodeID
-	DefaultValue *NodeID
-}
-
-func (MakeSlice) isKind() {}
-
 type ArrayLiteral struct {
 	Elems []NodeID
 }
@@ -352,14 +336,6 @@ type StructLiteral struct {
 
 func (StructLiteral) isKind() {}
 
-type New struct {
-	Allocator NodeID
-	Target    NodeID
-	Mut       bool
-}
-
-func (New) isKind() {}
-
 type Ref struct {
 	Target NodeID
 	Mut    bool
@@ -450,10 +426,6 @@ func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
 
 func (a *AST) NewStructLiteral(target NodeID, args []NodeID, span base.Span) NodeID {
 	return a.node(StructLiteral{Target: target, Args: args}, span)
-}
-
-func (a *AST) NewNew(alloc NodeID, target NodeID, mut bool, span base.Span) NodeID {
-	return a.node(New{Allocator: alloc, Target: target, Mut: mut}, span)
 }
 
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
@@ -570,14 +542,6 @@ func (a *AST) NewSliceType(elemType NodeID, mut bool, span base.Span) NodeID {
 
 func (a *AST) NewFunType(params []NodeID, returnType NodeID, span base.Span) NodeID {
 	return a.node(FunType{Params: params, ReturnType: returnType}, span)
-}
-
-func (a *AST) NewNewArray(typ NodeID, defaultValue *NodeID, span base.Span) NodeID {
-	return a.node(NewArray{Type: typ, DefaultValue: defaultValue}, span)
-}
-
-func (a *AST) NewMakeSlice(alloc NodeID, typ NodeID, len_ NodeID, defaultValue *NodeID, span base.Span) NodeID {
-	return a.node(MakeSlice{Allocator: alloc, Type: typ, Len: len_, DefaultValue: defaultValue}, span)
 }
 
 func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
@@ -724,9 +688,6 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
 		}
-	case New:
-		f(kind.Allocator)
-		f(kind.Target)
 	case AllocatorVar:
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
@@ -735,18 +696,6 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Elem)
 	case SliceType:
 		f(kind.Elem)
-	case NewArray:
-		f(kind.Type)
-		if kind.DefaultValue != nil {
-			f(*kind.DefaultValue)
-		}
-	case MakeSlice:
-		f(kind.Allocator)
-		f(kind.Type)
-		f(kind.Len)
-		if kind.DefaultValue != nil {
-			f(*kind.DefaultValue)
-		}
 	case ArrayLiteral:
 		for i := range len(kind.Elems) {
 			f(kind.Elems[i])
@@ -1033,15 +982,6 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addChild("target", kind.Target)
 			addChild("args", kind.Args...)
 		}
-	case New:
-		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
-		if !children {
-			addAttr("allocator", nodeIDKind(kind.Allocator))
-			addAttr("target", nodeIDKind(kind.Target))
-		} else {
-			addChild("allocator", kind.Allocator)
-			addChild("target", kind.Target)
-		}
 	case AllocatorVar:
 		addAttr("name", kind.Name.Name)
 		addAttr("allocator", kind.Allocator.Name)
@@ -1096,33 +1036,6 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addAttr("type", nodeIDKind(kind.Elem))
 		} else {
 			addChild("type", kind.Elem)
-		}
-	case NewArray:
-		if !children {
-			addAttr("type", nodeIDKind(kind.Type))
-			if kind.DefaultValue != nil {
-				addAttr("default", nodeIDKind(*kind.DefaultValue))
-			}
-		} else {
-			addChild("type", kind.Type)
-			if kind.DefaultValue != nil {
-				addChild("default", *kind.DefaultValue)
-			}
-		}
-	case MakeSlice:
-		addAttr("len", nodeIDKind(kind.Len))
-		if !children {
-			addAttr("allocator", nodeIDKind(kind.Allocator))
-			addAttr("type", nodeIDKind(kind.Type))
-			if kind.DefaultValue != nil {
-				addAttr("default", nodeIDKind(*kind.DefaultValue))
-			}
-		} else {
-			addChild("allocator", kind.Allocator)
-			addChild("type", kind.Type)
-			if kind.DefaultValue != nil {
-				addChild("default", *kind.DefaultValue)
-			}
 		}
 	case ArrayLiteral:
 		addAttr("len", fmt.Sprintf("%d", len(kind.Elems)))

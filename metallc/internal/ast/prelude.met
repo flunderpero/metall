@@ -10,7 +10,7 @@ fun Rune.from_u32_lossy(n U32) Rune {
 --- Replace illegal utf8 sequences with the replacement character U+FFFD. 
     todo: Actually do that. :-) ---
 fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
-	mut copy = make(@a, []mut U8(data.len))
+	mut copy = @a.slice_uninit_mut<U8>(data.len)
 	for i in 0..data.len {
 		copy[i] = data[i]
 	}
@@ -42,7 +42,7 @@ fun Str.starts_with(s Str, other Str) Bool {
 }
 
 fun Str.concat(s Str, other Str, @a Arena) Str {
-    let data = make(@a, []mut U8(s.data.len + other.data.len))
+    let data = @a.slice_uninit_mut<U8>(s.data.len + other.data.len)
     for i in 0..s.data.len {
         data[i] = s.data[i]
     }
