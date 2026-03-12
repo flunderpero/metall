@@ -10,7 +10,7 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
-var ReservedIdents = []string{"Arena"} //nolint:gochecknoglobals
+var ReservedWords = []string{"Arena", "panic"} //nolint:gochecknoglobals
 
 const ParseFailed = NodeID(0)
 
@@ -239,7 +239,7 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	if slices.Contains(ReservedIdents, nameToken.Value) {
+	if slices.Contains(ReservedWords, nameToken.Value) {
 		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
 		return ParseFailed, false
 	}
@@ -822,10 +822,14 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 		return p.ParseAllocatorVar(span)
 	}
 	nameToken, ok := p.expect(token.Ident)
-	name := Name{nameToken.Value, nameToken.Span}
 	if !ok {
 		return ParseFailed, false
 	}
+	if slices.Contains(ReservedWords, nameToken.Value) {
+		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
+		return ParseFailed, false
+	}
+	name := Name{nameToken.Value, nameToken.Span}
 	if _, ok := p.expect(token.Eq); !ok {
 		return ParseFailed, false
 	}
@@ -1250,7 +1254,10 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 		return FunDecl{}, base.Span{}, false
 	}
 	if peek.Kind == token.TypeIdent {
-		p.next()
+		ns, ok := p.expect(token.TypeIdent)
+		if !ok {
+			return FunDecl{}, base.Span{}, false
+		}
 		if _, ok := p.expect(token.Dot); !ok {
 			return FunDecl{}, base.Span{}, false
 		}
@@ -1258,10 +1265,14 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 		if !ok {
 			return FunDecl{}, base.Span{}, false
 		}
-		name = Name{peek.Value + "." + method.Value, peek.Span.Combine(method.Span)}
+		name = Name{ns.Value + "." + method.Value, peek.Span.Combine(method.Span)}
 	} else {
 		ident, ok := p.expect(token.Ident)
 		if !ok {
+			return FunDecl{}, base.Span{}, false
+		}
+		if slices.Contains(ReservedWords, ident.Value) {
+			p.diagnostic(ident.Span, "reserved word: %s", ident.Value)
 			return FunDecl{}, base.Span{}, false
 		}
 		name = Name{ident.Value, ident.Span}

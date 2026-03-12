@@ -1717,32 +1717,38 @@ func TestCompilePanic(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
+		want string
 	}{
+		{"panic", `
+			fun main() void {
+				panic("hello")
+			}
+		`, "test.met:3:5: hello\n"},
 		{"int divide by zero", `
 			fun main() void {
 				1 / 0
 			}
-		`},
+		`, "test.met:3:5: division by zero\n"},
 		{"int modulo by zero", `
 			fun main() void {
 				1 % 0
 			}
-		`},
+		`, "test.met:3:5: division by zero\n"},
 		{"rune arithmetic overflow", `
 			fun main() void {
 				'😀' * 9
 			}
-		`},
+		`, "test.met:3:5: illegal rune\n"},
 		{"rune arithmetic underflow", `
 			fun main() void {
 				'a' - 'b'
 			}
-		`},
+		`, "test.met:3:5: illegal rune\n"},
 		{"rune arithmetic into surrogate", `
 			fun main() void {
 				'퟿' + 1
 			}
-		`},
+		`, "test.met:3:5: illegal rune\n"},
 	}
 
 	assert := base.NewAssert(t)
@@ -1775,10 +1781,11 @@ func TestCompilePanic(t *testing.T) {
 				AddressSanitizer: true,
 				MinimalPrelude:   true,
 			}
-			exitCode, _, err := CompileAndRun(t.Context(), source, opts)
+			exitCode, stdout, err := CompileAndRun(t.Context(), source, opts)
 			timing.Log(t)
 			assert.NoError(err)
 			assert.NotEqual(0, exitCode, "expected non-zero exit code (trap)")
+			assert.Equal(tt.want, stdout)
 		})
 	}
 }

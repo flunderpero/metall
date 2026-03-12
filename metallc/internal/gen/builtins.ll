@@ -1,9 +1,21 @@
 ; >>> External functions.
 
+declare i32 @putchar(i8)
 declare i32 @puts(ptr)
 declare i32 @printf(ptr, ...)
+declare i32 @fflush(ptr)
 
 ; >>> Builtin functions.
+
+define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn alwaysinline {
+    call void (ptr) @print(ptr %loc)
+    call void (i8) @putchar(i8 58)
+    call void (i8) @putchar(i8 32)
+    call void (ptr) @print_str(ptr %s)
+    call i32 @fflush(ptr null)
+    call void @llvm.trap()
+    unreachable
+}
 
 @fmt_str = private constant [6 x i8] c"%.*s\0A\00"
 define internal void @print_str(ptr byval(%Str) %s) {
@@ -15,6 +27,18 @@ define internal void @print_str(ptr byval(%Str) %s) {
     call i32 (ptr, ...) @printf(ptr @fmt_str, i32 %len32, ptr %data)
     ret void
 }
+
+@fmt_print = private constant [5 x i8] c"%.*s\00"
+define internal void @print(ptr byval(%Str) %s) {
+    %data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
+    %data = load ptr, ptr %data_field
+    %len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
+    %len = load i64, ptr %len_field
+    %len32 = trunc i64 %len to i32
+    call i32 (ptr, ...) @printf(ptr @fmt_print, i32 %len32, ptr %data)
+    ret void
+}
+
 
 @fmt_int = private constant [6 x i8] c"%lld\0A\00"
 define internal void @print_int(i64 %n) {
@@ -532,21 +556,13 @@ define internal i64 @"Int.to_u64_clamped"(i64 %v) alwaysinline {
 
 ; >>> Rune builtins.
 
-define internal void @__rune_check(i32 %v) alwaysinline {
-    %above_max = icmp ugt i32 %v, 1114111
-    br i1 %above_max, label %panic, label %check_surrogate
-check_surrogate:
-    %above_d7ff = icmp ugt i32 %v, 55295
-    %below_e000 = icmp ult i32 %v, 57344
-    %in_surrogate = and i1 %above_d7ff, %below_e000
-    br i1 %in_surrogate, label %panic, label %ok
-panic:
-    call void @llvm.trap()
-    unreachable
-ok:
-    ret void
-}
-
 define internal i32 @"Rune.to_u32"(i32 %v) alwaysinline {
     ret i32 %v
 }
+
+; >>> String constants.
+
+@str_division_by_zero.data = private constant [16 x i8] c"division by zero"
+@str_division_by_zero = private constant %Str { { ptr, i64 } { ptr @str_division_by_zero.data, i64 16 } }
+@str_illegal_rune.data = private constant [12 x i8] c"illegal rune"
+@str_illegal_rune = private constant %Str { { ptr, i64 } { ptr @str_illegal_rune.data, i64 12 } }

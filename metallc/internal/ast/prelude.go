@@ -11,14 +11,14 @@ import (
 var stdlibPreludeSrc string
 
 const minimalPrelude = `
-struct Void________ {}
-struct Arena_______ {}
-fun Arena.new<T>(self Arena_______, value T) &T { value }
-fun Arena.new_mut<T>(self Arena_______, value T) &mut T { value }
-fun Arena.slice<T>(self Arena_______, len Int, default T) []T { default }
-fun Arena.slice_mut<T>(self Arena_______, len Int, default T) []mut T { default }
-fun Arena.slice_uninit<T>(self Arena_______, len Int) []T { len }
-fun Arena.slice_uninit_mut<T>(self Arena_______, len Int) []mut T { len }
+struct Void_ {}
+struct Arena_ {}
+fun Arena.new<T>(self Arena, value T) &T { value }
+fun Arena.new_mut<T>(self Arena, value T) &mut T { value }
+fun Arena.slice<T>(self Arena, len Int, default T) []T { default }
+fun Arena.slice_mut<T>(self Arena, len Int, default T) []mut T { default }
+fun Arena.slice_uninit<T>(self Arena, len Int) []T { len }
+fun Arena.slice_uninit_mut<T>(self Arena, len Int) []mut T { len }
 struct Bool {}
 struct I8 {}
 struct I16 {}
@@ -34,6 +34,7 @@ fun print_str(s Str) void {}
 fun print_int(n Int) void {}
 fun print_uint(n U64) void {}
 fun print_bool(b Bool) void {}
+fun panic_(s Str) void {}
 fun Rune.to_u32(r Rune) U32 { return 1 }
 fun I8.to_i16(self I8) I16 { return 1 }
 fun I8.to_i32(self I8) I32 { return 1 }
@@ -134,8 +135,9 @@ func IsPreludeNode(id NodeID) bool {
 }
 
 var preludeRenames = map[string]string{ //nolint:gochecknoglobals
-	"Void________": "void",
-	"Arena_______": "Arena",
+	"Void_":  "void",
+	"Arena_": "Arena",
+	"panic_": "panic",
 }
 
 // PreludeAST parses the minimal prelude (built-in types and extern function
@@ -173,6 +175,9 @@ func updateMinimalPrelude(a *AST) {
 			kind.Extern = true
 			node.Kind = kind
 		case Fun:
+			if renamed, ok := preludeRenames[kind.Name.Name]; ok {
+				kind.Name.Name = renamed
+			}
 			kind.Extern = true
 			node.Kind = kind
 		case SimpleType:

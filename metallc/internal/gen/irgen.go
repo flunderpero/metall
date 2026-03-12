@@ -111,7 +111,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	case ast.Block:
 		g.genBlock(id, kind)
 	case ast.Call:
-		g.genCall(id, kind)
+		g.genCall(id, kind, node.Span)
 	case ast.Deref:
 		g.genDeref(id, kind)
 	case ast.If:
@@ -802,9 +802,45 @@ func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.setCode(id, "void")
 }
 
-func (g *IRFunGen) runeCheckIfNeeded(nodeID ast.NodeID, reg string) {
-	if intTyp, ok := g.env.TypeOfNode(nodeID).Kind.(types.IntType); ok && intTyp.Name == "Rune" {
-		g.write("call void @__rune_check(i32 %s)", reg)
+// emitSafeIntOp emits an inline division/remainder with a zero-check.
+// The location string is only materialized in the cold panic block.
+func (g *IRFunGen) emitSafeIntOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string) {
+	span := g.ast.Node(id).Span
+	locReg := g.addStrConst(span.String())
+	panicLabel := g.label("divzero_panic", id)
+	okLabel := g.label("divzero_ok", id)
+	isZeroReg := g.reg()
+	g.write("%s = icmp eq %s %s, 0", isZeroReg, irTyp, rhs)
+	g.write("br i1 %s, label %%%s, label %%%s", isZeroReg, panicLabel, okLabel)
+	g.writeLabel(panicLabel)
+	g.write("call void @panic(ptr @str_division_by_zero, ptr %s)", locReg)
+	g.write("unreachable")
+	g.writeLabel(okLabel)
+	g.write("%s = %s %s %s, %s", reg, op, irTyp, lhs, rhs)
+}
+
+func (g *IRFunGen) runeCheckIfNeeded(id ast.NodeID, reg string) {
+	if intTyp, ok := g.env.TypeOfNode(id).Kind.(types.IntType); ok && intTyp.Name == "Rune" {
+		span := g.ast.Node(id).Span
+		locReg := g.addStrConst(span.String())
+		checkSurrogateLabel := g.label("rune_check_surrogate", id)
+		panicLabel := g.label("rune_panic", id)
+		okLabel := g.label("rune_ok", id)
+		aboveMaxReg := g.reg()
+		g.write("%s = icmp ugt i32 %s, 1114111", aboveMaxReg, reg)
+		g.write("br i1 %s, label %%%s, label %%%s", aboveMaxReg, panicLabel, checkSurrogateLabel)
+		g.writeLabel(checkSurrogateLabel)
+		aboveD7FFReg := g.reg()
+		belowE000Reg := g.reg()
+		inSurrogateReg := g.reg()
+		g.write("%s = icmp ugt i32 %s, 55295", aboveD7FFReg, reg)
+		g.write("%s = icmp ult i32 %s, 57344", belowE000Reg, reg)
+		g.write("%s = and i1 %s, %s", inSurrogateReg, aboveD7FFReg, belowE000Reg)
+		g.write("br i1 %s, label %%%s, label %%%s", inSurrogateReg, panicLabel, okLabel)
+		g.writeLabel(panicLabel)
+		g.write("call void @panic(ptr @str_illegal_rune, ptr %s)", locReg)
+		g.write("unreachable")
+		g.writeLabel(okLabel)
 	}
 }
 
@@ -844,13 +880,13 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 		if intTyp, ok := g.env.TypeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
 			divOp = "udiv"
 		}
-		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, divOp, lhs, rhs)
+		g.emitSafeIntOp(id, reg, irTyp, divOp, lhs, rhs)
 	case ast.BinaryOpMod:
 		remOp := "srem"
 		if intTyp, ok := g.env.TypeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
 			remOp = "urem"
 		}
-		g.write("%[1]s = call %[2]s @__safe_%[3]s_%[2]s(%[2]s %[4]s, %[2]s %[5]s)", reg, irTyp, remOp, lhs, rhs)
+		g.emitSafeIntOp(id, reg, irTyp, remOp, lhs, rhs)
 	case ast.BinaryOpEq:
 		g.write("%s = icmp eq %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpNeq:
@@ -915,7 +951,7 @@ func (g *IRFunGen) arenaAllocMethod(call ast.Call) (string, ast.FieldAccess, boo
 	return "", ast.FieldAccess{}, false
 }
 
-func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
+func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nolint:funlen
 	if method, fa, ok := g.arenaAllocMethod(call); ok {
 		switch method {
 		case "Arena.new", "Arena.new_mut":
@@ -937,6 +973,13 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call) { //nolint:funlen
 	argNodes = append(argNodes, call.Args...)
 	for _, nodeID := range argNodes {
 		g.Gen(nodeID)
+	}
+	if funName, ok := g.env.NamedFunRef(call.Callee); ok && funName == "panic" {
+		arg1Reg := g.lookupCode((argNodes[0]))
+		locReg := g.addStrConst(span.String())
+		g.write("call void @panic(ptr %s, ptr %s)", arg1Reg, locReg)
+		g.setCode(id, "void")
+		return
 	}
 	sb := strings.Builder{}
 	retType := g.env.Type(fun.Return)
@@ -1027,13 +1070,18 @@ func (g *IRFunGen) genBool(id ast.NodeID, bool_ ast.Bool) {
 }
 
 func (g *IRFunGen) genString(id ast.NodeID, str ast.String) {
-	cid, ok := g.strConsts[str.Value]
+	c := g.addStrConst(str.Value)
+	g.setCode(id, c)
+}
+
+func (g *IRFunGen) addStrConst(s string) string {
+	cid, ok := g.strConsts[s]
 	if !ok {
 		cid = g.constCounter
 		g.constCounter++
-		g.strConsts[str.Value] = cid
+		g.strConsts[s] = cid
 	}
-	g.setCode(id, "@str.%d", cid)
+	return fmt.Sprintf("@str.%d", cid)
 }
 
 func (g *IRFunGen) genRef(id ast.NodeID, ref ast.Ref) {
@@ -1326,10 +1374,6 @@ func GenIR(
 	g.write(builtinsIR)
 	for _, bits := range []int{8, 16, 32, 64} {
 		irType := fmt.Sprintf("i%d", bits)
-		g.write(builtinSafeDiv(irType, "sdiv"))
-		g.write(builtinSafeDiv(irType, "udiv"))
-		g.write(builtinSafeDiv(irType, "srem"))
-		g.write(builtinSafeDiv(irType, "urem"))
 		g.write(builtinFill(irType))
 	}
 	g.write(builtinFill("i1"))
@@ -1367,20 +1411,6 @@ declare i32 @dprintf(i32, ptr, ...)`
 		"${arena.on_destroy}", onDestroy,
 	)
 	return declarations + "\n" + r.Replace(arenaRuntimeIRTemplate)
-}
-
-func builtinSafeDiv(irType string, op string) string {
-	return fmt.Sprintf(`define internal %[1]s @__safe_%[2]s_%[1]s(%[1]s %%a, %[1]s %%b) alwaysinline {
-    %%is_zero = icmp eq %[1]s %%b, 0
-    br i1 %%is_zero, label %%panic, label %%ok
-panic:
-    call void @llvm.trap()
-    unreachable
-ok:
-    %%result = %[2]s %[1]s %%a, %%b
-    ret %[1]s %%result
-}
-`, irType, op)
 }
 
 func builtinFill(irType string) string {

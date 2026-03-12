@@ -707,6 +707,16 @@ func TestParseErr(t *testing.T) {
 				`    struct Arena{one Str}` + "\n" +
 				"           ^^^^^",
 		}},
+		{"reserved word panic (fun)", "expr", `fun panic() void {}`, []string{
+			"test.met:1:5: reserved word: panic\n" +
+				`    fun panic() void {}` + "\n" +
+				"        ^^^^^",
+		}},
+		{"reserved word panic (var)", "expr", `let panic = 123`, []string{
+			"test.met:1:5: reserved word: panic\n" +
+				`    let panic = 123` + "\n" +
+				"        ^^^^^",
+		}},
 		{"mut allocator var", "expr", `mut @a = Arena()`, []string{
 			"test.met:1:5: allocator variables cannot be mutable\n" +
 				`    mut @a = Arena()` + "\n" +
