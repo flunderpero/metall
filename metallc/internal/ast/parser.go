@@ -342,7 +342,7 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 	return p.NewUnion(name, typeParams, variants, t.Span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseStructLiteral() (NodeID, bool) {
+func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
 	struct_, ok := p.expect(token.TypeIdent)
 	if !ok {
 		return ParseFailed, false
@@ -356,7 +356,7 @@ func (p *Parser) ParseStructLiteral() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewStructLiteral(ident, args, struct_.Span.Combine(p.span())), true
+	return p.NewTypeConstruction(ident, args, struct_.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
@@ -545,7 +545,7 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 				return ParseFailed, false
 			}
 			if p.isStructTarget(callee) {
-				expr = p.NewStructLiteral(callee, args, span.Combine(p.span()))
+				expr = p.NewTypeConstruction(callee, args, span.Combine(p.span()))
 			} else {
 				expr = p.NewCall(callee, args, span.Combine(p.span()))
 			}
@@ -679,7 +679,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 	case token.TypeIdent:
 		// Peek ahead: if the next token is `.`, this is a qualified name
-		// (e.g. `Foo.bar`), not a struct literal.
+		// (e.g. `Foo.bar`), not a type construction.
 		if next, ok := p.mayPeek1(); ok && next.Kind == token.Dot {
 			p.next()
 			p.next()
@@ -694,11 +694,11 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			}
 			expr = p.NewIdent(qualifiedName, typeArgs, t.Span.Combine(p.span()))
 		} else {
-			struct_literal, ok := p.ParseStructLiteral()
+			construction, ok := p.ParseTypeConstruction()
 			if !ok {
 				return ParseFailed, false
 			}
-			expr = struct_literal
+			expr = construction
 		}
 	case token.AllocatorIdent:
 		p.next()

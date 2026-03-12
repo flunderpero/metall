@@ -80,7 +80,7 @@ fun f() void { Box<Int>(42) }
     name: (function_name (identifier))
     return_type: (simple_type)
     body: (block
-      (struct_literal
+      (type_construction
         type: (type_identifier)
         type_arguments: (type_arguments (simple_type (type_identifier)))
         arguments: (argument_list (integer_literal))))))

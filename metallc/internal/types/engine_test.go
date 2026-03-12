@@ -164,7 +164,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			},
 		},
 		{
-			"struct literal", `{ struct Foo { one Str two Int } let x = Foo("hello", 123) x }`,
+			"struct construction", `{ struct Foo { one Str two Int } let x = Foo("hello", 123) x }`,
 			struct_t("Foo", "one", Str, "two", Int), nil,
 		},
 		{
@@ -209,6 +209,209 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			`{ struct Foo { mut one Str } mut x = Foo("hello") let y = &mut x y.one = "X" }`,
 			void,
 			nil,
+		},
+
+		{
+			"union declaration",
+			`union Foo = Str | Int`,
+			union_t("Foo", Str, Int), nil,
+		},
+		{
+			"union three variants",
+			`union Foo = Str | Int | Bool`,
+			union_t("Foo", Str, Int, Bool), nil,
+		},
+		{
+			"forward declare union type",
+			`{ fun foo(a Foo) void {} union Foo = Str | Int }`,
+			union_t("Foo", Str, Int),
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				funID := block.Exprs[0]
+				typ := base.Cast[FunType](e.env.TypeOfNode(funID).Kind)
+				paramTyp := e.env.Type(typ.Params[0])
+				union := base.Cast[UnionType](paramTyp.Kind)
+				assert.Equal("Foo", union.Name)
+				assert.Equal(2, len(union.Variants))
+			},
+		},
+		{
+			"union with struct variant",
+			`{
+				struct Bar { one Int }
+				union Foo = Str | Bar
+				fun foo(a Foo) void {}
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				funID := block.Exprs[2]
+				typ := base.Cast[FunType](e.env.TypeOfNode(funID).Kind)
+				paramTyp := e.env.Type(typ.Params[0])
+				union := base.Cast[UnionType](paramTyp.Kind)
+				assert.Equal("Foo", union.Name)
+				assert.Equal(2, len(union.Variants))
+			},
+		},
+		{
+			"union with ref variant",
+			`{
+				union Foo = &Int | Str
+				fun foo(a Foo) void {}
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				funID := block.Exprs[1]
+				typ := base.Cast[FunType](e.env.TypeOfNode(funID).Kind)
+				paramTyp := e.env.Type(typ.Params[0])
+				union := base.Cast[UnionType](paramTyp.Kind)
+				assert.Equal("Foo", union.Name)
+				assert.Equal(2, len(union.Variants))
+				_, isRef := e.env.Type(union.Variants[0]).Kind.(RefType)
+				assert.Equal(true, isRef)
+			},
+		},
+		{
+			"generic union",
+			`{
+				union Maybe<T> = T | Bool
+				fun foo(a Maybe<Int>) void {}
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				funID := block.Exprs[1]
+				typ := base.Cast[FunType](e.env.TypeOfNode(funID).Kind)
+				paramTyp := e.env.Type(typ.Params[0])
+				union := base.Cast[UnionType](paramTyp.Kind)
+				assert.Equal(2, len(union.Variants))
+				assert.Equal(Int.ID, union.Variants[0])
+			},
+		},
+		{
+			"generic union identity and distinctness",
+			`{
+				union Maybe<T> = T | Bool
+				fun foo(a Maybe<Int>) void {}
+				fun bar(a Maybe<Int>) void {}
+				fun baz(a Maybe<Str>) void {}
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				fooFun := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[1]).Kind)
+				barFun := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[2]).Kind)
+				bazFun := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[3]).Kind)
+				fooParam := base.Cast[UnionType](e.env.Type(fooFun.Params[0]).Kind)
+				barParam := base.Cast[UnionType](e.env.Type(barFun.Params[0]).Kind)
+				bazParam := base.Cast[UnionType](e.env.Type(bazFun.Params[0]).Kind)
+				assert.Equal(fooParam.Name, barParam.Name, "Maybe<Int> should be the same type")
+				assert.NotEqual(fooParam.Name, bazParam.Name, "Maybe<Int> and Maybe<Str> should differ")
+			},
+		},
+		{
+			"method on union",
+			`{
+				union Foo = Str | Int
+				fun Foo.is_str(f &Foo) Bool { true }
+				fun test(f &Foo) Bool { f.is_str() }
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				testFun := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[2]).Kind)
+				assert.Equal(Bool.ID, testFun.Return)
+			},
+		},
+
+		{
+			"forward declare union with struct after",
+			`{
+				union Foo = Str | Bar
+				struct Bar { one Int }
+				fun test(f Foo, b Bar) Int { b.one }
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				testFun := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[2]).Kind)
+				fooParam := base.Cast[UnionType](e.env.Type(testFun.Params[0]).Kind)
+				assert.Equal("Foo", fooParam.Name)
+				assert.Equal(2, len(fooParam.Variants))
+				barType := base.Cast[StructType](e.env.Type(fooParam.Variants[1]).Kind)
+				assert.Equal("Bar", barType.Name)
+			},
+		},
+		{
+			"generic union with generic struct variant",
+			`{
+				struct Box<T> { value T }
+				union Maybe<T> = T | Box<T>
+				fun test(m Maybe<Int>) void {}
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				testFun := base.Cast[FunType](e.env.TypeOfNode(block.Exprs[2]).Kind)
+				maybeInt := base.Cast[UnionType](e.env.Type(testFun.Params[0]).Kind)
+				assert.Equal(2, len(maybeInt.Variants))
+				assert.Equal(Int.ID, maybeInt.Variants[0])
+				boxInt := base.Cast[StructType](e.env.Type(maybeInt.Variants[1]).Kind)
+				assert.Equal(1, len(boxInt.Fields))
+				assert.Equal(Int.ID, boxInt.Fields[0].Type)
+			},
+		},
+
+		{
+			"union construction with first variant",
+			`{
+				union Either = Str | Int
+				Either("hello")
+			}`,
+			union_t("Either", Str, Int), nil,
+		},
+		{
+			"union construction with second variant",
+			`{
+				union Foo = Str | Int
+				Foo(42)
+			}`,
+			union_t("Foo", Str, Int), nil,
+		},
+		{
+			"union construction with struct variant",
+			`{
+				struct Bar { one Int }
+				union Foo = Str | Bar
+				Foo(Bar(42))
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				litID := block.Exprs[2]
+				typ := e.env.TypeOfNode(litID)
+				union := base.Cast[UnionType](typ.Kind)
+				assert.Equal("Foo", union.Name)
+				assert.Equal(2, len(union.Variants))
+			},
+		},
+		{
+			"generic union construction",
+			`{
+				union Maybe<T> = T | Bool
+				Maybe<Int>(42)
+			}`,
+			nil,
+			func(e *Engine, id ast.NodeID, assert base.Assert) {
+				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
+				litID := block.Exprs[1]
+				typ := e.env.TypeOfNode(litID)
+				union := base.Cast[UnionType](typ.Kind)
+				assert.Equal(2, len(union.Variants))
+				assert.Equal(Int.ID, union.Variants[0])
+				assert.Equal(Bool.ID, union.Variants[1])
+			},
 		},
 
 		{"bool true", "{ true }", Bool, nil},
@@ -291,8 +494,13 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"mut ref parameter", `{ fun foo(a &mut Int) void { a.* = 321 } mut x = 123 foo(&mut x) }`, void, nil},
 		// &mut coerces to & when passed to a & param.
 		{"&mut coerces to &ref in call", `{ fun foo(a &Int) void {} mut x = 123 foo(&x) }`, void, nil},
-		// Same coercion but in a struct literal constructor.
-		{"&mut coerces to &ref in struct literal", `{ struct Foo { one &Int } mut x = 1 let y = Foo(&x) }`, void, nil},
+		// Same coercion but in a struct construction constructor.
+		{
+			"&mut coerces to &ref in struct construction",
+			`{ struct Foo { one &Int } mut x = 1 let y = Foo(&x) }`,
+			void,
+			nil,
+		},
 		{"fun returns ref", `{ fun foo(a &Int) &Int { a } let x = 123 foo(&x) }`, ref_t(Int), nil},
 		{
 			"deref assign through &mut struct field",
@@ -402,7 +610,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
 				block := base.Cast[ast.Block](e.ast.Node(id).Kind)
 				// The `let x = Foo(@myalloc)` is the last expr; its type is void.
-				// Inspect the Foo struct literal inside the var.
+				// Inspect the Foo struct construction inside the var.
 				varNode := base.Cast[ast.Var](e.ast.Node(block.Exprs[len(block.Exprs)-1]).Kind)
 				st, ok := e.env.TypeOfNode(varNode.Expr).Kind.(StructType)
 				assert.Equal(true, ok)
@@ -565,7 +773,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 			void, nil,
 		},
 		{
-			"empty slice in struct literal",
+			"empty slice in struct construction",
 			`{ struct Foo { items []Int } Foo([]) }`,
 			nil,
 			func(e *Engine, id ast.NodeID, assert base.Assert) {
@@ -641,7 +849,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"int materialization binary", `U8(1) + 2`, U8, nil},
 		{"int materialization call arg", `{ fun foo(a U8) U8 { a } foo(42) }`, U8, nil},
 		{"int materialization array literal", `[U8(1), 2, 3]`, arr_t(U8, 3), nil},
-		{"int materialization struct literal", `{ struct Foo { one U8 two U8 } let x = Foo(1, 2) }`, void, nil},
+		{"int materialization struct construction", `{ struct Foo { one U8 two U8 } let x = Foo(1, 2) }`, void, nil},
 
 		{"conditional for loop", `for true { }`, void, nil},
 		{"unconditional for loop", `for { }`, void, nil},
@@ -1244,7 +1452,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		"empty slice in make",
 		"empty slice in assignment",
 		"empty slice as fun arg",
-		"empty slice in struct literal",
+		"empty slice in struct construction",
 		"empty slice in make default",
 		"subslice array lo..hi",
 		"subslice array lo..=hi",
@@ -1312,6 +1520,11 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 				st := base.Cast[StructType](e.env.Type(s.TypeID).Kind)
 				assert.Equal(false, e.env.hasTypeParam(st.TypeArgs),
 					"Structs() should not contain type params: %s", st.Name)
+			}
+			for _, u := range e.Unions() {
+				ut := base.Cast[UnionType](e.env.Type(u.TypeID).Kind)
+				assert.Equal(false, e.env.hasTypeParam(ut.TypeArgs),
+					"Unions() should not contain type params: %s", ut.Name)
 			}
 			if !slices.Contains(skipLifetimeCheck, name) {
 				a := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env())
@@ -1774,7 +1987,7 @@ func TestTypeCheckErr(t *testing.T) {
 				"       ^^^",
 		}},
 		{"Bool is not a type constructor", `Bool(true)`, []string{
-			"test.met:1:1: not a struct: Bool\n" +
+			"test.met:1:1: not a struct or union: Bool\n" +
 				"    Bool(true)\n" +
 				"    ^^^^",
 		}},
@@ -1869,10 +2082,10 @@ func TestTypeCheckErr(t *testing.T) {
 			},
 		},
 		{
-			"generic struct type args on non-struct",
+			"type args on non-generic type",
 			`{ fun foo(x Int<Str>) void {} }`,
 			[]string{
-				"test.met:1:13: type arguments on non-struct type: Int\n" +
+				"test.met:1:13: type arguments on non-generic type: Int\n" +
 					"    { fun foo(x Int<Str>) void {} }\n" +
 					"                ^^^^^^^^",
 			},
@@ -1961,6 +2174,70 @@ func TestTypeCheckErr(t *testing.T) {
 				"test.met:1:88: type mismatch at receiver: expected Foo<Str>, got Foo<Int>\n" +
 					"    { struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo<V>, a U) U { a } let x = Foo<Int>(1) x.bar<Str>(\"hi\") }\n" +
 					"                                                                                           ^",
+			},
+		},
+
+		{
+			"duplicate union name",
+			`{ union Foo = Str | Int union Foo = Bool | Str }`,
+			[]string{
+				"test.met:1:31: symbol already defined: Foo\n" +
+					"    { union Foo = Str | Int union Foo = Bool | Str }\n" +
+					"                                  ^^^",
+			},
+		},
+		{
+			"generic union wrong type arg count",
+			`{ union Maybe<T> = T | Bool fun foo(a Maybe<Int, Str>) void {} }`,
+			[]string{
+				"test.met:1:39: type argument count mismatch: expected 1, got 2\n" +
+					"    { union Maybe<T> = T | Bool fun foo(a Maybe<Int, Str>) void {} }\n" +
+					"                                          ^^^^^^^^^^^^^^^",
+			},
+		},
+		{
+			"generic union variant with unbound type param",
+			`{ struct Box<T> { value T } union Foo<T> = Str | Box<V> }`,
+			[]string{
+				"test.met:1:54: symbol not defined: V\n" +
+					"    { struct Box<T> { value T } union Foo<T> = Str | Box<V> }\n" +
+					"                                                         ^",
+			},
+		},
+		{
+			"generic union missing type args",
+			`{ union Maybe<T> = T | Bool fun foo(a Maybe) void {} }`,
+			[]string{
+				"test.met:1:39: type argument count mismatch: expected 1, got 0\n" +
+					"    { union Maybe<T> = T | Bool fun foo(a Maybe) void {} }\n" +
+					"                                          ^^^^^",
+			},
+		},
+		{
+			"union constructor wrong arg count",
+			`{ union Foo = Str | Int Foo(1, 2) }`,
+			[]string{
+				"test.met:1:25: union constructor takes exactly 1 argument, got 2\n" +
+					"    { union Foo = Str | Int Foo(1, 2) }\n" +
+					"                            ^^^^^^^^^",
+			},
+		},
+		{
+			"union constructor no args",
+			`{ union Foo = Str | Int Foo() }`,
+			[]string{
+				"test.met:1:25: union constructor takes exactly 1 argument, got 0\n" +
+					"    { union Foo = Str | Int Foo() }\n" +
+					"                            ^^^^^",
+			},
+		},
+		{
+			"union constructor wrong type",
+			`{ union Foo = Str | Int Foo(true) }`,
+			[]string{
+				"test.met:1:29: type Bool is not a variant of Foo\n" +
+					"    { union Foo = Str | Int Foo(true) }\n" +
+					"                                ^^^^",
 			},
 		},
 
@@ -2144,7 +2421,15 @@ func struct_t(name string, fields ...any) *Type {
 			structFields[len(structFields)-1].Type = base.Cast[*Type](f).ID
 		}
 	}
-	return &Type{Kind: StructType{name, structFields, nil}}
+	return &Type{Kind: StructType{Name: name, Fields: structFields}}
+}
+
+func union_t(name string, variants ...*Type) *Type {
+	variantIDs := make([]TypeID, len(variants))
+	for i, v := range variants {
+		variantIDs[i] = v.ID
+	}
+	return &Type{Kind: UnionType{Name: name, Variants: variantIDs}}
 }
 
 func arr_t(typ *Type, size int) *Type {

@@ -234,7 +234,7 @@ module.exports = grammar({
         // Type-prefixed expressions.
         $.qualified_name,
         $.path_expression,
-        $.struct_literal,
+        $.type_construction,
 
         // Bindings and assignment.
         $.let_binding,
@@ -281,7 +281,7 @@ module.exports = grammar({
       )),
 
     // TypeName(args...) or TypeName<Args>(args...)
-    struct_literal: ($) =>
+    type_construction: ($) =>
       prec(PREC.POSTFIX, seq(
         field("type", $.type_identifier),
         optional(field("type_arguments", $.type_arguments)),

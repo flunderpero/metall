@@ -330,7 +330,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
-		{"nested struct literal ref escapes", `
+		{"nested struct construction ref escapes", `
 			{
 				struct Foo { one &Int }
 				struct Bar { one Foo }
@@ -743,7 +743,7 @@ func TestLifetimeAnalyzer(t *testing.T) {
 			`, []string{}},
 
 		// Struct literal containing a ref to a local - ref escapes via intermediate binding.
-		{"struct literal ref escapes", `
+		{"struct construction ref escapes", `
 			{
 				struct Wrapper { one &Int }
 				let x = {
@@ -1415,6 +1415,25 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				        let z = 99
 				        baz<Foo>(Foo(&z), &mut y)
 				                     ^^
+				    }
+				`, "\n"),
+		}},
+		{"pessimistic return taint for union with ref", `
+			{
+				struct Wrapper { one &Int }
+				union Holder = Wrapper | Bool
+				fun foo(h Holder) Holder { foo(h) }
+				let x = {
+					let y = 42
+					foo(Holder(Wrapper(&y)))
+				}
+			}
+			`, []string{
+			"test.met:8:40: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let y = 42
+				        foo(Holder(Wrapper(&y)))
+				                           ^^
 				    }
 				`, "\n"),
 		}},

@@ -337,12 +337,12 @@ type Call struct {
 
 func (Call) isKind() {}
 
-type StructLiteral struct {
+type TypeConstruction struct {
 	Target NodeID
 	Args   []NodeID
 }
 
-func (StructLiteral) isKind() {}
+func (TypeConstruction) isKind() {}
 
 type Ref struct {
 	Target NodeID
@@ -432,8 +432,8 @@ func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
 	return a.node(Call{Callee: callee, Args: args}, span)
 }
 
-func (a *AST) NewStructLiteral(target NodeID, args []NodeID, span base.Span) NodeID {
-	return a.node(StructLiteral{Target: target, Args: args}, span)
+func (a *AST) NewTypeConstruction(target NodeID, args []NodeID, span base.Span) NodeID {
+	return a.node(TypeConstruction{Target: target, Args: args}, span)
 }
 
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
@@ -702,7 +702,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for _, typeArg := range kind.TypeArgs {
 			f(typeArg)
 		}
-	case StructLiteral:
+	case TypeConstruction:
 		f(kind.Target)
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
@@ -1006,7 +1006,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		} else {
 			addChild("type", kind.Type)
 		}
-	case StructLiteral:
+	case TypeConstruction:
 		if !children {
 			addAttr("target", nodeIDKind(kind.Target))
 			addAttr("args", nodeIDList(kind.Args))

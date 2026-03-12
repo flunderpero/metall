@@ -83,6 +83,66 @@ func (g *GenericsEngine) resolveStructFields(
 	return TypeOK, structType
 }
 
+func (g *GenericsEngine) instantiateUnion(
+	generic UnionType,
+	genericTypeID TypeID,
+	typeArgNodeIDs []ast.NodeID,
+	span base.Span,
+) (TypeID, TypeStatus) {
+	unionNodeID := g.env.DeclNode(genericTypeID)
+	unionNode := base.Cast[ast.Union](g.ast.Node(unionNodeID).Kind)
+	if len(typeArgNodeIDs) != len(unionNode.TypeParams) {
+		g.diag(span, "type argument count mismatch: expected %d, got %d",
+			len(unionNode.TypeParams), len(typeArgNodeIDs))
+		return InvalidTypeID, TypeFailed
+	}
+	mangledParts := make([]string, len(typeArgNodeIDs))
+	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
+	for i, typeArgNodeID := range typeArgNodeIDs {
+		argTypeID, status := g.query(typeArgNodeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		argTypeIDs[i] = argTypeID
+		mangledParts[i] = argTypeID.String()
+	}
+	mangledName := fmt.Sprintf("%s.%s.%s", generic.Name, genericTypeID, strings.Join(mangledParts, "."))
+	if cached, ok := g.unions[mangledName]; ok {
+		return cached.TypeID, TypeOK
+	}
+	defer g.enterChildEnv()()
+	for i, typeParamNodeID := range unionNode.TypeParams {
+		typeParamNode := base.Cast[ast.TypeParam](g.ast.Node(typeParamNodeID).Kind)
+		g.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
+	}
+	node := g.ast.Node(unionNodeID)
+	placeholder := UnionType{mangledName, nil, argTypeIDs}
+	typeID := g.env.newType(placeholder, node.ID, node.Span, TypeInProgress)
+	g.env.reg.genericOrigin[typeID] = genericTypeID
+	g.unions[mangledName] = UnionWork{NodeID: unionNodeID, TypeID: typeID, Env: g.env}
+	status, resolved := g.resolveUnionVariants(unionNode, placeholder)
+	if status.Failed() {
+		return InvalidTypeID, status
+	}
+	cached := g.env.reg.types[typeID]
+	cached.Type.Kind = resolved
+	cached.Status = TypeOK
+	return typeID, TypeOK
+}
+
+func (g *GenericsEngine) resolveUnionVariants(unionNode ast.Union, unionType UnionType) (TypeStatus, UnionType) {
+	variants := make([]TypeID, len(unionNode.Variants))
+	for i, variantNodeID := range unionNode.Variants {
+		variantTypeID, status := g.query(variantNodeID)
+		if status.Failed() {
+			return TypeDepFailed, unionType
+		}
+		variants[i] = variantTypeID
+	}
+	unionType.Variants = variants
+	return TypeOK, unionType
+}
+
 func (g *GenericsEngine) resolveTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID, TypeStatus) {
 	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
 	for i, typeArgNodeID := range typeArgNodeIDs {
@@ -212,11 +272,11 @@ func (g *GenericsEngine) satisfiesShape( //nolint:funlen
 	// Method requirements — any type can have methods.
 	shapeNodeID := g.env.DeclNode(shapeTypeID)
 	shapeNode := base.Cast[ast.Shape](g.ast.Node(shapeNodeID).Kind)
-	// For monomorphized generic structs, the concrete type args need to be
-	// applied to generic methods defined on the struct.
-	var structTypeArgs []TypeID
-	if structType, ok := concreteTyp.Kind.(StructType); ok {
-		structTypeArgs = structType.TypeArgs
+	// For monomorphized generic types, the concrete type args need to be
+	// applied to generic methods defined on the type.
+	var concreteTypeArgs []TypeID
+	if typ, ok := IsStructOrUnion(concreteTyp.Kind); ok {
+		concreteTypeArgs = typ.TypeArgs
 	}
 	for _, funDeclNodeID := range shapeNode.Funs {
 		funDecl := base.Cast[ast.FunDecl](g.ast.Node(funDeclNodeID).Kind)
@@ -230,11 +290,11 @@ func (g *GenericsEngine) satisfiesShape( //nolint:funlen
 		shapeFunBinding, _ := g.lookup(scopeNodeID, shapeType.DeclName+"."+methodName)
 		shapeFunType := base.Cast[FunType](g.env.Type(shapeFunBinding.TypeID).Kind)
 		expectedFunType := g.env.substituteFunType(shapeFunType, shapeTypeID, concreteTypeID)
-		// When the method is a generic function on a generic struct, instantiate
-		// it with the struct's type args to get the concrete signature.
+		// When the method is a generic function on a generic type, instantiate
+		// it with the type's type args to get the concrete signature.
 		methodFunNode, isFun := g.ast.Node(binding.Decl).Kind.(ast.Fun)
-		if isFun && len(methodFunNode.TypeParams) > 0 && len(structTypeArgs) > 0 {
-			methodTypeID, _, status := g.instantiateFun(binding.TypeID, structTypeArgs, scopeNodeID, span)
+		if isFun && len(methodFunNode.TypeParams) > 0 && len(concreteTypeArgs) > 0 {
+			methodTypeID, _, status := g.instantiateFun(binding.TypeID, concreteTypeArgs, scopeNodeID, span)
 			if status.Failed() {
 				return false
 			}
@@ -382,8 +442,8 @@ func (g *GenericsEngine) resolveGenericMethod(
 	nodeID ast.NodeID, fieldAccess ast.FieldAccess, targetTyp *Type, binding *Binding,
 ) (TypeID, TypeStatus, bool) {
 	var argTypeIDs []TypeID
-	if structType, isStruct := targetTyp.Kind.(StructType); isStruct {
-		argTypeIDs = append(argTypeIDs, structType.TypeArgs...)
+	if typ, ok := IsStructOrUnion(targetTyp.Kind); ok {
+		argTypeIDs = append(argTypeIDs, typ.TypeArgs...)
 	}
 	extraArgs, status := g.resolveTypeArgs(fieldAccess.TypeArgs)
 	if status.Failed() {

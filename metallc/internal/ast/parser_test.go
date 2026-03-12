@@ -153,15 +153,15 @@ func TestParseOK(t *testing.T) {
 		{"struct with allocator field", "expr", "struct Foo { @myalloc Arena }", func(a *TestAST) NodeID {
 			return a.struct_("Foo", a.struct_field("@myalloc", a.typ("Arena")))
 		}},
-		{"struct literal", "expr", "Foo(\"hello\", 123)", func(a *TestAST) NodeID {
-			return a.struct_lit(a.ident("Foo"), a.string_("hello"), a.int_(123))
+		{"type construction", "expr", "Foo(\"hello\", 123)", func(a *TestAST) NodeID {
+			return a.type_construction(a.ident("Foo"), a.string_("hello"), a.int_(123))
 		}},
-		// Type constructors parse as struct literals — the type checker distinguishes them.
+		// Type constructors parse as type constructions — the type checker distinguishes them.
 		{"type constructor U8", "expr", "U8(42)", func(a *TestAST) NodeID {
-			return a.struct_lit(a.ident("U8"), a.int_(42))
+			return a.type_construction(a.ident("U8"), a.int_(42))
 		}},
 		{"type constructor Int", "expr", "Int(123)", func(a *TestAST) NodeID {
-			return a.struct_lit(a.ident("Int"), a.int_(123))
+			return a.type_construction(a.ident("Int"), a.int_(123))
 		}},
 		{"field read", "expr", "x.one", func(a *TestAST) NodeID {
 			return a.field_access(a.ident("x"), "one")
@@ -236,7 +236,7 @@ func TestParseOK(t *testing.T) {
 		{"heap alloc", "expr", `@myalloc.new<Foo>(Foo())`, func(a *TestAST) NodeID {
 			return a.call(
 				a.field_access_t(a.ident("@myalloc"), "new", a.typ("Foo")),
-				a.struct_lit(a.ident("Foo")),
+				a.type_construction(a.ident("Foo")),
 			)
 		}},
 		{
@@ -331,13 +331,13 @@ func TestParseOK(t *testing.T) {
 		{"heap alloc from field", "expr", `x.@myalloc.new<Foo>(Foo("hello"))`, func(a *TestAST) NodeID {
 			return a.call(
 				a.field_access_t(a.field_access(a.ident("x"), "@myalloc"), "new", a.typ("Foo")),
-				a.struct_lit(a.ident("Foo"), a.string_("hello")),
+				a.type_construction(a.ident("Foo"), a.string_("hello")),
 			)
 		}},
 		{"heap alloc mut struct", "expr", `@myalloc.new_mut<Foo>(Foo())`, func(a *TestAST) NodeID {
 			return a.call(
 				a.field_access_t(a.ident("@myalloc"), "new_mut", a.typ("Foo")),
-				a.struct_lit(a.ident("Foo")),
+				a.type_construction(a.ident("Foo")),
 			)
 		}},
 		{"make slice", "expr", `@myalloc.make<[]Int>(n, 42)`, func(a *TestAST) NodeID {
@@ -491,11 +491,11 @@ func TestParseOK(t *testing.T) {
 				a.block(),
 			)
 		}},
-		{"struct literal with type args", "expr", `Foo<Int>(42)`, func(a *TestAST) NodeID {
-			return a.struct_lit(a.ident_type_args("Foo", a.int_typ()), a.int_(42))
+		{"type construction with type args", "expr", `Foo<Int>(42)`, func(a *TestAST) NodeID {
+			return a.type_construction(a.ident_type_args("Foo", a.int_typ()), a.int_(42))
 		}},
-		{"struct literal nested type args", "expr", `Foo<Bar<Int>>(42)`, func(a *TestAST) NodeID {
-			return a.struct_lit(a.ident_type_args("Foo", a.typ_args("Bar", a.int_typ())), a.int_(42))
+		{"type construction nested type args", "expr", `Foo<Bar<Int>>(42)`, func(a *TestAST) NodeID {
+			return a.type_construction(a.ident_type_args("Foo", a.typ_args("Bar", a.int_typ())), a.int_(42))
 		}},
 		{"call with type args", "expr", `foo<Int>(42)`, func(a *TestAST) NodeID {
 			return a.call(a.ident_type_args("foo", a.int_typ()), a.int_(42))
@@ -608,19 +608,19 @@ func TestParseOK(t *testing.T) {
 		{
 			"path expression with type ident", "expr", `lib::Point(1, 2)`,
 			func(a *TestAST) NodeID {
-				return a.struct_lit(a.path_("lib", "Point"), a.int_(1), a.int_(2))
+				return a.type_construction(a.path_("lib", "Point"), a.int_(1), a.int_(2))
 			},
 		},
 		{
-			"path struct literal with type args", "expr", `lib::Foo<Int>(42)`,
+			"path type construction with type args", "expr", `lib::Foo<Int>(42)`,
 			func(a *TestAST) NodeID {
-				return a.struct_lit(a.path_type_args([]string{"lib", "Foo"}, a.int_typ()), a.int_(42))
+				return a.type_construction(a.path_type_args([]string{"lib", "Foo"}, a.int_typ()), a.int_(42))
 			},
 		},
 		{
-			"path struct literal nested type args", "expr", `lib::Foo<Bar<Int>>(42)`,
+			"path type construction nested type args", "expr", `lib::Foo<Bar<Int>>(42)`,
 			func(a *TestAST) NodeID {
-				return a.struct_lit(
+				return a.type_construction(
 					a.path_type_args([]string{"lib", "Foo"}, a.typ_args("Bar", a.int_typ())),
 					a.int_(42),
 				)
@@ -769,7 +769,7 @@ func TestParseErr(t *testing.T) {
 				"    fun foo<>() void {}\n" +
 				"           ^^",
 		}},
-		{"empty type args in struct literal", "expr", `{ struct Foo<T> { value T } Foo<>(42) }`, []string{
+		{"empty type args in type construction", "expr", `{ struct Foo<T> { value T } Foo<>(42) }`, []string{
 			"test.met:1:32: empty type argument list\n" +
 				"    { struct Foo<T> { value T } Foo<>(42) }\n" +
 				"                                   ^^",
@@ -987,11 +987,11 @@ func (a *TestAST) generic_fun(name string, typeParams []NodeID, paramsReturnAndB
 	return a.NewFun(Name{name, a.span}, typeParams, params, returnTyp, block, a.span)
 }
 
-func (a *TestAST) struct_lit(struct_ NodeID, args ...NodeID) NodeID {
+func (a *TestAST) type_construction(struct_ NodeID, args ...NodeID) NodeID {
 	if args == nil {
 		args = []NodeID{}
 	}
-	return a.NewStructLiteral(struct_, args, a.span)
+	return a.NewTypeConstruction(struct_, args, a.span)
 }
 
 func (a *TestAST) binary(op BinaryOp, lhs NodeID, rhs NodeID) NodeID {
@@ -1220,7 +1220,7 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 		case Union:
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
-		case StructLiteral:
+		case TypeConstruction:
 			node.Kind = kind
 		case AllocatorVar:
 			kind.Name.Span = base.Span{}

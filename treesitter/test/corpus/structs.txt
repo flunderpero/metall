@@ -41,6 +41,6 @@ fun f() void { Foo(1, "hello") }
     name: (function_name (identifier))
     return_type: (simple_type)
     body: (block
-      (struct_literal
+      (type_construction
         type: (type_identifier)
         arguments: (argument_list (integer_literal) (string_literal))))))

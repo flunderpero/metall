@@ -64,6 +64,22 @@ func (f FunType) Equal(other FunType) bool {
 
 func (FunType) isTypeKind() {}
 
+type StructOrUnion struct {
+	Name     string
+	TypeArgs []TypeID
+}
+
+func IsStructOrUnion(kind TypeKind) (StructOrUnion, bool) {
+	switch k := kind.(type) {
+	case StructType:
+		return StructOrUnion{k.Name, k.TypeArgs}, true
+	case UnionType:
+		return StructOrUnion{k.Name, k.TypeArgs}, true
+	default:
+		return StructOrUnion{}, false
+	}
+}
+
 type StructField struct {
 	Name string
 	Type TypeID
@@ -91,6 +107,14 @@ type SliceType struct {
 }
 
 func (SliceType) isTypeKind() {}
+
+type UnionType struct {
+	Name     string
+	Variants []TypeID
+	TypeArgs []TypeID
+}
+
+func (UnionType) isTypeKind() {}
 
 type TypeParamType struct {
 	Shape *TypeID // nil = unconstrained

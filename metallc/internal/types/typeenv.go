@@ -180,7 +180,7 @@ func (e *TypeEnv) MethodCallReceiver(callID ast.NodeID) (ast.NodeID, bool) {
 	return 0, false
 }
 
-func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
+func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 	if typeID == InvalidTypeID {
 		return "<invalid>"
 	}
@@ -219,6 +219,10 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string {
 		astStruct := base.Cast[ast.Struct](e.ast.Node(cached.Type.NodeID).Kind)
 		scope := e.scopeGraph.NodeScope(cached.Type.NodeID)
 		return e.typeNameAndTypeArgsString(scope.NamespacedName(astStruct.Name.Name), kind.TypeArgs)
+	case UnionType:
+		astUnion := base.Cast[ast.Union](e.ast.Node(cached.Type.NodeID).Kind)
+		scope := e.scopeGraph.NodeScope(cached.Type.NodeID)
+		return e.typeNameAndTypeArgsString(scope.NamespacedName(astUnion.Name.Name), kind.TypeArgs)
 	case ArrayType:
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case SliceType:
@@ -436,6 +440,8 @@ func (e *TypeEnv) containsTypeParam(id TypeID) bool {
 		return e.containsTypeParam(kind.Type)
 	case StructType:
 		return e.hasTypeParam(kind.TypeArgs)
+	case UnionType:
+		return e.hasTypeParam(kind.TypeArgs)
 	case ArrayType:
 		return e.containsTypeParam(kind.Elem)
 	case SliceType:
@@ -495,6 +501,8 @@ func (e *TypeEnv) typeName(typ *Type) string {
 	case ModuleType:
 		return kind.Name
 	case StructType:
+		return kind.Name
+	case UnionType:
 		return kind.Name
 	case IntType:
 		return kind.Name

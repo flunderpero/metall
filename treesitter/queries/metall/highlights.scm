@@ -64,7 +64,7 @@
 (struct_declaration name: (type_identifier) @type.definition)
 (struct_field name: (identifier) @property)
 (struct_field name: (allocator_identifier) @attribute)
-(struct_literal type: (type_identifier) @type)
+(type_construction type: (type_identifier) @type)
 
 ; >>> Shapes
 

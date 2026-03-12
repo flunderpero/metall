@@ -205,8 +205,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeFieldAccess(nodeID, kind)
 	case ast.AllocatorVar:
 		a.analyzeAllocatorVar(nodeID, kind)
-	case ast.StructLiteral:
-		a.analyzeStructLiteral(nodeID, kind)
+	case ast.TypeConstruction:
+		a.analyzeTypeConstruction(nodeID, kind)
 	case ast.ArrayLiteral:
 		a.analyzeArrayLiteral(nodeID, kind)
 	case ast.EmptySlice:
@@ -333,15 +333,15 @@ func (a *LifetimeCheck) analyzeAllocatorVar(nodeID ast.NodeID, alloc ast.Allocat
 	}
 }
 
-// analyzeStructLiteral: `Foo(a, b)` merges all argument flows.
-func (a *LifetimeCheck) analyzeStructLiteral(nodeID ast.NodeID, lit ast.StructLiteral) {
+// analyzeTypeConstruction: `Foo(a, b)` merges all argument flows.
+func (a *LifetimeCheck) analyzeTypeConstruction(nodeID ast.NodeID, lit ast.TypeConstruction) {
 	a.ast.Walk(nodeID, a.Check)
 	merged := Flow{}
 	for _, argNodeID := range lit.Args {
 		merged = merged.Merge(a.flow(argNodeID))
 	}
 	a.flows[nodeID] = merged
-	a.debug(1, nodeID, "analyzeStructLiteral: %s", merged)
+	a.debug(1, nodeID, "analyzeTypeConstruction: %s", merged)
 }
 
 func (a *LifetimeCheck) isArenaAllocCall(nodeID ast.NodeID) bool {
@@ -594,6 +594,10 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 			if a.typeContainsRefOrAlloc(field.Type) {
 				return true
 			}
+		}
+	case UnionType:
+		if slices.ContainsFunc(kind.Variants, a.typeContainsRefOrAlloc) {
+			return true
 		}
 	case TypeParamType:
 		if kind.Shape == nil {

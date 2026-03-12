@@ -22,14 +22,14 @@ fun f(@a Arena) void {
           field: (identifier))
         type_arguments: (type_arguments (simple_type (type_identifier)))
         arguments: (argument_list
-          (struct_literal type: (type_identifier) arguments: (argument_list (integer_literal)))))
+          (type_construction type: (type_identifier) arguments: (argument_list (integer_literal)))))
       (call_expression
         callee: (field_access
           object: (allocator_identifier)
           field: (identifier))
         type_arguments: (type_arguments (simple_type (type_identifier)))
         arguments: (argument_list
-          (struct_literal type: (type_identifier)))))))
+          (type_construction type: (type_identifier)))))))
 
 ================================================================================
 Arena slice with default
@@ -118,4 +118,4 @@ fun f(x Foo) void { x.@a.new<Bar>(Bar()) }
           field: (identifier))
         type_arguments: (type_arguments (simple_type (type_identifier)))
         arguments: (argument_list
-          (struct_literal type: (type_identifier)))))))
+          (type_construction type: (type_identifier)))))))

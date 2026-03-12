@@ -114,7 +114,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	module := base.Cast[ast.Module](engine.AST().Node(fileID).Kind)
 	ir, err := gen.GenIR(
-		engine.AST(), module, engine.Funs(), engine.Structs(),
+		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(),
 		gen.IROpts{
 			AddressSanitizer:    opts.AddressSanitizer,
 			ArenaDebug:          opts.DebugArenaAllocator,
