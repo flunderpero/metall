@@ -704,6 +704,13 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		e.diag(fieldAccess.Field.Span, "unknown field on slice: %s", fieldAccess.Field.Name)
 		return InvalidTypeID, TypeFailed
 	}
+	if _, ok := targetTyp.Kind.(ArrayType); ok {
+		if fieldAccess.Field.Name == "len" {
+			return e.intTyp, TypeOK
+		}
+		e.diag(fieldAccess.Field.Span, "unknown field on array: %s", fieldAccess.Field.Name)
+		return InvalidTypeID, TypeFailed
+	}
 	typeName := e.env.TypeDisplay(targetTyp.ID)
 	if struct_, ok := targetTyp.Kind.(StructType); ok {
 		for _, field := range struct_.Fields {

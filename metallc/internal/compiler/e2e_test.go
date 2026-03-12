@@ -1268,6 +1268,13 @@ func TestCompile(t *testing.T) {
 			}
 			`, "77\n88\n"},
 
+		{"array len", `
+			fun main() void {
+				let arr = [10, 20, 30, 40, 50]
+				print_int(arr.len)
+			}
+			`, "5\n"},
+
 		{"int arithmetic", `
 			fun main() void {
 				print_int(120 + 3)

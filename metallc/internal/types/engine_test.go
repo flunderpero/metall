@@ -538,6 +538,7 @@ func TestTypeCheckAndLifetimeOK(t *testing.T) {
 		{"subslice array lo..=hi", `{ let x = [1, 2, 3] x[0..=2] }`, slice_t(Int), nil},
 		{"subslice array ..hi", `{ let x = [1, 2, 3] x[..2] }`, slice_t(Int), nil},
 		{"subslice array lo..", `{ let x = [1, 2, 3] x[1..] }`, slice_t(Int), nil},
+		{"array len", `{ let x = [1, 2, 3] x.len }`, Int, nil},
 		{
 			"subslice slice",
 			`{ let @a = Arena() let x = @a.slice_uninit<Int>(5) x[1..3] }`,
@@ -1678,6 +1679,11 @@ func TestTypeCheckErr(t *testing.T) {
 			"test.met:1:54: unknown field on slice: foo\n" +
 				`    { let @a = Arena() let x = @a.slice_uninit<Int>(3) x.foo }` + "\n" +
 				"                                                         ^^^",
+		}},
+		{"unknown field on array", `{ let x = [1, 2, 3] x.foo }`, []string{
+			"test.met:1:23: unknown field on array: foo\n" +
+				"    { let x = [1, 2, 3] x.foo }\n" +
+				"                          ^^^",
 		}},
 		{"make slice non-int length", `{ let @a = Arena() @a.slice_uninit<Int>("hello") }`, []string{
 			"test.met:1:41: type mismatch at argument 1: expected Int, got Str\n" +

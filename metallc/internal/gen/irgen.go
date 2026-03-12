@@ -474,6 +474,13 @@ func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 		g.genSliceFieldAccess(id, fieldAccess)
 		return
 	}
+	if arrType, ok := targetType.Kind.(types.ArrayType); ok {
+		if fieldAccess.Field.Name == "len" {
+			g.setCode(id, fmt.Sprintf("%d", arrType.Len))
+			return
+		}
+		panic(base.Errorf("unknown array field: %s", fieldAccess.Field.Name))
+	}
 	ptrReg := g.genFieldAccessPtr(fieldAccess)
 	valReg := g.loadValue(ptrReg, g.env.TypeOfNode(id).ID)
 	g.setCode(id, valReg)
