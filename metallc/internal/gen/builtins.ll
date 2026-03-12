@@ -566,3 +566,7 @@ define internal i32 @"Rune.to_u32"(i32 %v) alwaysinline {
 @str_division_by_zero = private constant %Str { { ptr, i64 } { ptr @str_division_by_zero.data, i64 16 } }
 @str_illegal_rune.data = private constant [12 x i8] c"illegal rune"
 @str_illegal_rune = private constant %Str { { ptr, i64 } { ptr @str_illegal_rune.data, i64 12 } }
+@str_index_out_of_bounds.data = private constant [19 x i8] c"index out of bounds"
+@str_index_out_of_bounds = private constant %Str { { ptr, i64 } { ptr @str_index_out_of_bounds.data, i64 19 } }
+@str_slice_out_of_bounds.data = private constant [19 x i8] c"slice out of bounds"
+@str_slice_out_of_bounds = private constant %Str { { ptr, i64 } { ptr @str_slice_out_of_bounds.data, i64 19 } }

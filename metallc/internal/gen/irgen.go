@@ -222,6 +222,7 @@ func (g *IRFunGen) genIndex(id ast.NodeID, index ast.Index) {
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		targetType = g.env.Type(refTyp.Type)
 	}
+	g.boundsCheckIndex(id, indexReg, targetReg, targetType)
 	switch kind := targetType.Kind.(type) {
 	case types.ArrayType:
 		arrIRType := g.irType(targetType.ID)
@@ -306,6 +307,7 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 		g.write("%s = add i64 %s, 1", incReg, hiReg)
 		hiReg = incReg
 	}
+	g.boundsCheckSubSlice(id, loReg, hiReg, targetReg, targetType)
 	// GEP to lo element.
 	elemTypeID := base.Cast[types.SliceType](g.env.TypeOfNode(id).Kind).Elem
 	elemIRType := g.irType(elemTypeID)
@@ -844,6 +846,68 @@ func (g *IRFunGen) runeCheckIfNeeded(id ast.NodeID, reg string) {
 	}
 }
 
+// boundsCheckIndex emits a bounds check for an index operation.
+// Panics with "index out of bounds" if index >= len.
+func (g *IRFunGen) boundsCheckIndex(id ast.NodeID, indexReg, targetReg string, targetType *types.Type) {
+	span := g.ast.Node(id).Span
+	locReg := g.addStrConst(span.String())
+	panicLabel := g.label("oob_panic", id)
+	okLabel := g.label("oob_ok", id)
+	var lenReg string
+	switch kind := targetType.Kind.(type) {
+	case types.ArrayType:
+		lenReg = fmt.Sprintf("%d", kind.Len)
+	case types.SliceType:
+		lenReg = g.reg()
+		g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", lenReg, targetReg)
+		g.write("%s = load i64, ptr %s_field", lenReg, lenReg)
+	default:
+		panic(base.Errorf("boundsCheckIndex: unsupported target type %T", targetType.Kind))
+	}
+	oobReg := g.reg()
+	// Unsigned comparison catches negative indices too (sign bit makes them >= 2^63).
+	g.write("%s = icmp uge i64 %s, %s", oobReg, indexReg, lenReg)
+	g.write("br i1 %s, label %%%s, label %%%s", oobReg, panicLabel, okLabel)
+	g.writeLabel(panicLabel)
+	g.write("call void @panic(ptr @str_index_out_of_bounds, ptr %s)", locReg)
+	g.write("unreachable")
+	g.writeLabel(okLabel)
+}
+
+// boundsCheckSubSlice emits bounds checks for a sub-slice operation.
+// Panics with "slice out of bounds" if lo > hi or hi > len.
+func (g *IRFunGen) boundsCheckSubSlice(id ast.NodeID, loReg, hiReg, targetReg string, targetType *types.Type) {
+	span := g.ast.Node(id).Span
+	locReg := g.addStrConst(span.String())
+	checkHiLenLabel := g.label("slice_check_hi_len", id)
+	panicLabel := g.label("slice_oob_panic", id)
+	okLabel := g.label("slice_oob_ok", id)
+	var lenReg string
+	switch kind := targetType.Kind.(type) {
+	case types.ArrayType:
+		lenReg = fmt.Sprintf("%d", kind.Len)
+	case types.SliceType:
+		lenReg = g.reg()
+		g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", lenReg, targetReg)
+		g.write("%s = load i64, ptr %s_field", lenReg, lenReg)
+	default:
+		panic(base.Errorf("boundsCheckSubSlice: unsupported target type %T", targetType.Kind))
+	}
+	// Check lo <= hi (unsigned: catches negative lo too).
+	loGtHiReg := g.reg()
+	g.write("%s = icmp ugt i64 %s, %s", loGtHiReg, loReg, hiReg)
+	g.write("br i1 %s, label %%%s, label %%%s", loGtHiReg, panicLabel, checkHiLenLabel)
+	g.writeLabel(checkHiLenLabel)
+	// Check hi <= len.
+	hiGtLenReg := g.reg()
+	g.write("%s = icmp ugt i64 %s, %s", hiGtLenReg, hiReg, lenReg)
+	g.write("br i1 %s, label %%%s, label %%%s", hiGtLenReg, panicLabel, okLabel)
+	g.writeLabel(panicLabel)
+	g.write("call void @panic(ptr @str_slice_out_of_bounds, ptr %s)", locReg)
+	g.write("unreachable")
+	g.writeLabel(okLabel)
+}
+
 func (g *IRFunGen) genUnary(id ast.NodeID, unary ast.Unary) {
 	g.Gen(unary.Expr)
 	expr := g.lookupCode(unary.Expr)
@@ -1100,7 +1164,7 @@ func (g *IRFunGen) genPlaceAddr(nodeID ast.NodeID) string {
 	case ast.FieldAccess:
 		return g.genFieldAccessPtr(kind)
 	case ast.Index:
-		return g.genIndexAddr(kind)
+		return g.genIndexAddr(nodeID, kind)
 	case ast.Deref:
 		g.Gen(kind.Expr)
 		return g.lookupCode(kind.Expr)
@@ -1109,7 +1173,7 @@ func (g *IRFunGen) genPlaceAddr(nodeID ast.NodeID) string {
 	}
 }
 
-func (g *IRFunGen) genIndexAddr(index ast.Index) string {
+func (g *IRFunGen) genIndexAddr(id ast.NodeID, index ast.Index) string {
 	g.Gen(index.Target)
 	g.Gen(index.Index)
 	indexReg := g.lookupCode(index.Index)
@@ -1118,6 +1182,7 @@ func (g *IRFunGen) genIndexAddr(index ast.Index) string {
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		targetType = g.env.Type(refTyp.Type)
 	}
+	g.boundsCheckIndex(id, indexReg, targetReg, targetType)
 	ptrReg := g.reg()
 	switch targetType.Kind.(type) {
 	case types.ArrayType:

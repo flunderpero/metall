@@ -1749,6 +1749,51 @@ func TestCompilePanic(t *testing.T) {
 				'퟿' + 1
 			}
 		`, "test.met:3:5: illegal rune\n"},
+		{"array index out of bounds", `
+			fun main() void {
+				let arr = [10, 20, 30]
+				print_int(arr[3])
+			}
+		`, "test.met:4:15: index out of bounds\n"},
+		{"array index negative", `
+			fun main() void {
+				let arr = [10, 20, 30]
+				let i = 0 - 1
+				print_int(arr[i])
+			}
+		`, "test.met:5:15: index out of bounds\n"},
+		{"slice index out of bounds", `
+			fun main() void {
+				let @a = Arena()
+				let s = @a.slice<Int>(3, 0)
+				print_int(s[3])
+			}
+		`, "test.met:5:15: index out of bounds\n"},
+		{"array write index out of bounds", `
+			fun main() void {
+				mut arr = [10, 20, 30]
+				arr[3] = 99
+			}
+		`, "test.met:4:5: index out of bounds\n"},
+		{"subslice hi out of bounds", `
+			fun main() void {
+				let arr = [10, 20, 30]
+				let s = arr[0..4]
+			}
+		`, "test.met:4:13: slice out of bounds\n"},
+		{"subslice lo greater than hi", `
+			fun main() void {
+				let arr = [10, 20, 30]
+				let s = arr[2..1]
+			}
+		`, "test.met:4:13: slice out of bounds\n"},
+		{"subslice of slice out of bounds", `
+			fun main() void {
+				let @a = Arena()
+				let s = @a.slice<Int>(3, 0)
+				let sub = s[0..4]
+			}
+		`, "test.met:5:15: slice out of bounds\n"},
 	}
 
 	assert := base.NewAssert(t)
