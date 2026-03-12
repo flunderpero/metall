@@ -77,6 +77,10 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if shape, ok := p.ParseShape(); ok {
 				decls = append(decls, shape)
 			}
+		case token.Union:
+			if union, ok := p.ParseUnion(); ok {
+				decls = append(decls, union)
+			}
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
 			return decls, false
@@ -295,6 +299,47 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 		funs = append(funs, funDecl)
 	}
 	return p.NewShape(name, fields, funs, t.Span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseUnion() (NodeID, bool) {
+	t, ok := p.expect(token.Union)
+	if !ok {
+		return ParseFailed, false
+	}
+	nameToken, ok := p.expect(token.TypeIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	if slices.Contains(ReservedWords, nameToken.Value) {
+		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
+		return ParseFailed, false
+	}
+	name := Name{nameToken.Value, nameToken.Span}
+	typeParams, ok := p.parseTypeParams()
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.Eq); !ok {
+		return ParseFailed, false
+	}
+	var variants []NodeID
+	for {
+		variant, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		variants = append(variants, variant)
+		next, ok := p.mayPeek()
+		if !ok || next.Kind != token.Pipe {
+			break
+		}
+		p.next()
+	}
+	if len(variants) < 2 {
+		p.diagnostic(p.span(), "union requires at least 2 variants")
+		return ParseFailed, false
+	}
+	return p.NewUnion(name, typeParams, variants, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseStructLiteral() (NodeID, bool) {
@@ -585,6 +630,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = shape
+	case token.Union:
+		union, ok := p.ParseUnion()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = union
 	case token.If:
 		if_, ok := p.ParseIf()
 		if !ok {

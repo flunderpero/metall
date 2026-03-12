@@ -184,6 +184,14 @@ type Shape struct {
 
 func (Shape) isKind() {}
 
+type Union struct {
+	Name       Name
+	TypeParams []NodeID
+	Variants   []NodeID // Type nodes (SimpleType, RefType, etc.)
+}
+
+func (Union) isKind() {}
+
 type FieldAccess struct {
 	Target   NodeID
 	Field    Name
@@ -500,6 +508,10 @@ func (a *AST) NewShape(name Name, fields []NodeID, funs []NodeID, span base.Span
 	return a.node(Shape{Name: name, Fields: fields, Funs: funs}, span)
 }
 
+func (a *AST) NewUnion(name Name, typeParams []NodeID, variants []NodeID, span base.Span) NodeID {
+	return a.node(Union{Name: name, TypeParams: typeParams, Variants: variants}, span)
+}
+
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
 	return a.node(FieldAccess{Target: target, Field: field, TypeArgs: typeArgs}, span)
 }
@@ -671,6 +683,13 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		for i := range len(kind.Funs) {
 			f(kind.Funs[i])
+		}
+	case Union:
+		for i := range len(kind.TypeParams) {
+			f(kind.TypeParams[i])
+		}
+		for i := range len(kind.Variants) {
+			f(kind.Variants[i])
 		}
 	case TypeParam:
 		if kind.Constraint != nil {
@@ -956,6 +975,19 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 		} else {
 			addChild("fields", kind.Fields...)
 			addChild("funs", kind.Funs...)
+		}
+	case Union:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if !children {
+			if len(kind.TypeParams) > 0 {
+				addAttr("typeParams", nodeIDList(kind.TypeParams))
+			}
+			addAttr("variants", nodeIDList(kind.Variants))
+		} else {
+			if len(kind.TypeParams) > 0 {
+				addChild("typeParams", kind.TypeParams...)
+			}
+			addChild("variants", kind.Variants...)
 		}
 	case TypeParam:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))

@@ -4,6 +4,7 @@
   "fun"
   "struct"
   "shape"
+  "union"
   "use"
   "let"
   "if"
@@ -72,6 +73,10 @@
 (fun_signature "fun" @keyword.function)
 (fun_signature name: (function_name (identifier) @function))
 (fun_signature name: (function_name (type_identifier) @type))
+
+; >>> Unions
+
+(union_declaration name: (type_identifier) @type.definition)
 
 ; >>> Qualified names (Foo.bar)
 

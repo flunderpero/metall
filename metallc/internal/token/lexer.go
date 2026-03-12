@@ -68,6 +68,7 @@ const (
 	Tilde
 	True
 	TypeIdent
+	Union
 	Unknown
 	Use
 	Void
@@ -132,6 +133,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Struct:                "<struct>",
 	True:                  "true",
 	TypeIdent:             "<type identifier>",
+	Union:                 "<union>",
 	Unknown:               "<unknown>",
 	Use:                   "<use>",
 	Void:                  "<void>",
@@ -172,6 +174,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"shape":    Shape,
 	"struct":   Struct,
 	"true":     True,
+	"union":    Union,
 	"use":      Use,
 	"void":     Void,
 }

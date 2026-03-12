@@ -1,0 +1,95 @@
+================================================================================
+Simple union
+================================================================================
+
+union Foo = Str | Int
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (union_declaration
+    name: (type_identifier)
+    variants: (union_variants
+      (simple_type (type_identifier))
+      (simple_type (type_identifier)))))
+
+================================================================================
+Union with three variants
+================================================================================
+
+union Foo = Str | Int | Bool
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (union_declaration
+    name: (type_identifier)
+    variants: (union_variants
+      (simple_type (type_identifier))
+      (simple_type (type_identifier))
+      (simple_type (type_identifier)))))
+
+================================================================================
+Generic union
+================================================================================
+
+union Maybe<T> = T | None
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (union_declaration
+    name: (type_identifier)
+    type_parameters: (type_parameters
+      (type_parameter name: (type_identifier)))
+    variants: (union_variants
+      (simple_type (type_identifier))
+      (simple_type (type_identifier)))))
+
+================================================================================
+Generic union with type args in variant
+================================================================================
+
+union Foo<T> = Str | Bar<T> | Int
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (union_declaration
+    name: (type_identifier)
+    type_parameters: (type_parameters
+      (type_parameter name: (type_identifier)))
+    variants: (union_variants
+      (simple_type (type_identifier))
+      (simple_type (type_identifier) (type_arguments (simple_type (type_identifier))))
+      (simple_type (type_identifier)))))
+
+================================================================================
+Union with reference variant
+================================================================================
+
+union Foo = &Str | Int
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (union_declaration
+    name: (type_identifier)
+    variants: (union_variants
+      (reference_type (simple_type (type_identifier)))
+      (simple_type (type_identifier)))))
+
+================================================================================
+Union with slice variant
+================================================================================
+
+union Foo = []Int | Str
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (union_declaration
+    name: (type_identifier)
+    variants: (union_variants
+      (slice_type (simple_type (type_identifier)))
+      (simple_type (type_identifier)))))

@@ -31,12 +31,14 @@ module.exports = grammar({
 
   conflicts: ($) => [
     [$.qualified_name],
+    [$.simple_type],
   ],
 
   rules: {
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
-    _declaration: ($) => choice($.function_declaration, $.struct_declaration, $.shape_declaration),
+    _declaration: ($) =>
+      choice($.function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration),
 
     // >>> Imports
 
@@ -188,6 +190,20 @@ module.exports = grammar({
         field("return_type", $._type),
       ),
 
+    // >>> Union declaration
+
+    union_declaration: ($) =>
+      seq(
+        "union",
+        field("name", $.type_identifier),
+        optional(field("type_parameters", $.type_parameters)),
+        "=",
+        field("variants", $.union_variants),
+      ),
+
+    union_variants: ($) =>
+      prec.left(seq($._type, repeat1(seq("|", $._type)))),
+
     // >>> Blocks
 
     block: ($) => seq("{", repeat($._expression), "}"),
@@ -213,6 +229,7 @@ module.exports = grammar({
         $.function_declaration,
         $.struct_declaration,
         $.shape_declaration,
+        $.union_declaration,
 
         // Type-prefixed expressions.
         $.qualified_name,

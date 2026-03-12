@@ -134,6 +134,7 @@ func TestLexer(t *testing.T) {
 		{"let", `let`, []want{{Let, "", "1:1-1:3"}}},
 		{"struct", `struct`, []want{{Struct, "", "1:1-1:6"}}},
 		{"shape", `shape`, []want{{Shape, "", "1:1-1:5"}}},
+		{"union", `union`, []want{{Union, "", "1:1-1:5"}}},
 		{"for", `for`, []want{{For, "", "1:1-1:3"}}},
 		{"break", `break`, []want{{Break, "", "1:1-1:5"}}},
 		{"continue", `continue`, []want{{Continue, "", "1:1-1:8"}}},

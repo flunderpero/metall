@@ -530,6 +530,28 @@ func TestParseOK(t *testing.T) {
 				)
 			},
 		},
+		{"union", "expr", `union Foo = Str | Int`, func(a *TestAST) NodeID {
+			return a.union_("Foo", a.str_typ(), a.int_typ())
+		}},
+		{"union three variants", "expr", `union Foo = Str | Int | Bool`, func(a *TestAST) NodeID {
+			return a.union_("Foo", a.str_typ(), a.int_typ(), a.typ("Bool"))
+		}},
+		{"generic union", "expr", `union Maybe<T> = T | None`, func(a *TestAST) NodeID {
+			return a.generic_union("Maybe", []NodeID{a.type_param("T")}, a.typ("T"), a.typ("None"))
+		}},
+		{"generic union with type args", "expr", `union Foo<T> = Str | Bar<T> | Int`, func(a *TestAST) NodeID {
+			return a.generic_union("Foo",
+				[]NodeID{a.type_param("T")},
+				a.str_typ(), a.typ_args("Bar", a.typ("T")), a.int_typ(),
+			)
+		}},
+		{"union with ref variant", "expr", `union Foo = &Str | Int`, func(a *TestAST) NodeID {
+			return a.union_("Foo", a.ref_typ(a.str_typ()), a.int_typ())
+		}},
+		{"union with slice variant", "expr", `union Foo = []Int | Str`, func(a *TestAST) NodeID {
+			return a.union_("Foo", a.slice_typ(a.int_typ()), a.str_typ())
+		}},
+
 		{
 			"namespaced fun", "expr", `fun Foo.bar(f Foo) Int { 123 }`,
 			func(a *TestAST) NodeID {
@@ -788,6 +810,17 @@ func TestParseErr(t *testing.T) {
 				"              ^^",
 		}},
 
+		{"union single variant", "expr", `union Foo = Str`, []string{
+			"test.met:1:13: union requires at least 2 variants\n" +
+				"    union Foo = Str\n" +
+				"                ^^^",
+		}},
+		{"union reserved word", "expr", `union Arena = Str | Int`, []string{
+			"test.met:1:7: reserved word: Arena\n" +
+				"    union Arena = Str | Int\n" +
+				"          ^^^^^",
+		}},
+
 		{"use in expression", "expr", `use foo::bar`, []string{
 			"test.met:1:1: unexpected token: expected start of an expression, got <use>\n" +
 				"    use foo::bar\n" +
@@ -937,6 +970,14 @@ func (a *TestAST) generic_struct(name string, typeParams []NodeID, fields ...Nod
 		fields = []NodeID{}
 	}
 	return a.NewStruct(Name{name, a.span}, typeParams, fields, a.span)
+}
+
+func (a *TestAST) union_(name string, variants ...NodeID) NodeID {
+	return a.NewUnion(Name{name, a.span}, nil, variants, a.span)
+}
+
+func (a *TestAST) generic_union(name string, typeParams []NodeID, variants ...NodeID) NodeID {
+	return a.NewUnion(Name{name, a.span}, typeParams, variants, a.span)
 }
 
 func (a *TestAST) generic_fun(name string, typeParams []NodeID, paramsReturnAndBlock ...NodeID) NodeID {
@@ -1174,6 +1215,9 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case Struct:
+			kind.Name.Span = base.Span{}
+			node.Kind = kind
+		case Union:
 			kind.Name.Span = base.Span{}
 			node.Kind = kind
 		case StructLiteral:
