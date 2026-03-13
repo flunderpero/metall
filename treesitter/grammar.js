@@ -101,6 +101,7 @@ module.exports = grammar({
     type_parameter: ($) => seq(
       field("name", $.type_identifier),
       field("constraint", optional($.type_identifier)),
+      optional(seq("=", field("default", $._type))),
     ),
 
     type_arguments: ($) => seq(

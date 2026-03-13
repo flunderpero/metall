@@ -69,13 +69,14 @@ type arrayTypeCacheKey struct {
 }
 
 type TypeRegistry struct {
-	types         map[TypeID]*cachedType
-	refTypes      map[refTypeCacheKey]*cachedType
-	arrayTypes    map[arrayTypeCacheKey]*cachedType
-	sliceTypes    map[sliceTypeCacheKey]*cachedType
-	funTypes      map[string]*cachedType
-	genericOrigin map[TypeID]TypeID // monomorphized type ID → generic type ID
-	nextID        TypeID
+	types          map[TypeID]*cachedType
+	typeParamTypes map[ast.NodeID]TypeID // TypeParam NodeID → TypeParamType TypeID
+	refTypes       map[refTypeCacheKey]*cachedType
+	arrayTypes     map[arrayTypeCacheKey]*cachedType
+	sliceTypes     map[sliceTypeCacheKey]*cachedType
+	funTypes       map[string]*cachedType
+	genericOrigin  map[TypeID]TypeID // monomorphized type ID → generic type ID
+	nextID         TypeID
 }
 
 type TypeEnv struct {
@@ -95,13 +96,14 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		ast:        a,
 		scopeGraph: g,
 		reg: &TypeRegistry{
-			types:         map[TypeID]*cachedType{},
-			refTypes:      map[refTypeCacheKey]*cachedType{},
-			arrayTypes:    map[arrayTypeCacheKey]*cachedType{},
-			sliceTypes:    map[sliceTypeCacheKey]*cachedType{},
-			funTypes:      map[string]*cachedType{},
-			genericOrigin: map[TypeID]TypeID{},
-			nextID:        1,
+			types:          map[TypeID]*cachedType{},
+			typeParamTypes: map[ast.NodeID]TypeID{},
+			refTypes:       map[refTypeCacheKey]*cachedType{},
+			arrayTypes:     map[arrayTypeCacheKey]*cachedType{},
+			sliceTypes:     map[sliceTypeCacheKey]*cachedType{},
+			funTypes:       map[string]*cachedType{},
+			genericOrigin:  map[TypeID]TypeID{},
+			nextID:         1,
 		},
 		bindings:           map[ast.BindingID]*Binding{},
 		nodes:              map[ast.NodeID]*cachedType{},

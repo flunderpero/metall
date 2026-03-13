@@ -1449,7 +1449,7 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 	if binding.Decl != 0 {
 		if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok {
 			if len(typeArgs) > 0 || len(funNode.TypeParams) > 0 {
-				argTypeIDs, status := e.generics.resolveTypeArgs(typeArgs)
+				argTypeIDs, status := e.generics.queryTypeArgs(typeArgs)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}

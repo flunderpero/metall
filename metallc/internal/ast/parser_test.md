@@ -1691,6 +1691,66 @@ test.met:1:26: empty type argument list
                              ^^
 ```
 
+**Default type param**
+
+```metall
+struct Foo<T = Int> { value T }
+```
+
+```ast
+Struct(name="Foo")
+  typeParams=TypeParam(name="T")
+    default=SimpleType(name="Int")
+  fields=StructField(name="value",mut=false)
+    type=SimpleType(name="T")
+```
+
+**Default type param with constraint**
+
+```metall
+fun foo<T Showable = Str>(t T) void { }
+```
+
+```ast
+Fun(name="foo")
+  typeParams=TypeParam(name="T")
+    constraint=SimpleType(name="Showable")
+    default=SimpleType(name="Str")
+  params=FunParam(name="t")
+    type=SimpleType(name="T")
+  returnType=SimpleType(name="void")
+  block=Block()
+```
+
+**Multiple type params with partial defaults**
+
+```metall
+struct Pair<A, B = Int> { a A b B }
+```
+
+```ast
+Struct(name="Pair")
+  typeParams[0]=TypeParam(name="A")
+  typeParams[1]=TypeParam(name="B")
+    default=SimpleType(name="Int")
+  fields[0]=StructField(name="a",mut=false)
+    type=SimpleType(name="A")
+  fields[1]=StructField(name="b",mut=false)
+    type=SimpleType(name="B")
+```
+
+**Default type param not rightmost should fail**
+
+```metall
+struct Foo<T = Int, U> { a T b U }
+```
+
+```error
+test.met:1:21: type parameters with defaults must be last
+    struct Foo<T = Int, U> { a T b U }
+                        ^
+```
+
 ## Shapes
 
 **Shape**

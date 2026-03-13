@@ -5489,6 +5489,165 @@ struct03 = Wrapper<Int> { value Int }
 fun06    = fun(struct03) Int
 ```
 
+## Default Type Args
+
+**Default type arg on struct**
+
+```metall
+{
+    struct Box<T = Int> { value T }
+    let x = Box(42)
+    let y = Box<Str>("hello")
+    x.value
+}
+```
+
+```types
+Block: Int
+  Struct: struct01
+    TypeParam: ?
+      SimpleType: ?
+    StructField: ?
+      SimpleType: ?
+  Var: void
+    TypeConstruction: struct02
+      Ident: struct02
+      Int: Int
+  Var: void
+    TypeConstruction: struct03
+      Ident: struct03
+        SimpleType: Str
+      String: Str
+  FieldAccess: Int
+    Ident: struct02
+---
+struct01 = Box { value T }
+struct02 = Box<Int> { value Int }
+struct03 = Box<Str> { value Str }
+```
+
+**Default type arg with partial params**
+
+```metall
+{
+    struct Pair<A, B = Int> { a A b B }
+    let x = Pair<Str>("hello", 42)
+    x.a
+}
+```
+
+```types
+Block: Str
+  Struct: struct01
+    TypeParam: ?
+    TypeParam: ?
+      SimpleType: ?
+    StructField: ?
+      SimpleType: ?
+    StructField: ?
+      SimpleType: ?
+  Var: void
+    TypeConstruction: struct02
+      Ident: struct02
+        SimpleType: Str
+      String: Str
+      Int: Int
+  FieldAccess: Str
+    Ident: struct02
+---
+struct01 = Pair { a A, b B }
+struct02 = Pair<Str, Int> { a Str, b Int }
+```
+
+**Default type arg on function with constraint**
+
+```metall
+{
+    shape ToStr {
+        fun ToStr.to_str(self ToStr) Str
+    }
+    fun Str.to_str(s Str) Str { s }
+    fun show<T ToStr = Str>(x T) Str { x.to_str() }
+    show("hello")
+}
+```
+
+```types
+Block: Str
+  Shape: shape01
+    FunDecl: ?
+      FunParam: shape01
+        SimpleType: shape01
+      SimpleType: Str
+  Fun: fun01
+    FunParam: Str
+      SimpleType: Str
+    SimpleType: Str
+    Block: Str
+      Ident: Str
+  Fun: fun02
+    TypeParam: T
+      SimpleType: shape01
+      SimpleType: Str
+    FunParam: T
+      SimpleType: T
+    SimpleType: Str
+    Block: Str
+      Call: Str
+        FieldAccess: fun03
+          Ident: T
+  Call: Str
+    Ident: fun04
+    String: Str
+---
+shape01 = ToStr {  }
+fun01   = fun(Str) Str
+fun02   = fun(T) Str
+fun03   = fun(T) Str
+fun04   = fun(Str) Str
+```
+
+**Default type arg does not satisfy shape constraint**
+
+```metall
+{
+    shape Showable { fun Showable.show(self Showable) Str }
+    struct Box<T Showable = Int> { value T }
+}
+```
+
+```error
+test.met:3:29: type Int does not satisfy shape Showable: missing method show
+        shape Showable { fun Showable.show(self Showable) Str }
+        struct Box<T Showable = Int> { value T }
+                                ^^^
+    }
+```
+
+**Default type arg too many args**
+
+```metall
+{ struct Box<T = Int> { value T } fun bar(f Box<Int, Str>) void {} }
+```
+
+```error
+test.met:1:45: type argument count mismatch: expected 0 to 1, got 2
+    { struct Box<T = Int> { value T } fun bar(f Box<Int, Str>) void {} }
+                                                ^^^^^^^^^^^^^
+```
+
+**Default type arg too few args**
+
+```metall
+{ struct Pair<A, B = Int> { a A b B } fun bar(f Pair) void {} }
+```
+
+```error
+test.met:1:49: type argument count mismatch: expected 1 to 2, got 0
+    { struct Pair<A, B = Int> { a A b B } fun bar(f Pair) void {} }
+                                                    ^^^^
+```
+
 ## Errors
 
 **Undefined symbol**

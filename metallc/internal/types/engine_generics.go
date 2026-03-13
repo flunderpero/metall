@@ -28,30 +28,20 @@ func (g *GenericsEngine) instantiateStruct(
 ) (TypeID, TypeStatus) {
 	structNodeID := g.env.DeclNode(genericTypeID)
 	structNode := base.Cast[ast.Struct](g.ast.Node(structNodeID).Kind)
-	if len(typeArgNodeIDs) != len(structNode.TypeParams) {
-		g.diag(span, "type argument count mismatch: expected %d, got %d",
-			len(structNode.TypeParams), len(typeArgNodeIDs))
-		return InvalidTypeID, TypeFailed
+	providedTypeIDs, status := g.queryTypeArgs(typeArgNodeIDs)
+	if status.Failed() {
+		return InvalidTypeID, status
 	}
-	mangledParts := make([]string, len(typeArgNodeIDs))
-	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
-	for i, typeArgNodeID := range typeArgNodeIDs {
-		argTypeID, status := g.query(typeArgNodeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		argTypeIDs[i] = argTypeID
-		mangledParts[i] = argTypeID.String()
+	argTypeIDs, status := g.applyTypeArgDefaults(structNode.TypeParams, providedTypeIDs, span)
+	if status.Failed() {
+		return InvalidTypeID, status
 	}
-	mangledName := fmt.Sprintf("%s.%s.%s", generic.Name, genericTypeID, strings.Join(mangledParts, "."))
+	mangledName := g.mangledName(generic.Name, genericTypeID, argTypeIDs)
 	if cached, ok := g.structs[mangledName]; ok {
 		return cached.TypeID, TypeOK
 	}
 	defer g.enterChildEnv()()
-	for i, typeParamNodeID := range structNode.TypeParams {
-		typeParamNode := base.Cast[ast.TypeParam](g.ast.Node(typeParamNodeID).Kind)
-		g.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
-	}
+	g.bindTypeParamsToArgs(structNode.TypeParams, argTypeIDs)
 	node := g.ast.Node(structNodeID)
 	placeholder := StructType{mangledName, []StructField{}, argTypeIDs}
 	typeID := g.env.newType(placeholder, node.ID, node.Span, TypeInProgress)
@@ -91,38 +81,28 @@ func (g *GenericsEngine) instantiateUnion(
 ) (TypeID, TypeStatus) {
 	unionNodeID := g.env.DeclNode(genericTypeID)
 	unionNode := base.Cast[ast.Union](g.ast.Node(unionNodeID).Kind)
-	if len(typeArgNodeIDs) != len(unionNode.TypeParams) {
-		g.diag(span, "type argument count mismatch: expected %d, got %d",
-			len(unionNode.TypeParams), len(typeArgNodeIDs))
-		return InvalidTypeID, TypeFailed
+	providedTypeIDs, status := g.queryTypeArgs(typeArgNodeIDs)
+	if status.Failed() {
+		return InvalidTypeID, status
 	}
-	mangledParts := make([]string, len(typeArgNodeIDs))
-	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
-	for i, typeArgNodeID := range typeArgNodeIDs {
-		argTypeID, status := g.query(typeArgNodeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		argTypeIDs[i] = argTypeID
-		mangledParts[i] = argTypeID.String()
+	argTypeIDs, status := g.applyTypeArgDefaults(unionNode.TypeParams, providedTypeIDs, span)
+	if status.Failed() {
+		return InvalidTypeID, status
 	}
-	mangledName := fmt.Sprintf("%s.%s.%s", generic.Name, genericTypeID, strings.Join(mangledParts, "."))
+	mangledName := g.mangledName(generic.Name, genericTypeID, argTypeIDs)
 	if cached, ok := g.unions[mangledName]; ok {
 		return cached.TypeID, TypeOK
 	}
 	defer g.enterChildEnv()()
-	for i, typeParamNodeID := range unionNode.TypeParams {
-		typeParamNode := base.Cast[ast.TypeParam](g.ast.Node(typeParamNodeID).Kind)
-		g.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
-	}
+	g.bindTypeParamsToArgs(unionNode.TypeParams, argTypeIDs)
 	node := g.ast.Node(unionNodeID)
 	placeholder := UnionType{mangledName, nil, argTypeIDs}
 	typeID := g.env.newType(placeholder, node.ID, node.Span, TypeInProgress)
 	g.env.reg.genericOrigin[typeID] = genericTypeID
 	g.unions[mangledName] = UnionWork{NodeID: unionNodeID, TypeID: typeID, Env: g.env}
-	status, resolved := g.resolveUnionVariants(unionNode, placeholder)
-	if status.Failed() {
-		return InvalidTypeID, status
+	resolveStatus, resolved := g.resolveUnionVariants(unionNode, placeholder)
+	if resolveStatus.Failed() {
+		return InvalidTypeID, resolveStatus
 	}
 	cached := g.env.reg.types[typeID]
 	cached.Type.Kind = resolved
@@ -143,7 +123,7 @@ func (g *GenericsEngine) resolveUnionVariants(unionNode ast.Union, unionType Uni
 	return TypeOK, unionType
 }
 
-func (g *GenericsEngine) resolveTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID, TypeStatus) {
+func (g *GenericsEngine) queryTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID, TypeStatus) {
 	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
 	for i, typeArgNodeID := range typeArgNodeIDs {
 		argTypeID, status := g.query(typeArgNodeID)
@@ -155,6 +135,54 @@ func (g *GenericsEngine) resolveTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID,
 	return argTypeIDs, TypeOK
 }
 
+func (g *GenericsEngine) applyTypeArgDefaults(
+	typeParamNodeIDs []ast.NodeID, argTypeIDs []TypeID, span base.Span,
+) ([]TypeID, TypeStatus) {
+	required := len(typeParamNodeIDs)
+	for i, id := range typeParamNodeIDs {
+		if base.Cast[ast.TypeParam](g.ast.Node(id).Kind).Default != nil {
+			required = i
+			break
+		}
+	}
+	total := len(typeParamNodeIDs)
+	provided := len(argTypeIDs)
+	if provided < required || provided > total {
+		if required == total {
+			g.diag(span, "type argument count mismatch: expected %d, got %d", total, provided)
+		} else {
+			g.diag(span, "type argument count mismatch: expected %d to %d, got %d", required, total, provided)
+		}
+		return nil, TypeFailed
+	}
+	if provided == total {
+		return argTypeIDs, TypeOK
+	}
+	filled := make([]TypeID, total)
+	copy(filled, argTypeIDs)
+	for i := provided; i < total; i++ {
+		typeParamTypeID := g.env.reg.typeParamTypes[typeParamNodeIDs[i]]
+		tpt := base.Cast[TypeParamType](g.env.Type(typeParamTypeID).Kind)
+		filled[i] = *tpt.Default
+	}
+	return filled, TypeOK
+}
+
+func (g *GenericsEngine) mangledName(baseName string, genericTypeID TypeID, argTypeIDs []TypeID) string {
+	parts := make([]string, len(argTypeIDs))
+	for i, id := range argTypeIDs {
+		parts[i] = id.String()
+	}
+	return fmt.Sprintf("%s.%s.%s", baseName, genericTypeID, strings.Join(parts, "."))
+}
+
+func (g *GenericsEngine) bindTypeParamsToArgs(typeParamNodeIDs []ast.NodeID, argTypeIDs []TypeID) {
+	for i, typeParamNodeID := range typeParamNodeIDs {
+		typeParamNode := base.Cast[ast.TypeParam](g.ast.Node(typeParamNodeID).Kind)
+		g.bind(typeParamNodeID, typeParamNode.Name.Name, false, argTypeIDs[i], typeParamNode.Name.Span)
+	}
+}
+
 func (g *GenericsEngine) instantiateFun(
 	genericTypeID TypeID,
 	argTypeIDs []TypeID,
@@ -163,21 +191,15 @@ func (g *GenericsEngine) instantiateFun(
 ) (typeID TypeID, mangledName string, status TypeStatus) {
 	funNodeID := g.env.DeclNode(genericTypeID)
 	funNode := base.Cast[ast.Fun](g.ast.Node(funNodeID).Kind)
-	if len(argTypeIDs) != len(funNode.TypeParams) {
-		g.diag(span, "type argument count mismatch: expected %d, got %d",
-			len(funNode.TypeParams), len(argTypeIDs))
-		return InvalidTypeID, "", TypeFailed
-	}
-	mangledParts := make([]string, len(argTypeIDs))
-	for i, argTypeID := range argTypeIDs {
-		mangledParts[i] = argTypeID.String()
+	argTypeIDs, status = g.applyTypeArgDefaults(funNode.TypeParams, argTypeIDs, span)
+	if status.Failed() {
+		return InvalidTypeID, "", status
 	}
 	genericName, ok := g.env.NamedFunRef(funNodeID)
 	if !ok {
-		// This can happen when a duplicate function was declared.
 		return InvalidTypeID, "", TypeFailed
 	}
-	mangledName = fmt.Sprintf("%s.%s.%s", genericName, genericTypeID, strings.Join(mangledParts, "."))
+	mangledName = g.mangledName(genericName, genericTypeID, argTypeIDs)
 	if cached, ok := g.funs[mangledName]; ok {
 		return cached.TypeID, mangledName, TypeOK
 	}
@@ -341,9 +363,25 @@ func (g *GenericsEngine) bindTypeParams(typeParamNodeIDs []ast.NodeID) TypeStatu
 			}
 			shapeID = &constraintTypeID
 		}
+		var defaultID *TypeID
+		if typeParamNode.Default != nil {
+			defaultTypeID, status := g.query(*typeParamNode.Default)
+			if status.Failed() {
+				return TypeDepFailed
+			}
+			if shapeID != nil {
+				span := g.ast.Node(*typeParamNode.Default).Span
+				if !g.satisfiesShape(defaultTypeID, *shapeID, typeParamNodeID, span) {
+					return TypeFailed
+				}
+			}
+			defaultID = &defaultTypeID
+		}
 		typeParamID := g.env.newType(
-			TypeParamType{Shape: shapeID}, typeParamNodeID, g.ast.Node(typeParamNodeID).Span, TypeOK,
+			TypeParamType{Shape: shapeID, Default: defaultID},
+			typeParamNodeID, g.ast.Node(typeParamNodeID).Span, TypeOK,
 		)
+		g.env.reg.typeParamTypes[typeParamNodeID] = typeParamID
 		g.bind(typeParamNodeID, typeParamNode.Name.Name, false, typeParamID, typeParamNode.Name.Span)
 	}
 	return TypeOK
@@ -445,7 +483,7 @@ func (g *GenericsEngine) resolveGenericMethod(
 	if typ, ok := IsStructOrUnion(targetTyp.Kind); ok {
 		argTypeIDs = append(argTypeIDs, typ.TypeArgs...)
 	}
-	extraArgs, status := g.resolveTypeArgs(fieldAccess.TypeArgs)
+	extraArgs, status := g.queryTypeArgs(fieldAccess.TypeArgs)
 	if status.Failed() {
 		return InvalidTypeID, status, true
 	}

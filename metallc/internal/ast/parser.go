@@ -1356,6 +1356,7 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 	}
 	open, _ := p.next()
 	params := []NodeID{}
+	hasDefault := false
 	for {
 		t, ok := p.mustPeek()
 		if !ok {
@@ -1384,7 +1385,20 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 			c := p.NewSimpleType(Name{next.Value, next.Span}, nil, next.Span)
 			constraint = &c
 		}
-		params = append(params, p.NewTypeParam(Name{t.Value, t.Span}, constraint, t.Span))
+		var defaultType *NodeID
+		if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
+			p.next()
+			d, ok := p.ParseType()
+			if !ok {
+				return nil, false
+			}
+			defaultType = &d
+			hasDefault = true
+		} else if hasDefault {
+			p.diagnostic(t.Span, "type parameters with defaults must be last")
+			return nil, false
+		}
+		params = append(params, p.NewTypeParam(Name{t.Value, t.Span}, constraint, defaultType, t.Span))
 	}
 }
 

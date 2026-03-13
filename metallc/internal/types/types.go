@@ -117,7 +117,8 @@ type UnionType struct {
 func (UnionType) isTypeKind() {}
 
 type TypeParamType struct {
-	Shape *TypeID // nil = unconstrained
+	Shape   *TypeID // nil = unconstrained
+	Default *TypeID // nil = no default
 }
 
 func (TypeParamType) isTypeKind() {}

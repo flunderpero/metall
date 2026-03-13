@@ -172,6 +172,7 @@ func (Struct) isKind() {}
 type TypeParam struct {
 	Name       Name
 	Constraint *NodeID
+	Default    *NodeID
 }
 
 func (TypeParam) isKind() {}
@@ -525,8 +526,8 @@ func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) 
 	return a.node(StructField{Name: name, Type: type_, Mut: mut}, span)
 }
 
-func (a *AST) NewTypeParam(name Name, constraint *NodeID, span base.Span) NodeID {
-	return a.node(TypeParam{Name: name, Constraint: constraint}, span)
+func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, span base.Span) NodeID {
+	return a.node(TypeParam{Name: name, Constraint: constraint, Default: defaultType}, span)
 }
 
 func (a *AST) NewShape(name Name, fields []NodeID, funs []NodeID, span base.Span) NodeID {
@@ -731,6 +732,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case TypeParam:
 		if kind.Constraint != nil {
 			f(*kind.Constraint)
+		}
+		if kind.Default != nil {
+			f(*kind.Default)
 		}
 	case StructField:
 		f(kind.Type)
@@ -1060,6 +1064,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 				addAttr("constraint", nodeIDKind(*kind.Constraint))
 			} else {
 				addChild("constraint", *kind.Constraint)
+			}
+		}
+		if kind.Default != nil {
+			if !children {
+				addAttr("default", nodeIDKind(*kind.Default))
+			} else {
+				addChild("default", *kind.Default)
 			}
 		}
 	case StructField:
