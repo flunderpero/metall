@@ -24,7 +24,7 @@ type Scope struct {
 	Parent    *Scope
 	Node      NodeID
 	Namespace string
-	bindings  map[string]*Binding
+	Bindings  map[string]*Binding
 }
 
 type Binding struct {
@@ -38,16 +38,16 @@ func NewScope(root NodeID, id ScopeID, parent *Scope, namespace string) *Scope {
 }
 
 func (s *Scope) Bind(name string, decl NodeID) (*Binding, bool) {
-	if b, ok := s.bindings[name]; ok {
+	if b, ok := s.Bindings[name]; ok {
 		return b, false
 	}
 	b := &Binding{BindingID(decl), name, decl}
-	s.bindings[name] = b
+	s.Bindings[name] = b
 	return b, true
 }
 
 func (s *Scope) Lookup(name string) (*Binding, *Scope, bool) {
-	if b, ok := s.bindings[name]; ok {
+	if b, ok := s.Bindings[name]; ok {
 		return b, s, true
 	}
 	if s.Parent != nil {

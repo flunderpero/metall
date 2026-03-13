@@ -18,7 +18,7 @@ lint-fixme:
     ! git --no-pager grep -i -n --untracked "fixme" -- :^.golangci.yaml :^.spell :^justfile :^AGENTS.md
 
 lint-no-excluded-tests:
-    ! git --no-pager grep -i -n --untracked "!only" -- :^justfile :^AGENTS.md
+    ! git --no-pager grep -i -n --untracked "!only" -- :^justfile :^AGENTS.md :^metallc/internal/test/
 
 fmt:
     go tool golangci-lint fmt ./metallc/...

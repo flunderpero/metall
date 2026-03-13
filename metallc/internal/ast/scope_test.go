@@ -6,202 +6,34 @@ import (
 	"testing"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
+	mdtest "github.com/flunderpero/metall/metallc/internal/test"
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
-func TestScopes(t *testing.T) {
-	tests := []struct {
-		name   string
-		src    string
-		scopes string // "scopeID:parentID" pairs, one per line
-		nodes  string // "nodeDebug:scopeID" pairs, one per line
-	}{
-		{
-			name: "simple var",
-			src:  `let x = 1`,
-			scopes: `
-				a:-
-			`,
-			nodes: `
-				n1:Int(value=1):a
-				n2:Var(name="x",mut=false,expr=n1:Int):a
-			`,
-		},
-		{
-			name: "block creates scope",
-			src:  `{ let x = 1 }`,
-			scopes: `
-				a:-
-				b:a
-			`,
-			nodes: `
-				n1:Int(value=1):b
-				n2:Var(name="x",mut=false,expr=n1:Int):b
-				n3:Block(exprs=[n2:Var]):a
-			`,
-		},
-		{
-			name: "nested blocks",
-			src:  `{ let x = 1 { let y = 2 } }`,
-			scopes: `
-				a:-
-				b:a
-				c:b
-			`,
-			nodes: `
-				n1:Int(value=1):b
-				n2:Var(name="x",mut=false,expr=n1:Int):b
-				n3:Int(value=2):c
-				n4:Var(name="y",mut=false,expr=n3:Int):c
-				n5:Block(exprs=[n4:Var]):b
-				n6:Block(exprs=[n2:Var,n5:Block]):a
-			`,
-		},
-		{
-			name: "function",
-			src:  `fun foo(a Int) Int { a }`,
-			scopes: `
-				a:-
-				b:a
-				c:b
-			`,
-			nodes: `
-				n1:SimpleType(name="Int"):b
-				n2:FunParam(name="a",type=n1:SimpleType):b
-				n3:SimpleType(name="Int"):b
-				n4:Ident(name="a"):c
-				n5:Block(exprs=[n4:Ident]):b
-				n6:Fun(name="foo",params=[n2:FunParam],returnType=n3:SimpleType,block=n5:Block):a
-			`,
-		},
-		{
-			name: "function with nested block",
-			src:  `fun foo() void { { 1 } }`,
-			scopes: `
-				a:-
-				b:a
-				c:b
-				d:c
-			`,
-			nodes: `
-				n1:SimpleType(name="void"):b
-				n2:Int(value=1):d
-				n3:Block(exprs=[n2:Int]):c
-				n4:Block(exprs=[n3:Block]):b
-				n5:Fun(name="foo",params=[],returnType=n1:SimpleType,block=n4:Block):a
-			`,
-		},
-		{
-			name: "struct creates scope",
-			src:  `struct Foo { one Int }`,
-			scopes: `
-				a:-
-				b:a
-			`,
-			nodes: `
-				n1:SimpleType(name="Int"):b
-				n2:StructField(name="one",mut=false,type=n1:SimpleType):b
-				n3:Struct(name="Foo",fields=[n2:StructField]):a
-			`,
-		},
-		{
-			name: "shape scope",
-			src:  `shape Showable { name Str fun Showable.str(self Showable) Str }`,
-			scopes: `
-				a:-
-				b:a
-				c:b
-			`,
-			nodes: `
-				n1:SimpleType(name="Str"):b
-				n2:StructField(name="name",mut=false,type=n1:SimpleType):b
-				n3:SimpleType(name="Showable"):c
-				n4:FunParam(name="self",type=n3:SimpleType):c
-				n5:SimpleType(name="Str"):c
-				n6:FunDecl(name="Showable.str",params=[n4:FunParam],returnType=n5:SimpleType):b
-				n7:Shape(name="Showable",fields=[n2:StructField],funs=[n6:FunDecl]):a
-			`,
-		},
-		{
-			name: "generic struct scope",
-			src:  `struct Foo<T> { value T }`,
-			scopes: `
-				a:-
-				b:a
-			`,
-			nodes: `
-				n1:TypeParam(name="T"):b
-				n2:SimpleType(name="T"):b
-				n3:StructField(name="value",mut=false,type=n2:SimpleType):b
-				n4:Struct(name="Foo",typeParams=[n1:TypeParam],fields=[n3:StructField]):a
-			`,
-		},
-		{
-			name: "match arms create scopes",
-			src:  `match x { case Int n: n case Str: 0 }`,
-			scopes: `
-				a:-
-				b:a
-				c:a
-			`,
-			nodes: `
-				n1:Ident(name="x"):a
-				n2:SimpleType(name="Int"):a
-				n3:Ident(name="n"):b
-				n4:Block(exprs=[n3:Ident]):a
-				n5:SimpleType(name="Str"):a
-				n6:Int(value=0):c
-				n7:Block(exprs=[n6:Int]):a
-				n8:Match(arms=2,expr=n1:Ident):a
-			`,
-		},
-		{
-			name: "match guard lives in body scope",
-			src:  `match x { case Int n if n > 0: n case Int: 0 }`,
-			scopes: `
-				a:-
-				b:a
-				c:a
-			`,
-			nodes: `
-				n1:Ident(name="x"):a
-				n2:SimpleType(name="Int"):a
-				n3:Ident(name="n"):b
-				n4:Int(value=0):b
-				n5:Binary(op=>,lhs=n3:Ident,rhs=n4:Int):b
-				n6:Ident(name="n"):b
-				n7:Block(exprs=[n6:Ident]):a
-				n8:SimpleType(name="Int"):a
-				n9:Int(value=0):c
-				n10:Block(exprs=[n9:Int]):a
-				n11:Match(arms=2,expr=n1:Ident):a
-			`,
-		},
+func TestScopesMD(t *testing.T) {
+	mdtest.RunFile(t, mdtest.File("scope_test.md"), mdtest.RunFunc(runScopeMDTest))
+}
+
+func runScopeMDTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[string]string {
+	results := map[string]string{}
+
+	source := base.NewSource("test.met", "test", true, []rune(tc.Input))
+	tokens := token.Lex(source)
+	parser := NewParser(tokens, NewAST(1))
+	nodeID, parseOK := parser.ParseExpr(0)
+	assert.Equal(0, len(parser.Diagnostics), "parse errors: %s", parser.Diagnostics)
+	assert.Equal(true, parseOK, "parser returned false")
+
+	g := BuildScopeGraph(parser.AST, []NodeID{nodeID})
+
+	if _, ok := tc.Want["scopes"]; ok {
+		results["scopes"] = collectScopes(parser.AST, g)
+	}
+	if _, ok := tc.Want["nodes"]; ok {
+		results["nodes"] = collectNodes(parser.AST, g)
 	}
 
-	assert := base.NewAssert(t)
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			source := base.NewSource("test.met", "test", true, []rune(tt.src))
-			tokens := token.Lex(source)
-			parser := NewParser(tokens, NewAST(1))
-			nodeID, parseOK := parser.ParseExpr(0)
-			assert.Equal(0, len(parser.Diagnostics), "parse errors: %s", parser.Diagnostics)
-			assert.Equal(true, parseOK, "parser returned false")
-
-			g := BuildScopeGraph(parser.AST, []NodeID{nodeID})
-
-			// Verify scopes: collect all scopes and check parent relationships.
-			gotScopes := collectScopes(parser.AST, g)
-			wantScopes := parseSnapshot(tt.scopes)
-			assert.Equal(wantScopes, gotScopes, "scopes mismatch")
-
-			// Verify nodes: check each node has the expected scope.
-			gotNodes := collectNodes(parser.AST, g)
-			wantNodes := parseSnapshot(tt.nodes)
-			assert.Equal(wantNodes, gotNodes, "nodes mismatch")
-		})
-	}
+	return results
 }
 
 func collectScopes(a *AST, g *ScopeGraph) string {
@@ -286,15 +118,4 @@ func collectNodes(a *AST, g *ScopeGraph) string {
 
 func scopeLetter(id ScopeID) string {
 	return string('a' + rune(id))
-}
-
-func parseSnapshot(s string) string {
-	var lines []string
-	for line := range strings.SplitSeq(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return strings.Join(lines, "\n")
 }

@@ -1,0 +1,3192 @@
+# E2E Tests
+
+## Compile
+
+**print str**
+
+```metall
+fun main() void { print_str("hello") }
+```
+
+```output
+hello
+```
+
+**int literal**
+
+```metall
+fun main() void { print_int(123) }
+```
+
+```output
+123
+```
+
+**str var**
+
+```metall
+fun main() void { let x = "hello" print_str(x) }
+```
+
+```output
+hello
+```
+
+**int var**
+
+```metall
+fun main() void { let x = 123 print_int(x) }
+```
+
+```output
+123
+```
+
+**bool var**
+
+```metall
+fun main() void { let x = true print_bool(x) }
+```
+
+```output
+true
+```
+
+**mut var reassign**
+
+```metall
+fun main() void { mut x = 123 print_int(x) x = 456 print_int(x) }
+```
+
+```output
+123
+456
+```
+
+**fun returns int**
+
+```metall
+fun foo() Int { 123 } fun main() void { print_int(foo()) }
+```
+
+```output
+123
+```
+
+**fun returns str**
+
+```metall
+fun foo() Str { "hello" } fun main() void { print_str(foo()) }
+```
+
+```output
+hello
+```
+
+**fun returns bool**
+
+```metall
+fun foo() Bool { true } fun main() void { print_bool(foo()) }
+```
+
+```output
+true
+```
+
+**fun with int param**
+
+```metall
+fun foo(a Int) Int { a } fun main() void { print_int(foo(123)) }
+```
+
+```output
+123
+```
+
+**fun with str param**
+
+```metall
+fun foo(a Str) Str { a } fun main() void { let x = foo("hello") print_str(x) }
+```
+
+```output
+hello
+```
+
+**fun with bool param**
+
+```metall
+fun foo(a Bool) Bool { a } fun main() void { print_bool(foo(true)) }
+```
+
+```output
+true
+```
+
+**fun with return**
+
+```metall
+fun foo() Int { return 123 } fun main() void { print_int(foo()) }
+```
+
+```output
+123
+```
+
+**fun with return struct**
+
+```metall
+struct Foo { one Str }
+fun foo() Foo { return Foo("hello") } 
+fun main() void { print_str(foo().one) }
+```
+
+```output
+hello
+```
+
+**fun with multiple return**
+
+```metall
+fun foo(a Int) Int { 
+    if a != 2 {
+        if a == 0 {
+            return 100
+        } else {
+            "just some expr"
+        }
+        return 101
+    }
+    return a + 200
+} 
+
+fun main() void { 
+    print_int(foo(0)) 
+    print_int(foo(1)) 
+    print_int(foo(2)) 
+}
+```
+
+```output
+100
+101
+202
+```
+
+**return void in if**
+
+```metall
+fun foo(x Int) void {
+    if x > 0 {
+        return void
+    }
+    print_int(x)
+}
+fun main() void { foo(1) foo(0) }
+```
+
+```output
+0
+```
+
+**free flowing fun**
+
+```metall
+fun double(a Int) Int { a + a }
+
+fun math(a Int, f fun(Int) Int) Int { f(a) }
+
+fun main() void {
+    print_int(math(7, double))
+    let local_math = math
+    let local_double = double
+    print_int(local_math(9, double))
+}
+```
+
+```output
+14
+18
+```
+
+**free flowing fun reassign**
+
+```metall
+fun double(a Int) Int { a + a }
+fun triple(a Int) Int { a + a + a }
+
+fun main() void {
+    mut f = double
+    print_int(f(5))
+    f = triple
+    print_int(f(5))
+}
+```
+
+```output
+10
+15
+```
+
+**free flowing fun qualified call**
+
+```metall
+struct Foo { x Int }
+fun Foo.get(self Foo) Int { self.x }
+
+fun main() void {
+    let f = Foo(42)
+    print_int(Foo.get(f))
+    let g = Foo.get
+    print_int(g(f))
+}
+```
+
+```output
+42
+42
+```
+
+**free flowing fun return**
+
+```metall
+fun double(a Int) Int { a + a }
+
+fun get_double() fun(Int) Int { double }
+
+fun main() void {
+    let f = get_double()
+    print_int(f(5))
+}
+```
+
+```output
+10
+```
+
+**free flowing fun in struct field**
+
+```metall
+fun double(a Int) Int { a + a }
+
+struct Foo { one fun(Int) Int }
+
+fun main() void {
+    let x = Foo(double)
+    print_int(x.one(5))
+    let y = x.one
+    print_int(y(5))
+}
+```
+
+```output
+10
+10
+```
+
+**free flowing fun higher order**
+
+```metall
+fun double(a Int) Int { a + a }
+fun apply_twice(f fun(Int) Int, x Int) Int { f(f(x)) }
+fun main() void {
+    print_int(apply_twice(double, 3))
+}
+```
+
+```output
+12
+```
+
+**free flowing fun recursive as value**
+
+```metall
+fun factorial(n Int) Int {
+    if n == 0 { 1 } else { n * factorial(n - 1) }
+}
+fun apply(f fun(Int) Int, x Int) Int { f(x) }
+fun main() void {
+    print_int(apply(factorial, 5))
+}
+```
+
+```output
+120
+```
+
+**free flowing fun builtin as value**
+
+```metall
+fun apply(f fun(Int) void, x Int) void { f(x) }
+fun main() void {
+    let f = print_int
+    f(42)
+    apply(print_int, 99)
+}
+```
+
+```output
+42
+99
+```
+
+**free flowing fun if branches**
+
+```metall
+fun double(a Int) Int { a + a }
+fun triple(a Int) Int { a + a + a }
+fun pick(use_double Bool) fun(Int) Int {
+    if use_double { double } else { triple }
+}
+fun main() void {
+    let f = pick(true)
+    print_int(f(5))
+    let g = pick(false)
+    print_int(g(5))
+}
+```
+
+```output
+10
+15
+```
+
+**nested fun**
+
+```metall
+fun foo() Int { 321 }
+fun main() void {
+    fun foo() Int { 
+        fun foo() Int { 123 }
+        foo()
+    }
+    print_int(foo())
+}
+```
+
+```output
+123
+```
+
+**nested fun mutual recursion**
+
+```metall
+fun main() void {
+    fun is_even(n Int) Bool {
+        if n == 0 { true } else { is_odd(n - 1) }
+    }
+    fun is_odd(n Int) Bool {
+        if n == 0 { false } else { is_even(n - 1) }
+    }
+    print_bool(is_even(4))
+    print_bool(is_odd(4))
+}
+```
+
+```output
+true
+false
+```
+
+**nested fun as value**
+
+```metall
+fun apply(f fun(Int) Int, x Int) Int { f(x) }
+fun main() void {
+    fun double(a Int) Int { a + a }
+    print_int(apply(double, 21))
+}
+```
+
+```output
+42
+```
+
+**nested struct**
+
+```metall
+struct Foo { x Int }
+fun Foo.foo(self Foo) Int { self.x }
+
+fun main() void {
+    struct Foo { x Int y Str }
+    fun Foo.bar(f Foo) Int { f.x + 1 }
+    let f = Foo(42, "hello")
+    print_int(f.bar())
+    print_str(f.y)
+}
+```
+
+```output
+43
+hello
+```
+
+**nested fun same name different scopes**
+
+```metall
+fun main() void {
+    fun foo() Int {
+        fun helper() Int { 10 }
+        helper()
+    }
+    fun bar() Int {
+        fun helper() Int { 20 }
+        helper()
+    }
+    print_int(foo() + bar())
+}
+```
+
+```output
+30
+```
+
+**block expression**
+
+```metall
+fun main() void { let x = { "hello" } print_str(x) }
+```
+
+```output
+hello
+```
+
+**var expr is void**
+
+```metall
+fun main() void { print_str("hello") let x = 123 }
+```
+
+```output
+hello
+```
+
+**assign expr is void**
+
+```metall
+fun main() void { print_str("hello") mut x = 123 x = 321 }
+```
+
+```output
+hello
+```
+
+**if true branch**
+
+```metall
+fun main() void { let x = if true { 123 } else { 321 } print_int(x) }
+```
+
+```output
+123
+```
+
+**if false branch**
+
+```metall
+fun main() void { let x = if false { 123 } else { 321 } print_int(x) }
+```
+
+```output
+321
+```
+
+**if assigns to mut var**
+
+```metall
+fun main() void { mut x = 1 if true { x = 123 } else { x = 321 } print_int(x) }
+```
+
+```output
+123
+```
+
+**nested if**
+
+```metall
+fun main() void {
+    let x = if true {
+        if false { 1 } else { 123 }
+    } else {
+        2
+    }
+    print_int(x)
+}
+```
+
+```output
+123
+```
+
+**ref deref**
+
+```metall
+fun main() void { mut x = 123 mut y = &mut x print_int(y.*) y.* = 321 print_int(x) }
+```
+
+```output
+123
+321
+```
+
+**nested ref deref**
+
+```metall
+fun main() void { 
+    mut x = 123 
+    mut y = &mut x
+    mut z = &mut y
+    print_int(y.*)
+    y.* = 321 
+    print_int(x)
+    z.*.* = 111
+    print_int(x)
+}
+```
+
+```output
+123
+321
+111
+```
+
+**deref assign through &mut param**
+
+```metall
+fun foo(a &mut Int) void { 
+    print_int(a.*)
+    a.* = 321 
+}
+fun main() void { 
+    mut x = 123 
+    foo(&mut x)
+    print_int(x)
+}
+```
+
+```output
+123
+321
+```
+
+**struct field read and write**
+
+```metall
+struct Foo {
+    mut one Str
+    mut two Int
+}
+
+fun main() void {
+    mut x = Foo("hello", 123)
+    print_str(x.one)
+    print_int(x.two)
+
+    x.one = "bye"
+    x.two = 456
+    print_str(x.one)
+    print_int(x.two)
+}
+```
+
+```output
+hello
+123
+bye
+456
+```
+
+**struct as value param**
+
+```metall
+struct Foo {
+    one Str
+}
+
+fun foo(a Foo) void {
+    print_str(a.one)
+}
+
+fun main() void {
+    let x = Foo("hello")
+    foo(x)
+}
+```
+
+```output
+hello
+```
+
+**struct &ref and &mut ref params**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+fun foo(a &Foo) void {
+    print_str(a.one)
+}
+
+fun bar(a &mut Foo, b Str) void {
+    a.one = b
+}
+
+fun main() void {
+    mut x = Foo("hello")
+    foo(&x)
+
+    bar(&mut x, "bye")
+    foo(&x)
+}
+```
+
+```output
+hello
+bye
+```
+
+**fun returns struct**
+
+```metall
+struct Foo {
+    one Str
+}
+
+fun foo() Foo {
+    Foo("hello")
+}
+
+fun main() void {
+    let x = foo()
+    print_str(x.one)
+}
+```
+
+```output
+hello
+```
+
+**nested struct field access**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+struct Bar {
+    one Foo
+    mut two Foo
+}
+
+fun main() void {
+    mut x = Bar(Foo("hello"), Foo("world"))
+    print_str(x.one.one)
+    print_str(x.two.one)
+    x.two.one = "bye"
+    print_str(x.two.one)
+}
+```
+
+```output
+hello
+world
+bye
+```
+
+**struct value copy**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+fun main() void {
+    mut x = Foo("hello")
+    mut y = x
+    y.one = "world"
+    print_str(x.one)
+    print_str(y.one)
+}
+```
+
+```output
+hello
+world
+```
+
+**nested struct value copy**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+struct Bar {
+    mut one Foo
+}
+
+fun main() void {
+    mut x = Bar(Foo("hello"))
+    mut y = Foo("world")
+    x.one = y
+    y.one = "bye"
+    print_str(x.one.one)
+    print_str(y.one)
+}
+```
+
+```output
+world
+bye
+```
+
+**struct with &ref field**
+
+```metall
+struct Wrapper {
+    one Int
+    two &Int
+}
+
+fun main() void {
+    mut x = 42
+    let y = Wrapper(1, &x)
+    print_int(y.one)
+    print_int(y.two.*)
+    x = 99
+    print_int(y.two.*)
+}
+```
+
+```output
+1
+42
+99
+```
+
+**struct ref alias sees mutation**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+fun main() void {
+    mut x = Foo("hello")
+    let y = &x
+    let z = y
+    x.one = "world"
+    print_str(z.one)
+}
+```
+
+```output
+world
+```
+
+**struct in if else**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+fun main() void {
+    let x = if true { Foo("hello") } else { Foo("world") }
+    print_str(x.one)
+    mut y = if false { Foo("hello") } else { Foo("world") }
+    print_str(y.one)
+    y.one = "bye"
+    print_str(y.one)
+}
+```
+
+```output
+hello
+world
+bye
+```
+
+**struct reassign from if else**
+
+```metall
+struct Foo {
+    one Str
+}
+
+fun main() void {
+    mut x = Foo("hello")
+    print_str(x.one)
+    x = if true { Foo("world") } else { Foo("bye") }
+    print_str(x.one)
+}
+```
+
+```output
+hello
+world
+```
+
+**struct from block as arg**
+
+```metall
+struct Foo {
+    one Str
+}
+
+fun foo(a Foo) void {
+    print_str(a.one)
+}
+
+fun main() void {
+    foo({ Foo("hello") })
+}
+```
+
+```output
+hello
+```
+
+**generic struct**
+
+```metall
+struct Pair<T> {
+    first T
+    second T
+}
+
+fun main() void {
+    let p = Pair<Int>(10, 20)
+    print_int(p.first)
+    print_int(p.second)
+}
+```
+
+```output
+10
+20
+```
+
+**generic fun**
+
+```metall
+struct Box<T> { value T }
+fun id<T>(x T) T { x }
+
+fun main() void {
+    print_int(id<Int>(42))
+    print_str(id<Str>("hello"))
+    let b = id<Box<Int>>(Box<Int>(99))
+    print_int(b.value)
+}
+```
+
+```output
+42
+hello
+99
+```
+
+**generic fun as value**
+
+```metall
+fun id<T>(x T) T { x }
+
+fun main() void {
+    let f = id<Int>
+    print_int(f(42))
+    let g = id<Str>
+    print_str(g("hello"))
+}
+```
+
+```output
+42
+hello
+```
+
+**method on generic struct**
+
+```metall
+struct Foo<T> { one T }
+fun Foo.bar<T>(f Foo<T>, a T, b Bool) T { if b { return f.one } a }
+
+fun main() void {
+    let x = Foo<Int>(42)
+    print_int(x.bar(99, true))
+    print_int(x.bar(99, false))
+}
+```
+
+```output
+42
+99
+```
+
+**generic method**
+
+```metall
+struct Foo { value Int }
+fun Foo.get<T>(f Foo, x T) T { x }
+
+fun main() void {
+    let f = Foo(42)
+    print_int(f.get<Int>(1))
+    print_str(f.get<Str>("hello"))
+}
+```
+
+```output
+1
+hello
+```
+
+**generic method with extra type param on generic struct**
+
+```metall
+struct Foo<T> { one T }
+fun Foo.bar<T, U>(f Foo<T>, a U) U { a }
+
+fun main() void {
+    let x = Foo<Int>(42)
+    print_str(x.bar<Str>("hello"))
+    print_int(x.bar<Int>(99))
+}
+```
+
+```output
+hello
+99
+```
+
+**method on generic struct accesses field**
+
+```metall
+struct Pair<A, B> { first A second B }
+fun Pair.get_first<A, B>(p Pair<A, B>) A { p.first }
+fun Pair.get_second<A, B>(p Pair<A, B>) B { p.second }
+
+fun main() void {
+    let p = Pair<Int, Str>(42, "hello")
+    print_int(p.get_first())
+    print_str(p.get_second())
+}
+```
+
+```output
+42
+hello
+```
+
+**method on multi-param generic struct with extra type param**
+
+```metall
+struct Pair<A, B> { first A second B }
+fun Pair.swap<A, B>(p Pair<A, B>) Pair<B, A> { Pair<B, A>(p.second, p.first) }
+fun Pair.map_first<A, B, C>(p Pair<A, B>, f fun(A) C) Pair<C, B> { Pair<C, B>(f(p.first), p.second) }
+
+fun to_str(x Int) Str { "mapped" }
+
+fun main() void {
+    let p = Pair<Int, Str>(42, "hello")
+    let s = p.swap()
+    print_str(s.first)
+    print_int(s.second)
+    let m = p.map_first<Str>(to_str)
+    print_str(m.first)
+    print_str(m.second)
+}
+```
+
+```output
+hello
+42
+mapped
+hello
+```
+
+**generic method chain**
+
+```metall
+struct Wrap<T> { inner T }
+fun Wrap.unwrap<T>(w Wrap<T>) T { w.inner }
+
+fun main() void {
+    let w = Wrap<Wrap<Int>>(Wrap<Int>(99))
+    let inner = w.unwrap()
+    print_int(inner.unwrap())
+}
+```
+
+```output
+99
+```
+
+**generic struct method calls generic fun**
+
+```metall
+struct Box<T> { value T }
+fun id<T>(x T) T { x }
+fun Box.get_id<T>(b Box<T>) T { id<T>(b.value) }
+
+fun main() void {
+    let b = Box<Int>(7)
+    print_int(b.get_id())
+}
+```
+
+```output
+7
+```
+
+**generic shadowing**
+
+```metall
+struct Box<T> { value T }
+fun id<T>(x T) T { x }
+
+fun main() void {
+    print_int(id<Int>(1))
+    print_int(Box<Int>(2).value)
+    {
+        struct Box<T> { value T value2 T }
+        fun id<T>(x T) T { x }
+        print_int(id<Int>(3))
+        print_int(Box<Int>(4, 5).value2)
+    }
+}
+```
+
+```output
+1
+2
+3
+5
+```
+
+**generic struct method called from generic fun**
+
+```metall
+struct Box<V> {
+    mut items []V
+}
+
+fun Box.len<V>(b &Box<V>) Int {
+    b.items.len
+}
+
+fun wrap<V>(@a Arena, v V) Int {
+    let items = @a.slice<V>(2, v)
+    let b = @a.new_mut<Box<V>>(Box<V>(items))
+    b.len()
+}
+
+fun main() void {
+    let @a = Arena()
+    print_int(wrap<Str>(@a, "x"))
+}
+```
+
+```output
+2
+```
+
+**forward declared fun**
+
+```metall
+fun main() void {
+    print_int(foo())
+}
+
+fun foo() Int {
+    123
+}
+```
+
+```output
+123
+```
+
+**heap alloc with arena**
+
+```metall
+struct Foo {
+    one Str
+}
+
+fun foo(@a Arena) &Foo {
+    @a.new<Foo>(Foo("hello"))
+}
+
+fun main() void {
+    let @a = Arena()
+    let x = @a.new<Foo>(Foo("x"))
+    let y = @a.new<Foo>(Foo("y"))
+    {
+        let @b = Arena()
+        let z = @b.new<Foo>(Foo("z"))
+        print_str(z.one)
+    }
+    print_str(y.one)
+    print_str(x.one)
+    let w = foo(@a)
+    print_str(w.one)
+}
+```
+
+```output
+z
+y
+x
+hello
+```
+
+**int array**
+
+```metall
+fun main() void {
+    let x = [1, 2, 3]
+    print_int(x[2])
+    print_int(x[1])
+    print_int(x[0])
+}
+```
+
+```output
+3
+2
+1
+```
+
+**array index with variable**
+
+```metall
+fun main() void {
+    mut x = [10, 20, 30]
+    let i = 1
+    print_int(x[i])
+    x[i] = 99
+    print_int(x[i])
+}
+```
+
+```output
+20
+99
+```
+
+**struct array**
+
+```metall
+struct Foo {
+    one Str
+}
+
+fun main() void {
+    let x = [
+        Foo("x"),
+        Foo("y"),
+        Foo("z"),
+    ]
+    print_str(x[2].one)
+    print_str(x[1].one)
+    print_str(x[0].one)
+}
+```
+
+```output
+z
+y
+x
+```
+
+**nested array**
+
+```metall
+fun main() void {
+    let x = [
+        [1, 2],
+        [3, 4],
+        [5, 6],
+    ]
+    let y = x[0]
+    print_int(y[1])
+    let z = x[1]
+    print_int(z[0])
+    let w = x[2]
+    print_int(w[1])
+}
+```
+
+```output
+2
+3
+6
+```
+
+**array in struct**
+
+```metall
+struct Foo {
+    one [3]Int
+}
+
+fun main() void {
+    let x = Foo([1, 2, 3])
+    print_int(x.one[1])
+}
+```
+
+```output
+2
+```
+
+**array with refs**
+
+```metall
+struct Foo {
+     one Str
+}
+
+fun main() void {
+    let x = Foo("x")
+    let y = Foo("y")
+    let z = [x, y]
+    print_str(z[1].one)
+    print_str(z[0].one)
+
+    let w = 1
+    let v = 2
+    let u = [&w, &v]
+    print_int(u[1].*)
+    print_int(u[0].*)
+}
+```
+
+```output
+y
+x
+2
+1
+```
+
+**array index write**
+
+```metall
+fun main() void {
+    mut x = [1, 2, 3]
+    print_int(x[1])
+    x[1] = 4
+    print_int(x[1])
+}
+```
+
+```output
+2
+4
+```
+
+**array struct index write**
+
+```metall
+struct Foo { one Str }
+
+fun main() void {
+    mut x = [Foo("x"), Foo("y")]
+    print_str(x[0].one)
+    x[0] = Foo("z")
+    print_str(x[0].one)
+}
+```
+
+```output
+x
+z
+```
+
+**array of refs index write**
+
+```metall
+struct Foo { one Str }
+
+fun main() void {
+    let x = Foo("x")
+    let y = Foo("y")
+    let z = Foo("z")
+    mut w = [&x, &y]
+    print_str(w[0].one)
+    w[0] = &z
+    print_str(w[0].one)
+}
+```
+
+```output
+x
+z
+```
+
+**heap alloc slice**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice_mut<Int>(5, 0)
+    x[1] = 1
+    x[2] = 2
+
+    print_int(x[0])
+    print_int(x[1])
+    print_int(x[2])
+}
+```
+
+```output
+0
+1
+2
+```
+
+**heap alloc struct is ref aliased**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+fun main() void {
+    let @a = Arena()
+    mut x = @a.new_mut<Foo>(Foo("hello"))
+    mut y = x
+    y.one = "world"
+    print_str(x.one)
+    print_str(y.one)
+}
+```
+
+```output
+world
+world
+```
+
+**heap alloc slice is aliased**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice_uninit_mut<Int>(3)
+    x[0] = 42
+    let y = x
+    y[0] = 99
+    print_int(x[0])
+    print_int(y[0])
+}
+```
+
+```output
+99
+99
+```
+
+**heap alloc immutable struct read**
+
+```metall
+struct Foo {
+    one Str
+}
+
+fun main() void {
+    let @a = Arena()
+    let x = @a.new<Foo>(Foo("hello"))
+    print_str(x.one)
+}
+```
+
+```output
+hello
+```
+
+**heap alloc mut struct as param**
+
+```metall
+struct Foo {
+    mut one Str
+}
+
+fun set(a &mut Foo, b Str) void {
+    a.one = b
+}
+
+fun main() void {
+    let @a = Arena()
+    let x = @a.new_mut<Foo>(Foo("hello"))
+    set(x, "world")
+    print_str(x.one)
+}
+```
+
+```output
+world
+```
+
+**heap alloc slice read**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice_uninit_mut<Int>(3)
+    x[0] = 42
+    let y = @a.slice_uninit<Int>(3)
+    print_int(x[0])
+}
+```
+
+```output
+42
+```
+
+**slice copy aliases underlying data**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice_uninit_mut<Int>(3)
+    x[0] = 42
+    let y = x
+    y[0] = 99
+    print_int(x[0])
+    print_int(y[0])
+}
+```
+
+```output
+99
+99
+```
+
+**make slice**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let size = 3
+    let x = @a.slice_uninit_mut<Int>(size)
+    x[0] = 10
+    x[1] = 20
+    x[2] = 30
+
+    print_int(x[0])
+    print_int(x[1])
+    print_int(x[2])
+    print_int(x.len)
+}
+```
+
+```output
+10
+20
+30
+3
+```
+
+**slice index with variable**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice_uninit_mut<Int>(3)
+    x[0] = 10
+    x[1] = 20
+    x[2] = 30
+    let i = 2
+    print_int(x[i])
+    x[i] = 99
+    print_int(x[i])
+}
+```
+
+```output
+30
+99
+```
+
+**make slice with default value**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice<Int>(100, 77)
+    print_int(x[0])
+    print_int(x[50])
+    print_int(x[99])
+}
+```
+
+```output
+77
+77
+77
+```
+
+**make slice with default value 2**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice<Int>(100, 77)
+    print_int(x[0])
+    print_int(x[50])
+    print_int(x[99])
+}
+```
+
+```output
+77
+77
+77
+```
+
+**make uninit then write**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice_uninit_mut<Int>(100)
+    x[99] = 42
+    print_int(x[99])
+}
+```
+
+```output
+42
+```
+
+**make uninit slice then write**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice_uninit_mut<Int>(100)
+    x[99] = 42
+    print_int(x[99])
+}
+```
+
+```output
+42
+```
+
+**make struct slice with default value 1**
+
+```metall
+struct Foo {
+    one Int
+    two Str
+}
+
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice<Foo>(100, Foo(42, "hello"))
+    print_int(x[0].one)
+    print_str(x[0].two)
+    print_int(x[50].one)
+    print_str(x[50].two)
+    print_int(x[99].one)
+    print_str(x[99].two)
+}
+```
+
+```output
+42
+hello
+42
+hello
+42
+hello
+```
+
+**make struct slice with default value 2**
+
+```metall
+struct Foo {
+    one Int
+    two Str
+}
+
+fun main() void {
+    let @a = Arena()
+    let x = @a.slice<Foo>(100, Foo(42, "hello"))
+    print_int(x[0].one)
+    print_str(x[0].two)
+    print_int(x[50].one)
+    print_str(x[50].two)
+    print_int(x[99].one)
+    print_str(x[99].two)
+}
+```
+
+```output
+42
+hello
+42
+hello
+42
+hello
+```
+
+**make ref slice with default value 1**
+
+```metall
+struct Foo {
+    mut one Int
+    two Str
+}
+
+fun main() void {
+    let @a = Arena()
+    let def = @a.new_mut<Foo>(Foo(42, "hello"))
+    let x = @a.slice_mut<&mut Foo>(3, def)
+    print_int(x[0].one)
+    print_int(x[2].one)
+    x[0].one = 99
+    print_int(x[1].one)
+    print_int(x[2].one)
+}
+```
+
+```output
+42
+42
+99
+99
+```
+
+**make ref slice with default value 2**
+
+```metall
+struct Foo {
+    mut one Int
+    two Str
+}
+
+fun main() void {
+    let @a = Arena()
+    let def = @a.new_mut<Foo>(Foo(42, "hello"))
+    let x = @a.slice_mut<&mut Foo>(3, def)
+    print_int(x[0].one)
+    print_int(x[2].one)
+    x[0].one = 99
+    print_int(x[1].one)
+    print_int(x[2].one)
+}
+```
+
+```output
+42
+42
+99
+99
+```
+
+**allocate multidimensional slice**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let m = @a.slice_mut<[]Int>(2, [])
+    m[0] = @a.slice<Int>(3, 10)
+    m[1] = @a.slice<Int>(3, 40)
+    print_int(m[0][1])
+    print_int(m[1][2])
+}
+```
+
+```output
+10
+40
+```
+
+**make multidimensional slice**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let m = @a.slice_mut<[]Int>(2, [])
+    m[0] = @a.slice<Int>(3, 20)
+    m[1] = @a.slice<Int>(3, 60)
+    print_int(m[0][1])
+    print_int(m[1][2])
+}
+```
+
+```output
+20
+60
+```
+
+**empty slice resets slice**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    mut x = @a.slice<Int>(3, 42)
+    print_int(x[1])
+    x = []
+    print_int(x.len)
+}
+```
+
+```output
+42
+0
+```
+
+**update array element in place**
+
+```metall
+fun main() void {
+    struct Foo { mut one Int }
+    mut a = [Foo(1)]
+    a[0].one = 42
+    print_int(a[0].one)
+}
+```
+
+```output
+42
+```
+
+**update slice element in place**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    struct Foo { mut one Int }
+    let a = @a.slice_uninit_mut<Foo>(1)
+    a[0] = Foo(1)
+    a[0].one = 42
+    print_int(a[0].one)
+}
+```
+
+```output
+42
+```
+
+**ref to array element**
+
+```metall
+fun main() void {
+    struct Foo { mut one Int }
+    mut a = [Foo(1)]
+    mut b = &mut a[0]
+    b.one = 42
+    print_int(a[0].one)
+}
+```
+
+```output
+42
+```
+
+**ref to slice element**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    struct Foo { mut one Int }
+    let a = @a.slice_uninit_mut<Foo>(1)
+    a[0] = Foo(1)
+    let b = &mut a[0]
+    b.one = 42
+    print_int(a[0].one)
+}
+```
+
+```output
+42
+```
+
+**arena alloc struct with alignment padding**
+
+```metall
+struct Padded { flag Bool value Int }
+
+fun main() void {
+    let @a = Arena()
+    let p = @a.new<Padded>(Padded(true, 42))
+    print_bool(p.flag)
+    print_int(p.value)
+    let s = @a.slice<Padded>(3, Padded(false, 99))
+    print_bool(s[0].flag)
+    print_int(s[0].value)
+    print_bool(s[2].flag)
+    print_int(s[2].value)
+}
+```
+
+```output
+true
+42
+false
+99
+false
+99
+```
+
+**subslice exclusive range**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30, 40, 50]
+    let s = arr[1..3]
+    print_int(s.len)
+    print_int(s[0])
+    print_int(s[1])
+}
+```
+
+```output
+2
+20
+30
+```
+
+**subslice inclusive range**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30, 40, 50]
+    let s = arr[1..=3]
+    print_int(s.len)
+    print_int(s[0])
+    print_int(s[2])
+}
+```
+
+```output
+3
+20
+40
+```
+
+**subslice open lo**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30, 40, 50]
+    let s = arr[..2]
+    print_int(s.len)
+    print_int(s[0])
+    print_int(s[1])
+}
+```
+
+```output
+2
+10
+20
+```
+
+**subslice open hi**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30, 40, 50]
+    let s = arr[3..]
+    print_int(s.len)
+    print_int(s[0])
+    print_int(s[1])
+}
+```
+
+```output
+2
+40
+50
+```
+
+**subslice of slice**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let sl = @a.slice_uninit_mut<Int>(5)
+    sl[0] = 100
+    sl[1] = 200
+    sl[2] = 300
+    sl[3] = 400
+    sl[4] = 500
+    let s = sl[2..4]
+    print_int(s.len)
+    print_int(s[0])
+    print_int(s[1])
+}
+```
+
+```output
+2
+300
+400
+```
+
+**mutate array through subslice**
+
+```metall
+fun main() void {
+    mut arr = [10, 20, 30, 40, 50]
+    mut s = arr[1..4]
+    s[0] = 99
+    s[2] = 88
+    print_int(arr[1])
+    print_int(arr[3])
+}
+```
+
+```output
+99
+88
+```
+
+**mutate slice through subslice**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let sl = @a.slice_uninit_mut<Int>(4)
+    sl[0] = 1
+    sl[1] = 2
+    sl[2] = 3
+    sl[3] = 4
+    let sub = sl[1..3]
+    sub[0] = 77
+    sub[1] = 88
+    print_int(sl[1])
+    print_int(sl[2])
+}
+```
+
+```output
+77
+88
+```
+
+**array len**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30, 40, 50]
+    print_int(arr.len)
+}
+```
+
+```output
+5
+```
+
+**int arithmetic**
+
+```metall
+fun main() void {
+    print_int(120 + 3)
+    print_int(44 - 2)
+    print_int(3 * 3)
+    print_int(9 / 3)
+    print_int(10 % 3)
+    print_int((U8(10) % 3).to_int())
+}
+```
+
+```output
+123
+42
+9
+3
+1
+1
+```
+
+**bool operators**
+
+```metall
+fun main() void {
+    print_bool(1 == 2)
+    print_bool(1 != 2)
+    print_bool(true == false)
+    print_bool(true != false)
+
+    print_bool(1 == 2 and 3 == 3)
+    print_bool(1 == 2 or 3 == 3)
+
+    print_bool(not true)
+}
+```
+
+```output
+false
+true
+false
+true
+false
+true
+false
+```
+
+**int comparison operators**
+
+```metall
+fun main() void {
+    print_bool(1 < 2)
+    print_bool(2 < 1)
+    print_bool(1 <= 1)
+    print_bool(1 <= 0)
+    print_bool(2 > 1)
+    print_bool(1 > 2)
+    print_bool(1 >= 1)
+    print_bool(0 >= 1)
+    print_bool(U8(1) < 2)
+}
+```
+
+```output
+true
+false
+true
+false
+true
+false
+true
+false
+true
+```
+
+**bitwise I8**
+
+```metall
+fun main() void {
+    let a = I8(90)
+    let b = I8(60)
+    print_int((a & b).to_int())
+    print_int((a | b).to_int())
+    print_int((a ^ b).to_int())
+    print_int((a << I8(1)).to_int())
+    print_int((a >> I8(2)).to_int())
+    print_int((~a).to_int())
+    let c = I8(0) - I8(100)
+    print_int((c >> I8(2)).to_int())
+    print_int((~c).to_int())
+}
+```
+
+```output
+24
+126
+102
+-76
+22
+-91
+-25
+99
+```
+
+**bitwise I16**
+
+```metall
+fun main() void {
+    let a = I16(90)
+    let b = I16(60)
+    print_int((a & b).to_int())
+    print_int((a | b).to_int())
+    print_int((a ^ b).to_int())
+    print_int((a << I16(4)).to_int())
+    print_int((a >> I16(2)).to_int())
+    print_int((~a).to_int())
+    let c = I16(0) - I16(1000)
+    print_int((c >> I16(3)).to_int())
+    print_int((~c).to_int())
+}
+```
+
+```output
+24
+126
+102
+1440
+22
+-91
+-125
+999
+```
+
+**bitwise I32**
+
+```metall
+fun main() void {
+    let a = I32(65280)
+    let b = I32(4080)
+    print_int((a & b).to_int())
+    print_int((a | b).to_int())
+    print_int((a ^ b).to_int())
+    print_int((a << I32(4)).to_int())
+    print_int((a >> I32(8)).to_int())
+    print_int((~a).to_int())
+    let c = I32(0) - I32(1)
+    print_int((c >> I32(16)).to_int())
+    print_int((~c).to_int())
+}
+```
+
+```output
+3840
+65520
+61680
+1044480
+255
+-65281
+-1
+0
+```
+
+**bitwise Int**
+
+```metall
+fun main() void {
+    let a = 3735928559
+    let b = 4294901760
+    print_int(a & b)
+    print_int(a | b)
+    print_int(a ^ b)
+    print_int(1 << 32)
+    print_int(a >> 16)
+    print_int(~a)
+    let c = 0 - 1
+    print_int(c >> 32)
+    print_int(~c)
+}
+```
+
+```output
+3735879680
+4294950639
+559070959
+4294967296
+57005
+-3735928560
+-1
+0
+```
+
+**bitwise U8**
+
+```metall
+fun main() void {
+    let a = U8(172)
+    let b = U8(58)
+    print_uint((a & b).to_u64())
+    print_uint((a | b).to_u64())
+    print_uint((a ^ b).to_u64())
+    print_uint((a << U8(1)).to_u64())
+    print_uint((a >> U8(3)).to_u64())
+    print_uint((~a).to_u64())
+}
+```
+
+```output
+40
+190
+150
+88
+21
+83
+```
+
+**bitwise U16**
+
+```metall
+fun main() void {
+    let a = U16(43981)
+    let b = U16(255)
+    print_uint((a & b).to_u64())
+    print_uint((a | b).to_u64())
+    print_uint((a ^ b).to_u64())
+    print_uint((a << U16(4)).to_u64())
+    print_uint((a >> U16(8)).to_u64())
+    print_uint((~a).to_u64())
+}
+```
+
+```output
+205
+44031
+43826
+48336
+171
+21554
+```
+
+**bitwise U32**
+
+```metall
+fun main() void {
+    let a = U32(3735928559)
+    let b = U32(4294901760)
+    print_uint((a & b).to_u64())
+    print_uint((a | b).to_u64())
+    print_uint((a ^ b).to_u64())
+    print_uint((U32(1) << U32(16)).to_u64())
+    print_uint((a >> U32(16)).to_u64())
+    print_uint((~a).to_u64())
+}
+```
+
+```output
+3735879680
+4294950639
+559070959
+65536
+57005
+559038736
+```
+
+**bitwise U64**
+
+```metall
+fun main() void {
+    let a = U64(16045690984503098046)
+    let b = U64(18446744069414584320)
+    print_uint(a & b)
+    print_uint(a | b)
+    print_uint(a ^ b)
+    print_uint(U64(1) << U64(48))
+    print_uint(a >> U64(32))
+    print_uint(~a)
+}
+```
+
+```output
+16045690981097406464
+18446744072820275902
+2401053091722869438
+281474976710656
+3735928559
+2401053089206453569
+```
+
+**conditional for loop**
+
+```metall
+fun main() void {
+    mut x = 0
+    for x != 3 {
+        print_int(x)
+        x = x + 1
+    }
+}
+```
+
+```output
+0
+1
+2
+```
+
+**unconditional for loop**
+
+```metall
+fun main() void {
+    mut x = 0
+    for {
+        x = x + 1
+        if x == 4 {
+            break
+        }
+        if x == 2 {
+            continue
+        }
+        print_int(x)
+    }
+}
+```
+
+```output
+1
+3
+```
+
+**for-in range**
+
+```metall
+fun main() void {
+    for i in 0..5 {
+        print_int(i)
+    }
+}
+```
+
+```output
+0
+1
+2
+3
+4
+```
+
+**for-in range inclusive**
+
+```metall
+fun main() void {
+    for i in 0..=3 {
+        print_int(i)
+    }
+}
+```
+
+```output
+0
+1
+2
+3
+```
+
+**for-in range with expressions**
+
+```metall
+fun main() void {
+    let start = 2
+    let end = 5
+    for i in start..end {
+        print_int(i)
+    }
+}
+```
+
+```output
+2
+3
+4
+```
+
+**for-in range with break**
+
+```metall
+fun main() void {
+    for i in 0..10 {
+        if i == 3 {
+            break
+        }
+        print_int(i)
+    }
+}
+```
+
+```output
+0
+1
+2
+```
+
+**for-in range with continue**
+
+```metall
+fun main() void {
+    for i in 0..5 {
+        if i == 2 {
+            continue
+        }
+        print_int(i)
+    }
+}
+```
+
+```output
+0
+1
+3
+4
+```
+
+**for-in range zero iterations**
+
+```metall
+fun main() void {
+    for i in 5..5 {
+        print_int(i)
+    }
+    print_int(99)
+}
+```
+
+```output
+99
+```
+
+**integer types**
+
+```metall
+fun main() void {
+    print_int(I8(127).to_int())
+    print_int((I8(0) - I8(1)).to_int())
+    print_int(I16(32767).to_int())
+    print_int(I32(2147483647).to_int())
+    print_int(U8(255).to_int())
+    print_int(U16(65535).to_int())
+    print_int(U32(4294967295).to_int())
+    print_uint(U64(18446744073709551615))
+}
+```
+
+```output
+127
+-1
+32767
+2147483647
+255
+65535
+4294967295
+18446744073709551615
+```
+
+**widening conversions**
+
+```metall
+fun main() void {
+    let x = I8(42)
+    print_int(x.to_i16().to_int())
+    print_int(x.to_i32().to_int())
+    print_int(x.to_int())
+    print_uint(U8(200).to_u16().to_u32().to_u64())
+    print_int(U8(200).to_i32().to_int())
+    print_int((I8(0) - I8(1)).to_i32().to_int())
+}
+```
+
+```output
+42
+42
+42
+200
+200
+-1
+```
+
+**wrapping conversions**
+
+```metall
+fun main() void {
+    print_int(I32(200).to_i8_wrapping().to_int())
+    print_int(2147483648.to_i32_wrapping().to_int())
+    print_int(U16(300).to_u8_wrapping().to_int())
+    print_int(U64(4294967296).to_u32_wrapping().to_int())
+    print_int((I8(0) - I8(1)).to_u8_wrapping().to_int())
+    print_uint((0 - 1).to_u64_wrapping())
+}
+```
+
+```output
+-56
+-2147483648
+44
+0
+255
+18446744073709551615
+```
+
+**clamped conversions**
+
+```metall
+fun main() void {
+    print_int(I32(200).to_i8_clamped().to_int())
+    print_int((I32(0) - I32(200)).to_i8_clamped().to_int())
+    print_int(U16(300).to_u8_clamped().to_int())
+    print_int(U16(100).to_u8_clamped().to_int())
+    print_uint((0 - 1).to_u64_clamped())
+    print_uint(42.to_u64_clamped())
+    print_int(U8(200).to_i8_clamped().to_int())
+    print_int(U8(50).to_i8_clamped().to_int())
+}
+```
+
+```output
+127
+-128
+255
+100
+0
+42
+127
+50
+```
+
+**typed int arithmetic**
+
+```metall
+fun main() void {
+    print_int((I32(10) + I32(20)).to_int())
+    print_int((I32(50) - I32(8)).to_int())
+    print_int((I32(6) * I32(7)).to_int())
+    print_int((I32(100) / I32(3)).to_int())
+    print_int((U8(255) / U8(2)).to_int())
+}
+```
+
+```output
+30
+42
+42
+33
+127
+```
+
+**rune literal and to_u32**
+
+```metall
+fun main() void {
+    print_uint('a'.to_u32().to_u64())
+    print_uint('z'.to_u32().to_u64())
+    print_uint('é'.to_u32().to_u64())
+}
+```
+
+```output
+97
+122
+233
+```
+
+**rune comparison**
+
+```metall
+fun main() void {
+    print_bool('a' == 'a')
+    print_bool('a' != 'b')
+    print_bool('a' == 'b')
+}
+```
+
+```output
+true
+true
+false
+```
+
+**rune arithmetic**
+
+```metall
+fun main() void {
+    let next = 'a' + 1
+    print_uint(next.to_u32().to_u64())
+    let diff = 'z' - 'a'
+    print_uint(diff.to_u32().to_u64())
+}
+```
+
+```output
+98
+25
+```
+
+**rune let binding**
+
+```metall
+fun main() void {
+    let r = 'x'
+    print_uint(r.to_u32().to_u64())
+}
+```
+
+```output
+120
+```
+
+**method call on struct**
+
+```metall
+struct Foo { x Int }
+fun Foo.get_x(self Foo) Int { self.x }
+fun main() void {
+    let f = Foo(42)
+    print_int(f.get_x())
+}
+```
+
+```output
+42
+```
+
+**method call with args**
+
+```metall
+struct Foo { x Int }
+fun Foo.add(self Foo, y Int) Int { self.x + y }
+fun main() void {
+    let f = Foo(10)
+    print_int(f.add(32))
+}
+```
+
+```output
+42
+```
+
+**method call on &ref**
+
+```metall
+struct Foo { x Int }
+fun Foo.get_x(self &Foo) Int { self.x }
+fun main() void {
+    let f = Foo(42)
+    let r = &f
+    print_int(r.get_x())
+}
+```
+
+```output
+42
+```
+
+**direct qualified call**
+
+```metall
+struct Foo { x Int }
+fun Foo.add(self Foo, y Int) Int { self.x + y }
+fun main() void {
+    let f = Foo(10)
+    print_int(Foo.add(f, 32))
+}
+```
+
+```output
+42
+```
+
+**method call on Int**
+
+```metall
+fun Int.double(self Int) Int { self + self }
+fun main() void {
+    let x = 21
+    print_int(x.double())
+}
+```
+
+```output
+42
+```
+
+**Str.byte_len method**
+
+```metall
+fun Str.byte_len(self Str) Int { self.data.len }
+fun main() void {
+    let s = "hello"
+    print_int(s.byte_len())
+    print_int("".byte_len())
+    print_int("abc".byte_len())
+}
+```
+
+```output
+5
+0
+3
+```
+
+**shape field access**
+
+```metall
+shape HasPair { one Str two Int }
+struct Pair { one Str two Int }
+fun first<T HasPair>(t T) Str { t.one }
+fun main() void {
+    let p = Pair("hello", 42)
+    print_str(first<Pair>(p))
+}
+```
+
+```output
+hello
+```
+
+**shape method call**
+
+```metall
+shape Showable {
+    fun Showable.show(self Showable) Str
+}
+struct Guitar {
+    name Str
+}
+fun Guitar.show(g Guitar) Str { g.name }
+fun display<T Showable>(t T) Str { t.show() }
+fun main() void {
+    print_str(display<Guitar>(Guitar("Telecaster")))
+}
+```
+
+```output
+Telecaster
+```
+
+**import local module**
+
+```metall
+use local::e2e
+
+fun main() void {
+    e2e::say_hello()
+
+    mut f = e2e::Foo(123)
+    f.print()
+
+    f.one = 321
+    e2e::Foo.print(f)
+}
+```
+
+```output
+hello
+123
+321
+```
+
+**union match int variants**
+
+```metall
+union IntOrBool = Int | Bool
+
+fun main() void {
+    let x = IntOrBool(42)
+    let y = IntOrBool(true)
+    match x {
+        case Int v: print_int(v)
+        case Bool v: print_bool(v)
+    }
+    match y {
+        case Int v: print_int(v)
+        case Bool v: print_bool(v)
+    }
+}
+```
+
+```output
+42
+true
+```
+
+**union match with struct variant**
+
+```metall
+struct Foo { one Str }
+union FooOrInt = Foo | Int
+
+fun main() void {
+    let x = FooOrInt(Foo("hello"))
+    let y = FooOrInt(99)
+    match x {
+        case Foo f: print_str(f.one)
+        case Int v: print_int(v)
+    }
+    match y {
+        case Foo f: print_str(f.one)
+        case Int v: print_int(v)
+    }
+}
+```
+
+```output
+hello
+99
+```
+
+**union match with else**
+
+```metall
+union ABC = Int | Bool | Str
+
+fun main() void {
+    let x = ABC(true)
+    match x {
+        case Int v: print_int(v)
+        else: print_str("other")
+    }
+}
+```
+
+```output
+other
+```
+
+**union match as expression**
+
+```metall
+union IntOrStr = Int | Str
+
+fun main() void {
+    let x = IntOrStr(42)
+    let result = match x {
+        case Int v: v + 1
+        case Str: 0
+    }
+    print_int(result)
+}
+```
+
+```output
+43
+```
+
+**union match without binding**
+
+```metall
+union AB = Int | Bool
+
+fun main() void {
+    let x = AB(42)
+    match x {
+        case Int: print_str("int")
+        case Bool: print_str("bool")
+    }
+}
+```
+
+```output
+int
+```
+
+**generic union match**
+
+```metall
+union Maybe<T> = T | Bool
+
+fun main() void {
+    let x = Maybe<Int>(42)
+    let y = Maybe<Int>(false)
+    match x {
+        case Int v: print_int(v)
+        case Bool: print_str("none")
+    }
+    match y {
+        case Int v: print_int(v)
+        case Bool: print_str("none")
+    }
+}
+```
+
+```output
+42
+none
+```
+
+**union match all arms return**
+
+```metall
+union IntOrBool = Int | Bool
+
+fun describe(x IntOrBool) Str {
+    match x {
+        case Int: return "int"
+        case Bool: return "bool"
+    }
+}
+
+fun main() void {
+    print_str(describe(IntOrBool(1)))
+    print_str(describe(IntOrBool(true)))
+}
+```
+
+```output
+int
+bool
+```
+
+**union match struct result**
+
+```metall
+struct Pair { a Int b Int }
+union IntOrPair = Int | Pair
+
+fun main() void {
+    let x = IntOrPair(Pair(10, 20))
+    let p = match x {
+        case Int v: Pair(v, v)
+        case Pair p: p
+    }
+    print_int(p.a)
+    print_int(p.b)
+}
+```
+
+```output
+10
+20
+```
+
+**union match with guard**
+
+```metall
+union IntOrStr = Int | Str
+
+fun classify(x IntOrStr) Str {
+    match x {
+        case Int n if n > 100: return "big"
+        case Int n if n > 0: return "positive"
+        case Int: return "non-positive"
+        case Str: return "string"
+    }
+}
+
+fun main() void {
+    print_str(classify(IntOrStr(200)))
+    print_str(classify(IntOrStr(42)))
+    print_str(classify(IntOrStr(0)))
+    print_str(classify(IntOrStr("hello")))
+}
+```
+
+```output
+big
+positive
+non-positive
+string
+```
+
+**union match guard with else**
+
+```metall
+union Tri = Int | Bool | Str
+
+fun main() void {
+    let x = Tri(42)
+    let result = match x {
+        case Int n if n > 10: "big int"
+        case Int: "small int"
+        else: "other"
+    }
+    print_str(result)
+}
+```
+
+```output
+big int
+```
+
+**union match guard falls through to else**
+
+```metall
+union Tri = Int | Bool | Str
+
+fun main() void {
+    let x = Tri(5)
+    let result = match x {
+        case Int n if n > 10: "big int"
+        else: "other"
+    }
+    print_str(result)
+}
+```
+
+```output
+other
+```
+
+**union match else with binding**
+
+```metall
+struct Pair { a Int b Int }
+union Three = Int | Bool | Pair
+
+fun describe(x Three) Str {
+    match x {
+        case Int: return "int"
+        else v:
+            match v {
+                case Int: "unreachable"
+                case Bool: "bool"
+                case Pair: "pair"
+            }
+    }
+}
+
+fun main() void {
+    print_str(describe(Three(42)))
+    print_str(describe(Three(true)))
+    print_str(describe(Three(Pair(1, 2))))
+}
+```
+
+```output
+int
+bool
+pair
+```
+
+## Panic
+
+**panic**
+
+```metall
+fun main() void {
+    panic("hello")
+}
+```
+
+```panic
+test.met:2:5: hello
+```
+
+**int divide by zero**
+
+```metall
+fun main() void {
+    1 / 0
+}
+```
+
+```panic
+test.met:2:5: division by zero
+```
+
+**int modulo by zero**
+
+```metall
+fun main() void {
+    1 % 0
+}
+```
+
+```panic
+test.met:2:5: division by zero
+```
+
+**rune arithmetic overflow**
+
+```metall
+fun main() void {
+    '😀' * 9
+}
+```
+
+```panic
+test.met:2:5: illegal rune
+```
+
+**rune arithmetic underflow**
+
+```metall
+fun main() void {
+    'a' - 'b'
+}
+```
+
+```panic
+test.met:2:5: illegal rune
+```
+
+**rune arithmetic into surrogate**
+
+```metall
+fun main() void {
+    '퟿' + 1
+}
+```
+
+```panic
+test.met:2:5: illegal rune
+```
+
+**array index out of bounds**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30]
+    print_int(arr[3])
+}
+```
+
+```panic
+test.met:3:15: index out of bounds
+```
+
+**array index negative**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30]
+    let i = 0 - 1
+    print_int(arr[i])
+}
+```
+
+```panic
+test.met:4:15: index out of bounds
+```
+
+**slice index out of bounds**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let s = @a.slice<Int>(3, 0)
+    print_int(s[3])
+}
+```
+
+```panic
+test.met:4:15: index out of bounds
+```
+
+**array write index out of bounds**
+
+```metall
+fun main() void {
+    mut arr = [10, 20, 30]
+    arr[3] = 99
+}
+```
+
+```panic
+test.met:3:5: index out of bounds
+```
+
+**subslice hi out of bounds**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30]
+    let s = arr[0..4]
+}
+```
+
+```panic
+test.met:3:13: slice out of bounds
+```
+
+**subslice lo greater than hi**
+
+```metall
+fun main() void {
+    let arr = [10, 20, 30]
+    let s = arr[2..1]
+}
+```
+
+```panic
+test.met:3:13: slice out of bounds
+```
+
+**subslice of slice out of bounds**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let s = @a.slice<Int>(3, 0)
+    let sub = s[0..4]
+}
+```
+
+```panic
+test.met:4:15: slice out of bounds
+```
+

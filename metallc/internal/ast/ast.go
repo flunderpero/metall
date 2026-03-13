@@ -796,7 +796,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	}
 }
 
-func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funlen
+func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) string { //nolint:funlen
+	skipNodeIDs := len(skipIDs) > 0 && skipIDs[0]
 	node := a.Node(id)
 	prefix := strings.Repeat(" ", indent)
 	kindName := strings.TrimPrefix(fmt.Sprintf("%T", node.Kind), "ast.")
@@ -1197,7 +1198,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
-	line := fmt.Sprintf("%s%s:%s(%s)", prefix, id, kindName, strings.Join(attrs, ","))
+	var line string
+	if skipNodeIDs {
+		line = fmt.Sprintf("%s%s(%s)", prefix, kindName, strings.Join(attrs, ","))
+	} else {
+		line = fmt.Sprintf("%s%s:%s(%s)", prefix, id, kindName, strings.Join(attrs, ","))
+	}
 	if !children || len(childAttrs) == 0 {
 		return line
 	}
@@ -1209,7 +1215,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			if len(child.ids) > 1 {
 				name = fmt.Sprintf("%s[%d]", name, i)
 			}
-			childDebug := a.Debug(childID, children, indent+2)
+			childDebug := a.Debug(childID, children, indent+2, skipNodeIDs)
 			childDebug = strings.TrimPrefix(childDebug, childPrefix)
 			lines = append(lines, fmt.Sprintf("%s%s=%s", childPrefix, name, childDebug))
 		}

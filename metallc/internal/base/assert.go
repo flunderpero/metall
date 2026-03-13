@@ -69,7 +69,7 @@ func (a Assert) Equal(expected, actual any, msg ...any) {
 	if strings.Contains(actualStr, "\n") {
 		actualStr = "\n" + actualStr
 	}
-	expectedStr, actualStr = diff(expectedStr, actualStr)
+	expectedStr, actualStr = Diff(expectedStr, actualStr)
 	a.tb.Fatalf(
 		"%sexpected: %v (%T), got: %v (%T)",
 		details(msg),
@@ -93,7 +93,7 @@ func (a Assert) NotEqual(expected, actual any, msg ...any) {
 	if strings.Contains(actualStr, "\n") {
 		actualStr = "\n" + actualStr
 	}
-	expectedStr, actualStr = diff(expectedStr, actualStr)
+	expectedStr, actualStr = Diff(expectedStr, actualStr)
 	a.tb.Fatalf(
 		"%sexpected: %v (%T) not to equal: %v (%T)",
 		details(msg),
@@ -169,7 +169,7 @@ func (a Assert) Calls(expected []MockCall, calls []MockCall, msg ...any) {
 }
 
 // Just mark different lines.
-func diff(a, b string) (string, string) {
+func Diff(a, b string) (string, string) {
 	if a == b {
 		return a, b
 	}
