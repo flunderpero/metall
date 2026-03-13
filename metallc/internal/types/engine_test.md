@@ -5796,6 +5796,45 @@ struct03 = Box<Int> { value Int }
 fun02    = fun(struct03) Int
 ```
 
+**Infer method type args from call**
+
+```metall
+{
+    struct Foo { name Str }
+    fun Foo.greet<T>(f Foo, x T) T { x }
+    let f = Foo("hi")
+    f.greet(42)
+}
+```
+
+```types
+Block: Int
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    TypeParam: T
+    FunParam: struct01
+      SimpleType: struct01
+    FunParam: T
+      SimpleType: T
+    SimpleType: T
+    Block: T
+      Ident: T
+  Var: void
+    TypeConstruction: struct01
+      Ident: struct01
+      String: Str
+  Call: Int
+    FieldAccess: fun02
+      Ident: struct01
+    Int: Int
+---
+struct01 = Foo { name Str }
+fun01    = fun(struct01, T) T
+fun02    = fun(struct01, Int) Int
+```
+
 **Infer type args from assignment target**
 
 ```metall

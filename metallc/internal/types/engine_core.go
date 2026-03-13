@@ -5,11 +5,6 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
-type (
-	QueryFunc         func(nodeID ast.NodeID) (TypeID, TypeStatus)
-	QueryWithHintFunc func(nodeID ast.NodeID, hint TypeID) (TypeID, TypeStatus)
-)
-
 type EngineCore struct {
 	ast         *ast.AST
 	debug       base.Debug

@@ -197,6 +197,37 @@ scope04:
 fun01 = fun() void
 ```
 
+**infer type args for generic function from import**
+
+```metall
+use generic
+fun main() void { let x = generic::identity(42) print_int(x) }
+```
+
+```bindings
+Module: scope01
+  Import: scope02
+  Fun: scope02
+    SimpleType: scope03
+    Block: scope03
+      Var: scope04
+        Call: scope04
+          Path: scope04
+          Int: scope04
+      Call: scope04
+        Ident: scope04
+        Ident: scope04
+---
+scope01:
+scope02:
+  generic: generic
+  main: fun01
+scope03:
+scope04:
+  x: Int
+fun01 = fun() void
+```
+
 **generic struct from import**
 
 ```metall
