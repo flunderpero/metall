@@ -636,6 +636,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = union
+	case token.Match:
+		match, ok := p.ParseMatch()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = match
 	case token.If:
 		if_, ok := p.ParseIf()
 		if !ok {
@@ -1053,6 +1059,32 @@ func (p *Parser) ParseFor() (NodeID, bool) {
 	return p.NewFor(nil, cond, body, span.Combine(p.span())), true
 }
 
+func (p *Parser) ParseMatch() (NodeID, bool) {
+	t, ok := p.expect(token.Match)
+	if !ok {
+		return ParseFailed, false
+	}
+	expr, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.LCurly); !ok {
+		return ParseFailed, false
+	}
+	arms, else_, ok := p.parseMatchArms()
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.RCurly); !ok {
+		return ParseFailed, false
+	}
+	if len(arms) == 0 && else_ == nil {
+		p.diagnostic(t.Span, "match requires at least one arm")
+		return ParseFailed, false
+	}
+	return p.NewMatch(expr, arms, else_, t.Span.Combine(p.span())), true
+}
+
 func (p *Parser) ParseIf() (NodeID, bool) {
 	t, ok := p.expect(token.If)
 	if !ok {
@@ -1206,6 +1238,83 @@ func (p *Parser) parseRangeRHS(lo *NodeID) (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewRange(lo, hi, inclusive, rangeSpan), true
+}
+
+func (p *Parser) parseMatchArms() ([]MatchArm, *MatchElse, bool) {
+	var arms []MatchArm
+	for {
+		t, ok := p.mayPeek()
+		if !ok || t.Kind == token.RCurly {
+			return arms, nil, true
+		}
+		if t.Kind == token.Else {
+			p.next()
+			else_, ok := p.parseMatchElse()
+			if !ok {
+				return nil, nil, false
+			}
+			return arms, else_, true
+		}
+		if t.Kind != token.Case {
+			p.diagnostic(t.Span, "expected case or else, got %s", t.Kind)
+			return nil, nil, false
+		}
+		p.next()
+		pattern, ok := p.ParseType()
+		if !ok {
+			return nil, nil, false
+		}
+		binding, body, ok := p.parseMatchArmBindingAndBody()
+		if !ok {
+			return nil, nil, false
+		}
+		arms = append(arms, MatchArm{Pattern: pattern, Binding: binding, Body: body})
+	}
+}
+
+func (p *Parser) parseMatchElse() (*MatchElse, bool) {
+	binding, body, ok := p.parseMatchArmBindingAndBody()
+	if !ok {
+		return nil, false
+	}
+	return &MatchElse{Binding: binding, Body: body}, true
+}
+
+func (p *Parser) parseMatchArmBindingAndBody() (*Name, NodeID, bool) {
+	var binding *Name
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
+		p.next()
+		b := Name{next.Value, next.Span}
+		binding = &b
+	}
+	if _, ok := p.expect(token.Colon); !ok {
+		return nil, ParseFailed, false
+	}
+	bodyExprs, ok := p.parseMatchArmBody()
+	if !ok {
+		return nil, ParseFailed, false
+	}
+	bodySpan := p.span()
+	if len(bodyExprs) > 0 {
+		bodySpan = p.Node(bodyExprs[0]).Span.Combine(p.span())
+	}
+	body := p.NewBlock(bodyExprs, bodySpan)
+	return binding, body, true
+}
+
+func (p *Parser) parseMatchArmBody() ([]NodeID, bool) {
+	var exprs []NodeID
+	for {
+		t, ok := p.mayPeek()
+		if !ok || t.Kind == token.RCurly || t.Kind == token.Case || t.Kind == token.Else {
+			return exprs, true
+		}
+		expr, ok := p.ParseExpr(0)
+		if !ok {
+			return nil, false
+		}
+		exprs = append(exprs, expr)
+	}
 }
 
 func (p *Parser) isStructTarget(nodeID NodeID) bool {

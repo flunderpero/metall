@@ -1,0 +1,109 @@
+package types
+
+import (
+	"github.com/flunderpero/metall/metallc/internal/ast"
+	"github.com/flunderpero/metall/metallc/internal/base"
+)
+
+func (e *Engine) checkMatch(match ast.Match, span base.Span) (TypeID, TypeStatus) {
+	exprTypeID, status := e.Query(match.Expr)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	exprTyp := e.env.Type(exprTypeID)
+	union, ok := exprTyp.Kind.(UnionType)
+	if !ok {
+		e.diag(e.ast.Node(match.Expr).Span, "match expression must be a union type, got %s",
+			e.env.TypeDisplay(exprTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	if len(match.Arms) == 0 && match.Else == nil {
+		e.diag(span, "match requires at least one arm")
+		return InvalidTypeID, TypeFailed
+	}
+	return e.checkMatchArms(match, union, exprTypeID, span)
+}
+
+func (e *Engine) checkMatchArms( //nolint:funlen
+	match ast.Match, union UnionType, unionTypeID TypeID, span base.Span,
+) (TypeID, TypeStatus) {
+	covered := make([]bool, len(union.Variants))
+	type armBody struct {
+		body   ast.NodeID
+		typeID TypeID
+	}
+	var bodies []armBody
+
+	for _, arm := range match.Arms {
+		variantTypeID, varStatus := e.Query(arm.Pattern)
+		if varStatus.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		matchedIdx := -1
+		for i, vID := range union.Variants {
+			if variantTypeID == vID {
+				matchedIdx = i
+				break
+			}
+		}
+		if matchedIdx < 0 {
+			e.diag(e.ast.Node(arm.Pattern).Span, "type %s is not a variant of %s",
+				e.env.TypeDisplay(variantTypeID), e.env.TypeDisplay(unionTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+		if covered[matchedIdx] {
+			e.diag(e.ast.Node(arm.Pattern).Span, "duplicate match arm for variant %s",
+				e.env.TypeDisplay(variantTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+		covered[matchedIdx] = true
+		if arm.Binding != nil {
+			bodyScope := e.scopeGraph.IntroducedScope(arm.Body)
+			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, variantTypeID)
+		}
+		bodies = append(bodies, armBody{arm.Body, InvalidTypeID})
+	}
+	if match.Else != nil {
+		if match.Else.Binding != nil {
+			bodyScope := e.scopeGraph.IntroducedScope(match.Else.Body)
+			e.env.bindInScope(bodyScope, match.Else.Body, match.Else.Binding.Name, unionTypeID)
+		}
+		bodies = append(bodies, armBody{match.Else.Body, InvalidTypeID})
+	} else {
+		for i, c := range covered {
+			if !c {
+				e.diag(span, "non-exhaustive match: missing variant %s",
+					e.env.TypeDisplay(union.Variants[i]))
+				return InvalidTypeID, TypeFailed
+			}
+		}
+	}
+
+	for i, ab := range bodies {
+		bodyTypeID, bodyStatus := e.Query(ab.body)
+		if bodyStatus.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if !e.ast.BlockBreaksControlFlow(ab.body, false) {
+			bodies[i].typeID = bodyTypeID
+		}
+	}
+
+	var resultTypeID TypeID
+	for _, ab := range bodies {
+		if ab.typeID == InvalidTypeID {
+			continue
+		}
+		if resultTypeID == 0 {
+			resultTypeID = ab.typeID
+		} else if ab.typeID != resultTypeID {
+			e.diag(e.ast.Node(ab.body).Span, "match arm type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(resultTypeID), e.env.TypeDisplay(ab.typeID))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	if resultTypeID == 0 {
+		return e.voidTyp, TypeOK
+	}
+	return resultTypeID, TypeOK
+}

@@ -64,12 +64,13 @@ func (s *Scope) NamespacedName(parts ...string) string {
 }
 
 type ScopeGraph struct {
-	scopes        map[ScopeID]*Scope
-	scopeByNodeID map[NodeID]*Scope
+	scopes          map[ScopeID]*Scope
+	scopeByNodeID   map[NodeID]*Scope
+	scopeByRootNode map[NodeID]*Scope
 }
 
 func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
-	g := &ScopeGraph{map[ScopeID]*Scope{}, map[NodeID]*Scope{}}
+	g := &ScopeGraph{map[ScopeID]*Scope{}, map[NodeID]*Scope{}, map[NodeID]*Scope{}}
 	var nextScopeID uint64 = 1
 	rootScope := NewScope(NodeID(0), ScopeID(0), nil, "")
 	g.scopes[rootScope.ID] = rootScope
@@ -86,6 +87,7 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 		scope = NewScope(nodeID, ScopeID(nextScopeID), scope, namespace)
 		nextScopeID++
 		g.scopes[scope.ID] = scope
+		g.scopeByRootNode[nodeID] = scope
 		return func() { scope = scope.Parent }
 	}
 	var visit func(nodeID NodeID)
@@ -123,6 +125,14 @@ func (g *ScopeGraph) NodeScope(nodeID NodeID) *Scope {
 	scope, ok := g.scopeByNodeID[nodeID]
 	if !ok {
 		panic(base.Errorf("no scope for node %d", nodeID))
+	}
+	return scope
+}
+
+func (g *ScopeGraph) IntroducedScope(nodeID NodeID) *Scope {
+	scope, ok := g.scopeByRootNode[nodeID]
+	if !ok {
+		panic(base.Errorf("no own scope for node %d", nodeID))
 	}
 	return scope
 }

@@ -74,6 +74,10 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if llvmHome == "" {
 		return base.Errorf("LLVM_HOME not set")
 	}
+	targetDataLayout, targetTriple, err := queryTargetInfo(ctx, llvmHome)
+	if err != nil {
+		return err
+	}
 
 	listener := opts.Listener
 	tokens := token.Lex(source)
@@ -116,6 +120,8 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	ir, err := gen.GenIR(
 		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(),
 		gen.IROpts{
+			TargetDataLayout:    targetDataLayout,
+			TargetTriple:        targetTriple,
 			AddressSanitizer:    opts.AddressSanitizer,
 			ArenaDebug:          opts.DebugArenaAllocator,
 			ArenaStackBufSize:   opts.ArenaStackBufSize,
@@ -222,6 +228,29 @@ func CompileAndRun(
 		listener.OnRun(exitCode, output)
 	}
 	return exitCode, output, nil
+}
+
+func queryTargetInfo(ctx context.Context, llvmHome string) (dataLayout, triple string, err error) {
+	clang := filepath.Join(llvmHome, "bin", "clang")
+	cmd := exec.CommandContext(ctx, clang, "-xc", "-S", "-emit-llvm", "-o", "-", "-")
+	cmd.Stdin = strings.NewReader("")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", "", base.WrapErrorf(err, "failed to query target info from clang")
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "target datalayout = "); ok {
+			dataLayout = strings.Trim(rest, `"`)
+		}
+		if rest, ok := strings.CutPrefix(line, "target triple = "); ok {
+			triple = strings.Trim(rest, `"`)
+		}
+	}
+	if dataLayout == "" || triple == "" {
+		return "", "", base.Errorf("could not extract target info from clang output")
+	}
+	return dataLayout, triple, nil
 }
 
 func resolveModules(

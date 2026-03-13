@@ -132,6 +132,132 @@ fun f() void { for i in start..end { print_int(i) } }
             arguments: (argument_list (identifier))))))))
 
 ================================================================================
+Match exhaustive
+================================================================================
+
+fun f(x AB) Int {
+    match x {
+        case Int v: v
+        case Bool: 0
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm pattern: (simple_type (type_identifier)) binding: (identifier) (identifier))
+        (match_arm pattern: (simple_type (type_identifier)) (integer_literal))))))
+
+================================================================================
+Match with else
+================================================================================
+
+fun f(x ABC) void {
+    match x {
+        case Int v: print_int(v)
+        else: print_str("other")
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm
+          pattern: (simple_type (type_identifier))
+          binding: (identifier)
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list (identifier))))
+        (match_else
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list (string_literal))))))))
+
+================================================================================
+Match with else binding
+================================================================================
+
+fun f(x AB) void {
+    match x {
+        case Int v: print_int(v)
+        else w: print_str("other")
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm
+          pattern: (simple_type (type_identifier))
+          binding: (identifier)
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list (identifier))))
+        (match_else
+          binding: (identifier)
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list (string_literal))))))))
+
+================================================================================
+Match as expression
+================================================================================
+
+fun f(x AB) Int {
+    let y = match x {
+        case Int v: v + 1
+        case Bool: 0
+    }
+    y
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (let_binding
+        name: (identifier)
+        value: (match_expression
+          subject: (identifier)
+          (match_arm
+            pattern: (simple_type (type_identifier))
+            binding: (identifier)
+            (binary_expression (identifier) (integer_literal)))
+          (match_arm
+            pattern: (simple_type (type_identifier))
+            (integer_literal))))
+      (identifier))))
+
+================================================================================
 Return, break, continue
 ================================================================================
 

@@ -1191,6 +1191,24 @@ func TestCompile(t *testing.T) {
 			}
 			`, "42\n"},
 
+		// Struct {Bool, Int} has padding between fields (LLVM layout: {i1, [7 x i8], i64} = 16 bytes).
+		// This tests that arena allocation and slice fill use the correct padded size.
+		{"arena alloc struct with alignment padding", `
+			struct Padded { flag Bool value Int }
+
+			fun main() void {
+				let @a = Arena()
+				let p = @a.new<Padded>(Padded(true, 42))
+				print_bool(p.flag)
+				print_int(p.value)
+				let s = @a.slice<Padded>(3, Padded(false, 99))
+				print_bool(s[0].flag)
+				print_int(s[0].value)
+				print_bool(s[2].flag)
+				print_int(s[2].value)
+			}
+			`, "true\n42\nfalse\n99\nfalse\n99\n"},
+
 		{"subslice exclusive range", `
 			fun main() void {
 				let arr = [10, 20, 30, 40, 50]
@@ -1676,6 +1694,149 @@ func TestCompile(t *testing.T) {
 			}
 			`, "hello\n123\n321\n",
 		},
+
+		{"union match int variants", `
+			union IntOrBool = Int | Bool
+
+			fun main() void {
+				let x = IntOrBool(42)
+				let y = IntOrBool(true)
+				match x {
+					case Int v: print_int(v)
+					case Bool v: print_bool(v)
+				}
+				match y {
+					case Int v: print_int(v)
+					case Bool v: print_bool(v)
+				}
+			}
+			`, "42\ntrue\n"},
+
+		{"union match with struct variant", `
+			struct Foo { one Str }
+			union FooOrInt = Foo | Int
+
+			fun main() void {
+				let x = FooOrInt(Foo("hello"))
+				let y = FooOrInt(99)
+				match x {
+					case Foo f: print_str(f.one)
+					case Int v: print_int(v)
+				}
+				match y {
+					case Foo f: print_str(f.one)
+					case Int v: print_int(v)
+				}
+			}
+			`, "hello\n99\n"},
+
+		{"union match with else", `
+			union ABC = Int | Bool | Str
+
+			fun main() void {
+				let x = ABC(true)
+				match x {
+					case Int v: print_int(v)
+					else: print_str("other")
+				}
+			}
+			`, "other\n"},
+
+		{"union match as expression", `
+			union IntOrStr = Int | Str
+
+			fun main() void {
+				let x = IntOrStr(42)
+				let result = match x {
+					case Int v: v + 1
+					case Str: 0
+				}
+				print_int(result)
+			}
+			`, "43\n"},
+
+		{"union match without binding", `
+			union AB = Int | Bool
+
+			fun main() void {
+				let x = AB(42)
+				match x {
+					case Int: print_str("int")
+					case Bool: print_str("bool")
+				}
+			}
+			`, "int\n"},
+
+		{"generic union match", `
+			union Maybe<T> = T | Bool
+
+			fun main() void {
+				let x = Maybe<Int>(42)
+				let y = Maybe<Int>(false)
+				match x {
+					case Int v: print_int(v)
+					case Bool: print_str("none")
+				}
+				match y {
+					case Int v: print_int(v)
+					case Bool: print_str("none")
+				}
+			}
+			`, "42\nnone\n"},
+
+		{"union match all arms return", `
+			union IntOrBool = Int | Bool
+
+			fun describe(x IntOrBool) Str {
+				match x {
+					case Int: return "int"
+					case Bool: return "bool"
+				}
+			}
+
+			fun main() void {
+				print_str(describe(IntOrBool(1)))
+				print_str(describe(IntOrBool(true)))
+			}
+			`, "int\nbool\n"},
+
+		{"union match struct result", `
+			struct Pair { a Int b Int }
+			union IntOrPair = Int | Pair
+
+			fun main() void {
+				let x = IntOrPair(Pair(10, 20))
+				let p = match x {
+					case Int v: Pair(v, v)
+					case Pair p: p
+				}
+				print_int(p.a)
+				print_int(p.b)
+			}
+			`, "10\n20\n"},
+
+		{"union match else with binding", `
+			struct Pair { a Int b Int }
+			union Three = Int | Bool | Pair
+
+			fun describe(x Three) Str {
+				match x {
+					case Int: return "int"
+					else v:
+						match v {
+							case Int: "unreachable"
+							case Bool: "bool"
+							case Pair: "pair"
+						}
+				}
+			}
+
+			fun main() void {
+				print_str(describe(Three(42)))
+				print_str(describe(Three(true)))
+				print_str(describe(Three(Pair(1, 2))))
+			}
+			`, "int\nbool\npair\n"},
 	}
 
 	assert := base.NewAssert(t)

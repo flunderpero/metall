@@ -174,6 +174,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkReturn(nodeKind, node.Span)
 	case ast.StructField:
 		typeID, status = e.checkStructField(nodeKind)
+	case ast.Match:
+		typeID, status = e.checkMatch(nodeKind, node.Span)
 	case ast.TypeConstruction:
 		typeID, status = e.checkTypeConstruction(nodeID, nodeKind, node.Span)
 	case ast.ArrayType:

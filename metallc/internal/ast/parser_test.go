@@ -552,6 +552,19 @@ func TestParseOK(t *testing.T) {
 			return a.union_("Foo", a.slice_typ(a.int_typ()), a.str_typ())
 		}},
 
+		{"match with else", "expr", `match x { case Int: 1 else: 2 }`, func(a *TestAST) NodeID {
+			expr := a.ident("x")
+			arms := []MatchArm{a.match_arm(a.int_typ(), a.block(a.int_(1)))}
+			else_ := &MatchElse{Binding: nil, Body: a.block(a.int_(2))}
+			return a.NewMatch(expr, arms, else_, a.span)
+		}},
+		{"match with binding", "expr", `match x { case Int n: n case Str s: s }`, func(a *TestAST) NodeID {
+			return a.match_(a.ident("x"),
+				a.match_arm_bind(a.int_typ(), "n", a.block(a.ident("n"))),
+				a.match_arm_bind(a.str_typ(), "s", a.block(a.ident("s"))),
+			)
+		}},
+
 		{
 			"namespaced fun", "expr", `fun Foo.bar(f Foo) Int { 123 }`,
 			func(a *TestAST) NodeID {
@@ -1010,6 +1023,19 @@ func (a *TestAST) field_access_t(base NodeID, field string, typeArgs ...NodeID) 
 	return a.NewFieldAccess(base, Name{field, a.span}, typeArgs, a.span)
 }
 
+func (a *TestAST) match_(expr NodeID, arms ...MatchArm) NodeID {
+	return a.NewMatch(expr, arms, nil, a.span)
+}
+
+func (a *TestAST) match_arm(pattern NodeID, body NodeID) MatchArm {
+	return MatchArm{Pattern: pattern, Binding: nil, Body: body}
+}
+
+func (a *TestAST) match_arm_bind(pattern NodeID, name string, body NodeID) MatchArm {
+	b := Name{name, a.span}
+	return MatchArm{Pattern: pattern, Binding: &b, Body: body}
+}
+
 func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {
 	return a.NewIf(cond, then, else_, a.span)
 }
@@ -1242,6 +1268,13 @@ func ast_to_list(ast *AST, nodeID NodeID) []*Node {
 				a := *kind.Alias
 				a.Span = base.Span{}
 				kind.Alias = &a
+			}
+			node.Kind = kind
+		case Match:
+			for i := range kind.Arms {
+				if kind.Arms[i].Binding != nil {
+					kind.Arms[i].Binding.Span = base.Span{}
+				}
 			}
 			node.Kind = kind
 		case Path:

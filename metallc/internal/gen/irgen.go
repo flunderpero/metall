@@ -43,6 +43,12 @@ func (g *CodeWriter) write(args ...any) {
 
 type Label string
 
+type matchArmInfo struct {
+	label    Label
+	armIndex int
+	tag      int
+}
+
 type Symbol struct {
 	Name string
 	Reg  string
@@ -116,6 +122,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genDeref(id, kind)
 	case ast.If:
 		g.genIf(id, kind)
+	case ast.Match:
+		g.genMatch(id, kind)
 	case ast.For:
 		g.genFor(id, kind)
 	case ast.Break:
@@ -153,6 +161,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	case ast.AllocatorVar:
 		g.genAllocatorVar(id, kind)
 	case ast.Struct,
+		ast.Union,
 		ast.Shape,
 		ast.FunParam,
 		ast.Fun,
@@ -187,6 +196,13 @@ func (g *IRGen) genStruct(env *types.TypeEnv, s types.StructWork) {
 	}
 	g.indent--
 	g.write("}\n")
+}
+
+func (g *IRGen) genUnion(env *types.TypeEnv, u types.UnionWork) {
+	typ := env.Type(u.TypeID)
+	unionType := base.Cast[types.UnionType](typ.Kind)
+	payloadSize := unionPayloadSize(env, unionType)
+	g.write("%%%s = type { i64, [%d x i8] } ; %s\n", u.TypeID, payloadSize, unionType.Name)
 }
 
 func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
@@ -339,10 +355,43 @@ func (g *IRFunGen) genTypeConstructionOnStack(id ast.NodeID, lit ast.TypeConstru
 		g.setCode(id, g.lookupCode(lit.Args[0]))
 		return
 	}
+	if unionType, ok := targetTyp.Kind.(types.UnionType); ok {
+		g.genUnionConstruction(id, lit, unionType, targetTyp.ID)
+		return
+	}
 	irTyp := g.irType(targetTyp.ID)
 	reg := g.reg()
 	g.write("%s = alloca %s", reg, irTyp)
 	g.genStructConstructionFields(id, lit, reg)
+}
+
+func (g *IRFunGen) genUnionConstruction(
+	id ast.NodeID, lit ast.TypeConstruction, union types.UnionType, unionTypeID types.TypeID,
+) {
+	g.Gen(lit.Target)
+	g.Gen(lit.Args[0])
+	argReg := g.lookupCode(lit.Args[0])
+	argTypeID := g.env.TypeOfNode(lit.Args[0]).ID
+	tag := -1
+	for i, variantID := range union.Variants {
+		if argTypeID == variantID {
+			tag = i
+			break
+		}
+	}
+	if tag < 0 {
+		panic(base.Errorf("union construction: variant not found"))
+	}
+	unionIRType := g.irType(unionTypeID)
+	reg := g.reg()
+	g.write("%s = alloca %s", reg, unionIRType)
+	tagPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, unionIRType, reg)
+	g.write("store i64 %d, ptr %s", tag, tagPtr)
+	payloadPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", payloadPtr, unionIRType, reg)
+	g.storeValue(argReg, payloadPtr, argTypeID)
+	g.setCode(id, reg)
 }
 
 func (g *IRFunGen) genArenaNew(id ast.NodeID, call ast.Call, fa ast.FieldAccess) {
@@ -350,11 +399,9 @@ func (g *IRFunGen) genArenaNew(id ast.NodeID, call ast.Call, fa ast.FieldAccess)
 	allocReg := g.lookupCode(fa.Target)
 	valueArg := call.Args[0]
 	valueTypeID := g.env.TypeOfNode(valueArg).ID
-	irTyp := g.irType(valueTypeID)
 	reg := g.reg()
-	g.write("%s_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
-	g.write("%s_size = ptrtoint ptr %s_size_ptr to i64", reg, reg)
-	g.write("%s = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
+	size := irTypeSize(g.env, valueTypeID)
+	g.write("%s = call ptr @arena_alloc(ptr %s, i64 %d)", reg, allocReg, size)
 	if lit, ok := g.ast.Node(valueArg).Kind.(ast.TypeConstruction); ok {
 		g.genStructConstructionFields(id, lit, reg)
 	} else {
@@ -371,11 +418,10 @@ func (g *IRFunGen) genArenaSlice(id ast.NodeID, call ast.Call, fa ast.FieldAcces
 	sliceType := base.Cast[types.SliceType](g.env.TypeOfNode(id).Kind)
 	reg := g.reg()
 	irTyp := g.irType(sliceType.Elem)
-	g.write("%s_elm_size_ptr = getelementptr %s, ptr null, i32 1", reg, irTyp)
-	g.write("%s_elm_size = ptrtoint ptr %s_elm_size_ptr to i64", reg, reg)
+	elemSize := irTypeSize(g.env, sliceType.Elem)
 	g.Gen(call.Args[0])
 	lenReg := g.lookupCode(call.Args[0])
-	g.write("%s_size = mul i64 %s_elm_size, %s", reg, reg, lenReg)
+	g.write("%s_size = mul i64 %d, %s", reg, elemSize, lenReg)
 	g.write("%s_data = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
 	if len(call.Args) == 2 { // slice/slice_mut have a default value arg; slice_uninit variants don't
 		g.Gen(call.Args[1])
@@ -399,7 +445,7 @@ func (g *IRFunGen) genInitializeMemory(
 	compileTimeCount *int64,
 ) {
 	if g.isAggregateType(elemTypeID) {
-		g.genInitializeMemoryStruct(dataReg, irElemType, valReg, countReg)
+		g.genInitializeMemoryStruct(dataReg, valReg, elemTypeID, countReg)
 	} else {
 		g.genInitializeMemoryScalar(dataReg, irElemType, valReg, countReg, compileTimeCount)
 	}
@@ -438,14 +484,12 @@ func (g *IRFunGen) genInitializeMemoryScalar(
 
 func (g *IRFunGen) genInitializeMemoryStruct(
 	dataReg string,
-	irElemType string,
 	valReg string,
+	elemTypeID types.TypeID,
 	countReg string,
 ) {
-	elemSizeReg := g.reg()
-	g.write("%s_ptr = getelementptr %s, ptr null, i32 1", elemSizeReg, irElemType)
-	g.write("%s = ptrtoint ptr %s_ptr to i64", elemSizeReg, elemSizeReg)
-	g.write("call void @__fill_cpy(ptr %s, ptr %s, i64 %s, i64 %s)", dataReg, valReg, elemSizeReg, countReg)
+	elemSize := irTypeSize(g.env, elemTypeID)
+	g.write("call void @__fill_cpy(ptr %s, ptr %s, i64 %d, i64 %s)", dataReg, valReg, elemSize, countReg)
 }
 
 func (g *IRFunGen) genStructConstructionFields(id ast.NodeID, lit ast.TypeConstruction, destReg string) {
@@ -788,6 +832,140 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 		}
 	}
 	g.setCode(id, code)
+}
+
+func (g *IRFunGen) genMatch(id ast.NodeID, match ast.Match) {
+	g.Gen(match.Expr)
+	exprReg := g.lookupCode(match.Expr)
+	exprType := g.env.TypeOfNode(match.Expr)
+	union := base.Cast[types.UnionType](exprType.Kind)
+	unionIRType := g.irType(exprType.ID)
+	tagPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, unionIRType, exprReg)
+	tagReg := g.reg()
+	g.write("%s = load i64, ptr %s", tagReg, tagPtr)
+	payloadPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", payloadPtr, unionIRType, exprReg)
+	contLabel := g.label("endmatch", id)
+	armInfos := g.buildMatchArmInfos(id, match, union)
+	var defaultLabel Label
+	if match.Else != nil {
+		defaultLabel = g.label("case_else", id)
+	} else {
+		defaultLabel = g.label("unreachable_match", id)
+	}
+	sb := strings.Builder{}
+	fmt.Fprintf(&sb, "switch i64 %s, label %%%s [", tagReg, defaultLabel)
+	for _, info := range armInfos {
+		fmt.Fprintf(&sb, " i64 %d, label %%%s", info.tag, info.label)
+	}
+	sb.WriteString(" ]")
+	g.write(sb.String())
+	if match.Else == nil {
+		g.writeLabel(defaultLabel)
+		g.write("unreachable")
+	}
+	g.genMatchArms(id, match, armInfos, contLabel, payloadPtr, defaultLabel)
+}
+
+func (g *IRFunGen) buildMatchArmInfos(id ast.NodeID, match ast.Match, union types.UnionType) []matchArmInfo {
+	arms := make([]matchArmInfo, 0, len(match.Arms))
+	for _, arm := range match.Arms {
+		patternTypeID := g.env.TypeOfNode(arm.Pattern).ID
+		tag := -1
+		for vi, vID := range union.Variants {
+			if patternTypeID == vID {
+				tag = vi
+				break
+			}
+		}
+		if tag < 0 {
+			panic(base.Errorf("genMatch: variant not found"))
+		}
+		lbl := g.label(fmt.Sprintf("case_%d", tag), id)
+		arms = append(arms, matchArmInfo{lbl, len(arms), tag})
+	}
+	return arms
+}
+
+func (g *IRFunGen) genMatchArms( //nolint:funlen
+	id ast.NodeID,
+	match ast.Match,
+	armInfos []matchArmInfo,
+	contLabel Label,
+	payloadPtr string,
+	elseLabel Label,
+) {
+	resultType := g.env.TypeOfNode(id)
+	resultIRType := g.irType(resultType.ID)
+	if g.isAggregateType(resultType.ID) {
+		resultIRType = "ptr"
+	}
+	type phiEntry struct {
+		code  string
+		label Label
+	}
+	var phiEntries []phiEntry
+	for _, armInfo := range armInfos {
+		arm := match.Arms[armInfo.armIndex]
+		g.writeLabel(armInfo.label)
+		body := base.Cast[ast.Block](g.ast.Node(arm.Body).Kind)
+		if arm.Binding != nil && len(body.Exprs) > 0 {
+			bindNode := body.Exprs[0]
+			variantTypeID := g.env.TypeOfNode(arm.Pattern).ID
+			variantIRType := g.irType(variantTypeID)
+			if g.isAggregateType(variantTypeID) {
+				g.setSymbol(bindNode, arm.Binding.Name, payloadPtr, "ptr")
+			} else {
+				bindReg := g.reg()
+				g.write("%s = load %s, ptr %s", bindReg, variantIRType, payloadPtr)
+				allocReg := g.reg()
+				g.write("%s = alloca %s", allocReg, variantIRType)
+				g.write("store %s %s, ptr %s", variantIRType, bindReg, allocReg)
+				g.setSymbol(bindNode, arm.Binding.Name, allocReg, variantIRType)
+			}
+		}
+		g.Gen(arm.Body)
+		if !g.ast.BlockBreaksControlFlow(arm.Body, false) {
+			g.write("br label %%%s", contLabel)
+			phiEntries = append(phiEntries, phiEntry{g.lookupCode(arm.Body), g.lastLabel})
+		}
+	}
+	if match.Else != nil {
+		g.writeLabel(elseLabel)
+		elseBody := base.Cast[ast.Block](g.ast.Node(match.Else.Body).Kind)
+		if match.Else.Binding != nil && len(elseBody.Exprs) > 0 {
+			bindNode := elseBody.Exprs[0]
+			bindReg := g.lookupCode(match.Expr)
+			g.setSymbol(bindNode, match.Else.Binding.Name, bindReg, "ptr")
+		}
+		g.Gen(match.Else.Body)
+		if !g.ast.BlockBreaksControlFlow(match.Else.Body, false) {
+			g.write("br label %%%s", contLabel)
+			phiEntries = append(phiEntries, phiEntry{g.lookupCode(match.Else.Body), g.lastLabel})
+		}
+	}
+	g.writeLabel(contLabel)
+	if len(phiEntries) == 0 {
+		g.write("unreachable")
+		g.setCode(id, "void")
+		return
+	}
+	if resultIRType == "void" {
+		g.setCode(id, "void")
+		return
+	}
+	phi := g.reg()
+	phiSB := strings.Builder{}
+	fmt.Fprintf(&phiSB, "%s = phi %s ", phi, resultIRType)
+	for i, entry := range phiEntries {
+		if i > 0 {
+			phiSB.WriteString(", ")
+		}
+		fmt.Fprintf(&phiSB, "[%s, %%%s]", entry.code, entry.label)
+	}
+	g.write(phiSB.String())
+	g.setCode(id, phi)
 }
 
 func (g *IRGen) label(name string, id ast.NodeID) Label {
@@ -1278,7 +1456,7 @@ func (g *IRFunGen) irType(typeID types.TypeID) string {
 func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
 	typ := g.env.Type(typeID)
 	switch typ.Kind.(type) {
-	case types.StructType:
+	case types.StructType, types.UnionType:
 		return true
 	case types.ArrayType, types.SliceType:
 		return true
@@ -1305,6 +1483,8 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 			return "%Str"
 		}
 		return "%" + typeID.String()
+	case types.UnionType:
+		return "%" + typeID.String()
 	case types.RefType, types.AllocatorType:
 		return "ptr"
 	case types.ArrayType:
@@ -1316,6 +1496,98 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 	default:
 		panic(base.Errorf("unknown type kind: %T", typ.Kind))
 	}
+}
+
+// validateDataLayout checks that the LLVM data layout string is compatible with
+// our irTypeSize/irTypeAlign assumptions (64-bit pointers, natural alignment).
+func validateDataLayout(dl string) {
+	if !strings.Contains(dl, "i64:64") {
+		panic(base.Errorf("unsupported target data layout: expected i64:64 (8-byte i64 alignment), got %q", dl))
+	}
+	if strings.Contains(dl, "p:32") {
+		panic(base.Errorf("unsupported target data layout: 32-bit pointers are not supported, got %q", dl))
+	}
+}
+
+func irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
+	typ := env.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case types.IntType:
+		return int64(kind.Bits+7) / 8
+	case types.BoolType:
+		return 1
+	case types.VoidType:
+		return 1
+	case types.RefType, types.AllocatorType, types.FunType:
+		return 8
+	case types.StructType:
+		var maxAlign int64 = 1
+		for _, field := range kind.Fields {
+			if a := irTypeAlign(env, field.Type); a > maxAlign {
+				maxAlign = a
+			}
+		}
+		return maxAlign
+	case types.UnionType:
+		return 8
+	case types.ArrayType:
+		return irTypeAlign(env, kind.Elem)
+	case types.SliceType:
+		return 8
+	default:
+		panic(base.Errorf("irTypeAlign: unknown type kind: %T", typ.Kind))
+	}
+}
+
+func alignUp(size, align int64) int64 {
+	return (size + align - 1) / align * align
+}
+
+func irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
+	typ := env.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case types.IntType:
+		return int64(kind.Bits+7) / 8
+	case types.BoolType:
+		return 1
+	case types.VoidType:
+		return 0
+	case types.RefType, types.AllocatorType, types.FunType:
+		return 8
+	case types.StructType:
+		var offset int64
+		var maxAlign int64 = 1
+		for _, field := range kind.Fields {
+			fieldAlign := irTypeAlign(env, field.Type)
+			offset = alignUp(offset, fieldAlign)
+			offset += irTypeSize(env, field.Type)
+			if fieldAlign > maxAlign {
+				maxAlign = fieldAlign
+			}
+		}
+		return alignUp(offset, maxAlign)
+	case types.UnionType:
+		payload := unionPayloadSize(env, kind)
+		return alignUp(8+payload, 8)
+	case types.ArrayType:
+		elemSize := irTypeSize(env, kind.Elem)
+		return kind.Len * elemSize
+	case types.SliceType:
+		return 16
+	default:
+		panic(base.Errorf("irTypeSize: unknown type kind: %T", typ.Kind))
+	}
+}
+
+func unionPayloadSize(env *types.TypeEnv, union types.UnionType) int64 {
+	var maxSize int64
+	for _, variantID := range union.Variants {
+		size := irTypeSize(env, variantID)
+		if size > maxSize {
+			maxSize = size
+		}
+	}
+	return maxSize
 }
 
 func irScalarSize(irType string) int64 {
@@ -1398,6 +1670,8 @@ func indexOfStructField(s types.StructType, name string) int {
 }
 
 type IROpts struct {
+	TargetDataLayout    string
+	TargetTriple        string
 	AddressSanitizer    bool
 	ArenaDebug          bool
 	ArenaStackBufSize   int
@@ -1414,11 +1688,13 @@ func GenIR(
 	unions []types.UnionWork,
 	opts IROpts,
 ) (string, error) {
-	_ = unions // Union IR generation will be added when pattern matching is implemented.
 	g := NewIRGen(a, module, opts)
+	validateDataLayout(opts.TargetDataLayout)
 	g.write("; Generated by metallc")
 	g.write("")
 	g.write(`source_filename = "%s"`, module.FileName)
+	g.write(`target datalayout = "%s"`, opts.TargetDataLayout)
+	g.write(`target triple = "%s"`, opts.TargetTriple)
 	g.write("")
 	// Emit the Str type definition (built-in struct, no AST node).
 	g.write("%Str = type { {ptr, i64} }")
@@ -1430,6 +1706,10 @@ func GenIR(
 	// Emit struct type definitions.
 	for _, s := range structs {
 		g.genStruct(s.Env, s)
+	}
+	// Emit union type definitions.
+	for _, u := range unions {
+		g.genUnion(u.Env, u)
 	}
 	// Emit all functions — each gets a fresh IRFunGen.
 	for i := range funs {

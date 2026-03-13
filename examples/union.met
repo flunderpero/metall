@@ -1,0 +1,28 @@
+use std::io
+
+struct Value<T> {
+    value T
+}
+
+union Mixed<T> = Str | Int | Value<T>
+
+fun Mixed.fmt_str<T FmtStr>(m Mixed<T>, sb &mut StrBuilder) void {
+    match m {
+        case Str s: sb.str(s)
+        case Int i: sb.int(i)
+        case Value<T> v: sb.fmt<T>(v.value)
+    }
+
+}
+
+fun main() void {
+    mut m1 = Mixed<Bool>("hello")
+    match m1 {
+        case Str s: io::print(s)
+        else: io::print("not matched")
+    }
+    m1 = Mixed<Bool>(123)
+    io::print_fmt<Mixed<Bool>>(m1)
+    m1 = Mixed<Bool>(Value<Bool>(true))
+    io::print_fmt<Mixed<Bool>>(m1)
+}

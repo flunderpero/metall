@@ -256,6 +256,7 @@ module.exports = grammar({
         // Control flow.
         $.if_expression,
         $.for_expression,
+        $.match_expression,
         $.return_expression,
         $.break_expression,
         $.continue_expression,
@@ -409,6 +410,35 @@ module.exports = grammar({
         field("lo", $._expression),
         choice("..", "..="),
         field("hi", $._expression),
+      ),
+
+    // >>> Match expression
+
+    match_expression: ($) =>
+      seq(
+        "match",
+        field("subject", $._expression),
+        "{",
+        repeat($.match_arm),
+        optional($.match_else),
+        "}",
+      ),
+
+    match_arm: ($) =>
+      seq(
+        "case",
+        field("pattern", $._type),
+        optional(field("binding", $.identifier)),
+        ":",
+        repeat($._expression),
+      ),
+
+    match_else: ($) =>
+      seq(
+        "else",
+        optional(field("binding", $.identifier)),
+        ":",
+        repeat($._expression),
       ),
 
     return_expression: ($) =>

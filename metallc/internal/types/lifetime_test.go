@@ -1418,6 +1418,118 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				    }
 				`, "\n"),
 		}},
+		{"match arm ref escapes via result", `
+			{
+				union Foo = Int | Bool
+				let x = 1
+				let y = {
+					let z = 42
+					let u = Foo(z)
+					match u {
+						case Int: &z
+						case Bool: &x
+					}
+				}
+			}
+			`, []string{
+			"test.met:9:35: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        match u {
+				            case Int: &z
+				                      ^^
+				            case Bool: &x
+				`, "\n"),
+		}},
+		{"match with else ref escapes via result", `
+			{
+				union Foo = Int | Bool
+				let x = 1
+				let y = {
+					let z = 42
+					let u = Foo(z)
+					match u {
+						case Int: &x
+						else: &z
+					}
+				}
+			}
+			`, []string{
+			"test.met:10:31: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				            case Int: &x
+				            else: &z
+				                  ^^
+				        }
+				`, "\n"),
+		}},
+		{"match binding tainted by function call result", `
+			{
+				struct Wrapper { one &Int }
+				union Holder = Wrapper | Int
+				fun make(r &Int) Holder { Holder(Wrapper(r)) }
+				let x = 42
+				let y = {
+					let z = 99
+					let h = make(&z)
+					match h {
+						case Wrapper w: w.one
+						case Int: &x
+					}
+				}
+			}
+			`, []string{
+			"test.met:9:34: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let z = 99
+				        let h = make(&z)
+				                     ^^
+				        match h {
+				`, "\n"),
+		}},
+		{"match binding tainted by outer variable escapes", `
+			{
+				struct Wrapper { one &Int }
+				union Holder = Wrapper | Bool
+				let x = 42
+				let y = {
+					let z = 99
+					let h = Holder(Wrapper(&z))
+					match h {
+						case Wrapper w: w.one
+						case Bool: &x
+					}
+				}
+			}
+			`, []string{
+			"test.met:8:44: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let z = 99
+				        let h = Holder(Wrapper(&z))
+				                               ^^
+				        match h {
+				`, "\n"),
+		}},
+		{"match ref to non-ref binding escapes", `
+			{
+				union Foo = Int | Bool
+				let x = 1
+				let y = {
+					let u = Foo(42)
+					match u {
+						case Int n: &n
+						case Bool: &x
+					}
+				}
+			}
+			`, []string{
+			"test.met:8:37: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        match u {
+				            case Int n: &n
+				                        ^^
+				            case Bool: &x
+				`, "\n"),
+		}},
 		{"pessimistic return taint for union with ref", `
 			{
 				struct Wrapper { one &Int }
@@ -1434,6 +1546,177 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				        let y = 42
 				        foo(Holder(Wrapper(&y)))
 				                           ^^
+				    }
+				`, "\n"),
+		}},
+		// Assigning a ref to a match binding into an outer mutable variable
+		// must be caught as an escape.
+		{"match binding ref assigned to outer variable", `
+			{
+				union Foo = Int | Bool
+				mut x = 0
+				mut r = &x
+				let u = Foo(42)
+				match u {
+					case Int n: r = &n
+					case Bool: {}
+				}
+			}
+			`, []string{
+			"test.met:8:37: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+				    match u {
+				        case Int n: r = &n
+				                        ^^
+				        case Bool: {}
+				`, "\n"),
+		}},
+		// Else arm binding with a ref-typed field: the binding inherits the
+		// union's taint, so extracting a ref field can escape.
+		{"match else binding ref field escapes", `
+			{
+				struct Wrapper { one &Int }
+				union Holder = Int | Wrapper
+				let x = 42
+				let y = {
+					let z = 99
+					let h = Holder(Wrapper(&z))
+					match h {
+						case Int: &x
+						else v:
+							match v {
+								case Int: &x
+								case Wrapper w: w.one
+							}
+					}
+				}
+			}
+			`, []string{
+			"test.met:8:44: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let z = 99
+				        let h = Holder(Wrapper(&z))
+				                               ^^
+				        match h {
+				`, "\n"),
+		}},
+		// Returning a ref to a local from inside a match arm must be caught
+		// by the return-path check.
+		// Both arms reference the same `local`, so all three diagnostics
+		// point to the first `&local` (the taint origin): two "via return"
+		// (one per arm) and one "via block result" (the merged match flow).
+		{"match arm return ref to local", `
+			{
+				union Foo = Int | Bool
+				fun bar(u Foo) &Int {
+					let local = 99
+					match u {
+						case Int: return &local
+						case Bool: return &local
+					}
+				}
+			}
+			`, []string{
+			"test.met:7:42: reference escaping its allocation scope (via return)\n" +
+				strings.Trim(`
+				        match u {
+				            case Int: return &local
+				                             ^^^^^^
+				            case Bool: return &local
+				`, "\n"),
+			"test.met:7:42: reference escaping its allocation scope (via return)\n" +
+				strings.Trim(`
+				        match u {
+				            case Int: return &local
+				                             ^^^^^^
+				            case Bool: return &local
+				`, "\n"),
+			"test.met:7:42: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        match u {
+				            case Int: return &local
+				                             ^^^^^^
+				            case Bool: return &local
+				`, "\n"),
+		}},
+		// Valid use: match binding used safely within its arm scope.
+		{"match binding used safely no escape", `
+			{
+				union Foo = Int | Bool
+				let u = Foo(42)
+				match u {
+					case Int n: print_int(n)
+					case Bool: {}
+				}
+			}
+			`, []string{}},
+		// Valid use: match on a union containing a ref variant, binding used
+		// safely within the arm scope.
+		{"match ref variant binding used safely", `
+			{
+				union RefOrInt = &Int | Int
+				let x = 42
+				let u = RefOrInt(&x)
+				match u {
+					case &Int r: print_int(r.*)
+					case Int: {}
+				}
+			}
+			`, []string{}},
+		// Nested match: a ref created in the inner match arm escapes the
+		// enclosing block.
+		{"nested match ref escapes", `
+			{
+				union Outer = Int | Bool
+				union Inner = Int | Bool
+				let x = 1
+				let y = {
+					let z = 42
+					let o = Outer(z)
+					match o {
+						case Int n:
+							let i = Inner(n)
+							match i {
+								case Int: &z
+								case Bool: &x
+							}
+						case Bool: &x
+					}
+				}
+			}
+			`, []string{
+			"test.met:13:43: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				                match i {
+				                    case Int: &z
+				                              ^^
+				                    case Bool: &x
+				`, "\n"),
+		}},
+		// Match where the subject union was built from a local ref, and the
+		// match result (through binding field access) escapes the block.
+		{"match on union param with ref variant escapes", `
+			{
+				struct Wrapper { one &Int }
+				union WOrBool = Wrapper | Bool
+				fun extract(u WOrBool, fallback &Int) &Int {
+					match u {
+						case Wrapper w: w.one
+						case Bool: fallback
+					}
+				}
+				let x = 42
+				let y = {
+					let z = 99
+					extract(WOrBool(Wrapper(&z)), &x)
+				}
+			}
+			`, []string{
+			"test.met:14:45: reference escaping its allocation scope (via block result)\n" +
+				strings.Trim(`
+				        let z = 99
+				        extract(WOrBool(Wrapper(&z)), &x)
+				                                ^^
 				    }
 				`, "\n"),
 		}},

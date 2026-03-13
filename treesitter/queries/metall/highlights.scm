@@ -11,6 +11,8 @@
   "else"
   "for"
   "in"
+  "match"
+  "case"
   "return"
   "and"
   "or"
@@ -107,6 +109,12 @@
 
 (for_expression binding: (identifier) @variable)
 
+; >>> Match bindings
+
+(match_arm binding: (identifier) @variable)
+(match_arm pattern: (simple_type (type_identifier) @type))
+(match_else binding: (identifier) @variable)
+
 ; >>> Assignment
 
 (assignment target: (identifier) @variable)
@@ -143,4 +151,4 @@
 ; >>> Punctuation
 
 ["(" ")" "{" "}" "[" "]" "<" ">"] @punctuation.bracket
-["," "." "::"] @punctuation.delimiter
+["," "." "::" ":"] @punctuation.delimiter

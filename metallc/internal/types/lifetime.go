@@ -221,6 +221,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeFor(nodeID, kind)
 	case ast.If:
 		a.analyzeIf(nodeID, kind)
+	case ast.Match:
+		a.analyzeMatch(nodeID, kind)
 	case ast.Var:
 		a.analyzeVar(nodeID, kind)
 	case ast.FunParam:
@@ -497,6 +499,35 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 			a.mergeIntoTarget(nodeID, arg, allArgs)
 		}
 	}
+}
+
+func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
+	a.Check(match.Expr)
+	exprFlow := a.flow(match.Expr)
+	for _, arm := range match.Arms {
+		a.Check(arm.Pattern)
+		if arm.Binding != nil {
+			ss := a.scopeByID(a.scopeGraph.IntroducedScope(arm.Body).ID)
+			ss.Vars[arm.Binding.Name] = &VarTaint{arm.Body, ss.ScopeTaint, exprFlow}
+		}
+		a.Check(arm.Body)
+	}
+	if match.Else != nil {
+		if match.Else.Binding != nil {
+			ss := a.scopeByID(a.scopeGraph.IntroducedScope(match.Else.Body).ID)
+			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, exprFlow}
+		}
+		a.Check(match.Else.Body)
+	}
+	merged := Flow{}
+	for _, arm := range match.Arms {
+		merged = merged.Merge(a.flow(arm.Body))
+	}
+	if match.Else != nil {
+		merged = merged.Merge(a.flow(match.Else.Body))
+	}
+	a.flows[nodeID] = merged
+	a.debug(1, nodeID, "analyzeMatch: %s", merged)
 }
 
 func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
@@ -816,7 +847,9 @@ func (a *LifetimeCheck) analyzeReturn(nodeID ast.NodeID, ret ast.Return) {
 
 // analyzeFun builds a FunEffects that describes how parameter flows map to the
 // return value and to each other (side effects).
-func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) { //nolint:funlen
+//
+//nolint:funlen
+func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	if fun.Extern {
 		return
 	}

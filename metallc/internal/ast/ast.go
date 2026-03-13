@@ -330,6 +330,25 @@ func (Continue) isKind() {}
 
 func (Block) isKind() {}
 
+type Match struct {
+	Expr NodeID
+	Arms []MatchArm
+	Else *MatchElse // nil if no else arm
+}
+
+func (Match) isKind() {}
+
+type MatchArm struct {
+	Pattern NodeID // SimpleType (variant)
+	Binding *Name  // optional binding (nil if absent)
+	Body    NodeID // Block
+}
+
+type MatchElse struct {
+	Binding *Name  // optional binding (nil if absent)
+	Body    NodeID // Block
+}
+
 type Call struct {
 	Callee NodeID
 	Args   []NodeID
@@ -398,6 +417,10 @@ func (a *AST) Merge(other *AST) (*AST, error) {
 
 func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
 	return a.node(Assign{LHS: lhs, RHS: value}, span)
+}
+
+func (a *AST) NewMatch(expr NodeID, arms []MatchArm, else_ *MatchElse, span base.Span) NodeID {
+	return a.node(Match{Expr: expr, Arms: arms, Else: else_}, span)
 }
 
 func (a *AST) NewIf(cond NodeID, then NodeID, else_ *NodeID, span base.Span) NodeID {
@@ -634,6 +657,15 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for i := range len(kind.Decls) {
 			f(kind.Decls[i])
 		}
+	case Match:
+		f(kind.Expr)
+		for _, arm := range kind.Arms {
+			f(arm.Pattern)
+			f(arm.Body)
+		}
+		if kind.Else != nil {
+			f(kind.Else.Body)
+		}
 	case If:
 		f(kind.Cond)
 		f(kind.Then)
@@ -843,6 +875,26 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 			addAttr("expr", nodeIDKind(kind.Expr))
 		} else {
 			addChild("expr", kind.Expr)
+		}
+	case Match:
+		addAttr("arms", fmt.Sprintf("%d", len(kind.Arms)))
+		if !children {
+			addAttr("expr", nodeIDKind(kind.Expr))
+		} else {
+			addChild("expr", kind.Expr)
+			for i, arm := range kind.Arms {
+				addAttr(fmt.Sprintf("arm[%d].pattern", i), nodeIDKind(arm.Pattern))
+				if arm.Binding != nil {
+					addAttr(fmt.Sprintf("arm[%d].binding", i), arm.Binding.Name)
+				}
+				addChild(fmt.Sprintf("arm[%d].body", i), arm.Body)
+			}
+			if kind.Else != nil {
+				if kind.Else.Binding != nil {
+					addAttr("else.binding", kind.Else.Binding.Name)
+				}
+				addChild("else.body", kind.Else.Body)
+			}
 		}
 	case If:
 		if !children {
@@ -1178,15 +1230,22 @@ func (a *AST) blockBreaksControlFlow(blockID NodeID, checkForReturnOnly bool) bo
 	case Return:
 		return true
 	default:
-		if len(block.Exprs) > 1 {
-			return false
+		if ifNode, ok := lastExpr.Kind.(If); ok {
+			return ifNode.Else != nil && a.blockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
+				a.blockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
 		}
-		ifNode, ok := a.Node(block.Exprs[0]).Kind.(If)
-		if !ok {
-			return false
+		if matchNode, ok := lastExpr.Kind.(Match); ok {
+			for _, arm := range matchNode.Arms {
+				if !a.blockBreaksControlFlow(arm.Body, checkForReturnOnly) {
+					return false
+				}
+			}
+			if matchNode.Else != nil && !a.blockBreaksControlFlow(matchNode.Else.Body, checkForReturnOnly) {
+				return false
+			}
+			return len(matchNode.Arms) > 0
 		}
-		return ifNode.Else != nil && a.blockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
-			a.blockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
+		return false
 	}
 }
 

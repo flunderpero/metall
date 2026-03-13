@@ -17,6 +17,8 @@ const (
 	And
 	Break
 	Caret
+	Case
+	Colon
 	ColonColon
 	Comma
 	Comment
@@ -45,6 +47,7 @@ const (
 	Lt
 	LtImmediate
 	Lte
+	Match
 	Minus
 	Mut
 	Neq
@@ -82,6 +85,8 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	And:                   "<and>",
 	Break:                 "<break>",
 	Caret:                 "^",
+	Case:                  "<case>",
+	Colon:                 ":",
 	ColonColon:            "::",
 	Comma:                 ",",
 	Comment:               "<comment>",
@@ -110,6 +115,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Lt:                    "<",
 	LtImmediate:           "<<immediate>",
 	Lte:                   "<=",
+	Match:                 "<match>",
 	Minus:                 "-",
 	Mut:                   "<mut>",
 	Neq:                   "!=",
@@ -159,6 +165,7 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"and":      And,
 	"break":    Break,
+	"case":     Case,
 	"continue": Continue,
 	"else":     Else,
 	"false":    False,
@@ -167,6 +174,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"if":       If,
 	"in":       In,
 	"let":      Let,
+	"match":    Match,
 	"mut":      Mut,
 	"not":      Not,
 	"or":       Or,
@@ -306,7 +314,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		if idx < len(source.Content) && source.Content[idx] == ':' {
 			return Token{Kind: ColonColon, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		return Token{Kind: Unknown, Value: string(c), Span: span}
+		return Token{Kind: Colon, Value: "", Span: span}
 	case c == '!':
 		if idx < len(source.Content) && source.Content[idx] == '=' {
 			return Token{Kind: Neq, Value: "", Span: base.NewSpan(source, start, idx)}
@@ -339,7 +347,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		span.End = idx - 1
 		return Token{Kind: Whitespace, Value: string(value), Span: span}
-	case unicode.IsLetter(c), c == '@':
+	case unicode.IsLetter(c), c == '@', c == '_':
 		value := []rune{c}
 		for idx < len(source.Content) {
 			c := source.Content[idx]
@@ -359,7 +367,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			if len(value) < 2 || !unicode.IsLower(value[1]) {
 				kind = InvalidAllocatorIdent
 			}
-		} else if unicode.IsLower(c) {
+		} else if unicode.IsLower(c) || c == '_' {
 			kind = Ident
 		}
 		return Token{kind, string(value), span}
