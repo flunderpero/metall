@@ -1142,12 +1142,15 @@ func (p *Parser) ParseNumber() (NodeID, bool) {
 }
 
 func (p *Parser) ParsePath() (NodeID, bool) {
-	span := p.span()
 	segments := []string{}
+	var span base.Span
 	for {
 		segment, ok := p.expect(token.Ident)
 		if !ok {
 			return ParseFailed, false
+		}
+		if len(segments) == 0 {
+			span = segment.Span
 		}
 		segments = append(segments, segment.Value)
 		t, ok := p.mayPeek()
