@@ -339,9 +339,10 @@ type Match struct {
 func (Match) isKind() {}
 
 type MatchArm struct {
-	Pattern NodeID // SimpleType (variant)
-	Binding *Name  // optional binding (nil if absent)
-	Body    NodeID // Block
+	Pattern NodeID  // SimpleType (variant)
+	Binding *Name   // optional binding (nil if absent)
+	Guard   *NodeID // optional guard condition (nil if absent)
+	Body    NodeID  // Block
 }
 
 type MatchElse struct {
@@ -661,6 +662,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Expr)
 		for _, arm := range kind.Arms {
 			f(arm.Pattern)
+			if arm.Guard != nil {
+				f(*arm.Guard)
+			}
 			f(arm.Body)
 		}
 		if kind.Else != nil {
@@ -886,6 +890,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int) string { //nolint:funl
 				addAttr(fmt.Sprintf("arm[%d].pattern", i), nodeIDKind(arm.Pattern))
 				if arm.Binding != nil {
 					addAttr(fmt.Sprintf("arm[%d].binding", i), arm.Binding.Name)
+				}
+				if arm.Guard != nil {
+					addChild(fmt.Sprintf("arm[%d].guard", i), *arm.Guard)
 				}
 				addChild(fmt.Sprintf("arm[%d].body", i), arm.Body)
 			}

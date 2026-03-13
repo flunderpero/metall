@@ -429,6 +429,7 @@ module.exports = grammar({
         "case",
         field("pattern", $._type),
         optional(field("binding", $.identifier)),
+        optional(seq("if", field("guard", $._expression))),
         ":",
         repeat($._expression),
       ),

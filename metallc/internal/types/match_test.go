@@ -98,6 +98,46 @@ func TestMatchOK(t *testing.T) {
 			}`,
 			Int, nil,
 		},
+		{
+			"match with guard",
+			`{
+				union Foo = Int | Str
+				let x = Foo(42)
+				match x {
+					case Int n if n > 10: "big"
+					case Int: "small"
+					case Str: "str"
+				}
+			}`,
+			Str, nil,
+		},
+		{
+			"match with guard and else",
+			`{
+				union Tri = Int | Bool | Str
+				let x = Tri(42)
+				match x {
+					case Int n if n > 0: "positive"
+					case Int: "non-positive"
+					else: "other"
+				}
+			}`,
+			Str, nil,
+		},
+		{
+			"match with multiple guarded arms same variant",
+			`{
+				union Foo = Int | Bool
+				let x = Foo(42)
+				match x {
+					case Int n if n > 100: "big"
+					case Int n if n > 10: "medium"
+					case Int: "small"
+					case Bool: "bool"
+				}
+			}`,
+			Str, nil,
+		},
 	}
 
 	assert := base.NewAssert(t)
@@ -233,6 +273,47 @@ func TestMatchErr(t *testing.T) {
 						case Bool: true
 						     ^^^^
 						case Str: "s"
+				`, "\n"),
+		}},
+		{"match guard not bool", `
+			{
+				union Foo = Int | Str
+				let x = Foo(42)
+				match x {
+					case Int n if n: "int"
+					case Int: "int"
+					case Str: "str"
+				}
+			}
+			`, []string{
+			"test.met:6:35: guard condition must be Bool, got Int\n" +
+				strings.Trim(`
+					match x {
+						case Int n if n: "int"
+						              ^
+						case Int: "int"
+				`, "\n"),
+		}},
+		{"match guard non-exhaustive without unguarded arm", `
+			{
+				union Foo = Int | Str
+				let x = Foo(42)
+				match x {
+					case Int n if n > 0: "positive"
+					case Str: "str"
+				}
+			}
+			`, []string{
+			"test.met:5:17: non-exhaustive match: missing variant Int\n" +
+				strings.Trim(`
+					let x = Foo(42)
+					match x {
+					^
+						case Int n if n > 0: "positive"
+						case Str: "str"
+					}
+					^
+				}
 				`, "\n"),
 		}},
 		{"match all arms diverge cannot assign", `

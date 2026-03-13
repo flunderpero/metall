@@ -1693,6 +1693,41 @@ func TestLifetimeAnalyzer(t *testing.T) {
 				                    case Bool: &x
 				`, "\n"),
 		}},
+		// Guard: binding used safely in guard condition — no escape.
+		{"match guard binding used safely", `
+			{
+				union Foo = Int | Bool
+				let u = Foo(42)
+				match u {
+					case Int n if n > 10: print_int(n)
+					case Int n: print_int(n)
+					case Bool: {}
+				}
+			}
+			`, []string{}},
+		// Guard: ref to binding in guard body escapes the arm scope.
+		{"match guard ref to binding escapes", `
+			{
+				union Foo = Int | Bool
+				mut x = 0
+				mut r = &x
+				let u = Foo(42)
+				match u {
+					case Int n if n > 0:
+						r = &n
+					case Int: {}
+					case Bool: {}
+				}
+			}
+			`, []string{
+			"test.met:9:29: reference escaping its allocation scope (via mutation of outer variable)\n" +
+				strings.Trim(`
+				        case Int n if n > 0:
+				            r = &n
+				                ^^
+				        case Int: {}
+				`, "\n"),
+		}},
 		// Match where the subject union was built from a local ref, and the
 		// match result (through binding field access) escapes the block.
 		{"match on union param with ref variant escapes", `

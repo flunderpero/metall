@@ -564,6 +564,19 @@ func TestParseOK(t *testing.T) {
 				a.match_arm_bind(a.str_typ(), "s", a.block(a.ident("s"))),
 			)
 		}},
+		{"match with guard", "expr", `match x { case Int n if n > 0: n case Int: 0 }`, func(a *TestAST) NodeID {
+			// Build nodes in parser order: expr, pattern, guard, body, ...
+			expr := a.ident("x")
+			pat1 := a.int_typ()
+			guard := a.binary(">", a.ident("n"), a.int_(0))
+			body1 := a.block(a.ident("n"))
+			pat2 := a.int_typ()
+			body2 := a.block(a.int_(0))
+			return a.match_(expr,
+				a.match_arm_guard(pat1, "n", guard, body1),
+				a.match_arm(pat2, body2),
+			)
+		}},
 
 		{
 			"namespaced fun", "expr", `fun Foo.bar(f Foo) Int { 123 }`,
@@ -834,6 +847,12 @@ func TestParseErr(t *testing.T) {
 				"          ^^^^^",
 		}},
 
+		{"match else with guard", "expr", `match x { case Int: 1 else if true: 2 }`, []string{
+			"test.met:1:31: else arm cannot have a guard condition\n" +
+				"    match x { case Int: 1 else if true: 2 }\n" +
+				"                                  ^^^^",
+		}},
+
 		{"use in expression", "expr", `use foo::bar`, []string{
 			"test.met:1:1: unexpected token: expected start of an expression, got <use>\n" +
 				"    use foo::bar\n" +
@@ -1028,12 +1047,17 @@ func (a *TestAST) match_(expr NodeID, arms ...MatchArm) NodeID {
 }
 
 func (a *TestAST) match_arm(pattern NodeID, body NodeID) MatchArm {
-	return MatchArm{Pattern: pattern, Binding: nil, Body: body}
+	return MatchArm{Pattern: pattern, Binding: nil, Guard: nil, Body: body}
 }
 
 func (a *TestAST) match_arm_bind(pattern NodeID, name string, body NodeID) MatchArm {
 	b := Name{name, a.span}
-	return MatchArm{Pattern: pattern, Binding: &b, Body: body}
+	return MatchArm{Pattern: pattern, Binding: &b, Guard: nil, Body: body}
+}
+
+func (a *TestAST) match_arm_guard(pattern NodeID, name string, guard NodeID, body NodeID) MatchArm {
+	b := Name{name, a.span}
+	return MatchArm{Pattern: pattern, Binding: &b, Guard: &guard, Body: body}
 }
 
 func (a *TestAST) if_(cond NodeID, then NodeID, else_ *NodeID) NodeID {

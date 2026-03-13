@@ -1815,6 +1815,53 @@ func TestCompile(t *testing.T) {
 			}
 			`, "10\n20\n"},
 
+		{"union match with guard", `
+			union IntOrStr = Int | Str
+
+			fun classify(x IntOrStr) Str {
+				match x {
+					case Int n if n > 100: return "big"
+					case Int n if n > 0: return "positive"
+					case Int: return "non-positive"
+					case Str: return "string"
+				}
+			}
+
+			fun main() void {
+				print_str(classify(IntOrStr(200)))
+				print_str(classify(IntOrStr(42)))
+				print_str(classify(IntOrStr(0)))
+				print_str(classify(IntOrStr("hello")))
+			}
+			`, "big\npositive\nnon-positive\nstring\n"},
+
+		{"union match guard with else", `
+			union Tri = Int | Bool | Str
+
+			fun main() void {
+				let x = Tri(42)
+				let result = match x {
+					case Int n if n > 10: "big int"
+					case Int: "small int"
+					else: "other"
+				}
+				print_str(result)
+			}
+			`, "big int\n"},
+
+		{"union match guard falls through to else", `
+			union Tri = Int | Bool | Str
+
+			fun main() void {
+				let x = Tri(5)
+				let result = match x {
+					case Int n if n > 10: "big int"
+					else: "other"
+				}
+				print_str(result)
+			}
+			`, "other\n"},
+
 		{"union match else with binding", `
 			struct Pair { a Int b Int }
 			union Three = Int | Bool | Pair

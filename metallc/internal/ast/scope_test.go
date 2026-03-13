@@ -136,6 +136,47 @@ func TestScopes(t *testing.T) {
 				n4:Struct(name="Foo",typeParams=[n1:TypeParam],fields=[n3:StructField]):a
 			`,
 		},
+		{
+			name: "match arms create scopes",
+			src:  `match x { case Int n: n case Str: 0 }`,
+			scopes: `
+				a:-
+				b:a
+				c:a
+			`,
+			nodes: `
+				n1:Ident(name="x"):a
+				n2:SimpleType(name="Int"):a
+				n3:Ident(name="n"):b
+				n4:Block(exprs=[n3:Ident]):a
+				n5:SimpleType(name="Str"):a
+				n6:Int(value=0):c
+				n7:Block(exprs=[n6:Int]):a
+				n8:Match(arms=2,expr=n1:Ident):a
+			`,
+		},
+		{
+			name: "match guard lives in body scope",
+			src:  `match x { case Int n if n > 0: n case Int: 0 }`,
+			scopes: `
+				a:-
+				b:a
+				c:a
+			`,
+			nodes: `
+				n1:Ident(name="x"):a
+				n2:SimpleType(name="Int"):a
+				n3:Ident(name="n"):b
+				n4:Int(value=0):b
+				n5:Binary(op=>,lhs=n3:Ident,rhs=n4:Int):b
+				n6:Ident(name="n"):b
+				n7:Block(exprs=[n6:Ident]):a
+				n8:SimpleType(name="Int"):a
+				n9:Int(value=0):c
+				n10:Block(exprs=[n9:Int]):a
+				n11:Match(arms=2,expr=n1:Ident):a
+			`,
+		},
 	}
 
 	assert := base.NewAssert(t)

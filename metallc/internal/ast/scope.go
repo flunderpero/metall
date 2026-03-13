@@ -98,6 +98,9 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 			defer enterScope(nodeID, "")()
 		case For:
 			defer enterScope(nodeID, "")()
+		case Match:
+			visitMatch(ast, g, kind, nodeID, visit, enterScope)
+			return
 		case Module:
 			// Modules with an empty name (prelude) bind into the root
 			// scope so all user code can see their declarations.
@@ -119,6 +122,36 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 		visit(root)
 	}
 	return g
+}
+
+func visitMatch(
+	a *AST,
+	g *ScopeGraph,
+	match Match,
+	matchNodeID NodeID,
+	visit func(NodeID),
+	enterScope func(NodeID, string) func(),
+) {
+	visit(match.Expr)
+	for _, arm := range match.Arms {
+		visit(arm.Pattern)
+		// Manually set the body block's scope and enter it so that
+		// both the guard and the body's children live in the same scope.
+		matchScope := g.NodeScope(matchNodeID)
+		g.setNodeScope(arm.Body, matchScope)
+		leaveScope := enterScope(arm.Body, "")
+		if arm.Guard != nil {
+			visit(*arm.Guard)
+		}
+		body := base.Cast[Block](a.Node(arm.Body).Kind)
+		for _, expr := range body.Exprs {
+			visit(expr)
+		}
+		leaveScope()
+	}
+	if match.Else != nil {
+		visit(match.Else.Body)
+	}
 }
 
 func (g *ScopeGraph) NodeScope(nodeID NodeID) *Scope {

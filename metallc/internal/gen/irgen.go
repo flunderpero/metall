@@ -44,9 +44,10 @@ func (g *CodeWriter) write(args ...any) {
 type Label string
 
 type matchArmInfo struct {
-	label    Label
-	armIndex int
-	tag      int
+	label     Label
+	armIndex  int
+	tag       int
+	guardFail Label
 }
 
 type Symbol struct {
@@ -847,16 +848,17 @@ func (g *IRFunGen) genMatch(id ast.NodeID, match ast.Match) {
 	payloadPtr := g.reg()
 	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", payloadPtr, unionIRType, exprReg)
 	contLabel := g.label("endmatch", id)
-	armInfos := g.buildMatchArmInfos(id, match, union)
 	var defaultLabel Label
 	if match.Else != nil {
 		defaultLabel = g.label("case_else", id)
 	} else {
 		defaultLabel = g.label("unreachable_match", id)
 	}
+	armInfos := g.buildMatchArmInfos(id, match, union, defaultLabel)
+	targets := switchTargets(armInfos)
 	sb := strings.Builder{}
 	fmt.Fprintf(&sb, "switch i64 %s, label %%%s [", tagReg, defaultLabel)
-	for _, info := range armInfos {
+	for _, info := range targets {
 		fmt.Fprintf(&sb, " i64 %d, label %%%s", info.tag, info.label)
 	}
 	sb.WriteString(" ]")
@@ -868,9 +870,14 @@ func (g *IRFunGen) genMatch(id ast.NodeID, match ast.Match) {
 	g.genMatchArms(id, match, armInfos, contLabel, payloadPtr, defaultLabel)
 }
 
-func (g *IRFunGen) buildMatchArmInfos(id ast.NodeID, match ast.Match, union types.UnionType) []matchArmInfo {
-	arms := make([]matchArmInfo, 0, len(match.Arms))
-	for _, arm := range match.Arms {
+func (g *IRFunGen) buildMatchArmInfos(
+	id ast.NodeID,
+	match ast.Match,
+	union types.UnionType,
+	elseLabel Label,
+) []matchArmInfo {
+	infos := make([]matchArmInfo, 0, len(match.Arms))
+	for i, arm := range match.Arms {
 		patternTypeID := g.env.TypeOfNode(arm.Pattern).ID
 		tag := -1
 		for vi, vID := range union.Variants {
@@ -882,10 +889,41 @@ func (g *IRFunGen) buildMatchArmInfos(id ast.NodeID, match ast.Match, union type
 		if tag < 0 {
 			panic(base.Errorf("genMatch: variant not found"))
 		}
-		lbl := g.label(fmt.Sprintf("case_%d", tag), id)
-		arms = append(arms, matchArmInfo{lbl, len(arms), tag})
+		lbl := g.label(fmt.Sprintf("case_%d_%d", tag, i), id)
+		infos = append(infos, matchArmInfo{lbl, i, tag, ""})
 	}
-	return arms
+	// Chain guarded arms: if a guard fails, fall through to the next arm
+	// for the same variant tag. The last arm for a tag falls through to
+	// the else label (or unreachable).
+	for i := range infos {
+		if match.Arms[infos[i].armIndex].Guard == nil {
+			continue
+		}
+		nextLabel := elseLabel
+		for j := i + 1; j < len(infos); j++ {
+			if infos[j].tag == infos[i].tag {
+				nextLabel = infos[j].label
+				break
+			}
+		}
+		infos[i].guardFail = nextLabel
+	}
+	return infos
+}
+
+// switchTargets returns one label per variant tag for the switch instruction.
+// Only the first arm for each tag appears in the switch table.
+func switchTargets(infos []matchArmInfo) []matchArmInfo {
+	seen := map[int]bool{}
+	var targets []matchArmInfo
+	for _, info := range infos {
+		if seen[info.tag] {
+			continue
+		}
+		seen[info.tag] = true
+		targets = append(targets, info)
+	}
+	return targets
 }
 
 func (g *IRFunGen) genMatchArms( //nolint:funlen
@@ -909,21 +947,13 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 	for _, armInfo := range armInfos {
 		arm := match.Arms[armInfo.armIndex]
 		g.writeLabel(armInfo.label)
-		body := base.Cast[ast.Block](g.ast.Node(arm.Body).Kind)
-		if arm.Binding != nil && len(body.Exprs) > 0 {
-			bindNode := body.Exprs[0]
-			variantTypeID := g.env.TypeOfNode(arm.Pattern).ID
-			variantIRType := g.irType(variantTypeID)
-			if g.isAggregateType(variantTypeID) {
-				g.setSymbol(bindNode, arm.Binding.Name, payloadPtr, "ptr")
-			} else {
-				bindReg := g.reg()
-				g.write("%s = load %s, ptr %s", bindReg, variantIRType, payloadPtr)
-				allocReg := g.reg()
-				g.write("%s = alloca %s", allocReg, variantIRType)
-				g.write("store %s %s, ptr %s", variantIRType, bindReg, allocReg)
-				g.setSymbol(bindNode, arm.Binding.Name, allocReg, variantIRType)
-			}
+		g.genMatchArmBinding(arm, payloadPtr)
+		if arm.Guard != nil {
+			g.Gen(*arm.Guard)
+			guardReg := g.lookupCode(*arm.Guard)
+			bodyLabel := g.label(fmt.Sprintf("guard_ok_%d", armInfo.armIndex), id)
+			g.write("br i1 %s, label %%%s, label %%%s", guardReg, bodyLabel, armInfo.guardFail)
+			g.writeLabel(bodyLabel)
 		}
 		g.Gen(arm.Body)
 		if !g.ast.BlockBreaksControlFlow(arm.Body, false) {
@@ -966,6 +996,26 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 	}
 	g.write(phiSB.String())
 	g.setCode(id, phi)
+}
+
+func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
+	body := base.Cast[ast.Block](g.ast.Node(arm.Body).Kind)
+	if arm.Binding == nil || len(body.Exprs) == 0 {
+		return
+	}
+	bindNode := body.Exprs[0]
+	variantTypeID := g.env.TypeOfNode(arm.Pattern).ID
+	variantIRType := g.irType(variantTypeID)
+	if g.isAggregateType(variantTypeID) {
+		g.setSymbol(bindNode, arm.Binding.Name, payloadPtr, "ptr")
+	} else {
+		bindReg := g.reg()
+		g.write("%s = load %s, ptr %s", bindReg, variantIRType, payloadPtr)
+		allocReg := g.reg()
+		g.write("%s = alloca %s", allocReg, variantIRType)
+		g.write("store %s %s, ptr %s", variantIRType, bindReg, allocReg)
+		g.setSymbol(bindNode, arm.Binding.Name, allocReg, variantIRType)
+	}
 }
 
 func (g *IRGen) label(name string, id ast.NodeID) Label {

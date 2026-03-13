@@ -224,6 +224,37 @@ fun f(x AB) void {
             arguments: (argument_list (string_literal))))))))
 
 ================================================================================
+Match with guard
+================================================================================
+
+fun f(x AB) Str {
+    match x {
+        case Int n if n > 10: "big"
+        case Int: "small"
+        case Bool: "bool"
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm
+          pattern: (simple_type (type_identifier))
+          binding: (identifier)
+          guard: (binary_expression (identifier) (integer_literal))
+          (string_literal))
+        (match_arm pattern: (simple_type (type_identifier)) (string_literal))
+        (match_arm pattern: (simple_type (type_identifier)) (string_literal))))))
+
+================================================================================
 Match as expression
 ================================================================================
 

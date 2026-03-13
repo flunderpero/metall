@@ -51,15 +51,28 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 				e.env.TypeDisplay(variantTypeID), e.env.TypeDisplay(unionTypeID))
 			return InvalidTypeID, TypeFailed
 		}
-		if covered[matchedIdx] {
-			e.diag(e.ast.Node(arm.Pattern).Span, "duplicate match arm for variant %s",
-				e.env.TypeDisplay(variantTypeID))
-			return InvalidTypeID, TypeFailed
+		if arm.Guard == nil {
+			if covered[matchedIdx] {
+				e.diag(e.ast.Node(arm.Pattern).Span, "duplicate match arm for variant %s",
+					e.env.TypeDisplay(variantTypeID))
+				return InvalidTypeID, TypeFailed
+			}
+			covered[matchedIdx] = true
 		}
-		covered[matchedIdx] = true
 		if arm.Binding != nil {
 			bodyScope := e.scopeGraph.IntroducedScope(arm.Body)
 			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, variantTypeID)
+		}
+		if arm.Guard != nil {
+			guardTypeID, guardStatus := e.Query(*arm.Guard)
+			if guardStatus.Failed() {
+				return InvalidTypeID, TypeDepFailed
+			}
+			if guardTypeID != e.boolTyp {
+				e.diag(e.ast.Node(*arm.Guard).Span, "guard condition must be Bool, got %s",
+					e.env.TypeDisplay(guardTypeID))
+				return InvalidTypeID, TypeFailed
+			}
 		}
 		bodies = append(bodies, armBody{arm.Body, InvalidTypeID})
 	}

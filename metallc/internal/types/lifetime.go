@@ -510,6 +510,9 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 			ss := a.scopeByID(a.scopeGraph.IntroducedScope(arm.Body).ID)
 			ss.Vars[arm.Binding.Name] = &VarTaint{arm.Body, ss.ScopeTaint, exprFlow}
 		}
+		if arm.Guard != nil {
+			a.Check(*arm.Guard)
+		}
 		a.Check(arm.Body)
 	}
 	if match.Else != nil {
