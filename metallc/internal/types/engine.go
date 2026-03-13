@@ -854,6 +854,9 @@ func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
 	if len(e.moduleResolution.Imports) == 0 {
 		return nil, false
 	}
+	if _, ok := typ.Kind.(ModuleType); ok {
+		return nil, false
+	}
 	declNodeID := e.env.DeclNode(typ.ID)
 	if declNodeID == 0 || ast.IsPreludeNode(declNodeID) {
 		return nil, false

@@ -175,6 +175,11 @@ func TestTypeCheckModuleErr(t *testing.T) {
 			`use lib fun main() void { lib::sub::foo() }`,
 			"invalid module path",
 		},
+		{
+			"dot syntax on module",
+			`use lib fun main() void { lib.get_lib() }`,
+			"cannot access field on non-struct type: lib",
+		},
 	}
 
 	assert := base.NewAssert(t)
