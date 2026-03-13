@@ -280,6 +280,7 @@ func (Unary) isKind() {}
 
 type Var struct {
 	Name Name
+	Type *NodeID
 	Expr NodeID
 	Mut  bool
 }
@@ -604,8 +605,8 @@ func (a *AST) NewRefType(type_ NodeID, mut bool, span base.Span) NodeID {
 	return a.node(RefType{Type: type_, Mut: mut}, span)
 }
 
-func (a *AST) NewVar(name Name, expr NodeID, mut bool, span base.Span) NodeID {
-	return a.node(Var{Name: name, Expr: expr, Mut: mut}, span)
+func (a *AST) NewVar(name Name, type_ *NodeID, expr NodeID, mut bool, span base.Span) NodeID {
+	return a.node(Var{Name: name, Type: type_, Expr: expr, Mut: mut}, span)
 }
 
 func (a *AST) Node(id NodeID) *Node {
@@ -782,6 +783,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case String:
 	case RuneLiteral:
 	case Var:
+		if kind.Type != nil {
+			f(*kind.Type)
+		}
 		f(kind.Expr)
 	case SimpleType:
 		for i := range len(kind.TypeArgs) {
@@ -1110,6 +1114,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	case Var:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if kind.Type != nil {
+			if !children {
+				addAttr("type", nodeIDKind(*kind.Type))
+			} else {
+				addChild("type", *kind.Type)
+			}
+		}
 		if !children {
 			addAttr("expr", nodeIDKind(kind.Expr))
 		} else {

@@ -1584,18 +1584,44 @@ func (e *Engine) checkRuneLiteral(lit ast.RuneLiteral, span base.Span) (TypeID, 
 	return e.runeTyp, TypeOK
 }
 
-func (e *Engine) checkVar(
-	nodeID ast.NodeID, varNode ast.Var, span base.Span,
-) (TypeID, TypeStatus) {
-	exprTypeID, status := e.Query(varNode.Expr)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
+func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (TypeID, TypeStatus) {
+	var declTypeID TypeID
+	if varNode.Type != nil {
+		var status TypeStatus
+		declTypeID, status = e.Query(*varNode.Type)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	}
+	var exprTypeID TypeID
+	if varNode.Type != nil {
+		var status TypeStatus
+		exprTypeID, status = e.queryWithHint(varNode.Expr, declTypeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	} else {
+		var status TypeStatus
+		exprTypeID, status = e.Query(varNode.Expr)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
 	}
 	if exprTypeID == e.voidTyp {
 		e.diag(span, "cannot assign void to a variable")
 		return InvalidTypeID, TypeFailed
 	}
-	if !e.bind(nodeID, varNode.Name.Name, varNode.Mut, exprTypeID, varNode.Name.Span) {
+	bindTypeID := exprTypeID
+	if varNode.Type != nil {
+		if !e.env.isAssignableTo(exprTypeID, declTypeID) {
+			exprSpan := e.ast.Node(varNode.Expr).Span
+			e.diag(exprSpan, "type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(declTypeID), e.env.TypeDisplay(exprTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+		bindTypeID = declTypeID
+	}
+	if !e.bind(nodeID, varNode.Name.Name, varNode.Mut, bindTypeID, varNode.Name.Span) {
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK

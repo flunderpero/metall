@@ -102,6 +102,41 @@ scope01:
   x: Int (mut)
 ```
 
+**Type annotation coerces &mut to &ref**
+
+The annotated type is used for the binding, not the inferred expression type.
+
+```metall
+{ mut x = 1 let y &Int = &mut x }
+```
+
+```types
+Block: void
+  Var: void
+    Int: Int
+  Var: void
+    RefType: &Int
+      SimpleType: Int
+    Ref: &mut Int
+      Ident: Int
+```
+
+```bindings
+Block: scope01
+  Var: scope02
+    Int: scope02
+  Var: scope02
+    RefType: scope02
+      SimpleType: scope02
+    Ref: scope02
+      Ident: scope02
+---
+scope01:
+scope02:
+  x: Int (mut)
+  y: &Int
+```
+
 **Assign is void**
 
 ```metall
@@ -5591,6 +5626,30 @@ test.met:1:32: unreachable code
 test.met:1:19: type mismatch: expected Int, got Str
     { mut x = 123 x = "hello" }
                       ^^^^^^^
+```
+
+**Var type annotation mismatch**
+
+```metall
+let x Str = 123
+```
+
+```error
+test.met:1:13: type mismatch: expected Str, got Int
+    let x Str = 123
+                ^^^
+```
+
+**Var type annotation &ref not assignable to &mut**
+
+```metall
+{ let x = 1 let y &mut Int = &x }
+```
+
+```error
+test.met:1:30: type mismatch: expected &mut Int, got &Int
+    { let x = 1 let y &mut Int = &x }
+                                 ^^
 ```
 
 **Assign to let binding**

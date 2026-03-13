@@ -51,6 +51,30 @@ Var(name="x",mut=true)
   expr=Int(value=123)
 ```
 
+**Let binding with type annotation**
+
+```metall
+let x Str = "hello"
+```
+
+```ast
+Var(name="x",mut=false)
+  type=SimpleType(name="Str")
+  expr=String(value="hello")
+```
+
+**Let binding with invalid type annotation**
+
+```metall
+let x 123 = "hello"
+```
+
+```error
+test.met:1:7: unexpected token: expected <type identifier> or &, got <number>
+    let x 123 = "hello"
+          ^^^
+```
+
 **Assigning to a type name should fail**
 
 ```metall

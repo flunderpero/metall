@@ -887,6 +887,14 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
+	var type_ *NodeID
+	if next, ok := p.mustPeek(); ok && next.Kind != token.Eq {
+		t, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		type_ = &t
+	}
 	if _, ok := p.expect(token.Eq); !ok {
 		return ParseFailed, false
 	}
@@ -894,7 +902,7 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewVar(name, init, mut, span.Combine(p.span())), true
+	return p.NewVar(name, type_, init, mut, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFunParams() ([]NodeID, bool) {
