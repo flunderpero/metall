@@ -5648,6 +5648,181 @@ test.met:1:49: type argument count mismatch: expected 1 to 2, got 0
                                                     ^^^^
 ```
 
+## Type Arg Inference
+
+**Infer struct type args from constructor**
+
+```metall
+{
+    struct Pair<A, B> { a A b B }
+    let x = Pair("hello", 42)
+    x.a
+}
+```
+
+```types
+Block: Str
+  Struct: struct01
+    TypeParam: ?
+    TypeParam: ?
+    StructField: ?
+      SimpleType: ?
+    StructField: ?
+      SimpleType: ?
+  Var: void
+    TypeConstruction: struct02
+      Ident: struct02
+      String: Str
+      Int: Int
+  FieldAccess: Str
+    Ident: struct02
+---
+struct01 = Pair { a A, b B }
+struct02 = Pair<Str, Int> { a Str, b Int }
+```
+
+**Infer union type arg with default**
+
+```metall
+{
+    union Result<T, E = Bool> = T | E
+    Result(42)
+}
+```
+
+```types
+Block: ?
+  Union: ?
+    TypeParam: ?
+    TypeParam: ?
+      SimpleType: ?
+    SimpleType: ?
+    SimpleType: ?
+  TypeConstruction: ?
+    Ident: ?
+    Int: Int
+```
+
+**Infer function type args from call**
+
+```metall
+{
+    fun id<T>(x T) T { x }
+    id(42)
+}
+```
+
+```types
+Block: Int
+  Fun: fun01
+    TypeParam: T
+    FunParam: T
+      SimpleType: T
+    SimpleType: T
+    Block: T
+      Ident: T
+  Call: Int
+    Ident: fun02
+    Int: Int
+---
+fun01 = fun(T) T
+fun02 = fun(Int) Int
+```
+
+**Infer fun type args materializes int literals for concrete params**
+
+```metall
+{
+    fun foo<T>(x T, n U8) T { x }
+    foo("hi", 42)
+}
+```
+
+```types
+Block: Str
+  Fun: fun01
+    TypeParam: T
+    FunParam: T
+      SimpleType: T
+    FunParam: U8
+      SimpleType: U8
+    SimpleType: T
+    Block: T
+      Ident: T
+  Call: Str
+    Ident: fun02
+    String: Str
+    Int: U8
+---
+fun01 = fun(T, U8) T
+fun02 = fun(Str, U8) Str
+```
+
+**Infer nested type args**
+
+```metall
+{
+    struct Box<T> { value T }
+    fun unbox<T>(b Box<T>) T { b.value }
+    unbox(Box(42))
+}
+```
+
+```types
+Block: Int
+  Struct: struct01
+    TypeParam: ?
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    TypeParam: T
+    FunParam: struct02
+      SimpleType: struct02
+        SimpleType: T
+    SimpleType: T
+    Block: T
+      FieldAccess: T
+        Ident: struct02
+  Call: Int
+    Ident: fun02
+    TypeConstruction: struct03
+      Ident: struct03
+      Int: Int
+---
+struct01 = Box { value T }
+struct02 = Box<T> { value T }
+fun01    = fun(struct02) T
+struct03 = Box<Int> { value Int }
+fun02    = fun(struct03) Int
+```
+
+**Infer type args from assignment target**
+
+```metall
+{
+    union Foo<T> = Str | T
+    mut x = Foo(true)
+    x = Foo("test")
+}
+```
+
+```types
+Block: void
+  Union: ?
+    TypeParam: ?
+    SimpleType: ?
+    SimpleType: ?
+  Var: void
+    TypeConstruction: ?
+      Ident: ?
+      Bool: Bool
+  Assign: void
+    Ident: ?
+    TypeConstruction: ?
+      Ident: ?
+      String: Str
+```
+
 ## Errors
 
 **Undefined symbol**
@@ -6705,18 +6880,6 @@ test.met:1:27: type argument count mismatch: expected 1, got 2
 test.met:1:14: duplicate type parameter: T
     { fun foo<T, T>(x T) T { x } }
                  ^
-```
-
-**Generic fun missing type args**
-
-```metall
-{ fun foo<T>(x T) T { x } foo(1) }
-```
-
-```error
-test.met:1:27: type argument count mismatch: expected 1, got 0
-    { fun foo<T>(x T) T { x } foo(1) }
-                              ^^^
 ```
 
 **Method on generic struct too few type args**

@@ -54,7 +54,7 @@ func NewEngine(a *ast.AST, preludeAST *ast.AST, moduleResolution *modules.Module
 		EngineCore:       c,
 		moduleResolution: moduleResolution,
 	}
-	e.generics = NewGenericsEngine(c, e.Query, e.checkFunBody)
+	e.generics = NewGenericsEngine(c, e.Query, e.queryWithHint, e.checkFunBody)
 	for _, root := range preludeAST.Roots {
 		e.Query(root)
 	}
@@ -177,7 +177,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Match:
 		typeID, status = e.checkMatch(nodeKind, node.Span)
 	case ast.TypeConstruction:
-		typeID, status = e.checkTypeConstruction(nodeID, nodeKind, node.Span)
+		typeID, status = e.checkTypeConstruction(nodeID, nodeKind, node.Span, typeHint)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.SliceType:
@@ -630,12 +630,24 @@ func (e *Engine) checkSubSlice(nodeID ast.NodeID, subSlice ast.SubSlice) (TypeID
 }
 
 func (e *Engine) checkTypeConstruction(
-	nodeID ast.NodeID, lit ast.TypeConstruction, span base.Span,
+	nodeID ast.NodeID, lit ast.TypeConstruction, span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
+	if typeID, status, ok := e.generics.inferTypeConstruction(lit, span, typeHint); ok {
+		if status.Failed() {
+			return InvalidTypeID, status
+		}
+		return e.dispatchTypeConstruction(nodeID, typeID, lit, span)
+	}
 	targetTypeID, status := e.Query(lit.Target)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
+	return e.dispatchTypeConstruction(nodeID, targetTypeID, lit, span)
+}
+
+func (e *Engine) dispatchTypeConstruction(
+	nodeID ast.NodeID, targetTypeID TypeID, lit ast.TypeConstruction, span base.Span,
+) (TypeID, TypeStatus) {
 	targetTyp := e.env.Type(targetTypeID)
 	switch kind := targetTyp.Kind.(type) {
 	case IntType:
@@ -869,6 +881,9 @@ func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
 }
 
 func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) {
+	if _, status, ok := e.generics.inferFunCall(call, span); ok && status.Failed() {
+		return InvalidTypeID, status
+	}
 	calleeTypeID, status := e.Query(call.Callee)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed

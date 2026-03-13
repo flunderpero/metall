@@ -12,12 +12,15 @@ type CheckFunBodyFunc func(funNode ast.Fun, funTypeID TypeID, funType FunType)
 
 type GenericsEngine struct {
 	*EngineCore
-	query        QueryFunc
-	checkFunBody CheckFunBodyFunc
+	query         QueryFunc
+	queryWithHint QueryWithHintFunc
+	checkFunBody  CheckFunBodyFunc
 }
 
-func NewGenericsEngine(c *EngineCore, query QueryFunc, checkFunBody CheckFunBodyFunc) *GenericsEngine {
-	return &GenericsEngine{c, query, checkFunBody}
+func NewGenericsEngine(
+	c *EngineCore, query QueryFunc, queryWithHint QueryWithHintFunc, checkFunBody CheckFunBodyFunc,
+) *GenericsEngine {
+	return &GenericsEngine{c, query, queryWithHint, checkFunBody}
 }
 
 func (g *GenericsEngine) instantiateStruct(
@@ -36,6 +39,14 @@ func (g *GenericsEngine) instantiateStruct(
 	if status.Failed() {
 		return InvalidTypeID, status
 	}
+	return g.instantiateStructWithTypeArgs(generic, genericTypeID, argTypeIDs)
+}
+
+func (g *GenericsEngine) instantiateStructWithTypeArgs(
+	generic StructType, genericTypeID TypeID, argTypeIDs []TypeID,
+) (TypeID, TypeStatus) {
+	structNodeID := g.env.DeclNode(genericTypeID)
+	structNode := base.Cast[ast.Struct](g.ast.Node(structNodeID).Kind)
 	mangledName := g.mangledName(generic.Name, genericTypeID, argTypeIDs)
 	if cached, ok := g.structs[mangledName]; ok {
 		return cached.TypeID, TypeOK
@@ -89,6 +100,14 @@ func (g *GenericsEngine) instantiateUnion(
 	if status.Failed() {
 		return InvalidTypeID, status
 	}
+	return g.instantiateUnionWithTypeArgs(generic, genericTypeID, argTypeIDs)
+}
+
+func (g *GenericsEngine) instantiateUnionWithTypeArgs(
+	generic UnionType, genericTypeID TypeID, argTypeIDs []TypeID,
+) (TypeID, TypeStatus) {
+	unionNodeID := g.env.DeclNode(genericTypeID)
+	unionNode := base.Cast[ast.Union](g.ast.Node(unionNodeID).Kind)
 	mangledName := g.mangledName(generic.Name, genericTypeID, argTypeIDs)
 	if cached, ok := g.unions[mangledName]; ok {
 		return cached.TypeID, TypeOK
@@ -183,6 +202,223 @@ func (g *GenericsEngine) bindTypeParamsToArgs(typeParamNodeIDs []ast.NodeID, arg
 	}
 }
 
+func (g *GenericsEngine) collectTypeArgBindings(genericTypeID, concreteTypeID TypeID, bindings map[TypeID]TypeID) {
+	genericTyp := g.env.Type(genericTypeID)
+	switch kind := genericTyp.Kind.(type) {
+	case TypeParamType:
+		bindings[genericTypeID] = concreteTypeID
+	case StructType:
+		if concrete, ok := g.env.Type(concreteTypeID).Kind.(StructType); ok {
+			for i, typeArg := range kind.TypeArgs {
+				if i < len(concrete.TypeArgs) {
+					g.collectTypeArgBindings(typeArg, concrete.TypeArgs[i], bindings)
+				}
+			}
+		}
+	case UnionType:
+		if concrete, ok := g.env.Type(concreteTypeID).Kind.(UnionType); ok {
+			for i, typeArg := range kind.TypeArgs {
+				if i < len(concrete.TypeArgs) {
+					g.collectTypeArgBindings(typeArg, concrete.TypeArgs[i], bindings)
+				}
+			}
+		}
+	case RefType:
+		if concrete, ok := g.env.Type(concreteTypeID).Kind.(RefType); ok {
+			g.collectTypeArgBindings(kind.Type, concrete.Type, bindings)
+		}
+	case ArrayType:
+		if concrete, ok := g.env.Type(concreteTypeID).Kind.(ArrayType); ok {
+			g.collectTypeArgBindings(kind.Elem, concrete.Elem, bindings)
+		}
+	case SliceType:
+		if concrete, ok := g.env.Type(concreteTypeID).Kind.(SliceType); ok {
+			g.collectTypeArgBindings(kind.Elem, concrete.Elem, bindings)
+		}
+	case FunType:
+		if concrete, ok := g.env.Type(concreteTypeID).Kind.(FunType); ok {
+			for i, param := range kind.Params {
+				if i < len(concrete.Params) {
+					g.collectTypeArgBindings(param, concrete.Params[i], bindings)
+				}
+			}
+			g.collectTypeArgBindings(kind.Return, concrete.Return, bindings)
+		}
+	}
+}
+
+func (g *GenericsEngine) inferTypeArgs(
+	typeParamNodeIDs []ast.NodeID, genericTypeIDs, concreteTypeIDs []TypeID, span base.Span,
+) ([]TypeID, TypeStatus) {
+	bindings := map[TypeID]TypeID{}
+	for i, genericTypeID := range genericTypeIDs {
+		if i < len(concreteTypeIDs) {
+			g.collectTypeArgBindings(genericTypeID, concreteTypeIDs[i], bindings)
+		}
+	}
+	inferred := make([]TypeID, 0, len(typeParamNodeIDs))
+	for _, nodeID := range typeParamNodeIDs {
+		typeParamTypeID := g.env.reg.typeParamTypes[nodeID]
+		if concreteID, ok := bindings[typeParamTypeID]; ok {
+			inferred = append(inferred, concreteID)
+		} else {
+			break
+		}
+	}
+	return g.applyTypeArgDefaults(typeParamNodeIDs, inferred, span)
+}
+
+func (g *GenericsEngine) inferTypeConstruction(
+	lit ast.TypeConstruction, span base.Span, typeHint *TypeID,
+) (TypeID, TypeStatus, bool) {
+	ident, ok := g.ast.Node(lit.Target).Kind.(ast.Ident)
+	if !ok || len(ident.TypeArgs) > 0 {
+		return InvalidTypeID, TypeFailed, false
+	}
+	binding, ok := g.lookup(lit.Target, ident.Name)
+	if !ok {
+		return InvalidTypeID, TypeFailed, false
+	}
+	if typeHint != nil {
+		if origin, ok := g.env.GenericOrigin(*typeHint); ok && origin == binding.TypeID {
+			if !g.env.containsTypeParam(*typeHint) {
+				g.updateCachedType(g.ast.Node(lit.Target), *typeHint, TypeOK)
+				return *typeHint, TypeOK, true
+			}
+		}
+	}
+	switch kind := g.env.Type(binding.TypeID).Kind.(type) {
+	case StructType:
+		return g.inferStructConstruction(binding, kind, lit, span)
+	case UnionType:
+		return g.inferUnionConstruction(binding, kind, lit, span)
+	default:
+		return InvalidTypeID, TypeFailed, false
+	}
+}
+
+func (g *GenericsEngine) queryArgsForInference(
+	argNodeIDs []ast.NodeID,
+	genericParamTypeIDs []TypeID,
+) ([]TypeID, TypeStatus) {
+	argTypeIDs := make([]TypeID, len(argNodeIDs))
+	for i, argNodeID := range argNodeIDs {
+		var argTypeID TypeID
+		var status TypeStatus
+		if i < len(genericParamTypeIDs) {
+			if _, isTypeParam := g.env.Type(genericParamTypeIDs[i]).Kind.(TypeParamType); !isTypeParam {
+				argTypeID, status = g.queryWithHint(argNodeID, genericParamTypeIDs[i])
+			} else {
+				argTypeID, status = g.query(argNodeID)
+			}
+		} else {
+			argTypeID, status = g.query(argNodeID)
+		}
+		if status.Failed() {
+			return nil, TypeDepFailed
+		}
+		argTypeIDs[i] = argTypeID
+	}
+	return argTypeIDs, TypeOK
+}
+
+func (g *GenericsEngine) inferStructConstruction(
+	binding *Binding, structType StructType, lit ast.TypeConstruction, span base.Span,
+) (TypeID, TypeStatus, bool) {
+	structNode, ok := g.ast.Node(binding.Decl).Kind.(ast.Struct)
+	if !ok || len(structNode.TypeParams) == 0 {
+		return InvalidTypeID, TypeFailed, false
+	}
+	fieldTypeIDs := make([]TypeID, len(structType.Fields))
+	for i, field := range structType.Fields {
+		fieldTypeIDs[i] = field.Type
+	}
+	argTypeIDs, status := g.queryArgsForInference(lit.Args, fieldTypeIDs)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed, true
+	}
+	inferred, status := g.inferTypeArgs(structNode.TypeParams, fieldTypeIDs, argTypeIDs, span)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	typeID, status := g.instantiateStructWithTypeArgs(structType, binding.TypeID, inferred)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	g.updateCachedType(g.ast.Node(lit.Target), typeID, TypeOK)
+	return typeID, TypeOK, true
+}
+
+func (g *GenericsEngine) inferUnionConstruction(
+	binding *Binding, unionType UnionType, lit ast.TypeConstruction, span base.Span,
+) (TypeID, TypeStatus, bool) {
+	unionNode, ok := g.ast.Node(binding.Decl).Kind.(ast.Union)
+	if !ok || len(unionNode.TypeParams) == 0 {
+		return InvalidTypeID, TypeFailed, false
+	}
+	if len(lit.Args) != 1 {
+		return InvalidTypeID, TypeFailed, false
+	}
+	argTypeID, status := g.query(lit.Args[0])
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed, true
+	}
+	bindings := map[TypeID]TypeID{}
+	for _, variant := range unionType.Variants {
+		g.collectTypeArgBindings(variant, argTypeID, bindings)
+	}
+	inferred := make([]TypeID, 0, len(unionNode.TypeParams))
+	for _, nodeID := range unionNode.TypeParams {
+		typeParamTypeID := g.env.reg.typeParamTypes[nodeID]
+		if concreteID, ok := bindings[typeParamTypeID]; ok {
+			inferred = append(inferred, concreteID)
+		} else {
+			break
+		}
+	}
+	filled, status := g.applyTypeArgDefaults(unionNode.TypeParams, inferred, span)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	typeID, status := g.instantiateUnionWithTypeArgs(unionType, binding.TypeID, filled)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	g.updateCachedType(g.ast.Node(lit.Target), typeID, TypeOK)
+	return typeID, TypeOK, true
+}
+
+func (g *GenericsEngine) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus, bool) {
+	ident, ok := g.ast.Node(call.Callee).Kind.(ast.Ident)
+	if !ok || len(ident.TypeArgs) > 0 {
+		return InvalidTypeID, TypeFailed, false
+	}
+	binding, ok := g.lookup(call.Callee, ident.Name)
+	if !ok || binding.Decl == 0 {
+		return InvalidTypeID, TypeFailed, false
+	}
+	funNode, ok := g.ast.Node(binding.Decl).Kind.(ast.Fun)
+	if !ok || len(funNode.TypeParams) == 0 {
+		return InvalidTypeID, TypeFailed, false
+	}
+	genericFunType := base.Cast[FunType](g.env.Type(binding.TypeID).Kind)
+	argTypeIDs, status := g.queryArgsForInference(call.Args, genericFunType.Params)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed, true
+	}
+	inferred, status := g.inferTypeArgs(funNode.TypeParams, genericFunType.Params, argTypeIDs, span)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	typeID, mangledName, status := g.instantiateFunWithTypeArgs(binding.TypeID, call.Callee, span, inferred)
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	g.env.setNamedFunRef(call.Callee, mangledName)
+	g.env.setNodeType(call.Callee, &cachedType{Type: g.env.Type(typeID), Status: TypeOK})
+	return typeID, TypeOK, true
+}
+
 func (g *GenericsEngine) instantiateFun(
 	genericTypeID TypeID,
 	argTypeIDs []TypeID,
@@ -195,6 +431,17 @@ func (g *GenericsEngine) instantiateFun(
 	if status.Failed() {
 		return InvalidTypeID, "", status
 	}
+	return g.instantiateFunWithTypeArgs(genericTypeID, callSiteNodeID, span, argTypeIDs)
+}
+
+func (g *GenericsEngine) instantiateFunWithTypeArgs(
+	genericTypeID TypeID,
+	callSiteNodeID ast.NodeID,
+	span base.Span,
+	argTypeIDs []TypeID,
+) (typeID TypeID, mangledName string, status TypeStatus) {
+	funNodeID := g.env.DeclNode(genericTypeID)
+	funNode := base.Cast[ast.Fun](g.ast.Node(funNodeID).Kind)
 	genericName, ok := g.env.NamedFunRef(funNodeID)
 	if !ok {
 		return InvalidTypeID, "", TypeFailed
