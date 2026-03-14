@@ -260,6 +260,12 @@ func (d *debugTypes) typeLabelForID(typeID TypeID) string { //nolint:funlen
 			return "[]mut " + elem
 		}
 		return "[]" + elem
+	case UnionType:
+		label, isNew := d.reserveLabel("union", typeID)
+		if isNew {
+			d.legends = append(d.legends, debugTypesLegend{label, d.unionDetail(kind, typeID)})
+		}
+		return label
 	case ShapeType:
 		label, isNew := d.reserveLabel("shape", typeID)
 		if isNew {
@@ -351,6 +357,40 @@ func (d *debugTypes) funDetail(kind FunType) string {
 	}
 	sb.WriteString(") ")
 	sb.WriteString(d.typeLabelForID(kind.Return))
+	return sb.String()
+}
+
+func (d *debugTypes) unionDetail(kind UnionType, typeID TypeID) string {
+	var sb strings.Builder
+	name := kind.Name
+	if origin, ok := d.env.reg.genericOrigin[typeID]; ok {
+		originTyp := d.env.reg.types[origin]
+		if originTyp != nil && originTyp.Type.NodeID != 0 {
+			name = base.Cast[ast.Union](d.env.ast.Node(originTyp.Type.NodeID).Kind).Name.Name
+		}
+	} else if typ := d.env.reg.types[typeID]; typ != nil && typ.Type.NodeID != 0 {
+		if u, ok := d.env.ast.Node(typ.Type.NodeID).Kind.(ast.Union); ok {
+			name = u.Name.Name
+		}
+	}
+	sb.WriteString(name)
+	if len(kind.TypeArgs) > 0 {
+		sb.WriteString("<")
+		for i, ta := range kind.TypeArgs {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(d.typeLabelForID(ta))
+		}
+		sb.WriteString(">")
+	}
+	sb.WriteString(" = ")
+	for i, v := range kind.Variants {
+		if i > 0 {
+			sb.WriteString(" | ")
+		}
+		sb.WriteString(d.typeLabelForID(v))
+	}
 	return sb.String()
 }
 

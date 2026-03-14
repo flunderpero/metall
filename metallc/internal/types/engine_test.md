@@ -747,9 +747,11 @@ union Foo = Str | Int
 ```
 
 ```types
-Union: ?
+Union: union01
   SimpleType: ?
   SimpleType: ?
+---
+union01 = Foo = Str | Int
 ```
 
 **Union three variants**
@@ -759,10 +761,12 @@ union Foo = Str | Int | Bool
 ```
 
 ```types
-Union: ?
+Union: union01
   SimpleType: ?
   SimpleType: ?
   SimpleType: ?
+---
+union01 = Foo = Str | Int | Bool
 ```
 
 **Forward declare union type**
@@ -772,17 +776,18 @@ Union: ?
 ```
 
 ```types
-Block: ?
+Block: union01
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
     SimpleType: void
     Block: void
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
 ---
-fun01 = fun(?) void
+union01 = Foo = Str | Int
+fun01   = fun(union01) void
 ```
 
 **Union with struct variant**
@@ -800,17 +805,18 @@ Block: fun01
   Struct: struct01
     StructField: ?
       SimpleType: ?
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
     SimpleType: void
     Block: void
 ---
-fun01    = fun(?) void
 struct01 = Bar { one Int }
+union01  = Foo = Str | struct01
+fun01    = fun(union01) void
 ```
 
 **Union with ref variant**
@@ -824,17 +830,18 @@ struct01 = Bar { one Int }
 
 ```types
 Block: fun01
-  Union: ?
+  Union: union01
     RefType: ?
       SimpleType: ?
     SimpleType: ?
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
     SimpleType: void
     Block: void
 ---
-fun01 = fun(?) void
+union01 = Foo = &Int | Str
+fun01   = fun(union01) void
 ```
 
 **Generic union**
@@ -848,18 +855,20 @@ fun01 = fun(?) void
 
 ```types
 Block: fun01
-  Union: ?
+  Union: union02
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
         SimpleType: Int
     SimpleType: void
     Block: void
 ---
-fun01 = fun(?) void
+union01 = Maybe<Int> = Int | Bool
+fun01   = fun(union01) void
+union02 = Maybe = T | Bool
 ```
 
 **Generic union identity and distinctness**
@@ -875,31 +884,34 @@ fun01 = fun(?) void
 
 ```types
 Block: fun01
-  Union: ?
+  Union: union02
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
   Fun: fun02
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union03
+      SimpleType: union03
         SimpleType: Int
     SimpleType: void
     Block: void
   Fun: fun02
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union03
+      SimpleType: union03
         SimpleType: Int
     SimpleType: void
     Block: void
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
         SimpleType: Str
     SimpleType: void
     Block: void
 ---
-fun01 = fun(?) void
-fun02 = fun(?) void
+union01 = Maybe<Str> = Str | Bool
+fun01   = fun(union01) void
+union02 = Maybe = T | Bool
+union03 = Maybe<Int> = Int | Bool
+fun02   = fun(union03) void
 ```
 
 **Method on union**
@@ -914,27 +926,28 @@ fun02 = fun(?) void
 
 ```types
 Block: fun01
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
   Fun: fun01
-    FunParam: &?
-      RefType: &?
-        SimpleType: ?
+    FunParam: &union01
+      RefType: &union01
+        SimpleType: union01
     SimpleType: Bool
     Block: Bool
       Bool: Bool
   Fun: fun01
-    FunParam: &?
-      RefType: &?
-        SimpleType: ?
+    FunParam: &union01
+      RefType: &union01
+        SimpleType: union01
     SimpleType: Bool
     Block: Bool
       Call: Bool
         FieldAccess: fun01
-          Ident: &?
+          Ident: &union01
 ---
-fun01 = fun(&?) Bool
+union01 = Foo = Str | Int
+fun01   = fun(&union01) Bool
 ```
 
 **Forward declare union with struct after**
@@ -949,15 +962,15 @@ fun01 = fun(&?) Bool
 
 ```types
 Block: fun01
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
   Struct: struct01
     StructField: ?
       SimpleType: ?
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
     FunParam: struct01
       SimpleType: struct01
     SimpleType: Int
@@ -966,7 +979,8 @@ Block: fun01
         Ident: struct01
 ---
 struct01 = Bar { one Int }
-fun01    = fun(?, struct01) Int
+union01  = Foo = Str | struct01
+fun01    = fun(union01, struct01) Int
 ```
 
 **Generic union with generic struct variant**
@@ -981,24 +995,28 @@ fun01    = fun(?, struct01) Int
 
 ```types
 Block: fun01
-  Struct: struct01
+  Struct: struct02
     TypeParam: ?
     StructField: ?
       SimpleType: ?
-  Union: ?
+  Union: union02
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
       SimpleType: ?
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
         SimpleType: Int
     SimpleType: void
     Block: void
 ---
-fun01    = fun(?) void
-struct01 = Box { value T }
+struct01 = Box<Int> { value Int }
+union01  = Maybe<Int> = Int | struct01
+fun01    = fun(union01) void
+struct02 = Box { value T }
+struct03 = Box<T> { value T }
+union02  = Maybe = T | struct03
 ```
 
 **Union construction with first variant**
@@ -1011,13 +1029,15 @@ struct01 = Box { value T }
 ```
 
 ```types
-Block: ?
-  Union: ?
+Block: union01
+  Union: union01
     SimpleType: ?
     SimpleType: ?
-  TypeConstruction: ?
-    Ident: ?
+  TypeConstruction: union01
+    Ident: union01
     String: Str
+---
+union01 = Either = Str | Int
 ```
 
 **Union construction with second variant**
@@ -1030,13 +1050,15 @@ Block: ?
 ```
 
 ```types
-Block: ?
-  Union: ?
+Block: union01
+  Union: union01
     SimpleType: ?
     SimpleType: ?
-  TypeConstruction: ?
-    Ident: ?
+  TypeConstruction: union01
+    Ident: union01
     Int: Int
+---
+union01 = Foo = Str | Int
 ```
 
 **Union construction with struct variant**
@@ -1050,20 +1072,21 @@ Block: ?
 ```
 
 ```types
-Block: ?
+Block: union01
   Struct: struct01
     StructField: ?
       SimpleType: ?
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
-  TypeConstruction: ?
-    Ident: ?
+  TypeConstruction: union01
+    Ident: union01
     TypeConstruction: struct01
       Ident: struct01
       Int: Int
 ---
 struct01 = Bar { one Int }
+union01  = Foo = Str | struct01
 ```
 
 **Generic union construction**
@@ -1076,14 +1099,295 @@ struct01 = Bar { one Int }
 ```
 
 ```types
-Block: ?
-  Union: ?
+Block: union01
+  Union: union02
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
-  TypeConstruction: ?
-    Ident: ?
+  TypeConstruction: union01
+    Ident: union01
       SimpleType: Int
+    Int: Int
+---
+union01 = Maybe<Int> = Int | Bool
+union02 = Maybe = T | Bool
+```
+
+## Union Auto-Wrap
+
+**Auto-wrap in let binding**
+
+The expression `42` has type `Int`, but the binding `x` gets type `Foo` (the union).
+
+```metall
+{
+    union Foo = Str | Int
+    let x Foo = 42
+    let y Foo = "hello"
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Var: scope02
+    SimpleType: scope02
+    Int: scope02
+  Var: scope02
+    SimpleType: scope02
+    String: scope02
+---
+scope01:
+scope02:
+  Foo: union01
+  x: union01
+  y: union01
+union01 = Foo = Str | Int
+```
+
+**Auto-wrap in function call**
+
+Arguments `42` and `"hello"` are auto-wrapped to `Foo` at the call site.
+
+```metall
+{
+    union Foo = Str | Int
+    fun check(f Foo) void {}
+    check(42)
+    check("hello")
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Fun: scope02
+    FunParam: scope03
+      SimpleType: scope03
+    SimpleType: scope03
+    Block: scope03
+  Call: scope02
+    Ident: scope02
+    Int: scope02
+  Call: scope02
+    Ident: scope02
+    String: scope02
+---
+scope01:
+scope02:
+  Foo: union01
+  check: fun01
+scope03:
+  f: union01
+union01 = Foo = Str | Int
+fun01   = fun(union01) void
+```
+
+**Auto-wrap in return and implicit return**
+
+Both explicit `return` and implicit block result auto-wrap to the union return type.
+
+```metall
+{
+    union Foo = Str | Int
+    fun explicit() Foo { return 42 }
+    fun implicit() Foo { "hello" }
+}
+```
+
+```types
+Block: fun01
+  Union: union01
+    SimpleType: ?
+    SimpleType: ?
+  Fun: fun01
+    SimpleType: union01
+    Block: void
+      Return: void
+        Int: Int
+  Fun: fun01
+    SimpleType: union01
+    Block: union01
+      String: Str
+---
+union01 = Foo = Str | Int
+fun01   = fun() union01
+```
+
+**Auto-wrap in if-else branches**
+
+Each branch independently wraps its variant to the union type.
+
+```metall
+{
+    union Foo = Str | Int
+    fun pick(b Bool) Foo {
+        if b { 42 } else { "hello" }
+    }
+}
+```
+
+```types
+Block: fun01
+  Union: union01
+    SimpleType: ?
+    SimpleType: ?
+  Fun: fun01
+    FunParam: Bool
+      SimpleType: Bool
+    SimpleType: union01
+    Block: union01
+      If: union01
+        Ident: Bool
+        Block: union01
+          Int: Int
+        Block: union01
+          String: Str
+---
+union01 = Foo = Str | Int
+fun01   = fun(Bool) union01
+```
+
+**Auto-wrap in assignment**
+
+Both the initializer and the reassignment auto-wrap to the union.
+
+```metall
+{
+    union Foo = Str | Int
+    fun test() void {
+        mut x Foo = 42
+        x = "hello"
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Fun: scope02
+    SimpleType: scope03
+    Block: scope03
+      Var: scope04
+        SimpleType: scope04
+        Int: scope04
+      Assign: scope04
+        Ident: scope04
+        String: scope04
+---
+scope01:
+scope02:
+  Foo: union01
+  test: fun01
+scope03:
+scope04:
+  x: union01 (mut)
+union01 = Foo = Str | Int
+fun01   = fun() void
+```
+
+**Auto-wrap with generic union**
+
+Wraps through monomorphized generic union.
+
+```metall
+{
+    union Maybe<T> = T | Bool
+    let x Maybe<Int> = 42
+    let y Maybe<Str> = "hello"
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    TypeParam: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Var: scope02
+    SimpleType: scope02
+      SimpleType: scope02
+    Int: scope02
+  Var: scope02
+    SimpleType: scope02
+      SimpleType: scope02
+    String: scope02
+---
+scope01:
+scope02:
+  Maybe: union01
+  T: ?
+  x: union02
+  y: union03
+union01 = Maybe = T | Bool
+union02 = Maybe<Int> = Int | Bool
+union03 = Maybe<Str> = Str | Bool
+```
+
+**Auto-wrap does not wrap matching type**
+
+Explicit `Foo(42)` already produces the union; no redundant wrapping.
+
+```metall
+{
+    union Foo = Str | Int
+    let x Foo = Foo(42)
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Var: scope02
+    SimpleType: scope02
+    TypeConstruction: scope02
+      Ident: scope02
+      Int: scope02
+---
+scope01:
+scope02:
+  Foo: union01
+  x: union01
+union01 = Foo = Str | Int
+```
+
+**Auto-wrap wrong variant type is rejected**
+
+```metall
+{
+    union Foo = Str | Int
+    let x Foo = true
+}
+```
+
+```error
+test.met:3:17: type mismatch: expected Foo, got Bool
+        union Foo = Str | Int
+        let x Foo = true
+                    ^^^^
+    }
+```
+
+**Auto-wrap non-union type is not affected**
+
+```metall
+{
+    let x Int = 42
+}
+```
+
+```types
+Block: void
+  Var: void
+    SimpleType: Int
     Int: Int
 ```
 
@@ -5691,16 +5995,19 @@ struct02 = Pair<Str, Int> { a Str, b Int }
 ```
 
 ```types
-Block: ?
-  Union: ?
+Block: union01
+  Union: union02
     TypeParam: ?
     TypeParam: ?
       SimpleType: ?
     SimpleType: ?
     SimpleType: ?
-  TypeConstruction: ?
-    Ident: ?
+  TypeConstruction: union01
+    Ident: union01
     Int: Int
+---
+union01 = Result<Int, Int> = Int | Int
+union02 = Result = T | E
 ```
 
 **Infer function type args from call**
@@ -5847,19 +6154,22 @@ fun02    = fun(struct01, Int) Int
 
 ```types
 Block: void
-  Union: ?
+  Union: union01
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union02
+      Ident: union02
       Bool: Bool
   Assign: void
-    Ident: ?
-    TypeConstruction: ?
-      Ident: ?
+    Ident: union02
+    TypeConstruction: union02
+      Ident: union02
       String: Str
+---
+union01 = Foo = Str | T
+union02 = Foo<Bool> = Str | Bool
 ```
 
 **Infer type args from return type**
@@ -5873,22 +6183,24 @@ Block: void
 ```
 
 ```types
-Block: ?
-  Union: ?
+Block: union01
+  Union: union02
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
   Fun: fun01
-    SimpleType: ?
+    SimpleType: union01
       SimpleType: Int
-    Block: ?
-      TypeConstruction: ?
-        Ident: ?
+    Block: union01
+      TypeConstruction: union01
+        Ident: union01
         Int: Int
-  Call: ?
+  Call: union01
     Ident: fun01
 ---
-fun01 = fun() ?
+union01 = Result<Int> = Int | Str
+union02 = Result = T | Str
+fun01   = fun() union01
 ```
 
 **Infer type args from return type via if**
@@ -5905,32 +6217,34 @@ fun01 = fun() ?
 ```
 
 ```types
-Block: ?
-  Union: ?
+Block: union01
+  Union: union02
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
   Fun: fun01
     FunParam: Bool
       SimpleType: Bool
-    SimpleType: ?
+    SimpleType: union01
       SimpleType: Int
-    Block: ?
-      If: ?
+    Block: union01
+      If: union01
         Ident: Bool
-        Block: ?
-          TypeConstruction: ?
-            Ident: ?
+        Block: union01
+          TypeConstruction: union01
+            Ident: union01
             Int: Int
-        Block: ?
-          TypeConstruction: ?
-            Ident: ?
+        Block: union01
+          TypeConstruction: union01
+            Ident: union01
             String: Str
-  Call: ?
+  Call: union01
     Ident: fun01
     Bool: Bool
 ---
-fun01 = fun(Bool) ?
+union01 = Result<Int> = Int | Str
+union02 = Result = T | Str
+fun01   = fun(Bool) union01
 ```
 
 **Infer type args from return type via match**
@@ -5949,38 +6263,40 @@ fun01 = fun(Bool) ?
 ```
 
 ```types
-Block: ?
-  Union: ?
+Block: union01
+  Union: union02
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
   Fun: fun01
-    FunParam: ?
-      SimpleType: ?
+    FunParam: union01
+      SimpleType: union01
         SimpleType: Int
-    SimpleType: ?
+    SimpleType: union01
       SimpleType: Int
-    Block: ?
-      Match: ?
-        Ident: ?
+    Block: union01
+      Match: union01
+        Ident: union01
         SimpleType: Int
-        Block: ?
-          TypeConstruction: ?
-            Ident: ?
+        Block: union01
+          TypeConstruction: union01
+            Ident: union01
             Ident: Int
         SimpleType: Str
-        Block: ?
-          TypeConstruction: ?
-            Ident: ?
+        Block: union01
+          TypeConstruction: union01
+            Ident: union01
             Ident: Str
-  Call: ?
+  Call: union01
     Ident: fun01
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union01
+      Ident: union01
         SimpleType: Int
       Int: Int
 ---
-fun01 = fun(?) ?
+union01 = Result<Int> = Int | Str
+union02 = Result = T | Str
+fun01   = fun(union01) union01
 ```
 
 ## Errors

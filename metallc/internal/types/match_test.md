@@ -17,21 +17,23 @@
 
 ```types
 Block: Str
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union01
+      Ident: union01
       String: Str
   Match: Str
-    Ident: ?
+    Ident: union01
     SimpleType: Str
     Block: Str
       String: Str
     SimpleType: Int
     Block: Str
       String: Str
+---
+union01 = Foo = Str | Int
 ```
 
 **Match union with binding**
@@ -49,15 +51,15 @@ Block: Str
 
 ```types
 Block: void
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union01
+      Ident: union01
       Int: Int
   Match: void
-    Ident: ?
+    Ident: union01
     SimpleType: Int
     Block: void
       Call: void
@@ -69,8 +71,9 @@ Block: void
         Ident: fun02
         Ident: Str
 ---
-fun01 = fun(Int) void
-fun02 = fun(Str) void
+union01 = Foo = Str | Int
+fun01   = fun(Int) void
+fun02   = fun(Str) void
 ```
 
 **Match union with else**
@@ -88,21 +91,23 @@ fun02 = fun(Str) void
 
 ```types
 Block: Str
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union01
+      Ident: union01
       String: Str
   Match: Str
-    Ident: ?
+    Ident: union01
     SimpleType: Str
     Block: Str
       String: Str
     Block: Str
       String: Str
+---
+union01 = Foo = Str | Int | Bool
 ```
 
 **Match union all arms diverge**
@@ -122,15 +127,15 @@ fun foo() Int {
 Fun: fun01
   SimpleType: Int
   Block: void
-    Union: ?
+    Union: union01
       SimpleType: ?
       SimpleType: ?
     Var: void
-      TypeConstruction: ?
-        Ident: ?
+      TypeConstruction: union01
+        Ident: union01
         Int: Int
     Match: void
-      Ident: ?
+      Ident: union01
       SimpleType: Str
       Block: void
         Return: void
@@ -140,7 +145,8 @@ Fun: fun01
         Return: void
           Int: Int
 ---
-fun01 = fun() Int
+fun01   = fun() Int
+union01 = Foo = Str | Int
 ```
 
 **Match diverging arm excluded from result type**
@@ -161,16 +167,16 @@ fun foo() Int {
 Fun: fun01
   SimpleType: Int
   Block: Int
-    Union: ?
+    Union: union01
       SimpleType: ?
       SimpleType: ?
       SimpleType: ?
     Var: void
-      TypeConstruction: ?
-        Ident: ?
+      TypeConstruction: union01
+        Ident: union01
         Int: Int
     Match: Int
-      Ident: ?
+      Ident: union01
       SimpleType: Str
       Block: void
         Return: void
@@ -182,7 +188,8 @@ Fun: fun01
       Block: Int
         Int: Int
 ---
-fun01 = fun() Int
+fun01   = fun() Int
+union01 = Tri = Int | Bool | Str
 ```
 
 **Match union with generic type**
@@ -200,23 +207,26 @@ fun01 = fun() Int
 
 ```types
 Block: Int
-  Union: ?
+  Union: union01
     TypeParam: ?
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union02
+      Ident: union02
         SimpleType: Int
       Int: Int
   Match: Int
-    Ident: ?
+    Ident: union02
     SimpleType: Int
     Block: Int
       Ident: Int
     SimpleType: Bool
     Block: Int
       Int: Int
+---
+union01 = Maybe = T | Bool
+union02 = Maybe<Int> = Int | Bool
 ```
 
 **Match with guard**
@@ -235,15 +245,15 @@ Block: Int
 
 ```types
 Block: Str
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union01
+      Ident: union01
       Int: Int
   Match: Str
-    Ident: ?
+    Ident: union01
     SimpleType: Int
     Binary: Bool
       Ident: Int
@@ -256,6 +266,8 @@ Block: Str
     SimpleType: Str
     Block: Str
       String: Str
+---
+union01 = Foo = Int | Str
 ```
 
 **Match with guard and else**
@@ -274,16 +286,16 @@ Block: Str
 
 ```types
 Block: Str
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union01
+      Ident: union01
       Int: Int
   Match: Str
-    Ident: ?
+    Ident: union01
     SimpleType: Int
     Binary: Bool
       Ident: Int
@@ -295,6 +307,8 @@ Block: Str
       String: Str
     Block: Str
       String: Str
+---
+union01 = Tri = Int | Bool | Str
 ```
 
 **Match with multiple guarded arms same variant**
@@ -314,15 +328,15 @@ Block: Str
 
 ```types
 Block: Str
-  Union: ?
+  Union: union01
     SimpleType: ?
     SimpleType: ?
   Var: void
-    TypeConstruction: ?
-      Ident: ?
+    TypeConstruction: union01
+      Ident: union01
       Int: Int
   Match: Str
-    Ident: ?
+    Ident: union01
     SimpleType: Int
     Binary: Bool
       Ident: Int
@@ -341,6 +355,8 @@ Block: Str
     SimpleType: Bool
     Block: Str
       String: Str
+---
+union01 = Foo = Int | Bool
 ```
 
 ## Errors

@@ -3022,6 +3022,293 @@ bool
 pair
 ```
 
+## Union Auto-Wrap
+
+**union auto-wrap in let binding**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    let x Foo = 42
+    match x {
+        case Int n: print_int(n)
+        case Str: print_str("str")
+    }
+}
+```
+
+```output
+42
+```
+
+**union auto-wrap in function call**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    fun check(f Foo) void {
+        match f {
+            case Int n: print_int(n)
+            case Str s: print_str(s)
+        }
+    }
+    check(42)
+    check("hello")
+}
+```
+
+```output
+42
+hello
+```
+
+**union auto-wrap in return**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    fun make_foo() Foo {
+        return 42
+    }
+    match make_foo() {
+        case Int n: print_int(n)
+        case Str: print_str("str")
+    }
+}
+```
+
+```output
+42
+```
+
+**union auto-wrap implicit return**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    fun make_foo() Foo {
+        42
+    }
+    match make_foo() {
+        case Int n: print_int(n)
+        case Str: print_str("str")
+    }
+}
+```
+
+```output
+42
+```
+
+**union auto-wrap in if-else branches**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    fun pick(b Bool) Foo {
+        if b { 42 } else { "hello" }
+    }
+    match pick(true) {
+        case Int n: print_int(n)
+        case Str s: print_str(s)
+    }
+    match pick(false) {
+        case Int n: print_int(n)
+        case Str s: print_str(s)
+    }
+}
+```
+
+```output
+42
+hello
+```
+
+**union auto-wrap in assignment**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    mut x Foo = 42
+    match x {
+        case Int n: print_int(n)
+        case Str: print_str("str")
+    }
+    x = "reassigned"
+    match x {
+        case Int: print_str("int")
+        case Str s: print_str(s)
+    }
+}
+```
+
+```output
+42
+reassigned
+```
+
+**union auto-wrap with generic union**
+
+```metall
+fun main() void {
+    union Maybe<T> = T | Bool
+    let x Maybe<Int> = 99
+    match x {
+        case Int n: print_int(n)
+        case Bool: print_str("bool")
+    }
+}
+```
+
+```output
+99
+```
+
+**union auto-wrap no double wrap**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    let x Foo = Foo(42)
+    match x {
+        case Int n: print_int(n)
+        case Str: print_str("str")
+    }
+}
+```
+
+```output
+42
+```
+
+**union auto-wrap through nested blocks**
+
+```metall
+fun main() void {
+    union Foo = Str | Int
+    let x Foo = { { 42 } }
+    match x {
+        case Int n: print_int(n)
+        case Str: print_str("str")
+    }
+}
+```
+
+```output
+42
+```
+
+**union auto-wrap struct variant**
+
+```metall
+fun main() void {
+    struct Bar { value Int }
+    union Foo = Bar | Int
+    let x Foo = Bar(99)
+    match x {
+        case Bar b: print_int(b.value)
+        case Int: print_str("int")
+    }
+    let y Foo = 42
+    match y {
+        case Bar: print_str("bar")
+        case Int n: print_int(n)
+    }
+}
+```
+
+```output
+99
+42
+```
+
+**union auto-wrap in match arm result**
+
+```metall
+fun main() void {
+    union Inner = Str | Int
+    union Outer = Inner | Bool
+    let x Outer = true
+    match x {
+        case Inner: print_str("inner")
+        case Bool b: {
+            let result Inner = 42
+            match result {
+                case Int n: print_int(n)
+                case Str: print_str("str")
+            }
+        }
+    }
+}
+```
+
+```output
+42
+```
+
+**union auto-wrap deeply nested showcase**
+
+Tests auto-wrap across if/else, match, nested blocks, explicit return,
+implicit return, let bindings, function calls, and generic unions.
+
+```metall
+fun main() void {
+    union Outcome<T> = T | Str
+
+    fun transform(x Int) Outcome<Int> {
+        if x > 100 {
+            return "overflow"
+        }
+        {
+            {
+                x + 1
+            }
+        }
+    }
+
+    fun describe(r Outcome<Int>) Str {
+        match r {
+            case Int n: {
+                if n > 50 { return "big" }
+                "small"
+            }
+            case Str s: s
+        }
+    }
+
+    fun pass_through(x Int) Str {
+        describe(x)
+    }
+
+    print_str(describe(transform(10)))
+    print_str(describe(transform(200)))
+    print_str(describe(42))
+    print_str(pass_through(99))
+
+    mut acc Outcome<Int> = 0
+    acc = "replaced"
+    match acc {
+        case Int: print_str("int")
+        case Str s: print_str(s)
+    }
+
+    let choice Outcome<Int> = if true { 7 } else { "nope" }
+    match choice {
+        case Int n: print_int(n)
+        case Str s: print_str(s)
+    }
+}
+```
+
+```output
+small
+overflow
+small
+big
+replaced
+7
+```
+
 ## Panic
 
 **panic**

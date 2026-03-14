@@ -220,6 +220,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		panic(base.Errorf("unknown node kind: %T", nodeKind))
 	}
 	typeID, status = e.updateCachedType(node, typeID, status)
+	if typeHint != nil && !status.Failed() && typeID != *typeHint {
+		typeID = e.tryUnionAutoWrap(nodeID, typeID, *typeHint)
+	}
 	debugDedent()
 	e.debug.Print(0, "query end   %s -> %s", nodeDebug, e.env.TypeDisplay(typeID))
 	return typeID, status
@@ -1792,4 +1795,18 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 	default:
 		return typeID, false
 	}
+}
+
+func (e *Engine) tryUnionAutoWrap(nodeID ast.NodeID, typeID TypeID, hintTypeID TypeID) TypeID {
+	unionType, ok := e.env.Type(hintTypeID).Kind.(UnionType)
+	if !ok {
+		return typeID
+	}
+	for _, variantID := range unionType.Variants {
+		if e.env.isAssignableTo(typeID, variantID) {
+			e.env.recordUnionWrap(nodeID, hintTypeID)
+			return hintTypeID
+		}
+	}
+	return typeID
 }

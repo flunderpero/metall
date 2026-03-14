@@ -88,6 +88,7 @@ type TypeEnv struct {
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
 	methodCallReceiver map[ast.NodeID]ast.NodeID
+	unionWraps         map[ast.NodeID]TypeID // nodeID → union TypeID (auto-wrap variant → union)
 }
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
@@ -109,6 +110,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
+		unionWraps:         map[ast.NodeID]TypeID{},
 	}
 }
 
@@ -122,6 +124,7 @@ func (e *TypeEnv) NewChildEnv() *TypeEnv {
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
+		unionWraps:         map[ast.NodeID]TypeID{},
 	}
 }
 
@@ -268,6 +271,21 @@ func (e *TypeEnv) IterTypes(f func(*Type, TypeStatus) bool) {
 			return
 		}
 	}
+}
+
+func (e *TypeEnv) UnionWrap(nodeID ast.NodeID) (TypeID, bool) {
+	id, ok := e.unionWraps[nodeID]
+	if ok {
+		return id, true
+	}
+	if e.parent != nil {
+		return e.parent.UnionWrap(nodeID)
+	}
+	return 0, false
+}
+
+func (e *TypeEnv) recordUnionWrap(nodeID ast.NodeID, unionTypeID TypeID) {
+	e.unionWraps[nodeID] = unionTypeID
 }
 
 func (e *TypeEnv) typeNameAndTypeArgsString(name string, typeArgs []TypeID) string {
