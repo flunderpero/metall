@@ -292,7 +292,7 @@ func (e *Engine) queryArgsForInference(
 		var status TypeStatus
 		if i < len(genericParamTypeIDs) {
 			if _, isTypeParam := e.env.Type(genericParamTypeIDs[i]).Kind.(TypeParamType); !isTypeParam {
-				argTypeID, status = e.queryWithHint(argNodeID, genericParamTypeIDs[i])
+				argTypeID, status = e.queryWithHint(argNodeID, &genericParamTypeIDs[i])
 			} else {
 				argTypeID, status = e.Query(argNodeID)
 			}

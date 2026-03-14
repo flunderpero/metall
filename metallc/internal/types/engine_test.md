@@ -5862,6 +5862,127 @@ Block: void
       String: Str
 ```
 
+**Infer type args from return type**
+
+```metall
+{
+    union Result<T> = T | Str
+    fun foo() Result<Int> { Result(42) }
+    foo()
+}
+```
+
+```types
+Block: ?
+  Union: ?
+    TypeParam: ?
+    SimpleType: ?
+    SimpleType: ?
+  Fun: fun01
+    SimpleType: ?
+      SimpleType: Int
+    Block: ?
+      TypeConstruction: ?
+        Ident: ?
+        Int: Int
+  Call: ?
+    Ident: fun01
+---
+fun01 = fun() ?
+```
+
+**Infer type args from return type via if**
+
+```metall
+{
+    union Result<T> = T | Str
+    fun foo(x Bool) Result<Int> {
+        if x { Result(42) }
+        else { Result("err") }
+    }
+    foo(true)
+}
+```
+
+```types
+Block: ?
+  Union: ?
+    TypeParam: ?
+    SimpleType: ?
+    SimpleType: ?
+  Fun: fun01
+    FunParam: Bool
+      SimpleType: Bool
+    SimpleType: ?
+      SimpleType: Int
+    Block: ?
+      If: ?
+        Ident: Bool
+        Block: ?
+          TypeConstruction: ?
+            Ident: ?
+            Int: Int
+        Block: ?
+          TypeConstruction: ?
+            Ident: ?
+            String: Str
+  Call: ?
+    Ident: fun01
+    Bool: Bool
+---
+fun01 = fun(Bool) ?
+```
+
+**Infer type args from return type via match**
+
+```metall
+{
+    union Result<T> = T | Str
+    fun foo(x Result<Int>) Result<Int> {
+        match x {
+            case Int i: Result(i)
+            case Str s: Result(s)
+        }
+    }
+    foo(Result<Int>(1))
+}
+```
+
+```types
+Block: ?
+  Union: ?
+    TypeParam: ?
+    SimpleType: ?
+    SimpleType: ?
+  Fun: fun01
+    FunParam: ?
+      SimpleType: ?
+        SimpleType: Int
+    SimpleType: ?
+      SimpleType: Int
+    Block: ?
+      Match: ?
+        Ident: ?
+        SimpleType: Int
+        Block: ?
+          TypeConstruction: ?
+            Ident: ?
+            Ident: Int
+        SimpleType: Str
+        Block: ?
+          TypeConstruction: ?
+            Ident: ?
+            Ident: Str
+  Call: ?
+    Ident: fun01
+    TypeConstruction: ?
+      Ident: ?
+        SimpleType: Int
+      Int: Int
+---
+fun01 = fun(?) ?
+```
+
 ## Errors
 
 **Undefined symbol**

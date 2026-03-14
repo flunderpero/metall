@@ -5,7 +5,7 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
-func (e *Engine) checkMatch(match ast.Match, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkMatch(match ast.Match, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
 	exprTypeID, status := e.Query(match.Expr)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -21,11 +21,11 @@ func (e *Engine) checkMatch(match ast.Match, span base.Span) (TypeID, TypeStatus
 		e.diag(span, "match requires at least one arm")
 		return InvalidTypeID, TypeFailed
 	}
-	return e.checkMatchArms(match, union, exprTypeID, span)
+	return e.checkMatchArms(match, union, exprTypeID, span, typeHint)
 }
 
 func (e *Engine) checkMatchArms( //nolint:funlen
-	match ast.Match, union UnionType, unionTypeID TypeID, span base.Span,
+	match ast.Match, union UnionType, unionTypeID TypeID, span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
 	covered := make([]bool, len(union.Variants))
 	type armBody struct {
@@ -93,7 +93,7 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 	}
 
 	for i, ab := range bodies {
-		bodyTypeID, bodyStatus := e.Query(ab.body)
+		bodyTypeID, bodyStatus := e.queryWithHint(ab.body, typeHint)
 		if bodyStatus.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}

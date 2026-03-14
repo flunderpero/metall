@@ -138,7 +138,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Unary:
 		typeID, status = e.checkUnary(nodeKind)
 	case ast.Block:
-		typeID, status = e.checkBlock(nodeKind)
+		typeID, status = e.checkBlock(nodeKind, typeHint)
 	case ast.Call:
 		typeID, status = e.checkCall(nodeKind, nodeID, node.Span)
 	case ast.Deref:
@@ -146,7 +146,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Module:
 		typeID, status = e.checkModule(nodeID, nodeKind, node.Span)
 	case ast.If:
-		typeID, status = e.checkIf(nodeKind)
+		typeID, status = e.checkIf(nodeKind, typeHint)
 	case ast.For:
 		typeID, status = e.checkFor(nodeID, nodeKind)
 	case ast.Break:
@@ -173,7 +173,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.StructField:
 		typeID, status = e.checkStructField(nodeKind)
 	case ast.Match:
-		typeID, status = e.checkMatch(nodeKind, node.Span)
+		typeID, status = e.checkMatch(nodeKind, node.Span, typeHint)
 	case ast.TypeConstruction:
 		typeID, status = e.checkTypeConstruction(nodeID, nodeKind, node.Span, typeHint)
 	case ast.ArrayType:
@@ -225,9 +225,12 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	return typeID, status
 }
 
-func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint TypeID) (TypeID, TypeStatus) {
+func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint *TypeID) (TypeID, TypeStatus) {
+	if typeHint == nil {
+		return e.Query(nodeID)
+	}
 	saved := e.typeHint
-	e.typeHint = &typeHint
+	e.typeHint = typeHint
 	typeID, status := e.Query(nodeID)
 	e.typeHint = saved
 	return typeID, status
@@ -238,7 +241,7 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	rhsTypeID, status := e.queryWithHint(assign.RHS, lhsTypeID)
+	rhsTypeID, status := e.queryWithHint(assign.RHS, &lhsTypeID)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -321,7 +324,7 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 		)
 		return InvalidTypeID, TypeDepFailed
 	}
-	rhsTypeID, status := e.queryWithHint(binary.RHS, lhsTypeID)
+	rhsTypeID, status := e.queryWithHint(binary.RHS, &lhsTypeID)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -343,7 +346,7 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	}
 }
 
-func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {
+func (e *Engine) checkBlock(block ast.Block, typeHint *TypeID) (TypeID, TypeStatus) {
 	if len(block.Exprs) == 0 {
 		return e.voidTyp, TypeOK
 	}
@@ -352,12 +355,17 @@ func (e *Engine) checkBlock(block ast.Block) (TypeID, TypeStatus) {
 	var lastExprTypeID TypeID
 	var status TypeStatus
 	wouldBeDeadCode := false
-	for _, exprNodeID := range block.Exprs {
+	lastIdx := len(block.Exprs) - 1
+	for i, exprNodeID := range block.Exprs {
 		if wouldBeDeadCode {
 			e.diag(e.ast.Node(exprNodeID).Span, "unreachable code")
 			return InvalidTypeID, TypeDepFailed
 		}
-		lastExprTypeID, status = e.Query(exprNodeID)
+		if i == lastIdx {
+			lastExprTypeID, status = e.queryWithHint(exprNodeID, typeHint)
+		} else {
+			lastExprTypeID, status = e.Query(exprNodeID)
+		}
 		if status.Failed() {
 			depFailed = true
 		}
@@ -446,7 +454,7 @@ func (e *Engine) checkRange(range_ ast.Range) (TypeID, TypeStatus) {
 	return e.voidTyp, TypeOK
 }
 
-func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
+func (e *Engine) checkIf(if_ ast.If, typeHint *TypeID) (TypeID, TypeStatus) {
 	condType, status := e.Query(if_.Cond)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -457,14 +465,14 @@ func (e *Engine) checkIf(if_ ast.If) (TypeID, TypeStatus) {
 			e.env.TypeDisplay(condType))
 		return InvalidTypeID, TypeFailed
 	}
-	thenType, status := e.Query(if_.Then)
+	thenType, status := e.queryWithHint(if_.Then, typeHint)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
 	if if_.Else == nil {
 		return e.voidTyp, TypeOK
 	}
-	elseType, status := e.Query(*if_.Else)
+	elseType, status := e.queryWithHint(*if_.Else, typeHint)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -523,7 +531,7 @@ func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, sp
 		return InvalidTypeID, TypeDepFailed
 	}
 	for _, elemNodeID := range array.Elems[1:] {
-		elemTyp2, status := e.queryWithHint(elemNodeID, elemTyp)
+		elemTyp2, status := e.queryWithHint(elemNodeID, &elemTyp)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -678,7 +686,8 @@ func (e *Engine) checkStructConstruction(
 	}
 	for i, argNodeID := range lit.Args {
 		argNode := e.ast.Node(argNodeID)
-		argTypeID, status := e.queryWithHint(argNodeID, struct_.Fields[i].Type)
+		fieldType := struct_.Fields[i].Type
+		argTypeID, status := e.queryWithHint(argNodeID, &fieldType)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -730,7 +739,7 @@ func (e *Engine) checkIntConstruction(
 		return InvalidTypeID, TypeFailed
 	}
 	argNodeID := lit.Args[0]
-	argTypeID, status := e.queryWithHint(argNodeID, targetTypeID)
+	argTypeID, status := e.queryWithHint(argNodeID, &targetTypeID)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -911,7 +920,7 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 	}
 	for i, argNodeID := range argNodes {
 		paramTypeID := fun.Params[i]
-		argTypeID, status := e.queryWithHint(argNodeID, paramTypeID)
+		argTypeID, status := e.queryWithHint(argNodeID, &paramTypeID)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
@@ -1311,7 +1320,7 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType
 	if funNode.Name.Name == "main" {
 		e.verifyMain(funNode)
 	}
-	blockTypeID, status := e.Query(funNode.Block)
+	blockTypeID, status := e.queryWithHint(funNode.Block, &funType.Return)
 	if status.Failed() {
 		return
 	}
@@ -1374,7 +1383,7 @@ func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeSt
 		return InvalidTypeID, TypeFailed
 	}
 	funType := base.Cast[FunType](e.env.Type(e.funStack[len(e.funStack)-1]).Kind)
-	exprTypeID, status := e.queryWithHint(return_.Expr, funType.Return)
+	exprTypeID, status := e.queryWithHint(return_.Expr, &funType.Return)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -1612,7 +1621,7 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 	var exprTypeID TypeID
 	if varNode.Type != nil {
 		var status TypeStatus
-		exprTypeID, status = e.queryWithHint(varNode.Expr, declTypeID)
+		exprTypeID, status = e.queryWithHint(varNode.Expr, &declTypeID)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
