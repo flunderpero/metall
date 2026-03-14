@@ -408,7 +408,7 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 	span := t.Span
 	exprs := []NodeID{}
 	for {
-		t, ok := p.mayPeek()
+		t, ok := p.mustPeek()
 		if !ok {
 			break
 		}

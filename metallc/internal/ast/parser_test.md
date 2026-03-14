@@ -109,6 +109,18 @@ Block()
 Block()
 ```
 
+**Block must be closed even at EOF**
+
+```metall
+{
+```
+
+```error
+test.met:1:1: unexpected end of file
+    {
+    ^
+```
+
 ## Comments
 
 **Line comment**
