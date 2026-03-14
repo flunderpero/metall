@@ -3,10 +3,12 @@ package compiler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -40,6 +42,7 @@ type CompileOpts struct {
 	ProjectRoot         string
 	IncludePaths        []string
 	Listener            CompileListener
+	PrintTiming         bool
 	Output              string
 	KeepIR              bool
 	LLVMPasses          string
@@ -80,7 +83,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 
 	listener := opts.Listener
+	timingListener := NewTimingListener(0)
 	tokens := token.Lex(source)
+	timingListener.OnLex(tokens)
 	if listener != nil && !listener.OnLex(tokens) {
 		return ErrAbort
 	}
@@ -93,6 +98,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		moduleResolution, moduleDiags = resolveModules(parser.AST, opts)
 		parseDiagnostics = append(parseDiagnostics, moduleDiags...)
 	}
+	timingListener.OnParse(parser.AST, fileID, parseDiagnostics)
 	if listener != nil && !listener.OnParse(parser.AST, fileID, parseDiagnostics) {
 		return ErrAbort
 	}
@@ -102,6 +108,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	preludeAST, _ := ast.PreludeAST(opts.MinimalPrelude)
 	engine := types.NewEngine(parser.AST, preludeAST, moduleResolution)
 	engine.Query(fileID)
+	timingListener.OnTypeCheck(engine, engine.Diagnostics())
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
 		return ErrAbort
 	}
@@ -110,6 +117,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	lifetime := types.NewLifetimeAnalyzer(engine.AST(), engine.ScopeGraph(), engine.Env())
 	lifetime.Check(fileID)
+	timingListener.OnLifetimeCheck(lifetime, lifetime.Diagnostics)
 	if listener != nil && !listener.OnLifetimeCheck(lifetime, lifetime.Diagnostics) {
 		return ErrAbort
 	}
@@ -133,6 +141,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if err != nil {
 		return err //nolint:wrapcheck
 	}
+	timingListener.OnIRGen(ir)
 	if listener != nil && !listener.OnIRGen(ir) {
 		return ErrAbort
 	}
@@ -165,6 +174,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if err := run_cmd(ctx, cmdline); err != nil {
 		return base.WrapErrorf(err, "failed to generate optimized IR")
 	}
+	timingListener.OnOptimizeIR()
 	if listener != nil && !listener.OnOptimizeIR() {
 		return ErrAbort
 	}
@@ -183,8 +193,12 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if err := run_cmd(ctx, cmdline); err != nil {
 		return base.WrapErrorf(err, "failed to compile with clang")
 	}
+	timingListener.OnLink()
 	if listener != nil && !listener.OnLink() {
 		return ErrAbort
+	}
+	if opts.PrintTiming {
+		fmt.Println(timingListener.String())
 	}
 	return nil
 }
@@ -228,6 +242,93 @@ func CompileAndRun(
 		listener.OnRun(exitCode, output)
 	}
 	return exitCode, output, nil
+}
+
+// TimingListener records the wall-clock duration of each compiler phase.
+type TimingListener struct {
+	Threshold time.Duration
+	start     time.Time
+	last      time.Time
+	steps     []step
+}
+
+type step struct {
+	name     string
+	duration time.Duration
+}
+
+func NewTimingListener(threshold time.Duration) *TimingListener {
+	return &TimingListener{start: time.Now(), last: time.Now(), steps: nil, Threshold: threshold}
+}
+
+func (l *TimingListener) OnLex(_ []token.Token) bool {
+	l.record("lex")
+	return true
+}
+
+func (l *TimingListener) OnParse(_ *ast.AST, _ ast.NodeID, _ base.Diagnostics) bool {
+	l.record("parse")
+	return true
+}
+
+func (l *TimingListener) OnTypeCheck(_ *types.Engine, _ base.Diagnostics) bool {
+	l.record("typecheck")
+	return true
+}
+
+func (l *TimingListener) OnLifetimeCheck(_ *types.LifetimeCheck, _ base.Diagnostics) bool {
+	l.record("lifetime")
+	return true
+}
+
+func (l *TimingListener) OnIRGen(_ string) bool {
+	l.record("irgen")
+	return true
+}
+
+func (l *TimingListener) OnOptimizeIR() bool {
+	l.record("optimize")
+	return true
+}
+
+func (l *TimingListener) OnLink() bool {
+	l.record("link")
+	return true
+}
+
+func (l *TimingListener) OnRun(_ int, _ string) bool {
+	l.record("run")
+	return true
+}
+
+// Log prints every step that took longer than 10ms.
+func (l *TimingListener) String() string {
+	var sb strings.Builder
+	overall := l.last.Sub(l.start)
+	fmt.Fprintf(&sb, "compilation time : %s\n", overall.Round(time.Millisecond))
+	for _, s := range l.steps {
+		if s.duration >= l.Threshold {
+			fmt.Fprintf(&sb, "  %-15s: %s\n", s.name, s.duration.Round(time.Millisecond))
+		}
+	}
+	return sb.String()
+}
+
+// Total returns a display string of all step durations.
+func (l *TimingListener) Total() string {
+	var total time.Duration
+	parts := make([]string, 0, len(l.steps))
+	for _, s := range l.steps {
+		total += s.duration
+		parts = append(parts, fmt.Sprintf("%s=%s", s.name, s.duration.Round(time.Millisecond)))
+	}
+	return fmt.Sprintf("total=%s (%s)", total.Round(time.Millisecond), strings.Join(parts, ", "))
+}
+
+func (l *TimingListener) record(name string) {
+	now := time.Now()
+	l.steps = append(l.steps, step{name, now.Sub(l.last)})
+	l.last = now
 }
 
 func queryTargetInfo(ctx context.Context, llvmHome string) (dataLayout, triple string, err error) {
