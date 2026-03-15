@@ -78,8 +78,12 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 	}
 	if match.Else != nil {
 		if match.Else.Binding != nil {
+			bindTypeID := unionTypeID
+			if uncovered := uncoveredVariants(covered, union); len(uncovered) == 1 {
+				bindTypeID = uncovered[0]
+			}
 			bodyScope := e.scopeGraph.IntroducedScope(match.Else.Body)
-			e.env.bindInScope(bodyScope, match.Else.Body, match.Else.Binding.Name, unionTypeID)
+			e.env.bindInScope(bodyScope, match.Else.Body, match.Else.Binding.Name, bindTypeID)
 		}
 		bodies = append(bodies, armBody{match.Else.Body, InvalidTypeID})
 	} else {
@@ -119,4 +123,14 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 		return e.voidTyp, TypeOK
 	}
 	return resultTypeID, TypeOK
+}
+
+func uncoveredVariants(covered []bool, union UnionType) []TypeID {
+	var result []TypeID
+	for i, c := range covered {
+		if !c {
+			result = append(result, union.Variants[i])
+		}
+	}
+	return result
 }

@@ -1817,11 +1817,7 @@ test.met:7:25: reference escaping its allocation scope (via mutation of outer va
         let h = Holder(Wrapper(&z))
         match h {
             case Int: &x
-            else v:
-                match v {
-                    case Int: &x
-                    case Wrapper w: w.one
-                }
+            else w: w.one
         }
     }
 }

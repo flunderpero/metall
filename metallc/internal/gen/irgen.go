@@ -994,9 +994,7 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 		g.writeLabel(elseLabel)
 		elseBody := base.Cast[ast.Block](g.ast.Node(match.Else.Body).Kind)
 		if match.Else.Binding != nil && len(elseBody.Exprs) > 0 {
-			bindNode := elseBody.Exprs[0]
-			bindReg := g.lookupCode(match.Expr)
-			g.setSymbol(bindNode, match.Else.Binding.Name, bindReg, "ptr")
+			g.genMatchElseBinding(match, elseBody, payloadPtr)
 		}
 		g.Gen(match.Else.Body)
 		if !g.ast.BlockBreaksControlFlow(match.Else.Body, false) {
@@ -1032,19 +1030,34 @@ func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
 	if arm.Binding == nil || len(body.Exprs) == 0 {
 		return
 	}
-	bindNode := body.Exprs[0]
-	variantTypeID := g.typeIDOfNode(arm.Pattern)
-	variantIRType := g.irType(variantTypeID)
-	if g.isAggregateType(variantTypeID) {
-		g.setSymbol(bindNode, arm.Binding.Name, payloadPtr, "ptr")
-	} else {
-		bindReg := g.reg()
-		g.write("%s = load %s, ptr %s", bindReg, variantIRType, payloadPtr)
-		allocReg := g.reg()
-		g.write("%s = alloca %s", allocReg, variantIRType)
-		g.write("store %s %s, ptr %s", variantIRType, bindReg, allocReg)
-		g.setSymbol(bindNode, arm.Binding.Name, allocReg, variantIRType)
+	g.genMatchBinding(body.Exprs[0], arm.Binding.Name, g.typeIDOfNode(arm.Pattern), payloadPtr)
+}
+
+func (g *IRFunGen) genMatchElseBinding(match ast.Match, elseBody ast.Block, payloadPtr string) {
+	bindNode := elseBody.Exprs[0]
+	binding, ok := g.env.Lookup(bindNode, match.Else.Binding.Name)
+	if !ok {
+		panic(base.Errorf("else binding %q not found", match.Else.Binding.Name))
 	}
+	if binding.TypeID == g.typeIDOfNode(match.Expr) {
+		g.setSymbol(bindNode, match.Else.Binding.Name, g.lookupCode(match.Expr), "ptr")
+		return
+	}
+	g.genMatchBinding(bindNode, match.Else.Binding.Name, binding.TypeID, payloadPtr)
+}
+
+func (g *IRFunGen) genMatchBinding(bindNode ast.NodeID, name string, typeID types.TypeID, ptr string) {
+	if g.isAggregateType(typeID) {
+		g.setSymbol(bindNode, name, ptr, "ptr")
+		return
+	}
+	irTyp := g.irType(typeID)
+	bindReg := g.reg()
+	g.write("%s = load %s, ptr %s", bindReg, irTyp, ptr)
+	allocReg := g.reg()
+	g.write("%s = alloca %s", allocReg, irTyp)
+	g.write("store %s %s, ptr %s", irTyp, bindReg, allocReg)
+	g.setSymbol(bindNode, name, allocReg, irTyp)
 }
 
 func (g *IRGen) label(name string, id ast.NodeID) Label {

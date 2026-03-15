@@ -3022,6 +3022,48 @@ bool
 pair
 ```
 
+**union match else binding with single remaining variant**
+
+```metall
+union Foo = Str | Int
+fun main() void {
+    let x = Foo("hello")
+    match x {
+        case Str s: print_str(s)
+        else i: print_int(i)
+    }
+    let y = Foo(42)
+    match y {
+        case Str s: print_str(s)
+        else i: print_int(i)
+    }
+}
+```
+
+```output
+hello
+42
+```
+
+**union match else single variant struct**
+
+```metall
+fun main() void {
+    struct Pair { a Int b Int }
+    union Foo = Str | Int | Pair
+    let x = Foo(Pair(10, 20))
+    match x {
+        case Str: print_str("str")
+        case Int: print_str("int")
+        else p: print_int(p.a + p.b)
+    }
+}
+```
+
+```output
+30
+```
+
 ## Union Auto-Wrap
 
 **union auto-wrap in let binding**

@@ -359,6 +359,124 @@ Block: Str
 union01 = Foo = Int | Bool
 ```
 
+**Match else binding single remaining variant**
+
+When all variants except one are covered, the else binding has the remaining variant's type.
+
+```metall
+{
+    union Foo = Str | Int
+    let x = Foo(42)
+    match x {
+        case Str s: print_str(s)
+        else i: print_int(i)
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Var: scope02
+    TypeConstruction: scope02
+      Ident: scope02
+      Int: scope02
+  Match: scope02
+    Ident: scope02
+    SimpleType: scope02
+    Block: scope02
+      Call: scope03
+        Ident: scope03
+        Ident: scope03
+    Block: scope02
+      Call: scope04
+        Ident: scope04
+        Ident: scope04
+---
+scope01:
+scope02:
+  Foo: union01
+  x: union01
+scope03:
+  s: Str
+scope04:
+  i: Int
+union01 = Foo = Str | Int
+```
+
+**Match else binding multiple remaining variants**
+
+When multiple variants remain uncovered, the else binding has the union type.
+
+```metall
+{
+    union Tri = Str | Int | Bool
+    let x = Tri(42)
+    match x {
+        case Str s: print_str(s)
+        else v:
+            match v {
+                case Int n: print_int(n)
+                case Bool: print_str("bool")
+                case Str: print_str("unreachable")
+            }
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Var: scope02
+    TypeConstruction: scope02
+      Ident: scope02
+      Int: scope02
+  Match: scope02
+    Ident: scope02
+    SimpleType: scope02
+    Block: scope02
+      Call: scope03
+        Ident: scope03
+        Ident: scope03
+    Block: scope02
+      Match: scope04
+        Ident: scope04
+        SimpleType: scope04
+        Block: scope04
+          Call: scope05
+            Ident: scope05
+            Ident: scope05
+        SimpleType: scope04
+        Block: scope04
+          Call: scope06
+            Ident: scope06
+            String: scope06
+        SimpleType: scope04
+        Block: scope04
+          Call: scope07
+            Ident: scope07
+            String: scope07
+---
+scope01:
+scope02:
+  Tri: union01
+  x: union01
+scope03:
+  s: Str
+scope04:
+  v: union01
+scope05:
+  n: Int
+scope06:
+scope07:
+union01 = Tri = Str | Int | Bool
+```
+
 ## Errors
 
 **Match on non-union**
