@@ -2000,3 +2000,45 @@ test.met:13:33: reference escaping its allocation scope (via block result)
         }
 ```
 
+**match value-type binding does not carry ref taint from other variants**
+
+```metall
+{
+    struct Err { msg Str }
+    union ValOrRef = &Int | Err
+    let x = 42
+    let r = ValOrRef(&x)
+    let result = match r {
+        case Err e: e
+        case &Int: Err("not an error")
+    }
+}
+```
+
+```error
+```
+
+**match ref-type binding still carries taint from ref variant**
+
+```metall
+{
+    union IntOrRef = Int | &Int
+    let result = {
+        let x = 42
+        let r = IntOrRef(&x)
+        match r {
+            case &Int i: i
+            case Int: &x
+        }
+    }
+}
+```
+
+```error
+test.met:5:26: reference escaping its allocation scope (via block result)
+            let x = 42
+            let r = IntOrRef(&x)
+                             ^^
+            match r {
+```
+

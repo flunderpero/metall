@@ -508,7 +508,15 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 		a.Check(arm.Pattern)
 		if arm.Binding != nil {
 			ss := a.scopeByID(a.scopeGraph.IntroducedScope(arm.Body).ID)
-			ss.Vars[arm.Binding.Name] = &VarTaint{arm.Body, ss.ScopeTaint, exprFlow}
+			// Only propagate taint if the matched variant type can carry references.
+			// E.g., matching `case Err e:` on a union that also contains `&mut File`
+			// should not taint `e` since Err is a plain value type.
+			bindingFlow := exprFlow
+			variantType := a.env.TypeOfNode(arm.Pattern)
+			if variantType != nil && !a.typeContainsRefOrAlloc(variantType.ID) {
+				bindingFlow = Flow{}
+			}
+			ss.Vars[arm.Binding.Name] = &VarTaint{arm.Body, ss.ScopeTaint, bindingFlow}
 		}
 		if arm.Guard != nil {
 			a.Check(*arm.Guard)
@@ -518,6 +526,8 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	if match.Else != nil {
 		if match.Else.Binding != nil {
 			ss := a.scopeByID(a.scopeGraph.IntroducedScope(match.Else.Body).ID)
+			// The else binding could be any unmatched variant, so conservatively
+			// propagate the full taint.
 			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, exprFlow}
 		}
 		a.Check(match.Else.Body)
