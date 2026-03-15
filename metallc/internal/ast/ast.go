@@ -336,6 +336,7 @@ type Match struct {
 	Expr NodeID
 	Arms []MatchArm
 	Else *MatchElse // nil if no else arm
+	Try  bool       // true if desugared from `try`
 }
 
 func (Match) isKind() {}
@@ -351,6 +352,12 @@ type MatchElse struct {
 	Binding *Name  // optional binding (nil if absent)
 	Body    NodeID // Block
 }
+
+// TryPattern is used as the pattern in a match arm desugared from `try` without `is`.
+// It signals the type checker to use the first variant of the union.
+type TryPattern struct{}
+
+func (TryPattern) isKind() {}
 
 type Call struct {
 	Callee NodeID
@@ -423,7 +430,11 @@ func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
 }
 
 func (a *AST) NewMatch(expr NodeID, arms []MatchArm, else_ *MatchElse, span base.Span) NodeID {
-	return a.node(Match{Expr: expr, Arms: arms, Else: else_}, span)
+	return a.node(Match{Expr: expr, Arms: arms, Else: else_, Try: false}, span)
+}
+
+func (a *AST) NewTryPattern(span base.Span) NodeID {
+	return a.node(TryPattern{}, span)
 }
 
 func (a *AST) NewIf(cond NodeID, then NodeID, else_ *NodeID, span base.Span) NodeID {
@@ -799,6 +810,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Target)
 	case RefType:
 		f(kind.Type)
+	case TryPattern:
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -1203,6 +1215,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 				addChild("typeArgs", kind.TypeArgs...)
 			}
 		}
+	case TryPattern:
 	case Ref:
 		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
 		if !children {

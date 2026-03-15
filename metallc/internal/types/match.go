@@ -35,9 +35,16 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 	var bodies []armBody
 
 	for _, arm := range match.Arms {
-		variantTypeID, varStatus := e.Query(arm.Pattern)
-		if varStatus.Failed() {
-			return InvalidTypeID, TypeDepFailed
+		var variantTypeID TypeID
+		if _, ok := e.ast.Node(arm.Pattern).Kind.(ast.TryPattern); ok {
+			variantTypeID = union.Variants[0]
+			e.env.setNodeType(arm.Pattern, e.env.reg.types[variantTypeID])
+		} else {
+			var varStatus TypeStatus
+			variantTypeID, varStatus = e.Query(arm.Pattern)
+			if varStatus.Failed() {
+				return InvalidTypeID, TypeDepFailed
+			}
 		}
 		matchedIdx := -1
 		for i, vID := range union.Variants {
@@ -103,6 +110,15 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 		}
 		if !e.ast.BlockBreaksControlFlow(ab.body, false) {
 			bodies[i].typeID = bodyTypeID
+		}
+	}
+	if match.Try {
+		if match.Else == nil {
+			panic(base.Errorf("try must have an else branch"))
+		}
+		if !e.ast.BlockBreaksControlFlow(match.Else.Body, false) {
+			e.diag(e.ast.Node(match.Else.Body).Span, "try else block must break control flow")
+			return InvalidTypeID, TypeFailed
 		}
 	}
 

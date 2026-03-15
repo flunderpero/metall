@@ -169,6 +169,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		ast.FunDecl,
 		ast.TypeParam,
 		ast.SimpleType,
+		ast.TryPattern,
 		ast.RefType,
 		ast.ArrayType,
 		ast.SliceType,
@@ -187,9 +188,9 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 			breaksFlow = g.ast.BlockBreaksControlFlow(id, false)
 		}
 		if !breaksFlow {
-		g.genUnionAutoWrap(id, unionTypeID)
+			g.genUnionAutoWrap(id, unionTypeID)
+		}
 	}
-}
 }
 
 func (g *IRGen) genStruct(env *types.TypeEnv, s types.StructWork) {
@@ -1056,16 +1057,15 @@ func (g *IRFunGen) genMatchElseBinding(match ast.Match, elseBody ast.Block, payl
 }
 
 func (g *IRFunGen) genMatchBinding(bindNode ast.NodeID, name string, typeID types.TypeID, ptr string) {
-	if g.isAggregateType(typeID) {
-		g.setSymbol(bindNode, name, ptr, "ptr")
+	valReg := g.loadValue(ptr, typeID)
+	irTyp := g.irType(typeID)
+	if irTyp == "void" || g.isAggregateType(typeID) {
+		g.setSymbol(bindNode, name, valReg, "ptr")
 		return
 	}
-	irTyp := g.irType(typeID)
-	bindReg := g.reg()
-	g.write("%s = load %s, ptr %s", bindReg, irTyp, ptr)
 	allocReg := g.reg()
 	g.write("%s = alloca %s", allocReg, irTyp)
-	g.write("store %s %s, ptr %s", irTyp, bindReg, allocReg)
+	g.write("store %s %s, ptr %s", irTyp, valReg, allocReg)
 	g.setSymbol(bindNode, name, allocReg, irTyp)
 }
 
@@ -1390,8 +1390,9 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	}
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
 		identType := g.typeOfNode(id)
-		if _, ok := identType.Kind.(types.AllocatorType); ok || g.isAggregateType(identType.ID) {
-			// Aggregate/Allocator: symbol.Reg is already the raw ptr (single indirection, no alloca).
+		if _, ok := identType.Kind.(types.AllocatorType); ok ||
+			g.isAggregateType(identType.ID) ||
+			g.irType(identType.ID) == "void" {
 			g.setCode(id, symbol.Reg)
 			return
 		}
@@ -1761,11 +1762,15 @@ func (g *IRFunGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
 }
 
 func (g *IRFunGen) loadValue(ptrReg string, typeID types.TypeID) string {
+	irTyp := g.irType(typeID)
+	if irTyp == "void" {
+		return "void"
+	}
 	if g.isAggregateType(typeID) {
 		return ptrReg
 	}
 	reg := g.reg()
-	g.write("%s = load %s, ptr %s", reg, g.irType(typeID), ptrReg)
+	g.write("%s = load %s, ptr %s", reg, irTyp, ptrReg)
 	return reg
 }
 

@@ -13,6 +13,8 @@
   "in"
   "match"
   "case"
+  "try"
+  "is"
   "return"
   "and"
   "or"
@@ -114,6 +116,10 @@
 (match_arm binding: (identifier) @variable)
 (match_arm pattern: (simple_type (type_identifier) @type))
 (match_else binding: (identifier) @variable)
+
+; >>> Try bindings
+
+(try_expression binding: (identifier) @variable)
 
 ; >>> Assignment
 

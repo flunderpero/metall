@@ -40,6 +40,7 @@ const (
 	If
 	In
 	InvalidAllocatorIdent
+	Is
 	LBracket
 	LBracketImmediate
 	LCurly
@@ -72,6 +73,7 @@ const (
 	Struct
 	Tilde
 	True
+	Try
 	TypeIdent
 	Union
 	Unknown
@@ -110,6 +112,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	If:                    "<if>",
 	In:                    "<in>",
 	InvalidAllocatorIdent: "<invalid allocation identifier>",
+	Is:                    "<is>",
 	LBracket:              "[",
 	LBracketImmediate:     "<[immediate>",
 	LCurly:                "{",
@@ -142,6 +145,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Tilde:                 "~",
 	Struct:                "<struct>",
 	True:                  "true",
+	Try:                   "<try>",
 	TypeIdent:             "<type identifier>",
 	Union:                 "<union>",
 	Unknown:               "<unknown>",
@@ -178,6 +182,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"fun":      Fun,
 	"if":       If,
 	"in":       In,
+	"is":       Is,
 	"let":      Let,
 	"match":    Match,
 	"mut":      Mut,
@@ -187,6 +192,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"shape":    Shape,
 	"struct":   Struct,
 	"true":     True,
+	"try":      Try,
 	"union":    Union,
 	"use":      Use,
 	"void":     Void,

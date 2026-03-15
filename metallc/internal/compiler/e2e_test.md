@@ -3447,6 +3447,73 @@ none
 nope
 ```
 
+## Try
+
+**try expression**
+
+```metall
+fun main() void {
+    struct Err { msg Str }
+    union Result<T> = T | Err
+
+    fun might_fail(ok Bool) Result<Int> {
+        if ok { 42 } else { Err("fail") }
+    }
+
+    fun short_form() Result<Int> {
+        let x = try might_fail(true)
+        print_int(x)
+        try might_fail(false)
+        0
+    }
+    match short_form() {
+        case Int: print_str("int")
+        case Err e: print_str(e.msg)
+    }
+
+    fun with_else() Str {
+        let x = try might_fail(false) else e { return e.msg }
+        print_int(x)
+        "ok"
+    }
+    print_str(with_else())
+
+    fun with_is() Err {
+        let n = try might_fail(true) is Int else e { return e }
+        print_int(n)
+        Err("done")
+    }
+    print_str(with_is().msg)
+
+    fun with_void() Err {
+        fun check(ok Bool) Result<void> {
+            if ok { void } else { Err("void fail") }
+        }
+        try check(true)
+        try check(false)
+        Err("all ok")
+    }
+    print_str(with_void().msg)
+
+    fun no_binding() Str {
+        let n = try might_fail(false) else { return "no binding" }
+        print_int(n)
+        "ok"
+    }
+    print_str(no_binding())
+}
+```
+
+```output
+42
+fail
+fail
+42
+done
+void fail
+no binding
+```
+
 ## Panic
 
 **panic**

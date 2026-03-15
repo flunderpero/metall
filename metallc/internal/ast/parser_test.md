@@ -2204,6 +2204,76 @@ test.met:1:20: unexpected token: <use>
                        ^^^
 ```
 
+## Try
+
+**Try short form desugars to match**
+
+```metall
+try foo()
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n3:TryPattern,arm[0].binding=__try,else.binding=__try_e)
+  expr=Call()
+    callee=Ident(name="foo")
+  arm[0].body=Block()
+    exprs=Ident(name="__try")
+  else.body=Block()
+    exprs=Return()
+      expr=Ident(name="__try_e")
+```
+
+**Try with is desugars to match**
+
+```metall
+try foo() is Int
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n3:SimpleType,arm[0].binding=__try,else.binding=__try_e)
+  expr=Call()
+    callee=Ident(name="foo")
+  arm[0].body=Block()
+    exprs=Ident(name="__try")
+  else.body=Block()
+    exprs=Return()
+      expr=Ident(name="__try_e")
+```
+
+**Try with else desugars to match**
+
+```metall
+try foo() else e { return e }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n3:TryPattern,arm[0].binding=__try,else.binding=e)
+  expr=Call()
+    callee=Ident(name="foo")
+  arm[0].body=Block()
+    exprs=Ident(name="__try")
+  else.body=Block()
+    exprs=Return()
+      expr=Ident(name="e")
+```
+
+**Try with is and else desugars to match**
+
+```metall
+try foo() is Ok else e { return e }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n3:SimpleType,arm[0].binding=__try,else.binding=e)
+  expr=Call()
+    callee=Ident(name="foo")
+  arm[0].body=Block()
+    exprs=Ident(name="__try")
+  else.body=Block()
+    exprs=Return()
+      expr=Ident(name="e")
+```
+
 ## Error Recovery
 
 **Unexpected token**

@@ -258,6 +258,7 @@ module.exports = grammar({
         $.if_expression,
         $.for_expression,
         $.match_expression,
+        $.try_expression,
         $.return_expression,
         $.break_expression,
         $.continue_expression,
@@ -442,6 +443,20 @@ module.exports = grammar({
         ":",
         repeat($._expression),
       ),
+
+    // >>> Try expression
+
+    try_expression: ($) =>
+      prec.right(seq(
+        "try",
+        field("expr", $._expression),
+        optional(seq("is", field("type", $._type))),
+        optional(seq(
+          "else",
+          optional(field("binding", $.identifier)),
+          field("body", $.block),
+        )),
+      )),
 
     return_expression: ($) =>
       prec.right(PREC.ASSIGN, seq("return", $._expression)),

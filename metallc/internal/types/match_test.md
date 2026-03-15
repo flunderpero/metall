@@ -657,3 +657,81 @@ test.met:8:5: symbol not defined: y
         ^
     }
 ```
+
+**Try on non-union**
+
+```metall
+fun foo() Int {
+    let x = try 42
+}
+```
+
+```error
+test.met:2:17: match expression must be a union type, got Int
+    fun foo() Int {
+        let x = try 42
+                    ^^
+    }
+```
+
+**Try with is wrong variant**
+
+```metall
+{
+    union Foo = Int | Str
+    fun foo() Foo {
+        let x = try Foo(42) is Bool
+    }
+}
+```
+
+```error
+test.met:4:32: type Bool is not a variant of Foo
+        fun foo() Foo {
+            let x = try Foo(42) is Bool
+                                   ^^^^
+        }
+```
+
+**Try short form return type mismatch**
+
+```metall
+{
+    union Foo = Int | Str
+    fun foo() Bool {
+        let x = try Foo(42)
+    }
+}
+```
+
+```error
+test.met:4:17: return type mismatch: expected Bool, got Str
+        fun foo() Bool {
+            let x = try Foo(42)
+                    ^^^
+        }
+```
+
+**Try else must break control flow**
+
+```metall
+{
+    union Foo = Int | Str
+    fun foo() Int {
+        try Foo(42) else e {
+            42
+        }
+    }
+}
+```
+
+```error
+test.met:4:28: try else block must break control flow
+        fun foo() Int {
+            try Foo(42) else e {
+                               ^
+                42
+            }
+            ^
+        }
+```

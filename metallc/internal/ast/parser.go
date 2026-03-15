@@ -643,6 +643,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = match
+	case token.Try:
+		try_, ok := p.parseTry()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = try_
 	case token.If:
 		if_, ok := p.ParseIf()
 		if !ok {
@@ -1218,6 +1224,58 @@ func (p *Parser) parseRangeRHS(lo *NodeID) (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewRange(lo, hi, inclusive, rangeSpan), true
+}
+
+func (p *Parser) parseTry() (NodeID, bool) {
+	t, ok := p.expect(token.Try)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	expr, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false
+	}
+	var pattern NodeID
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Is {
+		p.next()
+		pattern, ok = p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+	} else {
+		pattern = p.NewTryPattern(span)
+	}
+	successBinding := Name{"__try", span}
+	successIdent := p.NewIdent("__try", nil, span)
+	successBody := p.NewBlock([]NodeID{successIdent}, span)
+	arm := MatchArm{Pattern: pattern, Binding: &successBinding, Guard: nil, Body: successBody}
+	var else_ *MatchElse
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Else {
+		p.next()
+		var binding *Name
+		if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
+			p.next()
+			b := Name{next.Value, next.Span}
+			binding = &b
+		}
+		body, ok := p.ParseBlock()
+		if !ok {
+			return ParseFailed, false
+		}
+		else_ = &MatchElse{Binding: binding, Body: body}
+	} else {
+		elseBinding := Name{"__try_e", span}
+		elseIdent := p.NewIdent("__try_e", nil, span)
+		elseReturn := p.NewReturn(elseIdent, span)
+		elseBody := p.NewBlock([]NodeID{elseReturn}, span)
+		else_ = &MatchElse{Binding: &elseBinding, Body: elseBody}
+	}
+	matchID := p.NewMatch(expr, []MatchArm{arm}, else_, span.Combine(p.span()))
+	p.Node(matchID).Kind = Match{
+		Expr: expr, Arms: []MatchArm{arm}, Else: else_, Try: true,
+	}
+	return matchID, true
 }
 
 func (p *Parser) parseBaseType() (NodeID, bool) { //nolint:funlen

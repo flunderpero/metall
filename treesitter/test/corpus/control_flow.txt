@@ -303,3 +303,73 @@ fun f() Int { return 1  for { continue  break } }
     body: (block
       (return_expression (integer_literal))
       (for_expression body: (block (continue_expression) (break_expression))))))
+
+================================================================================
+Try short form
+================================================================================
+
+fun f() R {
+    let x = try foo()
+    x
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (let_binding
+        name: (identifier)
+        value: (try_expression
+          expr: (call_expression callee: (identifier))))
+      (identifier))))
+
+================================================================================
+Try with is and else binding
+================================================================================
+
+fun f() E {
+    let x = try foo() is Int else e { return e }
+    x
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (let_binding
+        name: (identifier)
+        value: (try_expression
+          expr: (call_expression callee: (identifier))
+          type: (simple_type (type_identifier))
+          binding: (identifier)
+          body: (block (return_expression (identifier)))))
+      (identifier))))
+
+================================================================================
+Try with else no binding
+================================================================================
+
+fun f() Str {
+    let x = try foo() else { return "err" }
+    x
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (let_binding
+        name: (identifier)
+        value: (try_expression
+          expr: (call_expression callee: (identifier))
+          body: (block (return_expression (string_literal)))))
+      (identifier))))
