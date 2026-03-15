@@ -1790,74 +1790,39 @@ test.met:1:21: type parameters with defaults must be last
                         ^
 ```
 
-**Option sugar: T?**
+**Option and Result type sugar**
 
 ```metall
-let x Str? = 1
+fun foo(a ?Int, b !Int, c ?&Int, d !&mut Int, e ?[]Int, f !?Int) void { 1 }
 ```
 
 ```ast
-Var(name="x",mut=false)
-  type=SimpleType(name="Option")
-    typeArgs=SimpleType(name="Str")
-  expr=Int(value=1)
-```
-
-**Result sugar: T!**
-
-```metall
-let x Str! = 1
-```
-
-```ast
-Var(name="x",mut=false)
-  type=SimpleType(name="Result")
-    typeArgs=SimpleType(name="Str")
-  expr=Int(value=1)
-```
-
-**Result sugar with error type: T!E**
-
-```metall
-let x Str!Int = 1
-```
-
-```ast
-Var(name="x",mut=false)
-  type=SimpleType(name="Result")
-    typeArgs[0]=SimpleType(name="Str")
-    typeArgs[1]=SimpleType(name="Int")
-  expr=Int(value=1)
-```
-
-**Combined sugar: T?!**
-
-```metall
-let x Str?! = 1
-```
-
-```ast
-Var(name="x",mut=false)
-  type=SimpleType(name="Result")
-    typeArgs=SimpleType(name="Option")
-      typeArgs=SimpleType(name="Str")
-  expr=Int(value=1)
-```
-
-**Combined sugar: T?!E?**
-
-```metall
-let x Str?!Int? = 1
-```
-
-```ast
-Var(name="x",mut=false)
-  type=SimpleType(name="Result")
-    typeArgs[0]=SimpleType(name="Option")
-      typeArgs=SimpleType(name="Str")
-    typeArgs[1]=SimpleType(name="Option")
+Fun(name="foo")
+  params[0]=FunParam(name="a")
+    type=SimpleType(name="Option")
       typeArgs=SimpleType(name="Int")
-  expr=Int(value=1)
+  params[1]=FunParam(name="b")
+    type=SimpleType(name="Result")
+      typeArgs=SimpleType(name="Int")
+  params[2]=FunParam(name="c")
+    type=SimpleType(name="Option")
+      typeArgs=RefType(mut=false)
+        type=SimpleType(name="Int")
+  params[3]=FunParam(name="d")
+    type=SimpleType(name="Result")
+      typeArgs=RefType(mut=true)
+        type=SimpleType(name="Int")
+  params[4]=FunParam(name="e")
+    type=SimpleType(name="Option")
+      typeArgs=SliceType(mut=false)
+        type=SimpleType(name="Int")
+  params[5]=FunParam(name="f")
+    type=SimpleType(name="Result")
+      typeArgs=SimpleType(name="Option")
+        typeArgs=SimpleType(name="Int")
+  returnType=SimpleType(name="void")
+  block=Block()
+    exprs=Int(value=1)
 ```
 
 ## Shapes

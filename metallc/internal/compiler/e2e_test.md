@@ -3383,12 +3383,12 @@ replaced
 **Option and Result sugar**
 
 ```metall
-fun maybe(x Bool) Int? {
+fun maybe(x Bool) ?Int {
     if x { Option(42) }
     else { Option(None()) }
 }
 
-fun try_it(x Bool) Int! {
+fun try_it(x Bool) !Int {
     if x { Result(1) }
     else { Result(Err("nope")) }
 }

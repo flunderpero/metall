@@ -130,7 +130,7 @@ fun Int.to_u64_clamped(self Int) U64 { return 1 }
 struct None {}
 union Option<T> = T | None
 struct Err { msg Str }
-union Result<T, E = Err> = T | E
+union Result<T> = T | Err
 `
 
 const PreludeFirstID = NodeID(1_000_000_000)
