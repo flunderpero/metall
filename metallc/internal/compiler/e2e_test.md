@@ -3378,6 +3378,33 @@ replaced
 7
 ```
 
+**union auto-wrap with early return in match arm**
+
+```metall
+struct Err { msg Str }
+union Result = void | Err
+
+fun close() Result { Result(Err("fail")) }
+
+fun try_it() Result {
+    match close() {
+        case Err e: return e
+        case void: print_str("ok")
+    }
+}
+
+fun main() void {
+    match try_it() {
+        case void: print_str("void")
+        case Err e: print_str(e.msg)
+    }
+}
+```
+
+```output
+fail
+```
+
 ## Type Sugar
 
 **Option and Result sugar**

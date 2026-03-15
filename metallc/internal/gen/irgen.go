@@ -179,8 +179,17 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
 	if unionTypeID, ok := g.env.UnionWrap(id); ok {
+		breaksFlow := false
+		switch node.Kind.(type) {
+		case ast.Return, ast.Break, ast.Continue:
+			breaksFlow = true
+		case ast.Block:
+			breaksFlow = g.ast.BlockBreaksControlFlow(id, false)
+		}
+		if !breaksFlow {
 		g.genUnionAutoWrap(id, unionTypeID)
 	}
+}
 }
 
 func (g *IRGen) genStruct(env *types.TypeEnv, s types.StructWork) {
