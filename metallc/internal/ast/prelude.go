@@ -131,6 +131,15 @@ struct None {}
 union Option<T> = T | None
 struct Err { msg Str }
 union Result<T> = T | Err
+struct CStr { data []U8 }
+struct LibCIntern {}
+fun LibCIntern.errno() I32 {}
+fun LibCIntern.reset_errno() void {}
+fun LibCIntern.fopen(filename CStr, mode CStr) U64 {}
+fun LibCIntern.strerror(errnum I32) Str {}
+fun LibCIntern.fwrite(fd U64, data []U8) Int {}
+fun LibCIntern.fread(fd U64, buf []U8) Int {}
+fun LibCIntern.fclose(fd U64) I32 {}
 `
 
 const PreludeFirstID = NodeID(1_000_000_000)

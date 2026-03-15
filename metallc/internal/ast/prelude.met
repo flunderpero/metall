@@ -57,6 +57,31 @@ fun Str.utf8_bytes(s Str) []U8 {
     s.data
 }
 
+--- Convert the first rune to lowercase. ---
+fun Str.decapitalize(s Str, @a Arena) Str {
+    -- todo: implement for non-ascii characters
+    let first = s.data[0].to_u32()
+    if first >= 'A'.to_u32() and first <= 'Z'.to_u32() {
+        let copy = @a.slice_uninit_mut<U8>(s.data.len)
+        copy[0] = s.data[0] + 32
+        for i in 1..s.data.len {
+            copy[i] = s.data[i]
+        }
+        return Str(copy)
+    }
+    s
+}
+
+--- Return a 0-terminated variant of the string. ---
+fun Str.to_cstr(s Str, @a Arena) CStr {
+    mut data = @a.slice_uninit_mut<U8>(s.data.len + 1)
+    for i in 0..s.data.len {
+        data[i] = s.data[i]
+    }
+    data[data.len - 1] = 0
+    CStr(data)
+}
+
 --- A convenient way to build strings. ---
 struct StrBuilder {
     mut out []mut U8
@@ -227,3 +252,39 @@ fun U32.fmt_str(i U32, sb &mut StrBuilder) void { sb.u32(i) }
 fun U16.fmt_str(i U16, sb &mut StrBuilder) void { sb.u16(i) }
 fun U8.fmt_str(i U8, sb &mut StrBuilder) void { sb.u8(i) }
 fun Bool.fmt_str(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
+
+--- Something that represents the absence of something ---
+-- struct None {}
+
+fun None.fmt_str(n None, sb &mut StrBuilder) void { sb.str("<none>") }
+
+--- Option represents a value that is either present or not. ---
+-- union Option<T> = T | None
+
+fun Option.fmt_str<T>(o Option<T>, sb &mut StrBuilder) void {
+    match o {
+        --- todo: We should find the possiblity to have a .fmt_str method
+                  for Option<T> and Option<T FmtStr> or have a way
+                  to type guard against it. All functions are monomorphized
+                  so we know *at compile time* what T actually is. ---
+        case T: sb.str("<some>")
+        case None n: sb.fmt(n)
+    } 
+}
+
+--- An error type. You are free to use anything as error. ---
+-- struct Err { msg Str }
+
+fun Err.fmt_str(e Err, sb &mut StrBuilder) void { 
+    sb.str("error: ").str(e.msg)
+}
+
+--- A result type. Use this to distinct between "success" and "error" ---
+-- union Result<T> = T | Err
+
+fun Result.fmt_str<T>(r Result<T>, sb &mut StrBuilder) void {
+    match r {
+        case T: sb.str("<ok>")
+        case Err: sb.str("<error>")
+    }
+}

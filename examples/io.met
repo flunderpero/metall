@@ -1,0 +1,39 @@
+use std::io
+
+fun write(filename Str, content Str) !void {
+    let @local = Arena()
+    let f = try io::File.open(filename, "w", @local)
+    try f.write(content.utf8_bytes())
+    try f.close()
+}
+
+fun read(filename Str, @a Arena) !Str {
+    let @local = Arena()
+    let f = try io::File.open(filename, "r", @local)
+    let sb = StrBuilder.init(32, @a)
+    let buf = @local.slice_uninit_mut<U8>(1024)
+    for {
+        let res = try f.read(buf)
+        sb.str(Str.from_utf8_lossy(res, @local))
+        if res.len < 1024 {
+            break
+        }
+    }
+    sb.to_str()
+}
+
+fun main() void {
+    let @a = Arena()
+    match write("/tmp/io.met.test", "This is IO!") {
+        case Err e: io::print_fmt(e)
+        else:
+    }
+    match read("/tmp/io.met.test", @a) {
+        case Err e: io::print_fmt(e)
+        else s: io::print(s)
+    }
+    match read("does not exist at all", @a) {
+        case Err e: io::print_fmt(e)
+        else: io::print("did not expect to see a result here")
+    }
+}

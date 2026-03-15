@@ -1603,6 +1603,9 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 		if kind.Name == "Str" {
 			return "%Str"
 		}
+		if kind.Name == "CStr" {
+			return "%CStr"
+		}
 		return "%" + typeID.String()
 	case types.UnionType:
 		return "%" + typeID.String()
@@ -1826,6 +1829,7 @@ func GenIR(
 	g.write("")
 	// Emit the Str type definition (built-in struct, no AST node).
 	g.write("%Str = type { {ptr, i64} }")
+	g.write("%CStr = type { {ptr, i64} }")
 	// Emit arena type definitions.
 	g.write("%struct.PageHeader = type { ptr, ptr, ptr }") //nolint:dupword
 	g.write("%%struct.FirstPage = type { %%struct.PageHeader, [%d x i8] }", opts.ArenaStackBufSize)
