@@ -2,6 +2,7 @@ package ast
 
 import (
 	_ "embed"
+	"slices"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -126,6 +127,10 @@ fun Int.to_u32_wrapping(self Int) U32 { return 1 }
 fun Int.to_u32_clamped(self Int) U32 { return 1 }
 fun Int.to_u64_wrapping(self Int) U64 { return 1 }
 fun Int.to_u64_clamped(self Int) U64 { return 1 }
+struct None {}
+union Option<T> = T | None
+struct Err { msg Str }
+union Result<T, E = Err> = T | E
 `
 
 const PreludeFirstID = NodeID(1_000_000_000)
@@ -169,6 +174,9 @@ func updateMinimalPrelude(a *AST) {
 		node := a.Node(id)
 		switch kind := node.Kind.(type) {
 		case Struct:
+			if slices.Contains([]string{"None", "Err"}, kind.Name.Name) {
+				return true
+			}
 			if renamed, ok := preludeRenames[kind.Name.Name]; ok {
 				kind.Name.Name = renamed
 			}

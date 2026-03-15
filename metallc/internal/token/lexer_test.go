@@ -95,6 +95,8 @@ func TestLexer(t *testing.T) {
 		{"eq", "=", []want{{Eq, "", "1:1"}}},
 		{"eqeq", "==", []want{{EqEq, "", "1:1-1:2"}}},
 		{"neq", "!=", []want{{Neq, "", "1:1-1:2"}}},
+		{"excl", "!", []want{{Excl, "", "1:1"}}},
+		{"question", "?", []want{{Question, "", "1:1"}}},
 		{"and", "and", []want{{And, "", "1:1-1:3"}}},
 		{"or", "or", []want{{Or, "", "1:1-1:2"}}},
 		{"not", "not", []want{{Not, "", "1:1-1:3"}}},

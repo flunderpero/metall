@@ -29,6 +29,7 @@ const (
 	EOF
 	Eq
 	EqEq
+	Excl
 	False
 	For
 	Fun
@@ -57,6 +58,7 @@ const (
 	Percent
 	Pipe
 	Plus
+	Question
 	RBracket
 	RCurly
 	Return
@@ -97,6 +99,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	EOF:                   "<EOF>",
 	Eq:                    "=",
 	EqEq:                  "==",
+	Excl:                  "!",
 	False:                 "false",
 	For:                   "<for>",
 	Gt:                    ">",
@@ -125,6 +128,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Percent:               "%",
 	Pipe:                  "|",
 	Plus:                  "+",
+	Question:              "?",
 	RBracket:              "]",
 	RCurly:                "}",
 	Return:                "return",
@@ -154,6 +158,7 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'%': Percent,
 	'|': Pipe,
 	'+': Plus,
+	'?': Question,
 	']': RBracket,
 	'}': RCurly,
 	')': RParen,
@@ -319,7 +324,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		if idx < len(source.Content) && source.Content[idx] == '=' {
 			return Token{Kind: Neq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		return Token{Kind: Unknown, Value: fmt.Sprint(c), Span: span}
+		return Token{Kind: Excl, Value: "", Span: span}
 	case c == '&':
 		kind := Amp
 		if idx < len(source.Content) && unicode.IsSpace(source.Content[idx]) {

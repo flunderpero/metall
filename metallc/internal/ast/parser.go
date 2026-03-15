@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -985,42 +986,11 @@ func (p *Parser) ParseArrayOrSliceType() (NodeID, bool) {
 }
 
 func (p *Parser) ParseType() (NodeID, bool) {
-	t, ok := p.mustPeek()
+	baseType, ok := p.parseBaseType()
 	if !ok {
 		return ParseFailed, false
 	}
-	span := t.Span
-	switch t.Kind { //nolint:exhaustive
-	case token.TypeIdent:
-		p.next()
-		typeArgs, ok := p.parseTypeArgs()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewSimpleType(Name{t.Value, span}, typeArgs, span.Combine(p.span())), true
-	case token.Void:
-		p.next()
-		return p.NewSimpleType(Name{"void", span}, nil, span), true
-	case token.LBracket, token.LBracketImmediate:
-		return p.ParseArrayOrSliceType()
-	case token.Amp:
-		p.next()
-		mut := false
-		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
-			mut = true
-			p.next()
-		}
-		inner, ok := p.ParseType()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewRefType(inner, mut, span.Combine(p.span())), true
-	case token.Fun:
-		return p.ParseFunType()
-	default:
-		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
-		return ParseFailed, false
-	}
+	return p.parseTypeSuffix(baseType)
 }
 
 func (p *Parser) ParseFor() (NodeID, bool) {
@@ -1252,6 +1222,107 @@ func (p *Parser) parseRangeRHS(lo *NodeID) (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewRange(lo, hi, inclusive, rangeSpan), true
+}
+
+func (p *Parser) canStartType() bool {
+	t, ok := p.mayPeek()
+	if !ok {
+		return false
+	}
+	switch t.Kind { //nolint:exhaustive
+	case token.TypeIdent, token.Void, token.LBracket, token.LBracketImmediate, token.Amp, token.Fun:
+		return true
+	case token.Ident:
+		next, ok := p.mayPeek1()
+		return ok && next.Kind == token.ColonColon
+	default:
+		return false
+	}
+}
+
+func (p *Parser) parseBaseType() (NodeID, bool) {
+	t, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	switch t.Kind { //nolint:exhaustive
+	case token.Ident:
+		if next, ok := p.mayPeek1(); ok && next.Kind == token.ColonColon {
+			path, ok := p.ParsePath()
+			if !ok {
+				return ParseFailed, false
+			}
+			pathNode := base.Cast[Path](p.AST.Node(path).Kind)
+			last := pathNode.Segments[len(pathNode.Segments)-1]
+			firstRune, _ := utf8.DecodeRuneInString(last)
+			if firstRune == utf8.RuneError || !unicode.IsUpper(firstRune) {
+				p.diagnostic(p.span(), "expected a type identifier, got %s", last)
+				return ParseFailed, false
+			}
+			return path, true
+		}
+		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
+		return ParseFailed, false
+	case token.TypeIdent:
+		p.next()
+		typeArgs, ok := p.parseTypeArgs()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewSimpleType(Name{t.Value, span}, typeArgs, span.Combine(p.span())), true
+	case token.Void:
+		p.next()
+		return p.NewSimpleType(Name{"void", span}, nil, span), true
+	case token.LBracket, token.LBracketImmediate:
+		return p.ParseArrayOrSliceType()
+	case token.Amp:
+		p.next()
+		mut := false
+		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
+			mut = true
+			p.next()
+		}
+		inner, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewRefType(inner, mut, span.Combine(p.span())), true
+	case token.Fun:
+		return p.ParseFunType()
+	default:
+		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
+		return ParseFailed, false
+	}
+}
+
+func (p *Parser) parseTypeSuffix(baseType NodeID) (NodeID, bool) {
+	span := p.AST.Node(baseType).Span
+	// T? -> Option<T>
+	if t, ok := p.mayPeek(); ok && t.Kind == token.Question {
+		p.next()
+		baseType = p.NewSimpleType(Name{"Option", span}, []NodeID{baseType}, span.Combine(p.span()))
+	}
+	// T! or T!E -> Result<T> or Result<T, E>
+	t, ok := p.mayPeek()
+	if !ok || t.Kind != token.Excl {
+		return baseType, true
+	}
+	p.next()
+	typeArgs := []NodeID{baseType}
+	if p.canStartType() {
+		errType, ok := p.parseBaseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		// The error type can also have a ? suffix (e.g. T!E?).
+		errType, ok = p.parseTypeSuffix(errType)
+		if !ok {
+			return ParseFailed, false
+		}
+		typeArgs = append(typeArgs, errType)
+	}
+	return p.NewSimpleType(Name{"Result", span}, typeArgs, span.Combine(p.span())), true
 }
 
 func (p *Parser) parseMatchArms() ([]MatchArm, *MatchElse, bool) {

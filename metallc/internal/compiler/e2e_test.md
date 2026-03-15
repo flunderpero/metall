@@ -3378,6 +3378,48 @@ replaced
 7
 ```
 
+## Type Sugar
+
+**Option and Result sugar**
+
+```metall
+fun maybe(x Bool) Int? {
+    if x { Option(42) }
+    else { Option(None()) }
+}
+
+fun try_it(x Bool) Int! {
+    if x { Result(1) }
+    else { Result(Err("nope")) }
+}
+
+fun main() void {
+    match maybe(true) {
+        case Int i: print_int(i)
+        case None: print_str("none")
+    }
+    match maybe(false) {
+        case Int: print_str("int")
+        case None: print_str("none")
+    }
+    match try_it(true) {
+        case Int i: print_int(i)
+        case Err e: print_str(e.msg)
+    }
+    match try_it(false) {
+        case Int: print_str("int")
+        case Err e: print_str(e.msg)
+    }
+}
+```
+
+```output
+42
+none
+1
+nope
+```
+
 ## Panic
 
 **panic**
