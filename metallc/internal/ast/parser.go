@@ -998,6 +998,9 @@ func (p *Parser) ParseType() (NodeID, bool) {
 			return ParseFailed, false
 		}
 		return p.NewSimpleType(Name{t.Value, span}, typeArgs, span.Combine(p.span())), true
+	case token.Void:
+		p.next()
+		return p.NewSimpleType(Name{"void", span}, nil, span), true
 	case token.LBracket, token.LBracketImmediate:
 		return p.ParseArrayOrSliceType()
 	case token.Amp:
@@ -1491,16 +1494,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 }
 
 func (p *Parser) parseFunReturnType() (NodeID, bool) {
-	t, ok := p.mustPeek()
-	if !ok {
-		return ParseFailed, false
-	}
-	if t.Kind == token.Void {
-		p.next()
-		return p.NewSimpleType(Name{"void", t.Span}, nil, t.Span), true
-	} else {
-		return p.ParseType()
-	}
+	return p.ParseType()
 }
 
 func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {

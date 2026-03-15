@@ -3246,6 +3246,33 @@ fun main() void {
 42
 ```
 
+**void as union type argument**
+
+```metall
+fun main() void {
+    struct Err { msg Str }
+    union Result<T> = T | Err
+
+    fun might_fail(ok Bool) Result<void> {
+        if ok { void } else { Err("something went wrong") }
+    }
+
+    match might_fail(true) {
+        case void: print_str("ok")
+        case Err e: print_str(e.msg)
+    }
+    match might_fail(false) {
+        case void: print_str("ok")
+        case Err e: print_str(e.msg)
+    }
+}
+```
+
+```output
+ok
+something went wrong
+```
+
 **union auto-wrap deeply nested showcase**
 
 Tests auto-wrap across if/else, match, nested blocks, explicit return,

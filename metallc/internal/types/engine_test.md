@@ -1391,6 +1391,60 @@ Block: void
     Int: Int
 ```
 
+**Auto-wrap void as union variant**
+
+```metall
+{
+    struct Err { msg Str }
+    union Result<T> = T | Err
+    fun might_fail(ok Bool) Result<void> {
+        if ok { void } else { Err("fail") }
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Struct: scope02
+    StructField: scope03
+      SimpleType: scope03
+  Union: scope02
+    TypeParam: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Fun: scope02
+    FunParam: scope04
+      SimpleType: scope04
+    SimpleType: scope04
+      SimpleType: scope04
+    Block: scope04
+      If: scope05
+        Ident: scope05
+        Block: scope05
+          Ident: scope06
+        Block: scope05
+          TypeConstruction: scope07
+            Ident: scope07
+            String: scope07
+---
+scope01:
+scope02:
+  Err: struct01
+  Result: union01
+  T: ?
+  might_fail: fun01
+scope03:
+scope04:
+  ok: Bool
+scope05:
+scope06:
+scope07:
+struct01 = Err { msg Str }
+union01  = Result = T | struct01
+union02  = Result<void> = void | struct01
+fun01    = fun(Bool) union02
+```
+
 ## Booleans and If
 
 **Bool true**

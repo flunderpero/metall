@@ -1561,6 +1561,33 @@ Fun(name="foo")
   block=Block()
 ```
 
+**Void as type argument**
+
+```metall
+fun foo(x Result<void>) void {}
+```
+
+```ast
+Fun(name="foo")
+  params=FunParam(name="x")
+    type=SimpleType(name="Result")
+      typeArgs=SimpleType(name="void")
+  returnType=SimpleType(name="void")
+  block=Block()
+```
+
+**Void as type annotation**
+
+```metall
+let x void = void
+```
+
+```ast
+Var(name="x",mut=false)
+  type=SimpleType(name="void")
+  expr=Ident(name="void")
+```
+
 **Type construction with type args**
 
 ```metall

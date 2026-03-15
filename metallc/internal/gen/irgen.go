@@ -1749,6 +1749,9 @@ func (g *IRFunGen) loadValue(ptrReg string, typeID types.TypeID) string {
 
 func (g *IRFunGen) storeValue(srcReg string, dstReg string, typeID types.TypeID) {
 	irTyp := g.irType(typeID)
+	if irTyp == "void" {
+		return
+	}
 	if g.isAggregateType(typeID) {
 		tmp := g.reg()
 		g.write("%s = load %s, ptr %s", tmp, irTyp, srcReg)
