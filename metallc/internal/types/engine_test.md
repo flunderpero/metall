@@ -6367,6 +6367,22 @@ test.met:1:9: symbol not defined: x
             ^
 ```
 
+**Method on undefined receiver type**
+
+```metall
+{
+    fun Foo.bar() void {}
+}
+```
+
+```error
+test.met:2:9: method receiver type not found: Foo
+    {
+        fun Foo.bar() void {}
+            ^^^^^^^
+    }
+```
+
 **Undefined symbol forward ref**
 
 ```metall

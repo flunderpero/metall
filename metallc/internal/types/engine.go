@@ -1211,7 +1211,11 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 	}
 	bindName := fun.Name.Name
 	if structName, methodName, ok := strings.Cut(fun.Name.Name, "."); ok {
-		bindName = e.resolveMethodBindName(node.ID, structName, methodName)
+		resolved, ok := e.resolveMethodBindName(node.ID, structName, methodName, fun.Name.Span)
+		if !ok {
+			return InvalidTypeID, TypeFailed
+		}
+		bindName = resolved
 	}
 	if !e.bind(node.ID, bindName, false, funTypeID, fun.Name.Span) {
 		return InvalidTypeID, TypeFailed
@@ -1220,12 +1224,15 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 	return funTypeID, funStatus
 }
 
-func (e *Engine) resolveMethodBindName(nodeID ast.NodeID, structName, methodName string) string {
+func (e *Engine) resolveMethodBindName(
+	nodeID ast.NodeID, structName, methodName string, span base.Span,
+) (string, bool) {
 	binding, ok := e.lookup(nodeID, structName)
 	if !ok {
-		panic(base.Errorf("method receiver type not found: %s", structName))
+		e.diag(span, "method receiver type not found: %s", structName)
+		return "", false
 	}
-	return e.env.typeName(e.env.Type(binding.TypeID)) + "." + methodName
+	return e.env.typeName(e.env.Type(binding.TypeID)) + "." + methodName, true
 }
 
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
@@ -1446,7 +1453,11 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 	// as local `Point.sum`, i.e. the struct name is resolved to its namespaced type name.
 	lookupName := memberName
 	if structName, methodName, ok := strings.Cut(memberName, "."); ok {
-		lookupName = e.resolveMethodBindName(mod.Decls[0], structName, methodName)
+		resolved, ok := e.resolveMethodBindName(mod.Decls[0], structName, methodName, span)
+		if !ok {
+			return InvalidTypeID, TypeFailed
+		}
+		lookupName = resolved
 	}
 	binding, ok := e.env.Lookup(mod.Decls[0], lookupName)
 	if !ok {
@@ -1459,7 +1470,11 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
 	lookupName := ident.Name
 	if structName, methodName, ok := strings.Cut(ident.Name, "."); ok {
-		lookupName = e.resolveMethodBindName(nodeID, structName, methodName)
+		resolved, ok := e.resolveMethodBindName(nodeID, structName, methodName, span)
+		if !ok {
+			return InvalidTypeID, TypeFailed
+		}
+		lookupName = resolved
 	}
 	binding, ok := e.lookup(nodeID, lookupName)
 	if !ok {
