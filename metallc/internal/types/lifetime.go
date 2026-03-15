@@ -526,9 +526,9 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	if match.Else != nil {
 		if match.Else.Binding != nil {
 			ss := a.scopeByID(a.scopeGraph.IntroducedScope(match.Else.Body).ID)
-			// The else binding could be any unmatched variant, so conservatively
-			// propagate the full taint.
-			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, exprFlow}
+			// Only propagate taint if any uncovered variant can carry references.
+			bindingFlow := a.elseBindingFlow(match, exprFlow)
+			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, bindingFlow}
 		}
 		a.Check(match.Else.Body)
 	}
@@ -541,6 +541,31 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	}
 	a.flows[nodeID] = merged
 	a.debug(1, nodeID, "analyzeMatch: %s", merged)
+}
+
+func (a *LifetimeCheck) elseBindingFlow(match ast.Match, exprFlow Flow) Flow {
+	exprType := a.env.TypeOfNode(match.Expr)
+	if exprType == nil {
+		return exprFlow
+	}
+	union, ok := exprType.Kind.(UnionType)
+	if !ok {
+		return exprFlow
+	}
+	covered := make([]bool, len(union.Variants))
+	for _, arm := range match.Arms {
+		if pt := a.env.TypeOfNode(arm.Pattern); pt != nil {
+			for i, v := range union.Variants {
+				if v == pt.ID {
+					covered[i] = true
+				}
+			}
+		}
+	}
+	if slices.ContainsFunc(uncoveredVariants(covered, union), a.typeContainsRefOrAlloc) {
+		return exprFlow
+	}
+	return Flow{}
 }
 
 func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {

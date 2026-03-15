@@ -2042,3 +2042,23 @@ test.met:5:26: reference escaping its allocation scope (via block result)
             match r {
 ```
 
+**match else binding with value-type uncovered variants does not carry taint**
+
+```metall
+{
+    struct Err { msg Str }
+    union FileResult = &Int | Err
+    fun handle(r FileResult) Err {
+        match r {
+            case &Int: Err("not an error")
+            else e: e
+        }
+    }
+    let x = 42
+    handle(FileResult(&x))
+}
+```
+
+```error
+```
+
