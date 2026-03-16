@@ -2224,6 +2224,42 @@ test.met:1:20: unexpected token: <use>
                        ^^^
 ```
 
+**Match else not confused with if-else**
+
+```metall
+match x { case Int: if cond { 1 } else: 2 }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n2:SimpleType)
+  expr=Ident(name="x")
+  arm[0].body=Block()
+    exprs=If()
+      cond=Ident(name="cond")
+      then=Block()
+        exprs=Int(value=1)
+  else.body=Block()
+    exprs=Int(value=2)
+```
+
+**Match else binding not confused with if-else**
+
+```metall
+match x { case Int: if cond { 1 } else v: 2 }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n2:SimpleType,else.binding=v)
+  expr=Ident(name="x")
+  arm[0].body=Block()
+    exprs=If()
+      cond=Ident(name="cond")
+      then=Block()
+        exprs=Int(value=1)
+  else.body=Block()
+    exprs=Int(value=2)
+```
+
 ## Try
 
 **Try short form desugars to match**

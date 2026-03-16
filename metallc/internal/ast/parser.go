@@ -1096,6 +1096,9 @@ func (p *Parser) ParseIf() (NodeID, bool) {
 	if et.Kind != token.Else {
 		return p.NewIf(cond, then, nil, t.Span.Combine(p.span())), true
 	}
+	if after, ok := p.mayPeek1(); ok && (after.Kind == token.Ident || after.Kind == token.Colon) {
+		return p.NewIf(cond, then, nil, t.Span.Combine(p.span())), true
+	}
 	p.next()
 	else_, ok := p.ParseBlock()
 	if !ok {
