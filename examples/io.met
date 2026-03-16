@@ -25,15 +25,15 @@ fun read(filename Str, @a Arena) !Str {
 fun main() void {
     let @a = Arena()
     match write("/tmp/io.met.test", "This is IO!") {
-        case Err e: io::print_fmt(e)
+        case Err e: io::println(e)
         else:
     }
     match read("/tmp/io.met.test", @a) {
-        case Err e: io::print_fmt(e)
-        else s: io::print(s)
+        case Err e: io::println(e)
+        else s: io::println(s)
     }
     match read("does not exist at all", @a) {
-        case Err e: io::print_fmt(e)
-        else: io::print("did not expect to see a result here")
+        case Err e: io::println(e)
+        else: io::println("did not expect to see a result here")
     }
 }

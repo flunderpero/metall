@@ -5,7 +5,7 @@
 **print str**
 
 ```metall
-fun main() void { print_str("hello") }
+fun main() void { DebugIntern.print_str("hello") }
 ```
 
 ```output
@@ -15,7 +15,7 @@ hello
 **int literal**
 
 ```metall
-fun main() void { print_int(123) }
+fun main() void { DebugIntern.print_int(123) }
 ```
 
 ```output
@@ -25,7 +25,7 @@ fun main() void { print_int(123) }
 **str var**
 
 ```metall
-fun main() void { let x = "hello" print_str(x) }
+fun main() void { let x = "hello" DebugIntern.print_str(x) }
 ```
 
 ```output
@@ -35,7 +35,7 @@ hello
 **int var**
 
 ```metall
-fun main() void { let x = 123 print_int(x) }
+fun main() void { let x = 123 DebugIntern.print_int(x) }
 ```
 
 ```output
@@ -45,7 +45,7 @@ fun main() void { let x = 123 print_int(x) }
 **bool var**
 
 ```metall
-fun main() void { let x = true print_bool(x) }
+fun main() void { let x = true DebugIntern.print_bool(x) }
 ```
 
 ```output
@@ -55,7 +55,7 @@ true
 **mut var reassign**
 
 ```metall
-fun main() void { mut x = 123 print_int(x) x = 456 print_int(x) }
+fun main() void { mut x = 123 DebugIntern.print_int(x) x = 456 DebugIntern.print_int(x) }
 ```
 
 ```output
@@ -66,7 +66,7 @@ fun main() void { mut x = 123 print_int(x) x = 456 print_int(x) }
 **fun returns int**
 
 ```metall
-fun foo() Int { 123 } fun main() void { print_int(foo()) }
+fun foo() Int { 123 } fun main() void { DebugIntern.print_int(foo()) }
 ```
 
 ```output
@@ -76,7 +76,7 @@ fun foo() Int { 123 } fun main() void { print_int(foo()) }
 **fun returns str**
 
 ```metall
-fun foo() Str { "hello" } fun main() void { print_str(foo()) }
+fun foo() Str { "hello" } fun main() void { DebugIntern.print_str(foo()) }
 ```
 
 ```output
@@ -86,7 +86,7 @@ hello
 **fun returns bool**
 
 ```metall
-fun foo() Bool { true } fun main() void { print_bool(foo()) }
+fun foo() Bool { true } fun main() void { DebugIntern.print_bool(foo()) }
 ```
 
 ```output
@@ -96,7 +96,7 @@ true
 **fun with int param**
 
 ```metall
-fun foo(a Int) Int { a } fun main() void { print_int(foo(123)) }
+fun foo(a Int) Int { a } fun main() void { DebugIntern.print_int(foo(123)) }
 ```
 
 ```output
@@ -106,7 +106,7 @@ fun foo(a Int) Int { a } fun main() void { print_int(foo(123)) }
 **fun with str param**
 
 ```metall
-fun foo(a Str) Str { a } fun main() void { let x = foo("hello") print_str(x) }
+fun foo(a Str) Str { a } fun main() void { let x = foo("hello") DebugIntern.print_str(x) }
 ```
 
 ```output
@@ -116,7 +116,7 @@ hello
 **fun with bool param**
 
 ```metall
-fun foo(a Bool) Bool { a } fun main() void { print_bool(foo(true)) }
+fun foo(a Bool) Bool { a } fun main() void { DebugIntern.print_bool(foo(true)) }
 ```
 
 ```output
@@ -126,7 +126,7 @@ true
 **fun with return**
 
 ```metall
-fun foo() Int { return 123 } fun main() void { print_int(foo()) }
+fun foo() Int { return 123 } fun main() void { DebugIntern.print_int(foo()) }
 ```
 
 ```output
@@ -138,7 +138,7 @@ fun foo() Int { return 123 } fun main() void { print_int(foo()) }
 ```metall
 struct Foo { one Str }
 fun foo() Foo { return Foo("hello") } 
-fun main() void { print_str(foo().one) }
+fun main() void { DebugIntern.print_str(foo().one) }
 ```
 
 ```output
@@ -161,9 +161,9 @@ fun foo(a Int) Int {
 } 
 
 fun main() void { 
-    print_int(foo(0)) 
-    print_int(foo(1)) 
-    print_int(foo(2)) 
+    DebugIntern.print_int(foo(0)) 
+    DebugIntern.print_int(foo(1)) 
+    DebugIntern.print_int(foo(2)) 
 }
 ```
 
@@ -180,7 +180,7 @@ fun foo(x Int) void {
     if x > 0 {
         return void
     }
-    print_int(x)
+    DebugIntern.print_int(x)
 }
 fun main() void { foo(1) foo(0) }
 ```
@@ -197,10 +197,10 @@ fun double(a Int) Int { a + a }
 fun math(a Int, f fun(Int) Int) Int { f(a) }
 
 fun main() void {
-    print_int(math(7, double))
+    DebugIntern.print_int(math(7, double))
     let local_math = math
     let local_double = double
-    print_int(local_math(9, double))
+    DebugIntern.print_int(local_math(9, double))
 }
 ```
 
@@ -217,9 +217,9 @@ fun triple(a Int) Int { a + a + a }
 
 fun main() void {
     mut f = double
-    print_int(f(5))
+    DebugIntern.print_int(f(5))
     f = triple
-    print_int(f(5))
+    DebugIntern.print_int(f(5))
 }
 ```
 
@@ -236,9 +236,9 @@ fun Foo.get(self Foo) Int { self.x }
 
 fun main() void {
     let f = Foo(42)
-    print_int(Foo.get(f))
+    DebugIntern.print_int(Foo.get(f))
     let g = Foo.get
-    print_int(g(f))
+    DebugIntern.print_int(g(f))
 }
 ```
 
@@ -256,7 +256,7 @@ fun get_double() fun(Int) Int { double }
 
 fun main() void {
     let f = get_double()
-    print_int(f(5))
+    DebugIntern.print_int(f(5))
 }
 ```
 
@@ -273,9 +273,9 @@ struct Foo { one fun(Int) Int }
 
 fun main() void {
     let x = Foo(double)
-    print_int(x.one(5))
+    DebugIntern.print_int(x.one(5))
     let y = x.one
-    print_int(y(5))
+    DebugIntern.print_int(y(5))
 }
 ```
 
@@ -290,7 +290,7 @@ fun main() void {
 fun double(a Int) Int { a + a }
 fun apply_twice(f fun(Int) Int, x Int) Int { f(f(x)) }
 fun main() void {
-    print_int(apply_twice(double, 3))
+    DebugIntern.print_int(apply_twice(double, 3))
 }
 ```
 
@@ -306,7 +306,7 @@ fun factorial(n Int) Int {
 }
 fun apply(f fun(Int) Int, x Int) Int { f(x) }
 fun main() void {
-    print_int(apply(factorial, 5))
+    DebugIntern.print_int(apply(factorial, 5))
 }
 ```
 
@@ -319,9 +319,9 @@ fun main() void {
 ```metall
 fun apply(f fun(Int) void, x Int) void { f(x) }
 fun main() void {
-    let f = print_int
+    let f = DebugIntern.print_int
     f(42)
-    apply(print_int, 99)
+    apply(DebugIntern.print_int, 99)
 }
 ```
 
@@ -340,9 +340,9 @@ fun pick(use_double Bool) fun(Int) Int {
 }
 fun main() void {
     let f = pick(true)
-    print_int(f(5))
+    DebugIntern.print_int(f(5))
     let g = pick(false)
-    print_int(g(5))
+    DebugIntern.print_int(g(5))
 }
 ```
 
@@ -360,7 +360,7 @@ fun main() void {
         fun foo() Int { 123 }
         foo()
     }
-    print_int(foo())
+    DebugIntern.print_int(foo())
 }
 ```
 
@@ -378,8 +378,8 @@ fun main() void {
     fun is_odd(n Int) Bool {
         if n == 0 { false } else { is_even(n - 1) }
     }
-    print_bool(is_even(4))
-    print_bool(is_odd(4))
+    DebugIntern.print_bool(is_even(4))
+    DebugIntern.print_bool(is_odd(4))
 }
 ```
 
@@ -394,7 +394,7 @@ false
 fun apply(f fun(Int) Int, x Int) Int { f(x) }
 fun main() void {
     fun double(a Int) Int { a + a }
-    print_int(apply(double, 21))
+    DebugIntern.print_int(apply(double, 21))
 }
 ```
 
@@ -412,8 +412,8 @@ fun main() void {
     struct Foo { x Int y Str }
     fun Foo.bar(f Foo) Int { f.x + 1 }
     let f = Foo(42, "hello")
-    print_int(f.bar())
-    print_str(f.y)
+    DebugIntern.print_int(f.bar())
+    DebugIntern.print_str(f.y)
 }
 ```
 
@@ -434,7 +434,7 @@ fun main() void {
         fun helper() Int { 20 }
         helper()
     }
-    print_int(foo() + bar())
+    DebugIntern.print_int(foo() + bar())
 }
 ```
 
@@ -445,7 +445,7 @@ fun main() void {
 **block expression**
 
 ```metall
-fun main() void { let x = { "hello" } print_str(x) }
+fun main() void { let x = { "hello" } DebugIntern.print_str(x) }
 ```
 
 ```output
@@ -455,7 +455,7 @@ hello
 **var expr is void**
 
 ```metall
-fun main() void { print_str("hello") let x = 123 }
+fun main() void { DebugIntern.print_str("hello") let x = 123 }
 ```
 
 ```output
@@ -465,7 +465,7 @@ hello
 **assign expr is void**
 
 ```metall
-fun main() void { print_str("hello") mut x = 123 x = 321 }
+fun main() void { DebugIntern.print_str("hello") mut x = 123 x = 321 }
 ```
 
 ```output
@@ -475,7 +475,7 @@ hello
 **if true branch**
 
 ```metall
-fun main() void { let x = if true { 123 } else { 321 } print_int(x) }
+fun main() void { let x = if true { 123 } else { 321 } DebugIntern.print_int(x) }
 ```
 
 ```output
@@ -485,7 +485,7 @@ fun main() void { let x = if true { 123 } else { 321 } print_int(x) }
 **if false branch**
 
 ```metall
-fun main() void { let x = if false { 123 } else { 321 } print_int(x) }
+fun main() void { let x = if false { 123 } else { 321 } DebugIntern.print_int(x) }
 ```
 
 ```output
@@ -495,7 +495,7 @@ fun main() void { let x = if false { 123 } else { 321 } print_int(x) }
 **if assigns to mut var**
 
 ```metall
-fun main() void { mut x = 1 if true { x = 123 } else { x = 321 } print_int(x) }
+fun main() void { mut x = 1 if true { x = 123 } else { x = 321 } DebugIntern.print_int(x) }
 ```
 
 ```output
@@ -511,7 +511,7 @@ fun main() void {
     } else {
         2
     }
-    print_int(x)
+    DebugIntern.print_int(x)
 }
 ```
 
@@ -522,7 +522,7 @@ fun main() void {
 **ref deref**
 
 ```metall
-fun main() void { mut x = 123 mut y = &mut x print_int(y.*) y.* = 321 print_int(x) }
+fun main() void { mut x = 123 mut y = &mut x DebugIntern.print_int(y.*) y.* = 321 DebugIntern.print_int(x) }
 ```
 
 ```output
@@ -537,11 +537,11 @@ fun main() void {
     mut x = 123 
     mut y = &mut x
     mut z = &mut y
-    print_int(y.*)
+    DebugIntern.print_int(y.*)
     y.* = 321 
-    print_int(x)
+    DebugIntern.print_int(x)
     z.*.* = 111
-    print_int(x)
+    DebugIntern.print_int(x)
 }
 ```
 
@@ -555,13 +555,13 @@ fun main() void {
 
 ```metall
 fun foo(a &mut Int) void { 
-    print_int(a.*)
+    DebugIntern.print_int(a.*)
     a.* = 321 
 }
 fun main() void { 
     mut x = 123 
     foo(&mut x)
-    print_int(x)
+    DebugIntern.print_int(x)
 }
 ```
 
@@ -580,13 +580,13 @@ struct Foo {
 
 fun main() void {
     mut x = Foo("hello", 123)
-    print_str(x.one)
-    print_int(x.two)
+    DebugIntern.print_str(x.one)
+    DebugIntern.print_int(x.two)
 
     x.one = "bye"
     x.two = 456
-    print_str(x.one)
-    print_int(x.two)
+    DebugIntern.print_str(x.one)
+    DebugIntern.print_int(x.two)
 }
 ```
 
@@ -605,7 +605,7 @@ struct Foo {
 }
 
 fun foo(a Foo) void {
-    print_str(a.one)
+    DebugIntern.print_str(a.one)
 }
 
 fun main() void {
@@ -626,7 +626,7 @@ struct Foo {
 }
 
 fun foo(a &Foo) void {
-    print_str(a.one)
+    DebugIntern.print_str(a.one)
 }
 
 fun bar(a &mut Foo, b Str) void {
@@ -660,7 +660,7 @@ fun foo() Foo {
 
 fun main() void {
     let x = foo()
-    print_str(x.one)
+    DebugIntern.print_str(x.one)
 }
 ```
 
@@ -682,10 +682,10 @@ struct Bar {
 
 fun main() void {
     mut x = Bar(Foo("hello"), Foo("world"))
-    print_str(x.one.one)
-    print_str(x.two.one)
+    DebugIntern.print_str(x.one.one)
+    DebugIntern.print_str(x.two.one)
     x.two.one = "bye"
-    print_str(x.two.one)
+    DebugIntern.print_str(x.two.one)
 }
 ```
 
@@ -706,8 +706,8 @@ fun main() void {
     mut x = Foo("hello")
     mut y = x
     y.one = "world"
-    print_str(x.one)
-    print_str(y.one)
+    DebugIntern.print_str(x.one)
+    DebugIntern.print_str(y.one)
 }
 ```
 
@@ -732,8 +732,8 @@ fun main() void {
     mut y = Foo("world")
     x.one = y
     y.one = "bye"
-    print_str(x.one.one)
-    print_str(y.one)
+    DebugIntern.print_str(x.one.one)
+    DebugIntern.print_str(y.one)
 }
 ```
 
@@ -753,10 +753,10 @@ struct Wrapper {
 fun main() void {
     mut x = 42
     let y = Wrapper(1, &x)
-    print_int(y.one)
-    print_int(y.two.*)
+    DebugIntern.print_int(y.one)
+    DebugIntern.print_int(y.two.*)
     x = 99
-    print_int(y.two.*)
+    DebugIntern.print_int(y.two.*)
 }
 ```
 
@@ -778,7 +778,7 @@ fun main() void {
     let y = &x
     let z = y
     x.one = "world"
-    print_str(z.one)
+    DebugIntern.print_str(z.one)
 }
 ```
 
@@ -795,11 +795,11 @@ struct Foo {
 
 fun main() void {
     let x = if true { Foo("hello") } else { Foo("world") }
-    print_str(x.one)
+    DebugIntern.print_str(x.one)
     mut y = if false { Foo("hello") } else { Foo("world") }
-    print_str(y.one)
+    DebugIntern.print_str(y.one)
     y.one = "bye"
-    print_str(y.one)
+    DebugIntern.print_str(y.one)
 }
 ```
 
@@ -818,9 +818,9 @@ struct Foo {
 
 fun main() void {
     mut x = Foo("hello")
-    print_str(x.one)
+    DebugIntern.print_str(x.one)
     x = if true { Foo("world") } else { Foo("bye") }
-    print_str(x.one)
+    DebugIntern.print_str(x.one)
 }
 ```
 
@@ -837,7 +837,7 @@ struct Foo {
 }
 
 fun foo(a Foo) void {
-    print_str(a.one)
+    DebugIntern.print_str(a.one)
 }
 
 fun main() void {
@@ -859,8 +859,8 @@ struct Pair<T> {
 
 fun main() void {
     let p = Pair<Int>(10, 20)
-    print_int(p.first)
-    print_int(p.second)
+    DebugIntern.print_int(p.first)
+    DebugIntern.print_int(p.second)
 }
 ```
 
@@ -876,10 +876,10 @@ struct Box<T> { value T }
 fun id<T>(x T) T { x }
 
 fun main() void {
-    print_int(id<Int>(42))
-    print_str(id<Str>("hello"))
+    DebugIntern.print_int(id<Int>(42))
+    DebugIntern.print_str(id<Str>("hello"))
     let b = id<Box<Int>>(Box<Int>(99))
-    print_int(b.value)
+    DebugIntern.print_int(b.value)
 }
 ```
 
@@ -896,9 +896,9 @@ fun id<T>(x T) T { x }
 
 fun main() void {
     let f = id<Int>
-    print_int(f(42))
+    DebugIntern.print_int(f(42))
     let g = id<Str>
-    print_str(g("hello"))
+    DebugIntern.print_str(g("hello"))
 }
 ```
 
@@ -915,8 +915,8 @@ fun Foo.bar<T>(f Foo<T>, a T, b Bool) T { if b { return f.one } a }
 
 fun main() void {
     let x = Foo<Int>(42)
-    print_int(x.bar(99, true))
-    print_int(x.bar(99, false))
+    DebugIntern.print_int(x.bar(99, true))
+    DebugIntern.print_int(x.bar(99, false))
 }
 ```
 
@@ -933,8 +933,8 @@ fun Foo.get<T>(f Foo, x T) T { x }
 
 fun main() void {
     let f = Foo(42)
-    print_int(f.get<Int>(1))
-    print_str(f.get<Str>("hello"))
+    DebugIntern.print_int(f.get<Int>(1))
+    DebugIntern.print_str(f.get<Str>("hello"))
 }
 ```
 
@@ -951,8 +951,8 @@ fun Foo.bar<T, U>(f Foo<T>, a U) U { a }
 
 fun main() void {
     let x = Foo<Int>(42)
-    print_str(x.bar<Str>("hello"))
-    print_int(x.bar<Int>(99))
+    DebugIntern.print_str(x.bar<Str>("hello"))
+    DebugIntern.print_int(x.bar<Int>(99))
 }
 ```
 
@@ -970,8 +970,8 @@ fun Pair.get_second<A, B>(p Pair<A, B>) B { p.second }
 
 fun main() void {
     let p = Pair<Int, Str>(42, "hello")
-    print_int(p.get_first())
-    print_str(p.get_second())
+    DebugIntern.print_int(p.get_first())
+    DebugIntern.print_str(p.get_second())
 }
 ```
 
@@ -992,11 +992,11 @@ fun to_str(x Int) Str { "mapped" }
 fun main() void {
     let p = Pair<Int, Str>(42, "hello")
     let s = p.swap()
-    print_str(s.first)
-    print_int(s.second)
+    DebugIntern.print_str(s.first)
+    DebugIntern.print_int(s.second)
     let m = p.map_first<Str>(to_str)
-    print_str(m.first)
-    print_str(m.second)
+    DebugIntern.print_str(m.first)
+    DebugIntern.print_str(m.second)
 }
 ```
 
@@ -1016,7 +1016,7 @@ fun Wrap.unwrap<T>(w Wrap<T>) T { w.inner }
 fun main() void {
     let w = Wrap<Wrap<Int>>(Wrap<Int>(99))
     let inner = w.unwrap()
-    print_int(inner.unwrap())
+    DebugIntern.print_int(inner.unwrap())
 }
 ```
 
@@ -1033,7 +1033,7 @@ fun Box.get_id<T>(b Box<T>) T { id<T>(b.value) }
 
 fun main() void {
     let b = Box<Int>(7)
-    print_int(b.get_id())
+    DebugIntern.print_int(b.get_id())
 }
 ```
 
@@ -1048,13 +1048,13 @@ struct Box<T> { value T }
 fun id<T>(x T) T { x }
 
 fun main() void {
-    print_int(id<Int>(1))
-    print_int(Box<Int>(2).value)
+    DebugIntern.print_int(id<Int>(1))
+    DebugIntern.print_int(Box<Int>(2).value)
     {
         struct Box<T> { value T value2 T }
         fun id<T>(x T) T { x }
-        print_int(id<Int>(3))
-        print_int(Box<Int>(4, 5).value2)
+        DebugIntern.print_int(id<Int>(3))
+        DebugIntern.print_int(Box<Int>(4, 5).value2)
     }
 }
 ```
@@ -1085,7 +1085,7 @@ fun wrap<V>(@a Arena, v V) Int {
 
 fun main() void {
     let @a = Arena()
-    print_int(wrap<Str>(@a, "x"))
+    DebugIntern.print_int(wrap<Str>(@a, "x"))
 }
 ```
 
@@ -1097,7 +1097,7 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_int(foo())
+    DebugIntern.print_int(foo())
 }
 
 fun foo() Int {
@@ -1127,12 +1127,12 @@ fun main() void {
     {
         let @b = Arena()
         let z = @b.new<Foo>(Foo("z"))
-        print_str(z.one)
+        DebugIntern.print_str(z.one)
     }
-    print_str(y.one)
-    print_str(x.one)
+    DebugIntern.print_str(y.one)
+    DebugIntern.print_str(x.one)
     let w = foo(@a)
-    print_str(w.one)
+    DebugIntern.print_str(w.one)
 }
 ```
 
@@ -1148,9 +1148,9 @@ hello
 ```metall
 fun main() void {
     let x = [1, 2, 3]
-    print_int(x[2])
-    print_int(x[1])
-    print_int(x[0])
+    DebugIntern.print_int(x[2])
+    DebugIntern.print_int(x[1])
+    DebugIntern.print_int(x[0])
 }
 ```
 
@@ -1166,9 +1166,9 @@ fun main() void {
 fun main() void {
     mut x = [10, 20, 30]
     let i = 1
-    print_int(x[i])
+    DebugIntern.print_int(x[i])
     x[i] = 99
-    print_int(x[i])
+    DebugIntern.print_int(x[i])
 }
 ```
 
@@ -1190,9 +1190,9 @@ fun main() void {
         Foo("y"),
         Foo("z"),
     ]
-    print_str(x[2].one)
-    print_str(x[1].one)
-    print_str(x[0].one)
+    DebugIntern.print_str(x[2].one)
+    DebugIntern.print_str(x[1].one)
+    DebugIntern.print_str(x[0].one)
 }
 ```
 
@@ -1212,11 +1212,11 @@ fun main() void {
         [5, 6],
     ]
     let y = x[0]
-    print_int(y[1])
+    DebugIntern.print_int(y[1])
     let z = x[1]
-    print_int(z[0])
+    DebugIntern.print_int(z[0])
     let w = x[2]
-    print_int(w[1])
+    DebugIntern.print_int(w[1])
 }
 ```
 
@@ -1235,7 +1235,7 @@ struct Foo {
 
 fun main() void {
     let x = Foo([1, 2, 3])
-    print_int(x.one[1])
+    DebugIntern.print_int(x.one[1])
 }
 ```
 
@@ -1254,14 +1254,14 @@ fun main() void {
     let x = Foo("x")
     let y = Foo("y")
     let z = [x, y]
-    print_str(z[1].one)
-    print_str(z[0].one)
+    DebugIntern.print_str(z[1].one)
+    DebugIntern.print_str(z[0].one)
 
     let w = 1
     let v = 2
     let u = [&w, &v]
-    print_int(u[1].*)
-    print_int(u[0].*)
+    DebugIntern.print_int(u[1].*)
+    DebugIntern.print_int(u[0].*)
 }
 ```
 
@@ -1277,9 +1277,9 @@ x
 ```metall
 fun main() void {
     mut x = [1, 2, 3]
-    print_int(x[1])
+    DebugIntern.print_int(x[1])
     x[1] = 4
-    print_int(x[1])
+    DebugIntern.print_int(x[1])
 }
 ```
 
@@ -1295,9 +1295,9 @@ struct Foo { one Str }
 
 fun main() void {
     mut x = [Foo("x"), Foo("y")]
-    print_str(x[0].one)
+    DebugIntern.print_str(x[0].one)
     x[0] = Foo("z")
-    print_str(x[0].one)
+    DebugIntern.print_str(x[0].one)
 }
 ```
 
@@ -1316,9 +1316,9 @@ fun main() void {
     let y = Foo("y")
     let z = Foo("z")
     mut w = [&x, &y]
-    print_str(w[0].one)
+    DebugIntern.print_str(w[0].one)
     w[0] = &z
-    print_str(w[0].one)
+    DebugIntern.print_str(w[0].one)
 }
 ```
 
@@ -1336,9 +1336,9 @@ fun main() void {
     x[1] = 1
     x[2] = 2
 
-    print_int(x[0])
-    print_int(x[1])
-    print_int(x[2])
+    DebugIntern.print_int(x[0])
+    DebugIntern.print_int(x[1])
+    DebugIntern.print_int(x[2])
 }
 ```
 
@@ -1360,8 +1360,8 @@ fun main() void {
     mut x = @a.new_mut<Foo>(Foo("hello"))
     mut y = x
     y.one = "world"
-    print_str(x.one)
-    print_str(y.one)
+    DebugIntern.print_str(x.one)
+    DebugIntern.print_str(y.one)
 }
 ```
 
@@ -1379,8 +1379,8 @@ fun main() void {
     x[0] = 42
     let y = x
     y[0] = 99
-    print_int(x[0])
-    print_int(y[0])
+    DebugIntern.print_int(x[0])
+    DebugIntern.print_int(y[0])
 }
 ```
 
@@ -1399,7 +1399,7 @@ struct Foo {
 fun main() void {
     let @a = Arena()
     let x = @a.new<Foo>(Foo("hello"))
-    print_str(x.one)
+    DebugIntern.print_str(x.one)
 }
 ```
 
@@ -1422,7 +1422,7 @@ fun main() void {
     let @a = Arena()
     let x = @a.new_mut<Foo>(Foo("hello"))
     set(x, "world")
-    print_str(x.one)
+    DebugIntern.print_str(x.one)
 }
 ```
 
@@ -1438,7 +1438,7 @@ fun main() void {
     let x = @a.slice_uninit_mut<Int>(3)
     x[0] = 42
     let y = @a.slice_uninit<Int>(3)
-    print_int(x[0])
+    DebugIntern.print_int(x[0])
 }
 ```
 
@@ -1455,8 +1455,8 @@ fun main() void {
     x[0] = 42
     let y = x
     y[0] = 99
-    print_int(x[0])
-    print_int(y[0])
+    DebugIntern.print_int(x[0])
+    DebugIntern.print_int(y[0])
 }
 ```
 
@@ -1476,10 +1476,10 @@ fun main() void {
     x[1] = 20
     x[2] = 30
 
-    print_int(x[0])
-    print_int(x[1])
-    print_int(x[2])
-    print_int(x.len)
+    DebugIntern.print_int(x[0])
+    DebugIntern.print_int(x[1])
+    DebugIntern.print_int(x[2])
+    DebugIntern.print_int(x.len)
 }
 ```
 
@@ -1500,9 +1500,9 @@ fun main() void {
     x[1] = 20
     x[2] = 30
     let i = 2
-    print_int(x[i])
+    DebugIntern.print_int(x[i])
     x[i] = 99
-    print_int(x[i])
+    DebugIntern.print_int(x[i])
 }
 ```
 
@@ -1517,9 +1517,9 @@ fun main() void {
 fun main() void {
     let @a = Arena()
     let x = @a.slice<Int>(100, 77)
-    print_int(x[0])
-    print_int(x[50])
-    print_int(x[99])
+    DebugIntern.print_int(x[0])
+    DebugIntern.print_int(x[50])
+    DebugIntern.print_int(x[99])
 }
 ```
 
@@ -1535,9 +1535,9 @@ fun main() void {
 fun main() void {
     let @a = Arena()
     let x = @a.slice<Int>(100, 77)
-    print_int(x[0])
-    print_int(x[50])
-    print_int(x[99])
+    DebugIntern.print_int(x[0])
+    DebugIntern.print_int(x[50])
+    DebugIntern.print_int(x[99])
 }
 ```
 
@@ -1554,7 +1554,7 @@ fun main() void {
     let @a = Arena()
     let x = @a.slice_uninit_mut<Int>(100)
     x[99] = 42
-    print_int(x[99])
+    DebugIntern.print_int(x[99])
 }
 ```
 
@@ -1569,7 +1569,7 @@ fun main() void {
     let @a = Arena()
     let x = @a.slice_uninit_mut<Int>(100)
     x[99] = 42
-    print_int(x[99])
+    DebugIntern.print_int(x[99])
 }
 ```
 
@@ -1588,12 +1588,12 @@ struct Foo {
 fun main() void {
     let @a = Arena()
     let x = @a.slice<Foo>(100, Foo(42, "hello"))
-    print_int(x[0].one)
-    print_str(x[0].two)
-    print_int(x[50].one)
-    print_str(x[50].two)
-    print_int(x[99].one)
-    print_str(x[99].two)
+    DebugIntern.print_int(x[0].one)
+    DebugIntern.print_str(x[0].two)
+    DebugIntern.print_int(x[50].one)
+    DebugIntern.print_str(x[50].two)
+    DebugIntern.print_int(x[99].one)
+    DebugIntern.print_str(x[99].two)
 }
 ```
 
@@ -1617,12 +1617,12 @@ struct Foo {
 fun main() void {
     let @a = Arena()
     let x = @a.slice<Foo>(100, Foo(42, "hello"))
-    print_int(x[0].one)
-    print_str(x[0].two)
-    print_int(x[50].one)
-    print_str(x[50].two)
-    print_int(x[99].one)
-    print_str(x[99].two)
+    DebugIntern.print_int(x[0].one)
+    DebugIntern.print_str(x[0].two)
+    DebugIntern.print_int(x[50].one)
+    DebugIntern.print_str(x[50].two)
+    DebugIntern.print_int(x[99].one)
+    DebugIntern.print_str(x[99].two)
 }
 ```
 
@@ -1647,11 +1647,11 @@ fun main() void {
     let @a = Arena()
     let def = @a.new_mut<Foo>(Foo(42, "hello"))
     let x = @a.slice_mut<&mut Foo>(3, def)
-    print_int(x[0].one)
-    print_int(x[2].one)
+    DebugIntern.print_int(x[0].one)
+    DebugIntern.print_int(x[2].one)
     x[0].one = 99
-    print_int(x[1].one)
-    print_int(x[2].one)
+    DebugIntern.print_int(x[1].one)
+    DebugIntern.print_int(x[2].one)
 }
 ```
 
@@ -1674,11 +1674,11 @@ fun main() void {
     let @a = Arena()
     let def = @a.new_mut<Foo>(Foo(42, "hello"))
     let x = @a.slice_mut<&mut Foo>(3, def)
-    print_int(x[0].one)
-    print_int(x[2].one)
+    DebugIntern.print_int(x[0].one)
+    DebugIntern.print_int(x[2].one)
     x[0].one = 99
-    print_int(x[1].one)
-    print_int(x[2].one)
+    DebugIntern.print_int(x[1].one)
+    DebugIntern.print_int(x[2].one)
 }
 ```
 
@@ -1697,8 +1697,8 @@ fun main() void {
     let m = @a.slice_mut<[]Int>(2, [])
     m[0] = @a.slice<Int>(3, 10)
     m[1] = @a.slice<Int>(3, 40)
-    print_int(m[0][1])
-    print_int(m[1][2])
+    DebugIntern.print_int(m[0][1])
+    DebugIntern.print_int(m[1][2])
 }
 ```
 
@@ -1715,8 +1715,8 @@ fun main() void {
     let m = @a.slice_mut<[]Int>(2, [])
     m[0] = @a.slice<Int>(3, 20)
     m[1] = @a.slice<Int>(3, 60)
-    print_int(m[0][1])
-    print_int(m[1][2])
+    DebugIntern.print_int(m[0][1])
+    DebugIntern.print_int(m[1][2])
 }
 ```
 
@@ -1731,9 +1731,9 @@ fun main() void {
 fun main() void {
     let @a = Arena()
     mut x = @a.slice<Int>(3, 42)
-    print_int(x[1])
+    DebugIntern.print_int(x[1])
     x = []
-    print_int(x.len)
+    DebugIntern.print_int(x.len)
 }
 ```
 
@@ -1749,7 +1749,7 @@ fun main() void {
     struct Foo { mut one Int }
     mut a = [Foo(1)]
     a[0].one = 42
-    print_int(a[0].one)
+    DebugIntern.print_int(a[0].one)
 }
 ```
 
@@ -1766,7 +1766,7 @@ fun main() void {
     let a = @a.slice_uninit_mut<Foo>(1)
     a[0] = Foo(1)
     a[0].one = 42
-    print_int(a[0].one)
+    DebugIntern.print_int(a[0].one)
 }
 ```
 
@@ -1782,7 +1782,7 @@ fun main() void {
     mut a = [Foo(1)]
     mut b = &mut a[0]
     b.one = 42
-    print_int(a[0].one)
+    DebugIntern.print_int(a[0].one)
 }
 ```
 
@@ -1800,7 +1800,7 @@ fun main() void {
     a[0] = Foo(1)
     let b = &mut a[0]
     b.one = 42
-    print_int(a[0].one)
+    DebugIntern.print_int(a[0].one)
 }
 ```
 
@@ -1816,13 +1816,13 @@ struct Padded { flag Bool value Int }
 fun main() void {
     let @a = Arena()
     let p = @a.new<Padded>(Padded(true, 42))
-    print_bool(p.flag)
-    print_int(p.value)
+    DebugIntern.print_bool(p.flag)
+    DebugIntern.print_int(p.value)
     let s = @a.slice<Padded>(3, Padded(false, 99))
-    print_bool(s[0].flag)
-    print_int(s[0].value)
-    print_bool(s[2].flag)
-    print_int(s[2].value)
+    DebugIntern.print_bool(s[0].flag)
+    DebugIntern.print_int(s[0].value)
+    DebugIntern.print_bool(s[2].flag)
+    DebugIntern.print_int(s[2].value)
 }
 ```
 
@@ -1841,9 +1841,9 @@ false
 fun main() void {
     let arr = [10, 20, 30, 40, 50]
     let s = arr[1..3]
-    print_int(s.len)
-    print_int(s[0])
-    print_int(s[1])
+    DebugIntern.print_int(s.len)
+    DebugIntern.print_int(s[0])
+    DebugIntern.print_int(s[1])
 }
 ```
 
@@ -1859,9 +1859,9 @@ fun main() void {
 fun main() void {
     let arr = [10, 20, 30, 40, 50]
     let s = arr[1..=3]
-    print_int(s.len)
-    print_int(s[0])
-    print_int(s[2])
+    DebugIntern.print_int(s.len)
+    DebugIntern.print_int(s[0])
+    DebugIntern.print_int(s[2])
 }
 ```
 
@@ -1877,9 +1877,9 @@ fun main() void {
 fun main() void {
     let arr = [10, 20, 30, 40, 50]
     let s = arr[..2]
-    print_int(s.len)
-    print_int(s[0])
-    print_int(s[1])
+    DebugIntern.print_int(s.len)
+    DebugIntern.print_int(s[0])
+    DebugIntern.print_int(s[1])
 }
 ```
 
@@ -1895,9 +1895,9 @@ fun main() void {
 fun main() void {
     let arr = [10, 20, 30, 40, 50]
     let s = arr[3..]
-    print_int(s.len)
-    print_int(s[0])
-    print_int(s[1])
+    DebugIntern.print_int(s.len)
+    DebugIntern.print_int(s[0])
+    DebugIntern.print_int(s[1])
 }
 ```
 
@@ -1919,9 +1919,9 @@ fun main() void {
     sl[3] = 400
     sl[4] = 500
     let s = sl[2..4]
-    print_int(s.len)
-    print_int(s[0])
-    print_int(s[1])
+    DebugIntern.print_int(s.len)
+    DebugIntern.print_int(s[0])
+    DebugIntern.print_int(s[1])
 }
 ```
 
@@ -1939,8 +1939,8 @@ fun main() void {
     mut s = arr[1..4]
     s[0] = 99
     s[2] = 88
-    print_int(arr[1])
-    print_int(arr[3])
+    DebugIntern.print_int(arr[1])
+    DebugIntern.print_int(arr[3])
 }
 ```
 
@@ -1962,8 +1962,8 @@ fun main() void {
     let sub = sl[1..3]
     sub[0] = 77
     sub[1] = 88
-    print_int(sl[1])
-    print_int(sl[2])
+    DebugIntern.print_int(sl[1])
+    DebugIntern.print_int(sl[2])
 }
 ```
 
@@ -1977,7 +1977,7 @@ fun main() void {
 ```metall
 fun main() void {
     let arr = [10, 20, 30, 40, 50]
-    print_int(arr.len)
+    DebugIntern.print_int(arr.len)
 }
 ```
 
@@ -1989,12 +1989,12 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_int(120 + 3)
-    print_int(44 - 2)
-    print_int(3 * 3)
-    print_int(9 / 3)
-    print_int(10 % 3)
-    print_int((U8(10) % 3).to_int())
+    DebugIntern.print_int(120 + 3)
+    DebugIntern.print_int(44 - 2)
+    DebugIntern.print_int(3 * 3)
+    DebugIntern.print_int(9 / 3)
+    DebugIntern.print_int(10 % 3)
+    DebugIntern.print_int((U8(10) % 3).to_int())
 }
 ```
 
@@ -2011,15 +2011,15 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_bool(1 == 2)
-    print_bool(1 != 2)
-    print_bool(true == false)
-    print_bool(true != false)
+    DebugIntern.print_bool(1 == 2)
+    DebugIntern.print_bool(1 != 2)
+    DebugIntern.print_bool(true == false)
+    DebugIntern.print_bool(true != false)
 
-    print_bool(1 == 2 and 3 == 3)
-    print_bool(1 == 2 or 3 == 3)
+    DebugIntern.print_bool(1 == 2 and 3 == 3)
+    DebugIntern.print_bool(1 == 2 or 3 == 3)
 
-    print_bool(not true)
+    DebugIntern.print_bool(not true)
 }
 ```
 
@@ -2037,15 +2037,15 @@ false
 
 ```metall
 fun main() void {
-    print_bool(1 < 2)
-    print_bool(2 < 1)
-    print_bool(1 <= 1)
-    print_bool(1 <= 0)
-    print_bool(2 > 1)
-    print_bool(1 > 2)
-    print_bool(1 >= 1)
-    print_bool(0 >= 1)
-    print_bool(U8(1) < 2)
+    DebugIntern.print_bool(1 < 2)
+    DebugIntern.print_bool(2 < 1)
+    DebugIntern.print_bool(1 <= 1)
+    DebugIntern.print_bool(1 <= 0)
+    DebugIntern.print_bool(2 > 1)
+    DebugIntern.print_bool(1 > 2)
+    DebugIntern.print_bool(1 >= 1)
+    DebugIntern.print_bool(0 >= 1)
+    DebugIntern.print_bool(U8(1) < 2)
 }
 ```
 
@@ -2067,15 +2067,15 @@ true
 fun main() void {
     let a = I8(90)
     let b = I8(60)
-    print_int((a & b).to_int())
-    print_int((a | b).to_int())
-    print_int((a ^ b).to_int())
-    print_int((a << I8(1)).to_int())
-    print_int((a >> I8(2)).to_int())
-    print_int((~a).to_int())
+    DebugIntern.print_int((a & b).to_int())
+    DebugIntern.print_int((a | b).to_int())
+    DebugIntern.print_int((a ^ b).to_int())
+    DebugIntern.print_int((a << I8(1)).to_int())
+    DebugIntern.print_int((a >> I8(2)).to_int())
+    DebugIntern.print_int((~a).to_int())
     let c = I8(0) - I8(100)
-    print_int((c >> I8(2)).to_int())
-    print_int((~c).to_int())
+    DebugIntern.print_int((c >> I8(2)).to_int())
+    DebugIntern.print_int((~c).to_int())
 }
 ```
 
@@ -2096,15 +2096,15 @@ fun main() void {
 fun main() void {
     let a = I16(90)
     let b = I16(60)
-    print_int((a & b).to_int())
-    print_int((a | b).to_int())
-    print_int((a ^ b).to_int())
-    print_int((a << I16(4)).to_int())
-    print_int((a >> I16(2)).to_int())
-    print_int((~a).to_int())
+    DebugIntern.print_int((a & b).to_int())
+    DebugIntern.print_int((a | b).to_int())
+    DebugIntern.print_int((a ^ b).to_int())
+    DebugIntern.print_int((a << I16(4)).to_int())
+    DebugIntern.print_int((a >> I16(2)).to_int())
+    DebugIntern.print_int((~a).to_int())
     let c = I16(0) - I16(1000)
-    print_int((c >> I16(3)).to_int())
-    print_int((~c).to_int())
+    DebugIntern.print_int((c >> I16(3)).to_int())
+    DebugIntern.print_int((~c).to_int())
 }
 ```
 
@@ -2125,15 +2125,15 @@ fun main() void {
 fun main() void {
     let a = I32(65280)
     let b = I32(4080)
-    print_int((a & b).to_int())
-    print_int((a | b).to_int())
-    print_int((a ^ b).to_int())
-    print_int((a << I32(4)).to_int())
-    print_int((a >> I32(8)).to_int())
-    print_int((~a).to_int())
+    DebugIntern.print_int((a & b).to_int())
+    DebugIntern.print_int((a | b).to_int())
+    DebugIntern.print_int((a ^ b).to_int())
+    DebugIntern.print_int((a << I32(4)).to_int())
+    DebugIntern.print_int((a >> I32(8)).to_int())
+    DebugIntern.print_int((~a).to_int())
     let c = I32(0) - I32(1)
-    print_int((c >> I32(16)).to_int())
-    print_int((~c).to_int())
+    DebugIntern.print_int((c >> I32(16)).to_int())
+    DebugIntern.print_int((~c).to_int())
 }
 ```
 
@@ -2154,15 +2154,15 @@ fun main() void {
 fun main() void {
     let a = 3735928559
     let b = 4294901760
-    print_int(a & b)
-    print_int(a | b)
-    print_int(a ^ b)
-    print_int(1 << 32)
-    print_int(a >> 16)
-    print_int(~a)
+    DebugIntern.print_int(a & b)
+    DebugIntern.print_int(a | b)
+    DebugIntern.print_int(a ^ b)
+    DebugIntern.print_int(1 << 32)
+    DebugIntern.print_int(a >> 16)
+    DebugIntern.print_int(~a)
     let c = 0 - 1
-    print_int(c >> 32)
-    print_int(~c)
+    DebugIntern.print_int(c >> 32)
+    DebugIntern.print_int(~c)
 }
 ```
 
@@ -2183,12 +2183,12 @@ fun main() void {
 fun main() void {
     let a = U8(172)
     let b = U8(58)
-    print_uint((a & b).to_u64())
-    print_uint((a | b).to_u64())
-    print_uint((a ^ b).to_u64())
-    print_uint((a << U8(1)).to_u64())
-    print_uint((a >> U8(3)).to_u64())
-    print_uint((~a).to_u64())
+    DebugIntern.print_uint((a & b).to_u64())
+    DebugIntern.print_uint((a | b).to_u64())
+    DebugIntern.print_uint((a ^ b).to_u64())
+    DebugIntern.print_uint((a << U8(1)).to_u64())
+    DebugIntern.print_uint((a >> U8(3)).to_u64())
+    DebugIntern.print_uint((~a).to_u64())
 }
 ```
 
@@ -2207,12 +2207,12 @@ fun main() void {
 fun main() void {
     let a = U16(43981)
     let b = U16(255)
-    print_uint((a & b).to_u64())
-    print_uint((a | b).to_u64())
-    print_uint((a ^ b).to_u64())
-    print_uint((a << U16(4)).to_u64())
-    print_uint((a >> U16(8)).to_u64())
-    print_uint((~a).to_u64())
+    DebugIntern.print_uint((a & b).to_u64())
+    DebugIntern.print_uint((a | b).to_u64())
+    DebugIntern.print_uint((a ^ b).to_u64())
+    DebugIntern.print_uint((a << U16(4)).to_u64())
+    DebugIntern.print_uint((a >> U16(8)).to_u64())
+    DebugIntern.print_uint((~a).to_u64())
 }
 ```
 
@@ -2231,12 +2231,12 @@ fun main() void {
 fun main() void {
     let a = U32(3735928559)
     let b = U32(4294901760)
-    print_uint((a & b).to_u64())
-    print_uint((a | b).to_u64())
-    print_uint((a ^ b).to_u64())
-    print_uint((U32(1) << U32(16)).to_u64())
-    print_uint((a >> U32(16)).to_u64())
-    print_uint((~a).to_u64())
+    DebugIntern.print_uint((a & b).to_u64())
+    DebugIntern.print_uint((a | b).to_u64())
+    DebugIntern.print_uint((a ^ b).to_u64())
+    DebugIntern.print_uint((U32(1) << U32(16)).to_u64())
+    DebugIntern.print_uint((a >> U32(16)).to_u64())
+    DebugIntern.print_uint((~a).to_u64())
 }
 ```
 
@@ -2255,12 +2255,12 @@ fun main() void {
 fun main() void {
     let a = U64(16045690984503098046)
     let b = U64(18446744069414584320)
-    print_uint(a & b)
-    print_uint(a | b)
-    print_uint(a ^ b)
-    print_uint(U64(1) << U64(48))
-    print_uint(a >> U64(32))
-    print_uint(~a)
+    DebugIntern.print_uint(a & b)
+    DebugIntern.print_uint(a | b)
+    DebugIntern.print_uint(a ^ b)
+    DebugIntern.print_uint(U64(1) << U64(48))
+    DebugIntern.print_uint(a >> U64(32))
+    DebugIntern.print_uint(~a)
 }
 ```
 
@@ -2279,7 +2279,7 @@ fun main() void {
 fun main() void {
     mut x = 0
     for x != 3 {
-        print_int(x)
+        DebugIntern.print_int(x)
         x = x + 1
     }
 }
@@ -2304,7 +2304,7 @@ fun main() void {
         if x == 2 {
             continue
         }
-        print_int(x)
+        DebugIntern.print_int(x)
     }
 }
 ```
@@ -2319,7 +2319,7 @@ fun main() void {
 ```metall
 fun main() void {
     for i in 0..5 {
-        print_int(i)
+        DebugIntern.print_int(i)
     }
 }
 ```
@@ -2337,7 +2337,7 @@ fun main() void {
 ```metall
 fun main() void {
     for i in 0..=3 {
-        print_int(i)
+        DebugIntern.print_int(i)
     }
 }
 ```
@@ -2356,7 +2356,7 @@ fun main() void {
     let start = 2
     let end = 5
     for i in start..end {
-        print_int(i)
+        DebugIntern.print_int(i)
     }
 }
 ```
@@ -2375,7 +2375,7 @@ fun main() void {
         if i == 3 {
             break
         }
-        print_int(i)
+        DebugIntern.print_int(i)
     }
 }
 ```
@@ -2394,7 +2394,7 @@ fun main() void {
         if i == 2 {
             continue
         }
-        print_int(i)
+        DebugIntern.print_int(i)
     }
 }
 ```
@@ -2411,9 +2411,9 @@ fun main() void {
 ```metall
 fun main() void {
     for i in 5..5 {
-        print_int(i)
+        DebugIntern.print_int(i)
     }
-    print_int(99)
+    DebugIntern.print_int(99)
 }
 ```
 
@@ -2425,14 +2425,14 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_int(I8(127).to_int())
-    print_int((I8(0) - I8(1)).to_int())
-    print_int(I16(32767).to_int())
-    print_int(I32(2147483647).to_int())
-    print_int(U8(255).to_int())
-    print_int(U16(65535).to_int())
-    print_int(U32(4294967295).to_int())
-    print_uint(U64(18446744073709551615))
+    DebugIntern.print_int(I8(127).to_int())
+    DebugIntern.print_int((I8(0) - I8(1)).to_int())
+    DebugIntern.print_int(I16(32767).to_int())
+    DebugIntern.print_int(I32(2147483647).to_int())
+    DebugIntern.print_int(U8(255).to_int())
+    DebugIntern.print_int(U16(65535).to_int())
+    DebugIntern.print_int(U32(4294967295).to_int())
+    DebugIntern.print_uint(U64(18446744073709551615))
 }
 ```
 
@@ -2452,12 +2452,12 @@ fun main() void {
 ```metall
 fun main() void {
     let x = I8(42)
-    print_int(x.to_i16().to_int())
-    print_int(x.to_i32().to_int())
-    print_int(x.to_int())
-    print_uint(U8(200).to_u16().to_u32().to_u64())
-    print_int(U8(200).to_i32().to_int())
-    print_int((I8(0) - I8(1)).to_i32().to_int())
+    DebugIntern.print_int(x.to_i16().to_int())
+    DebugIntern.print_int(x.to_i32().to_int())
+    DebugIntern.print_int(x.to_int())
+    DebugIntern.print_uint(U8(200).to_u16().to_u32().to_u64())
+    DebugIntern.print_int(U8(200).to_i32().to_int())
+    DebugIntern.print_int((I8(0) - I8(1)).to_i32().to_int())
 }
 ```
 
@@ -2474,12 +2474,12 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_int(I32(200).to_i8_wrapping().to_int())
-    print_int(2147483648.to_i32_wrapping().to_int())
-    print_int(U16(300).to_u8_wrapping().to_int())
-    print_int(U64(4294967296).to_u32_wrapping().to_int())
-    print_int((I8(0) - I8(1)).to_u8_wrapping().to_int())
-    print_uint((0 - 1).to_u64_wrapping())
+    DebugIntern.print_int(I32(200).to_i8_wrapping().to_int())
+    DebugIntern.print_int(2147483648.to_i32_wrapping().to_int())
+    DebugIntern.print_int(U16(300).to_u8_wrapping().to_int())
+    DebugIntern.print_int(U64(4294967296).to_u32_wrapping().to_int())
+    DebugIntern.print_int((I8(0) - I8(1)).to_u8_wrapping().to_int())
+    DebugIntern.print_uint((0 - 1).to_u64_wrapping())
 }
 ```
 
@@ -2496,14 +2496,14 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_int(I32(200).to_i8_clamped().to_int())
-    print_int((I32(0) - I32(200)).to_i8_clamped().to_int())
-    print_int(U16(300).to_u8_clamped().to_int())
-    print_int(U16(100).to_u8_clamped().to_int())
-    print_uint((0 - 1).to_u64_clamped())
-    print_uint(42.to_u64_clamped())
-    print_int(U8(200).to_i8_clamped().to_int())
-    print_int(U8(50).to_i8_clamped().to_int())
+    DebugIntern.print_int(I32(200).to_i8_clamped().to_int())
+    DebugIntern.print_int((I32(0) - I32(200)).to_i8_clamped().to_int())
+    DebugIntern.print_int(U16(300).to_u8_clamped().to_int())
+    DebugIntern.print_int(U16(100).to_u8_clamped().to_int())
+    DebugIntern.print_uint((0 - 1).to_u64_clamped())
+    DebugIntern.print_uint(42.to_u64_clamped())
+    DebugIntern.print_int(U8(200).to_i8_clamped().to_int())
+    DebugIntern.print_int(U8(50).to_i8_clamped().to_int())
 }
 ```
 
@@ -2522,11 +2522,11 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_int((I32(10) + I32(20)).to_int())
-    print_int((I32(50) - I32(8)).to_int())
-    print_int((I32(6) * I32(7)).to_int())
-    print_int((I32(100) / I32(3)).to_int())
-    print_int((U8(255) / U8(2)).to_int())
+    DebugIntern.print_int((I32(10) + I32(20)).to_int())
+    DebugIntern.print_int((I32(50) - I32(8)).to_int())
+    DebugIntern.print_int((I32(6) * I32(7)).to_int())
+    DebugIntern.print_int((I32(100) / I32(3)).to_int())
+    DebugIntern.print_int((U8(255) / U8(2)).to_int())
 }
 ```
 
@@ -2542,9 +2542,9 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_uint('a'.to_u32().to_u64())
-    print_uint('z'.to_u32().to_u64())
-    print_uint('é'.to_u32().to_u64())
+    DebugIntern.print_uint('a'.to_u32().to_u64())
+    DebugIntern.print_uint('z'.to_u32().to_u64())
+    DebugIntern.print_uint('é'.to_u32().to_u64())
 }
 ```
 
@@ -2558,9 +2558,9 @@ fun main() void {
 
 ```metall
 fun main() void {
-    print_bool('a' == 'a')
-    print_bool('a' != 'b')
-    print_bool('a' == 'b')
+    DebugIntern.print_bool('a' == 'a')
+    DebugIntern.print_bool('a' != 'b')
+    DebugIntern.print_bool('a' == 'b')
 }
 ```
 
@@ -2575,9 +2575,9 @@ false
 ```metall
 fun main() void {
     let next = 'a' + 1
-    print_uint(next.to_u32().to_u64())
+    DebugIntern.print_uint(next.to_u32().to_u64())
     let diff = 'z' - 'a'
-    print_uint(diff.to_u32().to_u64())
+    DebugIntern.print_uint(diff.to_u32().to_u64())
 }
 ```
 
@@ -2591,7 +2591,7 @@ fun main() void {
 ```metall
 fun main() void {
     let r = 'x'
-    print_uint(r.to_u32().to_u64())
+    DebugIntern.print_uint(r.to_u32().to_u64())
 }
 ```
 
@@ -2606,7 +2606,7 @@ struct Foo { x Int }
 fun Foo.get_x(self Foo) Int { self.x }
 fun main() void {
     let f = Foo(42)
-    print_int(f.get_x())
+    DebugIntern.print_int(f.get_x())
 }
 ```
 
@@ -2621,7 +2621,7 @@ struct Foo { x Int }
 fun Foo.add(self Foo, y Int) Int { self.x + y }
 fun main() void {
     let f = Foo(10)
-    print_int(f.add(32))
+    DebugIntern.print_int(f.add(32))
 }
 ```
 
@@ -2637,7 +2637,7 @@ fun Foo.get_x(self &Foo) Int { self.x }
 fun main() void {
     let f = Foo(42)
     let r = &f
-    print_int(r.get_x())
+    DebugIntern.print_int(r.get_x())
 }
 ```
 
@@ -2652,7 +2652,7 @@ struct Foo { x Int }
 fun Foo.add(self Foo, y Int) Int { self.x + y }
 fun main() void {
     let f = Foo(10)
-    print_int(Foo.add(f, 32))
+    DebugIntern.print_int(Foo.add(f, 32))
 }
 ```
 
@@ -2666,7 +2666,7 @@ fun main() void {
 fun Int.double(self Int) Int { self + self }
 fun main() void {
     let x = 21
-    print_int(x.double())
+    DebugIntern.print_int(x.double())
 }
 ```
 
@@ -2680,9 +2680,9 @@ fun main() void {
 fun Str.byte_len(self Str) Int { self.data.len }
 fun main() void {
     let s = "hello"
-    print_int(s.byte_len())
-    print_int("".byte_len())
-    print_int("abc".byte_len())
+    DebugIntern.print_int(s.byte_len())
+    DebugIntern.print_int("".byte_len())
+    DebugIntern.print_int("abc".byte_len())
 }
 ```
 
@@ -2700,7 +2700,7 @@ struct Pair { one Str two Int }
 fun first<T HasPair>(t T) Str { t.one }
 fun main() void {
     let p = Pair("hello", 42)
-    print_str(first<Pair>(p))
+    DebugIntern.print_str(first<Pair>(p))
 }
 ```
 
@@ -2720,7 +2720,7 @@ struct Guitar {
 fun Guitar.show(g Guitar) Str { g.name }
 fun display<T Showable>(t T) Str { t.show() }
 fun main() void {
-    print_str(display<Guitar>(Guitar("Telecaster")))
+    DebugIntern.print_str(display<Guitar>(Guitar("Telecaster")))
 }
 ```
 
@@ -2759,12 +2759,12 @@ fun main() void {
     let x = IntOrBool(42)
     let y = IntOrBool(true)
     match x {
-        case Int v: print_int(v)
-        case Bool v: print_bool(v)
+        case Int v: DebugIntern.print_int(v)
+        case Bool v: DebugIntern.print_bool(v)
     }
     match y {
-        case Int v: print_int(v)
-        case Bool v: print_bool(v)
+        case Int v: DebugIntern.print_int(v)
+        case Bool v: DebugIntern.print_bool(v)
     }
 }
 ```
@@ -2784,12 +2784,12 @@ fun main() void {
     let x = FooOrInt(Foo("hello"))
     let y = FooOrInt(99)
     match x {
-        case Foo f: print_str(f.one)
-        case Int v: print_int(v)
+        case Foo f: DebugIntern.print_str(f.one)
+        case Int v: DebugIntern.print_int(v)
     }
     match y {
-        case Foo f: print_str(f.one)
-        case Int v: print_int(v)
+        case Foo f: DebugIntern.print_str(f.one)
+        case Int v: DebugIntern.print_int(v)
     }
 }
 ```
@@ -2807,8 +2807,8 @@ union ABC = Int | Bool | Str
 fun main() void {
     let x = ABC(true)
     match x {
-        case Int v: print_int(v)
-        else: print_str("other")
+        case Int v: DebugIntern.print_int(v)
+        else: DebugIntern.print_str("other")
     }
 }
 ```
@@ -2828,7 +2828,7 @@ fun main() void {
         case Int v: v + 1
         case Str: 0
     }
-    print_int(result)
+    DebugIntern.print_int(result)
 }
 ```
 
@@ -2844,8 +2844,8 @@ union AB = Int | Bool
 fun main() void {
     let x = AB(42)
     match x {
-        case Int: print_str("int")
-        case Bool: print_str("bool")
+        case Int: DebugIntern.print_str("int")
+        case Bool: DebugIntern.print_str("bool")
     }
 }
 ```
@@ -2863,12 +2863,12 @@ fun main() void {
     let x = Maybe<Int>(42)
     let y = Maybe<Int>(false)
     match x {
-        case Int v: print_int(v)
-        case Bool: print_str("none")
+        case Int v: DebugIntern.print_int(v)
+        case Bool: DebugIntern.print_str("none")
     }
     match y {
-        case Int v: print_int(v)
-        case Bool: print_str("none")
+        case Int v: DebugIntern.print_int(v)
+        case Bool: DebugIntern.print_str("none")
     }
 }
 ```
@@ -2891,8 +2891,8 @@ fun describe(x IntOrBool) Str {
 }
 
 fun main() void {
-    print_str(describe(IntOrBool(1)))
-    print_str(describe(IntOrBool(true)))
+    DebugIntern.print_str(describe(IntOrBool(1)))
+    DebugIntern.print_str(describe(IntOrBool(true)))
 }
 ```
 
@@ -2913,8 +2913,8 @@ fun main() void {
         case Int v: Pair(v, v)
         case Pair p: p
     }
-    print_int(p.a)
-    print_int(p.b)
+    DebugIntern.print_int(p.a)
+    DebugIntern.print_int(p.b)
 }
 ```
 
@@ -2938,10 +2938,10 @@ fun classify(x IntOrStr) Str {
 }
 
 fun main() void {
-    print_str(classify(IntOrStr(200)))
-    print_str(classify(IntOrStr(42)))
-    print_str(classify(IntOrStr(0)))
-    print_str(classify(IntOrStr("hello")))
+    DebugIntern.print_str(classify(IntOrStr(200)))
+    DebugIntern.print_str(classify(IntOrStr(42)))
+    DebugIntern.print_str(classify(IntOrStr(0)))
+    DebugIntern.print_str(classify(IntOrStr("hello")))
 }
 ```
 
@@ -2964,7 +2964,7 @@ fun main() void {
         case Int: "small int"
         else: "other"
     }
-    print_str(result)
+    DebugIntern.print_str(result)
 }
 ```
 
@@ -2983,7 +2983,7 @@ fun main() void {
         case Int n if n > 10: "big int"
         else: "other"
     }
-    print_str(result)
+    DebugIntern.print_str(result)
 }
 ```
 
@@ -3010,9 +3010,9 @@ fun describe(x Three) Str {
 }
 
 fun main() void {
-    print_str(describe(Three(42)))
-    print_str(describe(Three(true)))
-    print_str(describe(Three(Pair(1, 2))))
+    DebugIntern.print_str(describe(Three(42)))
+    DebugIntern.print_str(describe(Three(true)))
+    DebugIntern.print_str(describe(Three(Pair(1, 2))))
 }
 ```
 
@@ -3029,13 +3029,13 @@ union Foo = Str | Int
 fun main() void {
     let x = Foo("hello")
     match x {
-        case Str s: print_str(s)
-        else i: print_int(i)
+        case Str s: DebugIntern.print_str(s)
+        else i: DebugIntern.print_int(i)
     }
     let y = Foo(42)
     match y {
-        case Str s: print_str(s)
-        else i: print_int(i)
+        case Str s: DebugIntern.print_str(s)
+        else i: DebugIntern.print_int(i)
     }
 }
 ```
@@ -3053,9 +3053,9 @@ fun main() void {
     union Foo = Str | Int | Pair
     let x = Foo(Pair(10, 20))
     match x {
-        case Str: print_str("str")
-        case Int: print_str("int")
-        else p: print_int(p.a + p.b)
+        case Str: DebugIntern.print_str("str")
+        case Int: DebugIntern.print_str("int")
+        else p: DebugIntern.print_int(p.a + p.b)
     }
 }
 ```
@@ -3073,8 +3073,8 @@ fun main() void {
     union Foo = Str | Int
     let x Foo = 42
     match x {
-        case Int n: print_int(n)
-        case Str: print_str("str")
+        case Int n: DebugIntern.print_int(n)
+        case Str: DebugIntern.print_str("str")
     }
 }
 ```
@@ -3090,8 +3090,8 @@ fun main() void {
     union Foo = Str | Int
     fun check(f Foo) void {
         match f {
-            case Int n: print_int(n)
-            case Str s: print_str(s)
+            case Int n: DebugIntern.print_int(n)
+            case Str s: DebugIntern.print_str(s)
         }
     }
     check(42)
@@ -3113,8 +3113,8 @@ fun main() void {
         return 42
     }
     match make_foo() {
-        case Int n: print_int(n)
-        case Str: print_str("str")
+        case Int n: DebugIntern.print_int(n)
+        case Str: DebugIntern.print_str("str")
     }
 }
 ```
@@ -3132,8 +3132,8 @@ fun main() void {
         42
     }
     match make_foo() {
-        case Int n: print_int(n)
-        case Str: print_str("str")
+        case Int n: DebugIntern.print_int(n)
+        case Str: DebugIntern.print_str("str")
     }
 }
 ```
@@ -3151,12 +3151,12 @@ fun main() void {
         if b { 42 } else { "hello" }
     }
     match pick(true) {
-        case Int n: print_int(n)
-        case Str s: print_str(s)
+        case Int n: DebugIntern.print_int(n)
+        case Str s: DebugIntern.print_str(s)
     }
     match pick(false) {
-        case Int n: print_int(n)
-        case Str s: print_str(s)
+        case Int n: DebugIntern.print_int(n)
+        case Str s: DebugIntern.print_str(s)
     }
 }
 ```
@@ -3173,13 +3173,13 @@ fun main() void {
     union Foo = Str | Int
     mut x Foo = 42
     match x {
-        case Int n: print_int(n)
-        case Str: print_str("str")
+        case Int n: DebugIntern.print_int(n)
+        case Str: DebugIntern.print_str("str")
     }
     x = "reassigned"
     match x {
-        case Int: print_str("int")
-        case Str s: print_str(s)
+        case Int: DebugIntern.print_str("int")
+        case Str s: DebugIntern.print_str(s)
     }
 }
 ```
@@ -3196,8 +3196,8 @@ fun main() void {
     union Maybe<T> = T | Bool
     let x Maybe<Int> = 99
     match x {
-        case Int n: print_int(n)
-        case Bool: print_str("bool")
+        case Int n: DebugIntern.print_int(n)
+        case Bool: DebugIntern.print_str("bool")
     }
 }
 ```
@@ -3213,8 +3213,8 @@ fun main() void {
     union Foo = Str | Int
     let x Foo = Foo(42)
     match x {
-        case Int n: print_int(n)
-        case Str: print_str("str")
+        case Int n: DebugIntern.print_int(n)
+        case Str: DebugIntern.print_str("str")
     }
 }
 ```
@@ -3230,8 +3230,8 @@ fun main() void {
     union Foo = Str | Int
     let x Foo = { { 42 } }
     match x {
-        case Int n: print_int(n)
-        case Str: print_str("str")
+        case Int n: DebugIntern.print_int(n)
+        case Str: DebugIntern.print_str("str")
     }
 }
 ```
@@ -3248,13 +3248,13 @@ fun main() void {
     union Foo = Bar | Int
     let x Foo = Bar(99)
     match x {
-        case Bar b: print_int(b.value)
-        case Int: print_str("int")
+        case Bar b: DebugIntern.print_int(b.value)
+        case Int: DebugIntern.print_str("int")
     }
     let y Foo = 42
     match y {
-        case Bar: print_str("bar")
-        case Int n: print_int(n)
+        case Bar: DebugIntern.print_str("bar")
+        case Int n: DebugIntern.print_int(n)
     }
 }
 ```
@@ -3272,12 +3272,12 @@ fun main() void {
     union Outer = Inner | Bool
     let x Outer = true
     match x {
-        case Inner: print_str("inner")
+        case Inner: DebugIntern.print_str("inner")
         case Bool b: {
             let result Inner = 42
             match result {
-                case Int n: print_int(n)
-                case Str: print_str("str")
+                case Int n: DebugIntern.print_int(n)
+                case Str: DebugIntern.print_str("str")
             }
         }
     }
@@ -3300,12 +3300,12 @@ fun main() void {
     }
 
     match might_fail(true) {
-        case void: print_str("ok")
-        case Err e: print_str(e.msg)
+        case void: DebugIntern.print_str("ok")
+        case Err e: DebugIntern.print_str(e.msg)
     }
     match might_fail(false) {
-        case void: print_str("ok")
-        case Err e: print_str(e.msg)
+        case void: DebugIntern.print_str("ok")
+        case Err e: DebugIntern.print_str(e.msg)
     }
 }
 ```
@@ -3349,22 +3349,22 @@ fun main() void {
         describe(x)
     }
 
-    print_str(describe(transform(10)))
-    print_str(describe(transform(200)))
-    print_str(describe(42))
-    print_str(pass_through(99))
+    DebugIntern.print_str(describe(transform(10)))
+    DebugIntern.print_str(describe(transform(200)))
+    DebugIntern.print_str(describe(42))
+    DebugIntern.print_str(pass_through(99))
 
     mut acc Outcome<Int> = 0
     acc = "replaced"
     match acc {
-        case Int: print_str("int")
-        case Str s: print_str(s)
+        case Int: DebugIntern.print_str("int")
+        case Str s: DebugIntern.print_str(s)
     }
 
     let choice Outcome<Int> = if true { 7 } else { "nope" }
     match choice {
-        case Int n: print_int(n)
-        case Str s: print_str(s)
+        case Int n: DebugIntern.print_int(n)
+        case Str s: DebugIntern.print_str(s)
     }
 }
 ```
@@ -3389,14 +3389,14 @@ fun close() Result { Result(Err("fail")) }
 fun try_it() Result {
     match close() {
         case Err e: return e
-        case void: print_str("ok")
+        case void: DebugIntern.print_str("ok")
     }
 }
 
 fun main() void {
     match try_it() {
-        case void: print_str("void")
-        case Err e: print_str(e.msg)
+        case void: DebugIntern.print_str("void")
+        case Err e: DebugIntern.print_str(e.msg)
     }
 }
 ```
@@ -3414,8 +3414,8 @@ fun apply(f fun(Int) Int, x Int) Int { f(x) }
 
 fun main() void {
     let double = fun(x Int) Int { x + x }
-    print_int(apply(double, 21))
-    print_int(apply(fun(x Int) Int { x + 1 }, 99))
+    DebugIntern.print_int(apply(double, 21))
+    DebugIntern.print_int(apply(fun(x Int) Int { x + 1 }, 99))
 }
 ```
 
@@ -3441,20 +3441,20 @@ fun try_it(x Bool) !Int {
 
 fun main() void {
     match maybe(true) {
-        case Int i: print_int(i)
-        case None: print_str("none")
+        case Int i: DebugIntern.print_int(i)
+        case None: DebugIntern.print_str("none")
     }
     match maybe(false) {
-        case Int: print_str("int")
-        case None: print_str("none")
+        case Int: DebugIntern.print_str("int")
+        case None: DebugIntern.print_str("none")
     }
     match try_it(true) {
-        case Int i: print_int(i)
-        case Err e: print_str(e.msg)
+        case Int i: DebugIntern.print_int(i)
+        case Err e: DebugIntern.print_str(e.msg)
     }
     match try_it(false) {
-        case Int: print_str("int")
-        case Err e: print_str(e.msg)
+        case Int: DebugIntern.print_str("int")
+        case Err e: DebugIntern.print_str(e.msg)
     }
 }
 ```
@@ -3481,28 +3481,28 @@ fun main() void {
 
     fun short_form() Result<Int> {
         let x = try might_fail(true)
-        print_int(x)
+        DebugIntern.print_int(x)
         try might_fail(false)
         0
     }
     match short_form() {
-        case Int: print_str("int")
-        case Err e: print_str(e.msg)
+        case Int: DebugIntern.print_str("int")
+        case Err e: DebugIntern.print_str(e.msg)
     }
 
     fun with_else() Str {
         let x = try might_fail(false) else e { return e.msg }
-        print_int(x)
+        DebugIntern.print_int(x)
         "ok"
     }
-    print_str(with_else())
+    DebugIntern.print_str(with_else())
 
     fun with_is() Err {
         let n = try might_fail(true) is Int else e { return e }
-        print_int(n)
+        DebugIntern.print_int(n)
         Err("done")
     }
-    print_str(with_is().msg)
+    DebugIntern.print_str(with_is().msg)
 
     fun with_void() Err {
         fun check(ok Bool) Result<void> {
@@ -3512,14 +3512,14 @@ fun main() void {
         try check(false)
         Err("all ok")
     }
-    print_str(with_void().msg)
+    DebugIntern.print_str(with_void().msg)
 
     fun no_binding() Str {
         let n = try might_fail(false) else { return "no binding" }
-        print_int(n)
+        DebugIntern.print_int(n)
         "ok"
     }
-    print_str(no_binding())
+    DebugIntern.print_str(no_binding())
 }
 ```
 
@@ -3612,12 +3612,12 @@ test.met:2:5: illegal rune
 ```metall
 fun main() void {
     let arr = [10, 20, 30]
-    print_int(arr[3])
+    DebugIntern.print_int(arr[3])
 }
 ```
 
 ```panic
-test.met:3:15: index out of bounds
+test.met:3:27: index out of bounds
 ```
 
 **array index negative**
@@ -3626,12 +3626,12 @@ test.met:3:15: index out of bounds
 fun main() void {
     let arr = [10, 20, 30]
     let i = 0 - 1
-    print_int(arr[i])
+    DebugIntern.print_int(arr[i])
 }
 ```
 
 ```panic
-test.met:4:15: index out of bounds
+test.met:4:27: index out of bounds
 ```
 
 **slice index out of bounds**
@@ -3640,12 +3640,12 @@ test.met:4:15: index out of bounds
 fun main() void {
     let @a = Arena()
     let s = @a.slice<Int>(3, 0)
-    print_int(s[3])
+    DebugIntern.print_int(s[3])
 }
 ```
 
 ```panic
-test.met:4:15: index out of bounds
+test.met:4:27: index out of bounds
 ```
 
 **array write index out of bounds**

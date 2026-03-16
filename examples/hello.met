@@ -1,7 +1,9 @@
+use std::io
+
 fun hello() Str {
     "hello"
 }
 
 fun main() void {
-    print_str(hello())
+    io::println(hello())
 }

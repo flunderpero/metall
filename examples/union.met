@@ -26,15 +26,15 @@ fun divide(a Int, b ?Int) !Int {
 fun main() void {
     mut m1 = Mixed<Bool>("hello")
     match m1 {
-        case Str s: io::print(s)
-        else: io::print("not matched")
+        case Str s: io::println(s)
+        else: io::println("not matched")
     }
     m1 = Mixed(123)
-    io::print_fmt(m1)
+    io::println(m1)
     m1 = Mixed(Value(true))
-    io::print_fmt(m1)
+    io::println(m1)
     m1 = Mixed(None())
-    io::print_fmt(m1)
+    io::println(m1)
 
-    io::print_fmt(divide(10, 1))
+    io::println(divide(10, 1))
 }

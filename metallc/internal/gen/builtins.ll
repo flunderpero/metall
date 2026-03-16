@@ -11,63 +11,65 @@ declare i64 @fread(ptr, i64, i64, ptr)
 declare ptr @__error()
 declare ptr @strerror(i32)
 declare i64 @strlen(ptr)
+declare i32 @memcmp(ptr, ptr, i64)
+declare i64 @write(i32, ptr, i64)
 
 ; >>> Builtin functions.
 
+@__fmt_str_nl = private constant [6 x i8] c"%.*s\0A\00"
+@__fmt_str = private constant [5 x i8] c"%.*s\00"
+@__fmt_int_nl = private constant [6 x i8] c"%lld\0A\00"
+@__fmt_uint_nl = private constant [6 x i8] c"%llu\0A\00"
+@__str_true = private constant [5 x i8] c"true\00"
+@__str_false = private constant [6 x i8] c"false\00"
+
+define internal void @__print_str(ptr byval(%Str) %s) alwaysinline {
+    %data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
+    %data = load ptr, ptr %data_field
+    %len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
+    %len = load i64, ptr %len_field
+    %len32 = trunc i64 %len to i32
+    call i32 (ptr, ...) @printf(ptr @__fmt_str, i32 %len32, ptr %data)
+    ret void
+}
+
 define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn alwaysinline {
-    call void (ptr) @print(ptr %loc)
+    call void (ptr) @__print_str(ptr %loc)
     call void (i8) @putchar(i8 58)
     call void (i8) @putchar(i8 32)
-    call void (ptr) @print_str(ptr %s)
+    call void (ptr) @DebugIntern.print_str(ptr %s)
     call i32 @fflush(ptr null)
     call void @llvm.trap()
     unreachable
 }
 
-@fmt_str = private constant [6 x i8] c"%.*s\0A\00"
-define internal void @print_str(ptr byval(%Str) %s) {
+define internal void @DebugIntern.print_str(ptr byval(%Str) %s) {
     %data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
     %data = load ptr, ptr %data_field
     %len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
     %len = load i64, ptr %len_field
     %len32 = trunc i64 %len to i32
-    call i32 (ptr, ...) @printf(ptr @fmt_str, i32 %len32, ptr %data)
+    call i32 (ptr, ...) @printf(ptr @__fmt_str_nl, i32 %len32, ptr %data)
     ret void
 }
 
-@fmt_print = private constant [5 x i8] c"%.*s\00"
-define internal void @print(ptr byval(%Str) %s) {
-    %data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
-    %data = load ptr, ptr %data_field
-    %len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
-    %len = load i64, ptr %len_field
-    %len32 = trunc i64 %len to i32
-    call i32 (ptr, ...) @printf(ptr @fmt_print, i32 %len32, ptr %data)
+define internal void @DebugIntern.print_int(i64 %n) {
+    call i32 (ptr, ...) @printf(ptr @__fmt_int_nl, i64 %n)
     ret void
 }
 
-
-@fmt_int = private constant [6 x i8] c"%lld\0A\00"
-define internal void @print_int(i64 %n) {
-    call i32 (ptr, ...) @printf(ptr @fmt_int, i64 %n)
+define internal void @DebugIntern.print_uint(i64 %n) {
+    call i32 (ptr, ...) @printf(ptr @__fmt_uint_nl, i64 %n)
     ret void
 }
 
-@fmt_uint = private constant [6 x i8] c"%llu\0A\00"
-define internal void @print_uint(i64 %n) {
-    call i32 (ptr, ...) @printf(ptr @fmt_uint, i64 %n)
-    ret void
-}
-
-@str_true = private constant [5 x i8] c"true\00"
-@str_false = private constant [6 x i8] c"false\00"
-define internal void @print_bool(i1 %n) {
+define internal void @DebugIntern.print_bool(i1 %n) {
 	br i1 %n, label %true, label %false
 	true:
-	    call i32 @puts(ptr @str_true)
+	    call i32 @puts(ptr @__str_true)
 	    ret void
 	false:
-		call i32 @puts(ptr @str_false)
+		call i32 @puts(ptr @__str_false)
 		ret void
 }
 
@@ -625,6 +627,15 @@ define internal void @LibCIntern.reset_errno() {
     %errno_ptr = call ptr @__error()
     store i32 0, ptr %errno_ptr
     ret void
+}
+
+define internal i64 @"LibCIntern.write"(i32 %fd, ptr byval({ptr, i64}) %data) {
+    %data_ptr_field = getelementptr {ptr, i64}, ptr %data, i32 0, i32 0
+    %data_ptr = load ptr, ptr %data_ptr_field
+    %data_len_field = getelementptr {ptr, i64}, ptr %data, i32 0, i32 1
+    %data_len = load i64, ptr %data_len_field
+    %written = call i64 @write(i32 %fd, ptr %data_ptr, i64 %data_len)
+    ret i64 %written
 }
 
 ; >>> String constants.

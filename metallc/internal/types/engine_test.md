@@ -268,7 +268,7 @@ fun01 = fun() void
 **Builtin print_str**
 
 ```metall
-print_str("hello")
+DebugIntern.print_str("hello")
 ```
 
 ```types
@@ -282,7 +282,7 @@ fun01 = fun(Str) void
 **Builtin print_int**
 
 ```metall
-print_int(123)
+DebugIntern.print_int(123)
 ```
 
 ```types
@@ -296,7 +296,7 @@ fun01 = fun(Int) void
 **Builtin print_bool**
 
 ```metall
-print_bool(true)
+DebugIntern.print_bool(true)
 ```
 
 ```types
@@ -310,25 +310,22 @@ fun01 = fun(Bool) void
 **Shadowing**
 
 ```metall
-{ let x = { let x = "hello" print_str(x) 123 } print_int(x) }
+{ let x = { let x = "hello" 123 } }
 ```
 
-```types
-Block: void
-  Var: void
-    Block: Int
-      Var: void
-        String: Str
-      Call: void
-        Ident: fun01
-        Ident: Str
-      Int: Int
-  Call: void
-    Ident: fun02
-    Ident: Int
+```bindings
+Block: scope01
+  Var: scope02
+    Block: scope02
+      Var: scope03
+        String: scope03
+      Int: scope03
 ---
-fun01 = fun(Str) void
-fun02 = fun(Int) void
+scope01:
+scope02:
+  x: Int
+scope03:
+  x: Str
 ```
 
 **Return**
@@ -6386,13 +6383,13 @@ test.met:2:9: method receiver type not found: Foo
 **Undefined symbol forward ref**
 
 ```metall
-{ print_int(x) let x = 123 }
+{ x let x = 123 }
 ```
 
 ```error
-test.met:1:13: symbol not defined: x
-    { print_int(x) let x = 123 }
-                ^
+test.met:1:3: symbol not defined: x
+    { x let x = 123 }
+      ^
 ```
 
 **Duplicate var**

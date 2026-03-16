@@ -1,3 +1,5 @@
+use std::io
+
 struct Planet {
     mut name Str
     mut diameter Int
@@ -8,8 +10,8 @@ fun make_earth() Planet {
 }
 
 fun print_planet(p Planet) void {
-    print_str(p.name)
-    print_int(p.diameter)
+    io::println(p.name)
+    io::println(p.diameter)
 }
 
 fun main() void {

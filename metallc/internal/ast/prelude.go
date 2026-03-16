@@ -31,10 +31,11 @@ struct U32 {}
 struct U64 {}
 struct Rune {}
 struct Str { data []U8 }
-fun print_str(s Str) void {}
-fun print_int(n Int) void {}
-fun print_uint(n U64) void {}
-fun print_bool(b Bool) void {}
+struct DebugIntern {}
+fun DebugIntern.print_str(s Str) void {}
+fun DebugIntern.print_int(n Int) void {}
+fun DebugIntern.print_uint(n U64) void {}
+fun DebugIntern.print_bool(b Bool) void {}
 fun panic_(s Str) void {}
 fun Rune.to_u32(r Rune) U32 { return 1 }
 fun I8.to_i16(self I8) I16 { return 1 }
@@ -140,6 +141,7 @@ fun LibCIntern.strerror(errnum I32) Str {}
 fun LibCIntern.fwrite(fd U64, data []U8) Int {}
 fun LibCIntern.fread(fd U64, buf []U8) Int {}
 fun LibCIntern.fclose(fd U64) I32 {}
+fun LibCIntern.write(fd I32, data []U8) Int {}
 `
 
 const PreludeFirstID = NodeID(1_000_000_000)

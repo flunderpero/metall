@@ -1,5 +1,5 @@
 fun say_hello() void {
-    print_str("hello")
+    DebugIntern.print_str("hello")
 }
 
 struct Foo {
@@ -7,5 +7,5 @@ struct Foo {
 }
 
 fun Foo.print(f Foo) void {
-    print_int(f.one)
+    DebugIntern.print_int(f.one)
 }

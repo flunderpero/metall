@@ -34,5 +34,5 @@ fun main() void {
 
     let x = Pair<Str, Int>("with io::printf", 42)
 
-    io::print_fmt<Pair<Str, Int>>(x)
+    io::println<Pair<Str, Int>>(x)
 }

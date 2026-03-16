@@ -1,12 +1,14 @@
+use std::io
+
 fun main() void {
     let arr = [0, 1, 2, 3, 4]
     for i in 0..arr.len {
-        print_int(arr[i])
+        io::println(arr[i])
     }
 
     let @a = Arena()
     let slice = @a.slice_uninit<Int>(5)
     for i in 0..slice.len {
-        print_int(slice[i])
+        io::println(slice[i])
     }
 }

@@ -1,3 +1,5 @@
+use std::io
+
 shape Showable {
     name Str
     fun Showable.str(self Showable) Str
@@ -12,7 +14,7 @@ fun Guitar.str(g Guitar) Str {
 }
 
 fun show<T Showable>(t T) void {
-    print_str(t.str())
+    io::println(t.str())
 }
 
 fun main() void {

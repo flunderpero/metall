@@ -48,14 +48,14 @@ fun main() void {}
 
 ```metall
 use lib
-fun main() void { print_int(lib::get_lib()) }
+fun main() void { lib::get_lib() }
 ```
 
 **call imported function return type**
 
 ```metall
 use lib
-fun main() void { let x = lib::get_lib() print_int(x) }
+fun main() void { let x = lib::get_lib() }
 ```
 
 ```bindings
@@ -67,9 +67,6 @@ Module: scope01
       Var: scope04
         Call: scope04
           Path: scope04
-      Call: scope04
-        Ident: scope04
-        Ident: scope04
 ---
 scope01:
 scope02:
@@ -85,7 +82,7 @@ fun01 = fun() void
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) print_int(p.x) }
+fun main() void { let p = lib::Point(1, 2) p.x p.y void }
 ```
 
 ```bindings
@@ -99,10 +96,11 @@ Module: scope01
           Path: scope04
           Int: scope04
           Int: scope04
-      Call: scope04
+      FieldAccess: scope04
         Ident: scope04
-        FieldAccess: scope04
-          Ident: scope04
+      FieldAccess: scope04
+        Ident: scope04
+      Ident: scope04
 ---
 scope01:
 scope02:
@@ -119,28 +117,28 @@ struct01 = Point { x Int, y Int }
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) print_int(p.sum()) }
+fun main() void { let p = lib::Point(1, 2) p.sum() void }
 ```
 
 **call method on imported struct via path**
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) print_int(lib::Point.sum(p)) }
+fun main() void { let p = lib::Point(1, 2) lib::Point.sum(p) void }
 ```
 
 **assign imported function to variable**
 
 ```metall
 use lib
-fun main() void { let f = lib::get_lib print_int(f()) }
+fun main() void { let f = lib::get_lib f() void }
 ```
 
 **local import call**
 
 ```metall
 use local::hello
-fun main() void { let s = hello::get_hello() print_str(s) }
+fun main() void { let s = hello::get_hello() }
 ```
 
 ```bindings
@@ -152,9 +150,6 @@ Module: scope01
       Var: scope04
         Call: scope04
           Path: scope04
-      Call: scope04
-        Ident: scope04
-        Ident: scope04
 ---
 scope01:
 scope02:
@@ -170,14 +165,14 @@ fun01 = fun() void
 
 ```metall
 use l = lib
-fun main() void { print_int(l::get_lib()) }
+fun main() void { l::get_lib() }
 ```
 
 **generic function from import**
 
 ```metall
 use generic
-fun main() void { let x = generic::identity<Int>(42) print_int(x) }
+fun main() void { let x = generic::identity<Int>(42) }
 ```
 
 ```bindings
@@ -191,9 +186,6 @@ Module: scope01
           Path: scope04
             SimpleType: scope04
           Int: scope04
-      Call: scope04
-        Ident: scope04
-        Ident: scope04
 ---
 scope01:
 scope02:
@@ -209,7 +201,7 @@ fun01 = fun() void
 
 ```metall
 use generic
-fun main() void { let x = generic::identity(42) print_int(x) }
+fun main() void { let x = generic::identity(42) }
 ```
 
 ```bindings
@@ -222,9 +214,6 @@ Module: scope01
         Call: scope04
           Path: scope04
           Int: scope04
-      Call: scope04
-        Ident: scope04
-        Ident: scope04
 ---
 scope01:
 scope02:
@@ -242,8 +231,9 @@ fun01 = fun() void
 use generic
 fun main() void {
     let p = generic::Pair<Int, Str>(1, "hi")
-    print_int(p.first)
-    print_str(p.second)
+    p.first
+    p.second
+    void
 }
 ```
 
@@ -260,14 +250,11 @@ Module: scope01
             SimpleType: scope04
           Int: scope04
           String: scope04
-      Call: scope04
+      FieldAccess: scope04
         Ident: scope04
-        FieldAccess: scope04
-          Ident: scope04
-      Call: scope04
+      FieldAccess: scope04
         Ident: scope04
-        FieldAccess: scope04
-          Ident: scope04
+      Ident: scope04
 ---
 scope01:
 scope02:

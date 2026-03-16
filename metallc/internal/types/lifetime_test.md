@@ -990,7 +990,7 @@ test.met:7:20: reference escaping its allocation scope (via mutation of outer va
 {
     mut x = [1, 2, 3, 4, 5]
     let s = x[1..3]
-    print_int(s[0])
+    let y = s[0]
 }
 ```
 
@@ -1149,7 +1149,6 @@ test.met:5:9: reference escaping its allocation scope (via block result)
         mut z = 99
         foo(&mut y, &z)
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1174,7 +1173,6 @@ test.met:10:21: reference escaping its allocation scope (via mutation of outer v
         let w = identity(&mut y)
         w.one = &z
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1199,7 +1197,6 @@ test.met:9:17: reference escaping its allocation scope (via mutation of outer va
         let w = identity(&mut y)
         w.one = &z
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1224,7 +1221,6 @@ test.met:9:17: reference escaping its allocation scope (via mutation of outer va
         mut z = 99
         foo(y, &z)
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1253,7 +1249,6 @@ test.met:9:16: reference escaping its allocation scope (via mutation of outer va
         mut z = 99
         foo(&mut y, &z)
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1335,7 +1330,6 @@ test.met:4:9: reference escaping its allocation scope (via block result)
         foo(&mut y, &z)
     }
 
-    print_int(y.one.*)
 }
 ```
 
@@ -1361,7 +1355,6 @@ test.met:21:21: reference escaping its allocation scope (via mutation of outer v
         mut z = 99
         foo(identity(&mut y), &z)
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1387,7 +1380,6 @@ test.met:10:31: reference escaping its allocation scope (via mutation of outer v
         mut b = Foo(&mut a)
         w.*.* = b
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1411,7 +1403,6 @@ test.met:9:21: reference escaping its allocation scope (via deref assignment)
         mut w = 99
         z.one.* = &w
     }
-    print_int(z.one.*.*)
 }
 ```
 
@@ -1435,7 +1426,6 @@ test.met:8:19: reference escaping its allocation scope (via deref assignment)
         y.two = &z
         y.one = "bye"
     }
-    print_int(y.two.*)
 }
 ```
 
@@ -1580,7 +1570,6 @@ test.met:10:28: reference escaping its allocation scope (via mutation of outer v
         let z = 99
         baz<Foo>(Foo(&z), &mut y)
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1621,7 +1610,6 @@ test.met:5:13: reference escaping its allocation scope (via mutation of outer va
         let z = 99
         baz<Foo>(Foo(&z), &mut y)
     }
-    print_int(y.one.*)
 }
 ```
 
@@ -1873,7 +1861,7 @@ test.met:6:30: reference escaping its allocation scope (via block result)
     union Foo = Int | Bool
     let u = Foo(42)
     match u {
-        case Int n: print_int(n)
+        case Int n: let x = n
         case Bool: {}
     }
 }
@@ -1890,7 +1878,7 @@ test.met:6:30: reference escaping its allocation scope (via block result)
     let x = 42
     let u = RefOrInt(&x)
     match u {
-        case &Int r: print_int(r.*)
+        case &Int r: let y = r.*
         case Int: {}
     }
 }
@@ -1937,8 +1925,8 @@ test.met:12:31: reference escaping its allocation scope (via block result)
     union Foo = Int | Bool
     let u = Foo(42)
     match u {
-        case Int n if n > 10: print_int(n)
-        case Int n: print_int(n)
+        case Int n if n > 10: let x = n
+        case Int n: let y = n
         case Bool: {}
     }
 }

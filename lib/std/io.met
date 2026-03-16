@@ -1,3 +1,24 @@
+struct FD {
+    fd I32
+}
+
+fun stdout() FD { FD(1) }
+
+fun stderr() FD { FD(2) }
+
+fun print<T FmtStr>(s T) void {
+    -- todo: We should be able to have a shortcut if is is Str.
+    let @a = Arena()
+    let sb = StrBuilder.init(32, @a)
+    s.fmt_str(sb)
+    LibCIntern.write(stdout().fd, sb.to_str().utf8_bytes())
+}
+
+fun println<T FmtStr>(s T) void {
+    print<T>(s)
+    LibCIntern.write(stdout().fd, [U8(10)][..])
+}
+
 struct File {
     -- todo: must be private
     mut file_ptr U64
@@ -64,15 +85,4 @@ fun internal_errno() Err {
     let errno = LibCIntern.errno()
     let errstr = LibCIntern.strerror(errno)
     return Err(errstr)
-}
-
-fun print(s Str) void {
-    print_str(s)
-}
-
-fun print_fmt<T FmtStr>(s T) void {
-    let @a = Arena()
-    let sb = StrBuilder.init(32, @a)
-    s.fmt_str(sb)
-    print(sb.to_str())
 }

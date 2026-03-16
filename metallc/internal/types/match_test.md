@@ -43,8 +43,8 @@ union01 = Foo = Str | Int
     union Foo = Str | Int
     let x = Foo(42)
     match x {
-        case Int n: print_int(n)
-        case Str s: print_str(s)
+        case Int n: let y = n
+        case Str s: let y = s
     }
 }
 ```
@@ -62,18 +62,14 @@ Block: void
     Ident: union01
     SimpleType: Int
     Block: void
-      Call: void
-        Ident: fun01
+      Var: void
         Ident: Int
     SimpleType: Str
     Block: void
-      Call: void
-        Ident: fun02
+      Var: void
         Ident: Str
 ---
 union01 = Foo = Str | Int
-fun01   = fun(Int) void
-fun02   = fun(Str) void
 ```
 
 **Match union with else**
@@ -368,8 +364,8 @@ When all variants except one are covered, the else binding has the remaining var
     union Foo = Str | Int
     let x = Foo(42)
     match x {
-        case Str s: print_str(s)
-        else i: print_int(i)
+        case Str s: let y = s
+        else i: let y = i
     }
 }
 ```
@@ -387,12 +383,10 @@ Block: scope01
     Ident: scope02
     SimpleType: scope02
     Block: scope02
-      Call: scope03
-        Ident: scope03
+      Var: scope03
         Ident: scope03
     Block: scope02
-      Call: scope04
-        Ident: scope04
+      Var: scope04
         Ident: scope04
 ---
 scope01:
@@ -401,8 +395,10 @@ scope02:
   x: union01
 scope03:
   s: Str
+  y: Str
 scope04:
   i: Int
+  y: Int
 union01 = Foo = Str | Int
 ```
 
@@ -415,13 +411,8 @@ When multiple variants remain uncovered, the else binding has the union type.
     union Tri = Str | Int | Bool
     let x = Tri(42)
     match x {
-        case Str s: print_str(s)
-        else v:
-            match v {
-                case Int n: print_int(n)
-                case Bool: print_str("bool")
-                case Str: print_str("unreachable")
-            }
+        case Str s: let str_match = s
+        else e: let else_match = e
     }
 }
 ```
@@ -440,27 +431,11 @@ Block: scope01
     Ident: scope02
     SimpleType: scope02
     Block: scope02
-      Call: scope03
-        Ident: scope03
+      Var: scope03
         Ident: scope03
     Block: scope02
-      Match: scope04
+      Var: scope04
         Ident: scope04
-        SimpleType: scope04
-        Block: scope04
-          Call: scope05
-            Ident: scope05
-            Ident: scope05
-        SimpleType: scope04
-        Block: scope04
-          Call: scope06
-            Ident: scope06
-            String: scope06
-        SimpleType: scope04
-        Block: scope04
-          Call: scope07
-            Ident: scope07
-            String: scope07
 ---
 scope01:
 scope02:
@@ -468,12 +443,10 @@ scope02:
   x: union01
 scope03:
   s: Str
+  str_match: Str
 scope04:
-  v: union01
-scope05:
-  n: Int
-scope06:
-scope07:
+  e: union01
+  else_match: union01
 union01 = Tri = Str | Int | Bool
 ```
 
