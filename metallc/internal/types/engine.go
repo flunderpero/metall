@@ -1605,6 +1605,11 @@ func (e *Engine) checkSimpleType(nodeID ast.NodeID, simpleType ast.SimpleType, s
 			e.registerUnion(unionType, binding.Decl, binding.TypeID)
 		}
 	}
+	// We need to return the correct type status (the type might have failed).
+	cachedType, ok := e.env.cachedTypeInfo(binding.TypeID)
+	if ok {
+		return binding.TypeID, cachedType.Status
+	}
 	return binding.TypeID, TypeOK
 }
 
