@@ -809,12 +809,15 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	return InvalidTypeID, TypeFailed
 }
 
-func (e *Engine) resolveMethod(
+func (e *Engine) resolveMethod( //nolint:funlen
 	nodeID ast.NodeID,
 	fieldAccess ast.FieldAccess,
 	targetTyp *Type,
 ) (TypeID, TypeStatus, bool) {
 	if tpt, ok := targetTyp.Kind.(TypeParamType); ok && tpt.Shape == nil {
+		return InvalidTypeID, TypeFailed, false
+	}
+	if _, ok := targetTyp.Kind.(FunType); ok {
 		return InvalidTypeID, TypeFailed, false
 	}
 	methodName := fieldAccess.Field.Name

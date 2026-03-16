@@ -6613,6 +6613,24 @@ test.met:1:5: unknown field: Int.one
         ^^^
 ```
 
+**Field access on function type**
+
+```metall
+{
+    struct Foo { f fun() void }
+    let x = Foo(fun() void {})
+    x.f.something
+}
+```
+
+```error
+test.met:4:5: cannot access field on non-struct type: fun() void
+        let x = Foo(fun() void {})
+        x.f.something
+        ^^^
+    }
+```
+
 **Field access unknown field**
 
 ```metall
