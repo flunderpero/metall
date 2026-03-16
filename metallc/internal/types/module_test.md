@@ -20,6 +20,14 @@ fun identity<T>(x T) T { x }
 fun get_hello() Str { "hello" }
 ```
 
+```module.shapes
+shape Showable {
+    fun Showable.show(self Showable) Int
+}
+fun show<T Showable>(x T) Int { x.show() }
+fun show_twice<T Showable>(x T) Int { show<T>(x) + show<T>(x) }
+```
+
 ## OK
 
 **import unused**
@@ -270,6 +278,68 @@ scope04:
   p: struct01
 fun01    = fun() void
 struct01 = Pair<Int, Str> { first Int, second Str }
+```
+
+**cross-module shape satisfaction**
+
+A generic function in module A calls another generic function in module A
+with a shape constraint. The concrete type and its method are defined in
+the calling module B. The shape check must find the method in B's scope.
+
+```metall
+use shapes
+
+struct Widget { value Int }
+fun Widget.show(w Widget) Int { w.value }
+
+fun main() void {
+    let w = Widget(42)
+    let r = shapes::show_twice(w)
+}
+```
+
+```bindings
+Module: scope01
+  Import: scope02
+  Struct: scope02
+    StructField: scope03
+      SimpleType: scope03
+  Fun: scope02
+    FunParam: scope04
+      SimpleType: scope04
+    SimpleType: scope04
+    Block: scope04
+      FieldAccess: scope05
+        Ident: scope05
+  Fun: scope02
+    SimpleType: scope06
+    Block: scope06
+      Var: scope07
+        TypeConstruction: scope07
+          Ident: scope07
+          Int: scope07
+      Var: scope07
+        Call: scope07
+          Path: scope07
+          Ident: scope07
+---
+scope01:
+scope02:
+  Widget: struct01
+  main: fun01
+  main.Widget.show: fun02
+  shapes: shapes
+scope03:
+scope04:
+  w: struct01
+scope05:
+scope06:
+scope07:
+  r: Int
+  w: struct01
+struct01 = Widget { value Int }
+fun01    = fun() void
+fun02    = fun(struct01) Int
 ```
 
 ## Error

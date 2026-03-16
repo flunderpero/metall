@@ -646,13 +646,25 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 	for _, funDeclNodeID := range shapeNode.Funs {
 		funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
 		_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
-		binding, ok := e.lookup(scopeNodeID, methodLookupName+"."+methodName)
+		fullMethodName := methodLookupName + "." + methodName
+		binding, ok := e.lookup(scopeNodeID, fullMethodName)
+		if !ok {
+			binding, ok = e.lookupInTypeModule(concreteTyp, fullMethodName)
+		}
 		if !ok {
 			e.diag(span, "type %s does not satisfy shape %s: missing method %s",
 				concreteDisplay, shapeType.DeclName, methodName)
 			return false
 		}
-		shapeFunBinding, _ := e.lookup(scopeNodeID, shapeType.DeclName+"."+methodName)
+		shapeMethodName := shapeType.DeclName + "." + methodName
+		shapeFunBinding, ok := e.lookup(scopeNodeID, shapeMethodName)
+		if !ok {
+			shapeTyp := e.env.Type(shapeTypeID)
+			shapeFunBinding, ok = e.lookupInTypeModule(shapeTyp, shapeMethodName)
+			if !ok {
+				panic(base.Errorf("shape method %s not found", shapeMethodName))
+			}
+		}
 		shapeFunType := base.Cast[FunType](e.env.Type(shapeFunBinding.TypeID).Kind)
 		expectedFunType := e.env.substituteFunType(shapeFunType, shapeTypeID, concreteTypeID)
 		// When the method is a generic function on a generic type, instantiate

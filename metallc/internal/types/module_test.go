@@ -17,6 +17,7 @@ var moduleFilePaths = map[string]string{ //nolint:gochecknoglobals
 	"lib":     "lib/lib.met",
 	"generic": "lib/generic.met",
 	"local":   "local/hello.met",
+	"shapes":  "lib/shapes.met",
 }
 
 // moduleContents is populated by the setup test case from the MD file.
