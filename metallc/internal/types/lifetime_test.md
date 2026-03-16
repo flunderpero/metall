@@ -1992,13 +1992,13 @@ test.met:13:33: reference escaping its allocation scope (via block result)
 
 ```metall
 {
-    struct Err { msg Str }
-    union ValOrRef = &Int | Err
+    struct MyErr { msg Str }
+    union ValOrRef = &Int | MyErr
     let x = 42
     let r = ValOrRef(&x)
     let result = match r {
-        case Err e: e
-        case &Int: Err("not an error")
+        case MyErr e: e
+        case &Int: MyErr("not an error")
     }
 }
 ```
@@ -2034,11 +2034,11 @@ test.met:5:26: reference escaping its allocation scope (via block result)
 
 ```metall
 {
-    struct Err { msg Str }
-    union FileResult = &Int | Err
-    fun handle(r FileResult) Err {
+    struct MyErr { msg Str }
+    union FileResult = &Int | MyErr
+    fun handle(r FileResult) MyErr {
         match r {
-            case &Int: Err("not an error")
+            case &Int: MyErr("not an error")
             else e: e
         }
     }

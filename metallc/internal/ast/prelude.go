@@ -3,6 +3,7 @@ package ast
 import (
 	_ "embed"
 	"slices"
+	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -14,29 +15,35 @@ var stdlibPreludeSrc string
 const minimalPrelude = `
 struct Void_ {}
 struct Arena_ {}
+struct Bool_ {}
+struct I8_ {}
+struct I16_ {}
+struct I32_ {}
+struct Int_ {}
+struct U8_ {}
+struct U16_ {}
+struct U32_ {}
+struct U64_ {}
+struct Rune_ {}
+struct Str_ { data []U8 }
+struct DebugIntern_ {}
+struct None_ {}
+union Option_<T> = T | None
+struct Err_ { msg Str }
+union Result_<T> = T | Err
+struct CStr_ { data []U8 }
+struct LibCIntern_ {}
+fun panic_(s Str) void {}
 fun Arena.new<T>(self Arena, value T) &T { value }
 fun Arena.new_mut<T>(self Arena, value T) &mut T { value }
 fun Arena.slice<T>(self Arena, len Int, default T) []T { default }
 fun Arena.slice_mut<T>(self Arena, len Int, default T) []mut T { default }
 fun Arena.slice_uninit<T>(self Arena, len Int) []T { len }
 fun Arena.slice_uninit_mut<T>(self Arena, len Int) []mut T { len }
-struct Bool {}
-struct I8 {}
-struct I16 {}
-struct I32 {}
-struct Int {}
-struct U8 {}
-struct U16 {}
-struct U32 {}
-struct U64 {}
-struct Rune {}
-struct Str { data []U8 }
-struct DebugIntern {}
 fun DebugIntern.print_str(s Str) void {}
 fun DebugIntern.print_int(n Int) void {}
 fun DebugIntern.print_uint(n U64) void {}
 fun DebugIntern.print_bool(b Bool) void {}
-fun panic_(s Str) void {}
 fun Rune.to_u32(r Rune) U32 { return 1 }
 fun I8.to_i16(self I8) I16 { return 1 }
 fun I8.to_i32(self I8) I32 { return 1 }
@@ -128,12 +135,6 @@ fun Int.to_u32_wrapping(self Int) U32 { return 1 }
 fun Int.to_u32_clamped(self Int) U32 { return 1 }
 fun Int.to_u64_wrapping(self Int) U64 { return 1 }
 fun Int.to_u64_clamped(self Int) U64 { return 1 }
-struct None {}
-union Option<T> = T | None
-struct Err { msg Str }
-union Result<T> = T | Err
-struct CStr { data []U8 }
-struct LibCIntern {}
 fun LibCIntern.errno() I32 {}
 fun LibCIntern.reset_errno() void {}
 fun LibCIntern.fopen(filename CStr, mode CStr) U64 {}
@@ -148,12 +149,6 @@ const PreludeFirstID = NodeID(1_000_000_000)
 
 func IsPreludeNode(id NodeID) bool {
 	return id >= PreludeFirstID
-}
-
-var preludeRenames = map[string]string{ //nolint:gochecknoglobals
-	"Void_":  "void",
-	"Arena_": "Arena",
-	"panic_": "panic",
 }
 
 // PreludeAST parses the minimal prelude (built-in types and extern function
@@ -185,23 +180,32 @@ func updateMinimalPrelude(a *AST) {
 		node := a.Node(id)
 		switch kind := node.Kind.(type) {
 		case Struct:
+			if kind.Name.Name == "Void_" {
+				kind.Name.Name = "void"
+				node.Kind = kind
+			} else if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
+				kind.Name.Name = s
+				node.Kind = kind
+			}
 			if slices.Contains([]string{"None", "Err"}, kind.Name.Name) {
 				return true
 			}
-			if renamed, ok := preludeRenames[kind.Name.Name]; ok {
-				kind.Name.Name = renamed
-			}
 			kind.Extern = true
 			node.Kind = kind
+		case Union:
+			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
+				kind.Name.Name = s
+				node.Kind = kind
+			}
 		case Fun:
-			if renamed, ok := preludeRenames[kind.Name.Name]; ok {
-				kind.Name.Name = renamed
+			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
+				kind.Name.Name = s
 			}
 			kind.Extern = true
 			node.Kind = kind
 		case SimpleType:
-			if renamed, ok := preludeRenames[kind.Name.Name]; ok {
-				kind.Name.Name = renamed
+			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
+				kind.Name.Name = s
 				node.Kind = kind
 			}
 		}

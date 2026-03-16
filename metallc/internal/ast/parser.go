@@ -12,7 +12,28 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
-var ReservedWords = []string{"Arena", "panic"} //nolint:gochecknoglobals
+var ReservedWords = []string{ //nolint:gochecknoglobals
+	"Arena",
+	"None",
+	"Option",
+	"Err",
+	"Result",
+	"CStr",
+	"Bool",
+	"I8",
+	"I16",
+	"I32",
+	"Int",
+	"U8",
+	"U16",
+	"U32",
+	"U64",
+	"Rune",
+	"Str",
+	"DebugIntern",
+	"LibCIntern",
+	"panic",
+}
 
 const ParseFailed = NodeID(0)
 

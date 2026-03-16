@@ -3292,9 +3292,6 @@ fun main() void {
 
 ```metall
 fun main() void {
-    struct Err { msg Str }
-    union Result<T> = T | Err
-
     fun might_fail(ok Bool) Result<void> {
         if ok { void } else { Err("something went wrong") }
     }
@@ -3381,14 +3378,14 @@ replaced
 **union auto-wrap with early return in match arm**
 
 ```metall
-struct Err { msg Str }
-union Result = void | Err
+struct MyErr { msg Str }
+union MyResult = void | MyErr
 
-fun close() Result { Result(Err("fail")) }
+fun close() MyResult { MyResult(MyErr("fail")) }
 
-fun try_it() Result {
+fun try_it() MyResult {
     match close() {
-        case Err e: return e
+        case MyErr e: return e
         case void: DebugIntern.print_str("ok")
     }
 }
@@ -3396,7 +3393,7 @@ fun try_it() Result {
 fun main() void {
     match try_it() {
         case void: DebugIntern.print_str("void")
-        case Err e: DebugIntern.print_str(e.msg)
+        case MyErr e: DebugIntern.print_str(e.msg)
     }
 }
 ```
@@ -3472,9 +3469,6 @@ nope
 
 ```metall
 fun main() void {
-    struct Err { msg Str }
-    union Result<T> = T | Err
-
     fun might_fail(ok Bool) Result<Int> {
         if ok { 42 } else { Err("fail") }
     }

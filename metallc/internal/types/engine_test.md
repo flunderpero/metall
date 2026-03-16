@@ -1392,10 +1392,10 @@ Block: void
 
 ```metall
 {
-    struct Err { msg Str }
-    union Result<T> = T | Err
-    fun might_fail(ok Bool) Result<void> {
-        if ok { void } else { Err("fail") }
+    struct MyErr { msg Str }
+    union MyResult<T> = T | MyErr
+    fun might_fail(ok Bool) MyResult<void> {
+        if ok { void } else { MyErr("fail") }
     }
 }
 ```
@@ -1426,8 +1426,8 @@ Block: scope01
 ---
 scope01:
 scope02:
-  Err: struct01
-  Result: union01
+  MyErr: struct01
+  MyResult: union01
   T: ?
   might_fail: fun01
 scope03:
@@ -1436,9 +1436,9 @@ scope04:
 scope05:
 scope06:
 scope07:
-struct01 = Err { msg Str }
-union01  = Result = T | struct01
-union02  = Result<void> = void | struct01
+struct01 = MyErr { msg Str }
+union01  = MyResult = T | struct01
+union02  = MyResult<void> = void | struct01
 fun01    = fun(Bool) union02
 ```
 
@@ -6040,8 +6040,8 @@ struct02 = Pair<Str, Int> { a Str, b Int }
 
 ```metall
 {
-    union Result<T, E = Bool> = T | E
-    Result(42)
+    union MyResult<T, E = Bool> = T | E
+    MyResult(42)
 }
 ```
 
@@ -6057,8 +6057,8 @@ Block: union01
     Ident: union01
     Int: Int
 ---
-union01 = Result<Int, Int> = Int | Int
-union02 = Result = T | E
+union01 = MyResult<Int, Int> = Int | Int
+union02 = MyResult = T | E
 ```
 
 **Infer function type args from call**
@@ -6227,8 +6227,8 @@ union02 = Foo<Bool> = Str | Bool
 
 ```metall
 {
-    union Result<T> = T | Str
-    fun foo() Result<Int> { Result(42) }
+    union MyResult<T> = T | Str
+    fun foo() MyResult<Int> { MyResult(42) }
     foo()
 }
 ```
@@ -6249,8 +6249,8 @@ Block: union01
   Call: union01
     Ident: fun01
 ---
-union01 = Result<Int> = Int | Str
-union02 = Result = T | Str
+union01 = MyResult<Int> = Int | Str
+union02 = MyResult = T | Str
 fun01   = fun() union01
 ```
 
@@ -6258,10 +6258,10 @@ fun01   = fun() union01
 
 ```metall
 {
-    union Result<T> = T | Str
-    fun foo(x Bool) Result<Int> {
-        if x { Result(42) }
-        else { Result("err") }
+    union MyResult<T> = T | Str
+    fun foo(x Bool) MyResult<Int> {
+        if x { MyResult(42) }
+        else { MyResult("err") }
     }
     foo(true)
 }
@@ -6293,8 +6293,8 @@ Block: union01
     Ident: fun01
     Bool: Bool
 ---
-union01 = Result<Int> = Int | Str
-union02 = Result = T | Str
+union01 = MyResult<Int> = Int | Str
+union02 = MyResult = T | Str
 fun01   = fun(Bool) union01
 ```
 
@@ -6302,14 +6302,14 @@ fun01   = fun(Bool) union01
 
 ```metall
 {
-    union Result<T> = T | Str
-    fun foo(x Result<Int>) Result<Int> {
+    union MyResult<T> = T | Str
+    fun foo(x MyResult<Int>) MyResult<Int> {
         match x {
-            case Int i: Result(i)
-            case Str s: Result(s)
+            case Int i: MyResult(i)
+            case Str s: MyResult(s)
         }
     }
-    foo(Result<Int>(1))
+    foo(MyResult<Int>(1))
 }
 ```
 
@@ -6345,8 +6345,8 @@ Block: union01
         SimpleType: Int
       Int: Int
 ---
-union01 = Result<Int> = Int | Str
-union02 = Result = T | Str
+union01 = MyResult<Int> = Int | Str
+union02 = MyResult = T | Str
 fun01   = fun(union01) union01
 ```
 
