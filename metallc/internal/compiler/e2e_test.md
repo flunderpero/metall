@@ -3405,6 +3405,25 @@ fun main() void {
 fail
 ```
 
+## Function Literals
+
+**function literal basic**
+
+```metall
+fun apply(f fun(Int) Int, x Int) Int { f(x) }
+
+fun main() void {
+    let double = fun(x Int) Int { x + x }
+    print_int(apply(double, 21))
+    print_int(apply(fun(x Int) Int { x + 1 }, 99))
+}
+```
+
+```output
+42
+100
+```
+
 ## Type Sugar
 
 **Option and Result sugar**

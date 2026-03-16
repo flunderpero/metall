@@ -1,6 +1,7 @@
 package ast
 
 import (
+	"fmt"
 	"math/big"
 	"slices"
 	"strings"
@@ -17,9 +18,10 @@ const ParseFailed = NodeID(0)
 
 type Parser struct {
 	*AST
-	Diagnostics base.Diagnostics
-	tokens      []token.Token
-	pos         int
+	Diagnostics  base.Diagnostics
+	tokens       []token.Token
+	pos          int
+	nextFunLitID int
 }
 
 func NewParser(tokens []token.Token, a *AST) *Parser {
@@ -32,7 +34,7 @@ func NewParser(tokens []token.Token, a *AST) *Parser {
 			stripped = append(stripped, t)
 		}
 	}
-	return &Parser{a, base.Diagnostics{}, stripped, 0}
+	return &Parser{a, base.Diagnostics{}, stripped, 0, 0}
 }
 
 func (p *Parser) ParseModule() (NodeID, bool) {
@@ -614,7 +616,13 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = ref
 	case token.Fun:
-		fun, ok := p.ParseFun()
+		var fun NodeID
+		var ok bool
+		if next, peekOK := p.mayPeek1(); peekOK && next.Kind == token.LParen {
+			fun, ok = p.parseFunLiteral()
+		} else {
+			fun, ok = p.ParseFun()
+		}
 		if !ok {
 			return ParseFailed, false
 		}
@@ -1585,6 +1593,31 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 		return FunDecl{}, base.Span{}, false
 	}
 	return FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType}, t.Span, true
+}
+
+func (p *Parser) parseFunLiteral() (NodeID, bool) {
+	t, ok := p.expect(token.Fun)
+	if !ok {
+		return ParseFailed, false
+	}
+	params, ok := p.ParseFunParams()
+	if !ok {
+		return ParseFailed, false
+	}
+	returnType, ok := p.parseFunReturnType()
+	if !ok {
+		return ParseFailed, false
+	}
+	body, ok := p.ParseBlock()
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span.Combine(p.span())
+	name := fmt.Sprintf("__fun_lit_%d", p.nextFunLitID)
+	p.nextFunLitID++
+	funNode := p.NewFun(Name{name, span}, nil, params, returnType, body, span)
+	ident := p.NewIdent(name, nil, span)
+	return p.NewBlock([]NodeID{funNode, ident}, span), true
 }
 
 func (p *Parser) parseFunReturnType() (NodeID, bool) {

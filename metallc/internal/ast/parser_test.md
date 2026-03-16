@@ -355,6 +355,26 @@ Block()
       target=Ident(name="x")
 ```
 
+**Function literal**
+
+```metall
+let f = fun(a Int, b Int) Bool { true }
+```
+
+```ast
+Var(name="f",mut=false)
+  expr=Block()
+    exprs[0]=Fun(name="__fun_lit_0")
+      params[0]=FunParam(name="a")
+        type=SimpleType(name="Int")
+      params[1]=FunParam(name="b")
+        type=SimpleType(name="Int")
+      returnType=SimpleType(name="Bool")
+      block=Block()
+        exprs=Bool(value=true)
+    exprs[1]=Ident(name="__fun_lit_0")
+```
+
 ## Literals
 
 **Bool true**
