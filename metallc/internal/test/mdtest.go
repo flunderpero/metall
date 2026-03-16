@@ -109,7 +109,8 @@ func RunFile(t *testing.T, path string, runner Runner) { //nolint:funlen
 						mu.Unlock()
 					} else {
 						wantStr, actualStr := base.Diff(want, actual)
-						t.Errorf("mismatch for %q:\nwant:\n%s\n\ngot:\n%s", lang, wantStr, actualStr)
+						line := tc.wantLines[lang]
+						t.Errorf("mismatch for %q (line %d):\nwant:\n%s\n\ngot:\n%s", lang, line, wantStr, actualStr)
 					}
 				}
 			}
