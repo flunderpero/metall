@@ -105,6 +105,10 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if union, ok := p.ParseUnion(); ok {
 				decls = append(decls, union)
 			}
+		case token.Ident:
+			if expr, ok := p.ParseExpr(0); ok {
+				decls = append(decls, expr)
+			}
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
 			return decls, false

@@ -67,14 +67,42 @@ type ScopeGraph struct {
 	scopes          map[ScopeID]*Scope
 	scopeByNodeID   map[NodeID]*Scope
 	scopeByRootNode map[NodeID]*Scope
+	nextScopeID     uint64
 }
 
 func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
-	g := &ScopeGraph{map[ScopeID]*Scope{}, map[NodeID]*Scope{}, map[NodeID]*Scope{}}
-	var nextScopeID uint64 = 1
+	g := &ScopeGraph{map[ScopeID]*Scope{}, map[NodeID]*Scope{}, map[NodeID]*Scope{}, 1}
 	rootScope := NewScope(NodeID(0), ScopeID(0), nil, "")
 	g.scopes[rootScope.ID] = rootScope
-	scope := rootScope
+	g.walkNodes(ast, roots, rootScope)
+	return g
+}
+
+// WalkNodes walks new AST nodes into an existing module scope.
+// Used by macro expansion to register expanded declarations in the calling module's scope.
+func (g *ScopeGraph) WalkNodes(a *AST, nodeIDs []NodeID, moduleNodeID NodeID) {
+	moduleScope := g.IntroducedScope(moduleNodeID)
+	g.walkNodes(a, nodeIDs, moduleScope)
+}
+
+func (g *ScopeGraph) NodeScope(nodeID NodeID) *Scope {
+	scope, ok := g.scopeByNodeID[nodeID]
+	if !ok {
+		panic(base.Errorf("no scope for node %d", nodeID))
+	}
+	return scope
+}
+
+func (g *ScopeGraph) IntroducedScope(nodeID NodeID) *Scope {
+	scope, ok := g.scopeByRootNode[nodeID]
+	if !ok {
+		panic(base.Errorf("no own scope for node %d", nodeID))
+	}
+	return scope
+}
+
+func (g *ScopeGraph) walkNodes(a *AST, nodeIDs []NodeID, startScope *Scope) {
+	scope := startScope
 	enterScope := func(nodeID NodeID, name string) func() {
 		namespace := scope.Namespace
 		if name != "" {
@@ -84,8 +112,8 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 				namespace += "." + name
 			}
 		}
-		scope = NewScope(nodeID, ScopeID(nextScopeID), scope, namespace)
-		nextScopeID++
+		scope = NewScope(nodeID, ScopeID(g.nextScopeID), scope, namespace)
+		g.nextScopeID++
 		g.scopes[scope.ID] = scope
 		g.scopeByRootNode[nodeID] = scope
 		return func() { scope = scope.Parent }
@@ -93,13 +121,13 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 	var visit func(nodeID NodeID)
 	visit = func(nodeID NodeID) {
 		g.setNodeScope(nodeID, scope)
-		switch kind := ast.Node(nodeID).Kind.(type) {
+		switch kind := a.Node(nodeID).Kind.(type) {
 		case Block:
 			defer enterScope(nodeID, "")()
 		case For:
 			defer enterScope(nodeID, "")()
 		case Match:
-			visitMatch(ast, g, kind, nodeID, visit, enterScope)
+			visitMatch(a, g, kind, nodeID, visit, enterScope)
 			return
 		case Module:
 			// Modules with an empty name (prelude) bind into the root
@@ -116,12 +144,23 @@ func BuildScopeGraph(ast *AST, roots []NodeID) *ScopeGraph {
 		case Fun:
 			defer enterScope(nodeID, kind.Name.Name)()
 		}
-		ast.Walk(nodeID, visit)
+		a.Walk(nodeID, visit)
 	}
-	for _, root := range roots {
+	for _, root := range nodeIDs {
 		visit(root)
 	}
-	return g
+}
+
+func (g *ScopeGraph) setNodeScope(nodeID NodeID, scope *Scope) {
+	if existing, ok := g.scopeByNodeID[nodeID]; ok {
+		if scope.ID != existing.ID {
+			panic(
+				base.Errorf("cannot set scope %s for node %s: scope already set to %s", scope.ID, nodeID, existing.ID),
+			)
+		}
+		return
+	}
+	g.scopeByNodeID[nodeID] = scope
 }
 
 func visitMatch(
@@ -152,32 +191,4 @@ func visitMatch(
 	if match.Else != nil {
 		visit(match.Else.Body)
 	}
-}
-
-func (g *ScopeGraph) NodeScope(nodeID NodeID) *Scope {
-	scope, ok := g.scopeByNodeID[nodeID]
-	if !ok {
-		panic(base.Errorf("no scope for node %d", nodeID))
-	}
-	return scope
-}
-
-func (g *ScopeGraph) IntroducedScope(nodeID NodeID) *Scope {
-	scope, ok := g.scopeByRootNode[nodeID]
-	if !ok {
-		panic(base.Errorf("no own scope for node %d", nodeID))
-	}
-	return scope
-}
-
-func (g *ScopeGraph) setNodeScope(nodeID NodeID, scope *Scope) {
-	if existing, ok := g.scopeByNodeID[nodeID]; ok {
-		if scope.ID != existing.ID {
-			panic(
-				base.Errorf("cannot set scope %s for node %s: scope already set to %s", scope.ID, nodeID, existing.ID),
-			)
-		}
-		return
-	}
-	g.scopeByNodeID[nodeID] = scope
 }

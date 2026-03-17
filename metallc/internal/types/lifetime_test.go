@@ -23,7 +23,7 @@ func runLifetimeTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[s
 	assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 
 	preludeAST, _ := ast.PreludeAST(true)
-	e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
+	e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{}, nil)
 	e.Query(exprID)
 	assert.Equal(0, len(e.diagnostics), "type check failed:\n%s", e.diagnostics)
 

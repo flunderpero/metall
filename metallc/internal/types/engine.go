@@ -5,6 +5,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/macros"
 	"github.com/flunderpero/metall/metallc/internal/modules"
 )
 
@@ -27,9 +28,12 @@ type UnionWork struct {
 	Env    *TypeEnv
 }
 
+type MacroExpander func(macroSource string, args []string) (expandedSource string, err error)
+
 type Engine struct {
 	*EngineCore
 	moduleResolution *modules.ModuleResolution
+	macroExpander    MacroExpander
 
 	loopStack []ast.NodeID
 	funStack  []TypeID
@@ -42,7 +46,12 @@ type Engine struct {
 	intTyp    TypeID
 }
 
-func NewEngine(a *ast.AST, preludeAST *ast.AST, moduleResolution *modules.ModuleResolution) *Engine {
+func NewEngine(
+	a *ast.AST,
+	preludeAST *ast.AST,
+	moduleResolution *modules.ModuleResolution,
+	macroExpander MacroExpander,
+) *Engine {
 	merged, err := preludeAST.Merge(a)
 	if err != nil {
 		panic(base.WrapErrorf(err, "failed to merge prelude AST"))
@@ -52,6 +61,7 @@ func NewEngine(a *ast.AST, preludeAST *ast.AST, moduleResolution *modules.Module
 	e := &Engine{ //nolint:exhaustruct
 		EngineCore:       c,
 		moduleResolution: moduleResolution,
+		macroExpander:    macroExpander,
 	}
 	for _, root := range preludeAST.Roots {
 		e.Query(root)
@@ -991,6 +1001,9 @@ func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
 }
 
 func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Span) (TypeID, TypeStatus) {
+	if macros.IsMacroModule(module.Name) {
+		return e.checkMacroModule(nodeID, module, span)
+	}
 	// Bind imports into this module's scope.
 	if importMap, ok := e.moduleResolution.Imports[nodeID]; ok {
 		for name, importedModuleNodeID := range importMap {
@@ -1010,6 +1023,9 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 			scope := e.scopeGraph.NodeScope(importNodeID)
 			e.env.bindInScope(scope, importNodeID, name, typeID)
 		}
+	}
+	if !e.expandMacros(nodeID, &module) {
+		return InvalidTypeID, TypeFailed
 	}
 	e.forwardDeclare(module.Decls)
 	for _, declNodeID := range module.Decls {
@@ -1031,7 +1047,7 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 		// This is from the prelude which lives in the global namespace.
 		return e.voidTyp, TypeOK
 	}
-	typeID := e.env.newType(ModuleType{Name: module.Name}, nodeID, span, TypeOK)
+	typeID := e.env.newType(ModuleType{Name: module.Name, Macro: false}, nodeID, span, TypeOK)
 	return typeID, TypeOK
 }
 
@@ -1198,7 +1214,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 		}
 		paramTypeIDs[i] = paramTypeID
 	}
-	funTyp := FunType{paramTypeIDs, retTypeID}
+	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false}
 	cacheKey := funTypeCacheKey(funTyp)
 	cached, ok := e.env.cachedFunType(cacheKey)
 	var funTypeID TypeID
@@ -1379,7 +1395,7 @@ func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	funTyp := FunType{params, returnType}
+	funTyp := FunType{Params: params, Return: returnType, Macro: false}
 	cacheKey := funTypeCacheKey(funTyp)
 	cached, ok := e.env.cachedFunType(cacheKey)
 	if ok {

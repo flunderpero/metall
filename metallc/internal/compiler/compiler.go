@@ -13,6 +13,7 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/gen"
+	"github.com/flunderpero/metall/metallc/internal/macros"
 	"github.com/flunderpero/metall/metallc/internal/modules"
 	"github.com/flunderpero/metall/metallc/internal/token"
 	"github.com/flunderpero/metall/metallc/internal/types"
@@ -106,7 +107,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		return parseDiagnostics
 	}
 	preludeAST, _ := ast.PreludeAST(opts.MinimalPrelude)
-	engine := types.NewEngine(parser.AST, preludeAST, moduleResolution)
+	engine := types.NewEngine(parser.AST, preludeAST, moduleResolution, newMacroExpander(ctx, opts))
 	engine.Query(fileID)
 	timingListener.OnTypeCheck(engine, engine.Diagnostics())
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
@@ -368,6 +369,29 @@ func ModuleNameFromPath(path string) string {
 	name := strings.TrimSuffix(path, filepath.Ext(path))
 	name = filepath.ToSlash(name)
 	return strings.ReplaceAll(name, "/", ".")
+}
+
+func newMacroExpander(ctx context.Context, opts CompileOpts) types.MacroExpander {
+	return func(macroSource string, args []string) (string, error) {
+		wrapperSource := macros.GenerateWrapper(macroSource, args)
+		source := base.NewSource("__macro__.met", "__macro__", true, []rune(wrapperSource))
+		tmpDir, err := os.MkdirTemp("", "metallc-macro-*")
+		if err != nil {
+			return "", base.WrapErrorf(err, "failed to create temp dir for macro")
+		}
+		defer os.RemoveAll(tmpDir) //nolint:errcheck
+		macroOpts := CompileOpts{  //nolint:exhaustruct
+			IncludePaths:   opts.IncludePaths,
+			Output:         filepath.Join(tmpDir, "macro"),
+			KeepIR:         true,
+			MinimalPrelude: false,
+		}
+		_, output, err := CompileAndRun(ctx, source, macroOpts)
+		if err != nil {
+			return "", base.WrapErrorf(err, "macro compilation failed")
+		}
+		return output, nil
+	}
 }
 
 func run_cmd(ctx context.Context, cmdline []string) error {

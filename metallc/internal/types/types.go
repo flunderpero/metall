@@ -56,10 +56,11 @@ func (RefType) isTypeKind() {}
 type FunType struct {
 	Params []TypeID
 	Return TypeID
+	Macro  bool
 }
 
 func (f FunType) Equal(other FunType) bool {
-	return f.Return == other.Return && slices.Equal(f.Params, other.Params)
+	return f.Return == other.Return && f.Macro == other.Macro && slices.Equal(f.Params, other.Params)
 }
 
 func (FunType) isTypeKind() {}
@@ -132,7 +133,8 @@ type ShapeType struct {
 func (ShapeType) isTypeKind() {}
 
 type ModuleType struct {
-	Name string
+	Name  string
+	Macro bool
 }
 
 func (ModuleType) isTypeKind() {}

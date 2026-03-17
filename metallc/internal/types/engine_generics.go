@@ -569,7 +569,7 @@ func (e *Engine) instantiateFunWithTypeArgs(
 	if qStatus.Failed() {
 		return InvalidTypeID, "", TypeDepFailed
 	}
-	funTyp := FunType{paramTypeIDs, retTypeID}
+	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false}
 	node := e.ast.Node(funNodeID)
 	funTypeID := e.env.newType(funTyp, node.ID, node.Span, TypeOK)
 	e.env.reg.genericOrigin[funTypeID] = genericTypeID
@@ -797,7 +797,7 @@ func (e *Engine) checkShapeFunDecl(funDecl ast.FunDecl) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	funType := FunType{Params: paramTypeIDs, Return: retTypeID}
+	funType := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false}
 	return e.env.newType(funType, 0, base.Span{}, TypeOK), TypeOK
 }
 

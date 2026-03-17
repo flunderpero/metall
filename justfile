@@ -31,8 +31,10 @@ examples:
     set -euo pipefail
 
     for file in examples/*.met; do
-        echo ">>> $file"
-        go run ./metallc/... run "$file"
+        if [[ "$file" != *_macro.met ]]; then
+            echo ">>> $file"
+            go run ./metallc/... run "$file"
+        fi
     done
 
 test-linux arch=host_arch:

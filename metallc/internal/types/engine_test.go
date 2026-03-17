@@ -35,7 +35,7 @@ func runEngineTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 	assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 
 	preludeAST, _ := ast.PreludeAST(true)
-	e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
+	e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{}, nil)
 	e.Query(nodeID)
 
 	_, wantTypes := tc.Want["types"]
@@ -106,7 +106,7 @@ func TestIntTypes(t *testing.T) {
 		}
 		preludeAST, _ := ast.PreludeAST(true)
 		parser.Roots = append(parser.Roots, exprID)
-		e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{})
+		e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{}, nil)
 		e.Query(exprID)
 		return e
 	}

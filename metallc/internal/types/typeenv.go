@@ -509,6 +509,7 @@ func (e *TypeEnv) substituteFunType(funType FunType, searchTypeID, replaceTypeID
 	result := FunType{
 		Params: make([]TypeID, len(funType.Params)),
 		Return: e.substituteType(funType.Return, searchTypeID, replaceTypeID),
+		Macro:  funType.Macro,
 	}
 	for i, p := range funType.Params {
 		result.Params[i] = e.substituteType(p, searchTypeID, replaceTypeID)
@@ -541,5 +542,5 @@ func (e *TypeEnv) typeName(typ *Type) string {
 }
 
 func funTypeCacheKey(typ FunType) string {
-	return fmt.Sprintf("fun:%v:%v", typ.Params, typ.Return)
+	return fmt.Sprintf("fun:%v:%v:%v", typ.Params, typ.Return, typ.Macro)
 }

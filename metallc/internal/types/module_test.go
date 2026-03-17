@@ -67,7 +67,7 @@ func runModuleTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 	assert.Equal(0, len(diags), "module resolution failed:\n%s", diags)
 
 	preludeAST, _ := ast.PreludeAST(true)
-	e := NewEngine(a, preludeAST, moduleResolution)
+	e := NewEngine(a, preludeAST, moduleResolution, nil)
 	e.Query(moduleID)
 
 	_, wantError := tc.Want["error"]

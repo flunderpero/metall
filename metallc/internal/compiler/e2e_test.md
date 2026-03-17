@@ -3695,3 +3695,39 @@ fun main() void {
 test.met:4:15: slice out of bounds
 ```
 
+## Macros
+
+**simple macro**
+
+```metall
+use local::hello_macro
+
+hello_macro::apply()
+
+fun main() void {
+    greet()
+}
+```
+
+```output
+hello from macro
+```
+
+**macro with argument**
+
+```metall
+use local::repeat_macro
+
+repeat_macro::apply(3)
+
+fun main() void {
+    repeat()
+}
+```
+
+```output
+hello 
+hello 
+hello 
+```
+
