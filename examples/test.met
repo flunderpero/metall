@@ -1,0 +1,34 @@
+use std::test
+use assert_ = std::assert
+use std::io
+
+fun main() void {
+    let @local = Arena()
+    let suite = test::suite("Tests", @local)
+    suite.test("first test", fun(assert &assert_::Assert) !void { })
+    suite.test("second test", fun(assert &assert_::Assert) !void { 
+        try assert.ok(false) 
+    })
+    suite.test("third test", fun(assert &assert_::Assert) !void { 
+        try assert.contains_str("hello there", "the") 
+    })
+    suite.test("fourth test", fun(assert &assert_::Assert) !void { 
+        try assert.contains_str("hello there", "aaa") 
+    })
+    suite.test("fifth test", fun(assert &assert_::Assert) !void { 
+        try assert.gt_int(5, 4) 
+    })
+    suite.test("sixth test", fun(assert &assert_::Assert) !void { 
+        try assert.gt_int(4, 5) 
+    })
+    suite.test("seventh test", fun(assert &assert_::Assert) !void { 
+        fun may_err(b Bool) !void {
+            if b {
+                return Err("boom")
+            }
+        }
+        try assert.err(may_err(true), "boom")
+        try assert.err(may_err(false), "boom")
+    })
+    suite.run()
+}

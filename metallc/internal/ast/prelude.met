@@ -41,6 +41,25 @@ fun Str.starts_with(s Str, other Str) Bool {
     return true
 }
 
+fun Str.contains(s Str, other Str) Bool {
+    if s.data.len < other.data.len {
+        return false
+    }
+    for i in 0..s.data.len - other.data.len + 1 {
+        mut found = true
+        for j in 0..other.data.len {
+            if s.data[i+j] != other.data[j] {
+                found = false
+                break
+            }
+        }
+        if found {
+            return true
+        }
+    }
+    false
+}
+
 fun Str.concat(s Str, other Str, @a Arena) Str {
     let data = @a.slice_uninit_mut<U8>(s.data.len + other.data.len)
     for i in 0..s.data.len {
@@ -89,9 +108,17 @@ struct StrBuilder {
     @a Arena
 }
 
-fun StrBuilder.init(capacity Int, @a Arena) &mut StrBuilder {
+fun StrBuilder.new(capacity Int, @a Arena) &mut StrBuilder {
     let out = @a.slice_uninit_mut<U8>(capacity)
     @a.new_mut<StrBuilder>(StrBuilder(out, 0, @a))
+}
+
+--- Reset the StrBuilder.
+
+    This will start overwriting the output buffer (`sb.out`).
+    It should be save because we never expose `StrBuffer.out`. ---
+fun StrBuilder.reset(sb &mut StrBuilder) void {
+    sb.len = 0
 }
 
 fun StrBuilder.u64(sb &mut StrBuilder, v U64) &mut StrBuilder {
@@ -207,14 +234,15 @@ fun StrBuilder.slice<T FmtStr>(sb &mut StrBuilder, v []T, sep Str) &mut StrBuild
         if i > 0 {
             sb.str(sep)
         }
-        let x = sb.fmt<T>(v[i]) -- todo: We need a better way to force `void`.
+        sb.fmt<T>(v[i])
+        void
     } 
     sb
 }
 
 fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
     if sb.out.len - sb.len < capacity {
-        let new_out = sb.@a.slice_uninit_mut<U8>(sb.len + capacity)
+        let new_out = sb.@a.slice_uninit_mut<U8>((sb.len + capacity) * 2)
         for i in 0..sb.len {
             new_out[i] = sb.out[i]
         }

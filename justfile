@@ -23,8 +23,32 @@ lint-no-excluded-tests:
 fmt:
     go tool golangci-lint fmt ./metallc/...
 
-test:
+test: test-go test-stdlib
+
+test-go:
     go test ./metallc/... -count 1
+
+test-stdlib:
+    #!/usr/bin/env bash
+    set -uo pipefail
+
+    failed=0
+    for file in lib/*_test.met lib/*/*_test.met; do
+        echo ">>> $file"
+        if go run ./metallc/... run "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
+            failed=1
+        fi
+        if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            failed=1
+        fi
+        echo ""
+    done
+    if [ $failed -ne 0 ]; then
+        echo "At least one test FAILED"
+        exit 1
+    else
+        echo "All tests passed"
+    fi
 
 examples:
     #!/usr/bin/env bash

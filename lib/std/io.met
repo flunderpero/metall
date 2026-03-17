@@ -9,7 +9,7 @@ fun stderr() FD { FD(2) }
 fun print<T FmtStr>(s T) void {
     -- todo: We should be able to have a shortcut if is is Str.
     let @a = Arena()
-    let sb = StrBuilder.init(32, @a)
+    let sb = StrBuilder.new(32, @a)
     s.fmt_str(sb)
     LibCIntern.write(stdout().fd, sb.to_str().utf8_bytes())
 }

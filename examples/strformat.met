@@ -11,7 +11,7 @@ fun Pair.fmt_str<K FmtStr, V FmtStr>(p Pair<K, V>, sb &mut StrBuilder) void {
 
 fun main() void {
     let @a = Arena()
-    let sb = StrBuilder.init(16, @a)
+    let sb = StrBuilder.new(16, @a)
     sb.str("StrBuilder:").nl()
     sb.str("runes:  ").rune('a').rune('ä').rune('€').rune('𝄞').nl()
     sb.str("u64:    ").u64(0).space().u64(18446744073709551615).nl()
@@ -30,7 +30,7 @@ fun main() void {
     sb.space()
     Pair<Str, Bool>("world", true).fmt_str(sb)
 
-    io::print(sb.to_str())
+    io::println(sb.to_str())
 
     let x = Pair<Str, Int>("with io::printf", 42)
 

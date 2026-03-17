@@ -20,7 +20,7 @@ func GenerateWrapper(macroSource string, args []string) string {
 	sb.WriteString(macroSource)
 	sb.WriteString("\nfun main() void {\n")
 	sb.WriteString("    let @a = Arena()\n")
-	sb.WriteString("    let sb = StrBuilder.init(1024, @a)\n")
+	sb.WriteString("    let sb = StrBuilder.new(1024, @a)\n")
 	sb.WriteString("    apply(")
 	for i, arg := range args {
 		if i > 0 {

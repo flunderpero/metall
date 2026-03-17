@@ -10,7 +10,7 @@ fun write(filename Str, content Str) !void {
 fun read(filename Str, @a Arena) !Str {
     let @local = Arena()
     let f = try io::File.open(filename, "r", @local)
-    let sb = StrBuilder.init(32, @a)
+    let sb = StrBuilder.new(32, @a)
     let buf = @local.slice_uninit_mut<U8>(1024)
     for {
         let res = try f.read(buf)

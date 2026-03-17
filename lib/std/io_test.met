@@ -1,0 +1,34 @@
+use std::test
+use assert_ = std::assert
+use std::io
+
+fun main() void {
+    let @local = Arena()
+    let suite = test::suite("File", @local)
+    suite.test("happy path", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let filename = "/tmp/io_test.met.file"
+        let content = "this is a test"
+
+        -- write file
+        mut sut = try io::File.open(filename, "w", @local)
+        try sut.write(content.utf8_bytes())
+        try sut.close()
+
+        -- read it again
+        sut = try io::File.open(filename, "r", @local)
+        let buf = @local.slice_uninit_mut<U8>(1024)
+        let read_bytes = try sut.read(buf)
+        let read_str = Str.from_utf8_lossy(read_bytes, @local)
+        try sut.close()
+        try assert.eq_str(content, read_str)
+    })
+    suite.test("read non-existing file", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        match io::File.open("does not exist i think.met", "r", @local) {
+            case Err e: try assert.contains_str(e.msg, "No such file")
+            else: return Err("expected an error")
+        }
+    })
+    suite.run()
+}

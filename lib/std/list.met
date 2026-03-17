@@ -1,0 +1,50 @@
+--- A re-allocating array list. ---
+struct List<T> {
+    -- todo: This is bad API design. We use the .len field to determine the length as a public API.
+    --       But .len is mutable!
+    mut len Int
+
+    -- private fields 
+    mut data []mut T 
+    default T
+    @a Arena
+}
+
+fun List.new<T>(default T, @a Arena) &mut List<T> {
+    -- todo: we should be able to use unitialized memory even if a T is not allowed
+    let data = @a.slice_mut<T>(32, default)
+    @a.new_mut(List(0, data, default, @a))
+}
+
+--- Add an element to the list.
+
+    This might allocate and copy the existing data. 
+    All references to elements point to stale data afterwards. ---
+fun List.push<T>(l &mut List<T>, v T) void {
+    if l.len == l.data.len {
+        let new_data = l.@a.slice_mut(l.len * 2, l.default)
+        for i in 0..l.len {
+            new_data[i] = l.data[i]
+        }
+        l.data = new_data
+    }
+    l.data[l.len] = v
+    l.len = l.len + 1
+}
+
+--- Get a slice to the *current* backing slice.
+
+    The returned slice will not reflect items added to the list
+    and it points to stale data once the backing slice gets re-allocated
+    by `List.push()`. ---
+fun List.slice<T>(l &List<T>) []mut T {
+    l.data[..l.len]
+}
+
+fun List.get<T>(l &List<T>, i Int) T {
+    return l.data[i]
+}
+
+fun List.set<T>(l &mut List<T>, i Int, v T) void {
+    l.data[i] = v
+}

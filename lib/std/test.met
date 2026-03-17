@@ -1,0 +1,58 @@
+--- A testing framework. ---
+
+use std::list
+use assert_ = std::assert
+use std::io
+
+struct Test {
+    name Str
+    f fun(&assert_::Assert) !void
+}
+
+struct Suite {
+    name Str
+    mut bail Bool
+    tests &mut list::List<Test>
+}
+
+struct SuiteResult {
+    succeeded Int
+    failed Int
+}
+
+fun Suite.test(s &mut Suite, name Str, f fun(&assert_::Assert) !void) void {
+    s.tests.push(Test(name, f))
+}
+
+fun Suite.run(s &mut Suite) SuiteResult {
+    let @local = Arena()
+    let assert = assert_::Assert.new(@local)
+    mut failed = 0
+    for test_index in 0..s.tests.len {
+        let test = s.tests.get(test_index)
+        let sb = StrBuilder.new(32, @local)
+        let prefix = 
+            sb.str(s.name).str("(").int(test_index + 1).str("/").int(s.tests.len).str(") ")
+            .tab().str(test.name).to_str()
+        io::print(prefix)
+        io::print("... ")
+        match test.f(assert) {
+            case Err e: 
+                failed = failed + 1
+                io::println("")
+                io::print(prefix)
+                io::print(" FAILED - ")
+                io::println(e)
+                if s.bail {
+                    return SuiteResult(test_index - 1, failed)
+                }
+            else: io::println("pass")
+        }
+    }
+    -- todo: we should exit with error
+    SuiteResult(s.tests.len - failed, failed)
+}
+
+fun suite(name Str, @a Arena) &mut Suite {
+    @a.new_mut<Suite>(Suite(name, false, list::List.new<Test>(Test("", fun(a &assert_::Assert) !void {}), @a)))
+}

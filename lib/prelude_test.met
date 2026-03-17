@@ -1,0 +1,32 @@
+use std::test
+use assert_ = std::assert
+
+fun main() void {
+    let @local = Arena()
+    let str_suite = test::suite("Str", @local)
+    str_suite.test("concat", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        try assert.eq_str("hello there", "hello ".concat("there", @local))
+    })
+    str_suite.test("contains", fun(assert &assert_::Assert) !void {
+        try assert.ok("test".contains("test"))
+        try assert.not_ok("test".contains("a"))
+        try assert.not_ok("test".contains("test1"))
+        try assert.ok("test".contains(""))
+        try assert.not_ok("".contains("test"))
+        try assert.ok("".contains(""))
+    })
+    str_suite.test("decapitalize", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        try assert.eq_str("hELLO", "HELLO".decapitalize(@local))
+    })
+    str_suite.run()
+
+    let rune_suite = test::suite("Rune", @local)
+    rune_suite.test("from_u32_lossy", fun(assert &assert_::Assert) !void {
+        try assert.eq_rune('A', Rune.from_u32_lossy(65))
+        try assert.eq_rune('�', Rune.from_u32_lossy(123456789))
+        try assert.eq_rune('�', Rune.from_u32_lossy(55296)) -- 0xD800
+    })
+    rune_suite.run()
+}
