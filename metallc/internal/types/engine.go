@@ -1484,7 +1484,30 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
 	}
+	if binding.Decl != 0 && e.unreachableBindingInOuterScope(nodeID, binding) {
+		e.diag(span, "cannot reference %q from outer scope", ident.Name)
+		return InvalidTypeID, TypeFailed
+	}
 	return e.resolveBinding(nodeID, binding, ident.TypeArgs)
+}
+
+// Check whether the binding a variable, allocator, or function parameter declared
+// in an outer scope.
+func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Binding) bool {
+	switch e.ast.Node(binding.Decl).Kind.(type) {
+	case ast.Var, ast.FunParam, ast.AllocatorVar:
+	default:
+		return false
+	}
+	scope := e.scopeGraph.NodeScope(nodeID)
+	bindingScope := e.scopeGraph.NodeScope(binding.Decl)
+	for scope != nil && scope.ID != bindingScope.ID {
+		if _, ok := e.ast.Node(scope.Node).Kind.(ast.Fun); ok {
+			return true
+		}
+		scope = scope.Parent
+	}
+	return false
 }
 
 func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []ast.NodeID) (TypeID, TypeStatus) {

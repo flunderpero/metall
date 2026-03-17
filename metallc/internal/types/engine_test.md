@@ -518,6 +518,127 @@ Block: fun01
 fun01 = fun(Int) Int
 ```
 
+**Nested function cannot reference outer variable**
+
+```metall
+{
+    let x = 1
+    fun(a Int) Int { x + a }
+    fun bar(a Int) Int { x + a }
+}
+```
+
+```error
+test.met:4:26: symbol not defined: x
+        fun(a Int) Int { x + a }
+        fun bar(a Int) Int { x + a }
+                             ^
+    }
+
+test.met:3:22: cannot reference "x" from outer scope
+        let x = 1
+        fun(a Int) Int { x + a }
+                         ^
+        fun bar(a Int) Int { x + a }
+```
+
+**Nested function cannot reference outer function parameter**
+
+```metall
+fun foo(a Int) fun(Int) Int {
+    fun(b Int) Int { a + b }
+    fun bar(b Int) Int { a + b }
+}
+```
+
+```error
+test.met:3:26: cannot reference "a" from outer scope
+        fun(b Int) Int { a + b }
+        fun bar(b Int) Int { a + b }
+                             ^
+    }
+
+test.met:2:22: cannot reference "a" from outer scope
+    fun foo(a Int) fun(Int) Int {
+        fun(b Int) Int { a + b }
+                         ^
+        fun bar(b Int) Int { a + b }
+```
+
+**Nested function cannot reference outer allocator**
+
+```metall
+{
+    let @a = Arena()
+    fun() void { @a }
+    fun bar() void { @a }
+}
+```
+
+```error
+test.met:4:22: symbol not defined: @a
+        fun() void { @a }
+        fun bar() void { @a }
+                         ^^
+    }
+
+test.met:3:18: cannot reference "@a" from outer scope
+        let @a = Arena()
+        fun() void { @a }
+                     ^^
+        fun bar() void { @a }
+```
+
+**Nested function can reference outer function and struct**
+
+```metall
+{
+    fun double(x Int) Int { x + x }
+    struct Foo { x Int }
+    fun(a Int) Int { double(a) }
+    fun bar(a Int) Int { Foo(double(a)).x }
+}
+```
+
+```types
+Block: fun01
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Ident: Int
+        Ident: Int
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+  Block: fun01
+    Fun: fun01
+      FunParam: Int
+        SimpleType: Int
+      SimpleType: Int
+      Block: Int
+        Call: Int
+          Ident: fun01
+          Ident: Int
+    Ident: fun01
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Int
+    Block: Int
+      FieldAccess: Int
+        TypeConstruction: struct01
+          Ident: struct01
+          Call: Int
+            Ident: fun01
+            Ident: Int
+---
+fun01    = fun(Int) Int
+struct01 = Foo { x Int }
+```
+
 ## Structs
 
 **Struct declaration**
@@ -7700,3 +7821,5 @@ test.met:1:36: symbol already defined: S.foo
     { shape S { fun S.foo(s S) Int fun S.foo(s S) Str } }
                                        ^^^^^
 ```
+
+
