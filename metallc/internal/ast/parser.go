@@ -1117,7 +1117,7 @@ func (p *Parser) ParseIf() (NodeID, bool) {
 	if et.Kind != token.Else {
 		return p.NewIf(cond, then, nil, t.Span.Combine(p.span())), true
 	}
-	if after, ok := p.mayPeek1(); ok && (after.Kind == token.Ident || after.Kind == token.Colon) {
+	if p.isMatchElse() {
 		return p.NewIf(cond, then, nil, t.Span.Combine(p.span())), true
 	}
 	p.next()
@@ -1283,7 +1283,7 @@ func (p *Parser) parseTry() (NodeID, bool) {
 	successBody := p.NewBlock([]NodeID{successIdent}, span)
 	arm := MatchArm{Pattern: pattern, Binding: &successBinding, Guard: nil, Body: successBody}
 	var else_ *MatchElse
-	if next, ok := p.mayPeek(); ok && next.Kind == token.Else {
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Else && !p.isMatchElse() {
 		p.next()
 		var binding *Name
 		if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
@@ -1667,6 +1667,20 @@ func (p *Parser) mayPeek() (*token.Token, bool) {
 		return nil, false
 	}
 	return &p.tokens[p.pos], true
+}
+
+func (p *Parser) isMatchElse() bool {
+	after, ok := p.mayPeek1()
+	if !ok {
+		return false
+	}
+	if after.Kind == token.Colon {
+		return true
+	}
+	if after.Kind == token.Ident && p.pos+2 < len(p.tokens) {
+		return p.tokens[p.pos+2].Kind == token.Colon
+	}
+	return false
 }
 
 // mayPeek1 peeks at the token after the current one (2-token lookahead).

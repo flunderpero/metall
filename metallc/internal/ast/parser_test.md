@@ -2330,6 +2330,92 @@ Match(arms=1,arm[0].pattern=n3:SimpleType,arm[0].binding=__try,else.binding=e)
       expr=Ident(name="e")
 ```
 
+**Try inside match arm without else leaves else for match**
+
+```metall
+match x { case Int: try foo() else: 0 }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n2:SimpleType)
+  expr=Ident(name="x")
+  arm[0].body=Block()
+    exprs=Match(arms=1,arm[0].pattern=n5:TryPattern,arm[0].binding=__try,else.binding=__try_e)
+      expr=Call()
+        callee=Ident(name="foo")
+      arm[0].body=Block()
+        exprs=Ident(name="__try")
+      else.body=Block()
+        exprs=Return()
+          expr=Ident(name="__try_e")
+  else.body=Block()
+    exprs=Int(value=0)
+```
+
+**Try inside match arm with else block**
+
+```metall
+match x { case Int: try foo() else { 0 } else: 0 }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n2:SimpleType)
+  expr=Ident(name="x")
+  arm[0].body=Block()
+    exprs=Match(arms=1,arm[0].pattern=n5:TryPattern,arm[0].binding=__try)
+      expr=Call()
+        callee=Ident(name="foo")
+      arm[0].body=Block()
+        exprs=Ident(name="__try")
+      else.body=Block()
+        exprs=Int(value=0)
+  else.body=Block()
+    exprs=Int(value=0)
+```
+
+**Try inside match arm with else binding and block**
+
+```metall
+match x { case Int: try foo() else e { e } else: 0 }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n2:SimpleType)
+  expr=Ident(name="x")
+  arm[0].body=Block()
+    exprs=Match(arms=1,arm[0].pattern=n5:TryPattern,arm[0].binding=__try,else.binding=e)
+      expr=Call()
+        callee=Ident(name="foo")
+      arm[0].body=Block()
+        exprs=Ident(name="__try")
+      else.body=Block()
+        exprs=Ident(name="e")
+  else.body=Block()
+    exprs=Int(value=0)
+```
+
+**Try inside match arm with else binding leaves match else binding**
+
+```metall
+match x { case Int: try foo() else y: y }
+```
+
+```ast
+Match(arms=1,arm[0].pattern=n2:SimpleType,else.binding=y)
+  expr=Ident(name="x")
+  arm[0].body=Block()
+    exprs=Match(arms=1,arm[0].pattern=n5:TryPattern,arm[0].binding=__try,else.binding=__try_e)
+      expr=Call()
+        callee=Ident(name="foo")
+      arm[0].body=Block()
+        exprs=Ident(name="__try")
+      else.body=Block()
+        exprs=Return()
+          expr=Ident(name="__try_e")
+  else.body=Block()
+    exprs=Ident(name="y")
+```
+
 ## Error Recovery
 
 **Unexpected token**
