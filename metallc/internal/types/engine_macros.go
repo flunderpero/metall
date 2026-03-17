@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/macros"
@@ -10,6 +12,9 @@ import (
 func (e *Engine) checkMacroModule(
 	nodeID ast.NodeID, module ast.Module, span base.Span,
 ) (TypeID, TypeStatus) {
+	if status := e.bindImports(nodeID, module); status.Failed() {
+		return InvalidTypeID, status
+	}
 	if len(module.Decls) != 1 {
 		e.diag(span, "macro modules must contain a single `apply` function")
 		return InvalidTypeID, TypeFailed
@@ -112,9 +117,8 @@ func (e *Engine) expandMacroCall(
 	args := make([]string, len(call.Args))
 	for i, argNodeID := range call.Args {
 		argNode := e.ast.Node(argNodeID)
-		rendered, diag := macros.RenderArg(argNode.Kind, argNode.Span)
-		if diag != nil {
-			e.diagnostics = append(e.diagnostics, *diag)
+		rendered, ok := e.renderMacroArg(argNode)
+		if !ok {
 			return nil, false
 		}
 		args[i] = rendered
@@ -143,6 +147,60 @@ func (e *Engine) expandMacroCall(
 	}
 	e.scopeGraph.WalkNodes(e.ast, decls, contextNodeID)
 	return decls, true
+}
+
+func (e *Engine) renderMacroArg(argNode *ast.Node) (string, bool) {
+	if call, ok := argNode.Kind.(ast.Call); ok {
+		if rendered, ok := e.renderCompTypeOf(call, argNode.Span); ok {
+			return rendered, true
+		}
+	}
+	rendered, diag := macros.RenderArg(argNode.Kind, argNode.Span)
+	if diag != nil {
+		e.diagnostics = append(e.diagnostics, *diag)
+		return "", false
+	}
+	return rendered, true
+}
+
+func (e *Engine) renderCompTypeOf(call ast.Call, span base.Span) (string, bool) {
+	calleeNode := e.ast.Node(call.Callee)
+	path, ok := calleeNode.Kind.(ast.Path)
+	if !ok || len(path.Segments) != 2 || path.Segments[1] != "type_of" {
+		return "", false
+	}
+	modBinding, ok := e.lookup(call.Callee, path.Segments[0])
+	if !ok {
+		return "", false
+	}
+	modType, ok := e.env.Type(modBinding.TypeID).Kind.(ModuleType)
+	if !ok || modType.Name != "std::comp" {
+		return "", false
+	}
+	if len(path.TypeArgs) != 1 {
+		e.diag(span, "comp::type_of requires exactly one type argument")
+		return "", false
+	}
+	typeID, status := e.Query(path.TypeArgs[0])
+	if status.Failed() {
+		return "", false
+	}
+	return e.renderCompType(typeID, span)
+}
+
+func (e *Engine) renderCompType(typeID TypeID, span base.Span) (string, bool) {
+	if typeID == e.strTyp {
+		return "comp::StrType()", true
+	}
+	if typeID == e.boolTyp {
+		return "comp::BoolType()", true
+	}
+	typ := e.env.Type(typeID)
+	if intType, ok := typ.Kind.(IntType); ok {
+		return fmt.Sprintf("comp::IntType(%q, %t, %d)", intType.Name, intType.Signed, intType.Bits), true
+	}
+	e.diag(span, "comp::type_of does not support type %s", e.env.TypeDisplay(typeID))
+	return "", false
 }
 
 func (e *Engine) macroModuleSource(moduleNodeID ast.NodeID) string {

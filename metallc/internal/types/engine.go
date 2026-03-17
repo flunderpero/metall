@@ -1000,29 +1000,37 @@ func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
 	return ref.Type, TypeOK
 }
 
+func (e *Engine) bindImports(nodeID ast.NodeID, module ast.Module) TypeStatus {
+	importMap, ok := e.moduleResolution.Imports[nodeID]
+	if !ok {
+		return TypeOK
+	}
+	for name, importedModuleNodeID := range importMap {
+		typeID, status := e.Query(importedModuleNodeID)
+		if status.Failed() {
+			return TypeDepFailed
+		}
+		var importNodeID ast.NodeID
+		for _, id := range module.Imports {
+			imp := base.Cast[ast.Import](e.ast.Node(id).Kind)
+			isAlias := imp.Alias != nil && imp.Alias.Name == name
+			if isAlias || imp.Segments[len(imp.Segments)-1] == name {
+				importNodeID = id
+				break
+			}
+		}
+		scope := e.scopeGraph.NodeScope(importNodeID)
+		e.env.bindInScope(scope, importNodeID, name, typeID)
+	}
+	return TypeOK
+}
+
 func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Span) (TypeID, TypeStatus) {
 	if macros.IsMacroModule(module.Name) {
 		return e.checkMacroModule(nodeID, module, span)
 	}
-	// Bind imports into this module's scope.
-	if importMap, ok := e.moduleResolution.Imports[nodeID]; ok {
-		for name, importedModuleNodeID := range importMap {
-			typeID, status := e.Query(importedModuleNodeID)
-			if status.Failed() {
-				return InvalidTypeID, TypeDepFailed
-			}
-			var importNodeID ast.NodeID
-			for _, id := range module.Imports {
-				imp := base.Cast[ast.Import](e.ast.Node(id).Kind)
-				isAlias := imp.Alias != nil && imp.Alias.Name == name
-				if isAlias || imp.Segments[len(imp.Segments)-1] == name {
-					importNodeID = id
-					break
-				}
-			}
-			scope := e.scopeGraph.NodeScope(importNodeID)
-			e.env.bindInScope(scope, importNodeID, name, typeID)
-		}
+	if status := e.bindImports(nodeID, module); status.Failed() {
+		return InvalidTypeID, status
 	}
 	if !e.expandMacros(nodeID, &module) {
 		return InvalidTypeID, TypeFailed
