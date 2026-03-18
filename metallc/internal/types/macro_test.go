@@ -7,6 +7,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/macros"
 	"github.com/flunderpero/metall/metallc/internal/modules"
 	mdtest "github.com/flunderpero/metall/metallc/internal/test"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -66,12 +67,12 @@ func runMacroTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[stri
 	var expander MacroExpander
 	if expanderOutput, ok := tc.Want["expander"]; ok {
 		results["expander"] = expanderOutput
-		expander = func(_ string, _ []string) (string, error) {
+		expander = func(_ string, _ []macros.MacroArg) (string, error) {
 			return expanderOutput, nil
 		}
 	} else if _, ok := tc.Want["expander_error"]; ok {
 		results["expander_error"] = tc.Want["expander_error"]
-		expander = func(_ string, _ []string) (string, error) {
+		expander = func(_ string, _ []macros.MacroArg) (string, error) {
 			return "", fmt.Errorf("%s", tc.Want["expander_error"])
 		}
 	}

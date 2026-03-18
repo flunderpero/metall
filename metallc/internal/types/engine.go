@@ -28,7 +28,7 @@ type UnionWork struct {
 	Env    *TypeEnv
 }
 
-type MacroExpander func(macroSource string, args []string) (expandedSource string, err error)
+type MacroExpander func(macroSource string, args []macros.MacroArg) (expandedSource string, err error)
 
 type Engine struct {
 	*EngineCore
@@ -1039,10 +1039,13 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 	if status := e.bindImports(nodeID, module); status.Failed() {
 		return InvalidTypeID, status
 	}
-	if !e.expandMacros(nodeID, &module) {
+	e.forwardDeclareTypes(module.Decls)
+	newDeclIDs, ok := e.expandMacros(nodeID, &module)
+	if !ok {
 		return InvalidTypeID, TypeFailed
 	}
-	e.forwardDeclare(module.Decls)
+	e.forwardDeclareTypes(newDeclIDs)
+	e.forwardDeclareFuns(module.Decls)
 	for _, declNodeID := range module.Decls {
 		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok && fun.Name.Name == "main" {
 			e.registerFun(declNodeID)
@@ -1066,20 +1069,25 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 	return typeID, TypeOK
 }
 
-func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
-	type decl struct {
-		node       *ast.Node
-		typeID     TypeID
-		status     TypeStatus
-		cachedType *cachedType
-	}
-	decls := []*decl{}
+type forwardDecl struct {
+	node       *ast.Node
+	typeID     TypeID
+	status     TypeStatus
+	cachedType *cachedType
+}
 
+func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) {
+	e.forwardDeclareTypes(nodeIDs)
+	e.forwardDeclareFuns(nodeIDs)
+}
+
+func (e *Engine) forwardDeclareTypes(nodeIDs []ast.NodeID) { //nolint:funlen
+	var decls []*forwardDecl
 	for _, nodeID := range nodeIDs {
 		node := e.ast.Node(nodeID)
 		switch node.Kind.(type) {
-		case ast.Fun, ast.Struct, ast.Shape, ast.Union:
-			decls = append(decls, &decl{node, InvalidTypeID, TypeFailed, nil})
+		case ast.Struct, ast.Shape, ast.Union:
+			decls = append(decls, &forwardDecl{node, InvalidTypeID, TypeFailed, nil})
 		}
 	}
 
@@ -1147,22 +1155,6 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 	}
 
 	for _, decl := range decls {
-		if _, ok := decl.node.Kind.(ast.Fun); !ok {
-			continue
-		}
-		nodeKind := base.Cast[ast.Fun](decl.node.Kind)
-		typeID, status := e.checkFunCreateAndBind(decl.node, nodeKind)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
-		if typeID != InvalidTypeID {
-			cachedType, ok := e.env.cachedTypeInfo(typeID)
-			if !ok {
-				panic(base.Errorf("type %s not found", typeID))
-			}
-			decl.cachedType = cachedType
-		}
-	}
-
-	for _, decl := range decls {
 		if _, ok := decl.node.Kind.(ast.Struct); !ok {
 			continue
 		}
@@ -1190,28 +1182,43 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		decl.status, decl.cachedType.Type.Kind = e.checkUnionCompleteType(unionNode, unionType)
 		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
 	}
+}
 
+func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
+	var decls []*forwardDecl
+	for _, nodeID := range nodeIDs {
+		node := e.ast.Node(nodeID)
+		if _, ok := node.Kind.(ast.Fun); ok {
+			decls = append(decls, &forwardDecl{node, InvalidTypeID, TypeFailed, nil})
+		}
+	}
+	for _, decl := range decls {
+		nodeKind := base.Cast[ast.Fun](decl.node.Kind)
+		typeID, status := e.checkFunCreateAndBind(decl.node, nodeKind)
+		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
+		if typeID != InvalidTypeID {
+			cachedType, ok := e.env.cachedTypeInfo(typeID)
+			if !ok {
+				panic(base.Errorf("type %s not found", typeID))
+			}
+			decl.cachedType = cachedType
+		}
+	}
 	for _, decl := range decls {
 		if decl.status.Failed() {
 			continue
 		}
-		typeKind := decl.cachedType.Type.Kind
-		switch nodeKind := decl.node.Kind.(type) {
-		case ast.Fun:
-			if !nodeKind.Extern {
-				funType := base.Cast[FunType](typeKind)
-				e.debug.Print(
-					0,
-					"forwardDeclare checkFunBody: %s (node=%s, type=%s)",
-					nodeKind.Name.Name,
-					decl.node.ID,
-					decl.cachedType.Type.ID,
-				)
-				e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
-			}
-		case ast.Struct, ast.Shape, ast.Union:
-		default:
-			panic(base.Errorf("node kind not supported: %T", nodeKind))
+		funKind := base.Cast[ast.Fun](decl.node.Kind)
+		if !funKind.Extern {
+			funType := base.Cast[FunType](decl.cachedType.Type.Kind)
+			e.debug.Print(
+				0,
+				"forwardDeclare checkFunBody: %s (node=%s, type=%s)",
+				funKind.Name.Name,
+				decl.node.ID,
+				decl.cachedType.Type.ID,
+			)
+			e.checkFunBody(funKind, decl.cachedType.Type.ID, funType)
 		}
 	}
 }

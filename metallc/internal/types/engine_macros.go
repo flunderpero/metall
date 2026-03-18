@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -51,33 +52,35 @@ func (e *Engine) checkMacroModule(
 	return typeID, TypeOK
 }
 
-func (e *Engine) expandMacros(nodeID ast.NodeID, module *ast.Module) bool {
-	var expandedDecls []ast.NodeID
+func (e *Engine) expandMacros(nodeID ast.NodeID, module *ast.Module) ([]ast.NodeID, bool) {
+	var allDecls []ast.NodeID
+	var newDecls []ast.NodeID
 	expanded := false
 	for _, declNodeID := range module.Decls {
 		node := e.ast.Node(declNodeID)
 		call, ok := node.Kind.(ast.Call)
 		if !ok {
-			expandedDecls = append(expandedDecls, declNodeID)
+			allDecls = append(allDecls, declNodeID)
 			continue
 		}
 		isMacro, macroModuleNodeID := e.isMacroCall(nodeID, call)
 		if !isMacro {
 			e.diag(node.Span, "only macro calls are allowed at the top level")
-			return false
+			return nil, false
 		}
-		newDecls, ok := e.expandMacroCall(nodeID, call, node.Span, macroModuleNodeID)
+		macroDecls, ok := e.expandMacroCall(nodeID, call, node.Span, macroModuleNodeID)
 		if !ok {
-			return false
+			return nil, false
 		}
-		expandedDecls = append(expandedDecls, newDecls...)
+		allDecls = append(allDecls, macroDecls...)
+		newDecls = append(newDecls, macroDecls...)
 		expanded = true
 	}
 	if expanded {
-		module.Decls = expandedDecls
+		module.Decls = allDecls
 		e.ast.Node(nodeID).Kind = *module
 	}
-	return true
+	return newDecls, true
 }
 
 func (e *Engine) isMacroCall(moduleNodeID ast.NodeID, call ast.Call) (bool, ast.NodeID) {
@@ -114,14 +117,14 @@ func (e *Engine) expandMacroCall(
 		e.diag(span, "could not read macro module source")
 		return nil, false
 	}
-	args := make([]string, len(call.Args))
+	args := make([]macros.MacroArg, len(call.Args))
 	for i, argNodeID := range call.Args {
 		argNode := e.ast.Node(argNodeID)
-		rendered, ok := e.renderMacroArg(argNode)
+		arg, ok := e.renderMacroArg(argNode)
 		if !ok {
 			return nil, false
 		}
-		args[i] = rendered
+		args[i] = arg
 	}
 	expandedSource, err := e.macroExpander(macroSource, args)
 	if err != nil {
@@ -149,58 +152,103 @@ func (e *Engine) expandMacroCall(
 	return decls, true
 }
 
-func (e *Engine) renderMacroArg(argNode *ast.Node) (string, bool) {
+func (e *Engine) renderMacroArg(argNode *ast.Node) (macros.MacroArg, bool) {
 	if call, ok := argNode.Kind.(ast.Call); ok {
-		if rendered, ok := e.renderCompTypeOf(call, argNode.Span); ok {
-			return rendered, true
+		if arg, ok := e.renderCompTypeOf(call, argNode.Span); ok {
+			return arg, true
 		}
 	}
 	rendered, diag := macros.RenderArg(argNode.Kind, argNode.Span)
 	if diag != nil {
 		e.diagnostics = append(e.diagnostics, *diag)
-		return "", false
+		return macros.MacroArg{}, false
 	}
-	return rendered, true
+	return macros.MacroArg{Preamble: "", Expr: rendered}, true
 }
 
-func (e *Engine) renderCompTypeOf(call ast.Call, span base.Span) (string, bool) {
+func (e *Engine) renderCompTypeOf(call ast.Call, span base.Span) (macros.MacroArg, bool) {
 	calleeNode := e.ast.Node(call.Callee)
 	path, ok := calleeNode.Kind.(ast.Path)
 	if !ok || len(path.Segments) != 2 || path.Segments[1] != "type_of" {
-		return "", false
+		return macros.MacroArg{}, false
 	}
 	modBinding, ok := e.lookup(call.Callee, path.Segments[0])
 	if !ok {
-		return "", false
+		return macros.MacroArg{}, false
 	}
 	modType, ok := e.env.Type(modBinding.TypeID).Kind.(ModuleType)
 	if !ok || modType.Name != "std::comp" {
-		return "", false
+		return macros.MacroArg{}, false
 	}
 	if len(path.TypeArgs) != 1 {
 		e.diag(span, "comp::type_of requires exactly one type argument")
-		return "", false
+		return macros.MacroArg{}, false
 	}
 	typeID, status := e.Query(path.TypeArgs[0])
 	if status.Failed() {
-		return "", false
+		return macros.MacroArg{}, false
 	}
-	return e.renderCompType(typeID, span)
+	r := &compTypeRenderer{engine: e, preamble: "", counter: 0}
+	expr, ok := r.render(typeID, span)
+	if !ok {
+		return macros.MacroArg{}, false
+	}
+	return macros.MacroArg{Preamble: r.preamble, Expr: expr}, true
 }
 
-func (e *Engine) renderCompType(typeID TypeID, span base.Span) (string, bool) {
-	if typeID == e.strTyp {
+type compTypeRenderer struct {
+	engine   *Engine
+	preamble string
+	counter  int
+}
+
+func (r *compTypeRenderer) let(expr string) string {
+	name := fmt.Sprintf("__t%d", r.counter)
+	r.counter++
+	r.preamble += fmt.Sprintf("    let %s = %s\n", name, expr)
+	return name
+}
+
+func (r *compTypeRenderer) letTyped(typeName string, expr string) string {
+	name := fmt.Sprintf("__t%d", r.counter)
+	r.counter++
+	r.preamble += fmt.Sprintf("    let %s %s = %s\n", name, typeName, expr)
+	return name
+}
+
+func (r *compTypeRenderer) render(typeID TypeID, span base.Span) (string, bool) {
+	if typeID == r.engine.strTyp {
 		return "comp::StrType()", true
 	}
-	if typeID == e.boolTyp {
+	if typeID == r.engine.boolTyp {
 		return "comp::BoolType()", true
 	}
-	typ := e.env.Type(typeID)
-	if intType, ok := typ.Kind.(IntType); ok {
-		return fmt.Sprintf("comp::IntType(%q, %t, %d)", intType.Name, intType.Signed, intType.Bits), true
+	if typeID == r.engine.voidTyp {
+		return "comp::VoidType()", true
 	}
-	e.diag(span, "comp::type_of does not support type %s", e.env.TypeDisplay(typeID))
+	typ := r.engine.env.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case IntType:
+		return fmt.Sprintf("comp::IntType(%q, %t, %d)", kind.Name, kind.Signed, kind.Bits), true
+	case StructType:
+		return r.renderStruct(kind, span)
+	}
+	r.engine.diag(span, "comp::type_of does not support type %s", r.engine.env.TypeDisplay(typeID))
 	return "", false
+}
+
+func (r *compTypeRenderer) renderStruct(kind StructType, span base.Span) (string, bool) {
+	var fields []string
+	for _, f := range kind.Fields {
+		fExpr, ok := r.render(f.Type, span)
+		if !ok {
+			return "", false
+		}
+		val := r.letTyped("comp::Type", fExpr)
+		ref := r.let(fmt.Sprintf("@a.new(%s)", val))
+		fields = append(fields, fmt.Sprintf("comp::Field(%q, %s, %t)", f.Name, ref, f.Mut))
+	}
+	return fmt.Sprintf("comp::StructType(%q, [%s][..])", kind.Name, strings.Join(fields, ", ")), true
 }
 
 func (e *Engine) macroModuleSource(moduleNodeID ast.NodeID) string {

@@ -1,5 +1,6 @@
 struct BoolType {}
 struct StrType {}
+struct VoidType {}
 
 struct IntType {
     name Str
@@ -7,7 +8,18 @@ struct IntType {
     bits Int
 }
 
-union Type = BoolType | StrType | IntType
+struct Field {
+    name Str
+    typ &Type
+    is_mut Bool
+}
+
+struct StructType {
+    name Str
+    fields []Field
+}
+
+union Type = BoolType | StrType | VoidType | IntType | StructType
 
 fun type_of<T>() Type {
     panic("comp::type_of must only be used as a macro argument")

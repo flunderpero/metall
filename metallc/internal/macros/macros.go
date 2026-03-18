@@ -15,18 +15,26 @@ func IsMacroModule(moduleName string) bool {
 	return strings.HasSuffix(parts[len(parts)-1], "_macro")
 }
 
-func GenerateWrapper(macroSource string, args []string) string {
+type MacroArg struct {
+	Preamble string
+	Expr     string
+}
+
+func GenerateWrapper(macroSource string, args []MacroArg) string {
 	var sb strings.Builder
 	sb.WriteString(macroSource)
 	sb.WriteString("\nfun main() void {\n")
 	sb.WriteString("    let @a = Arena()\n")
 	sb.WriteString("    let sb = StrBuilder.new(1024, @a)\n")
+	for _, arg := range args {
+		sb.WriteString(arg.Preamble)
+	}
 	sb.WriteString("    apply(")
 	for i, arg := range args {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(arg)
+		sb.WriteString(arg.Expr)
 	}
 	if len(args) > 0 {
 		sb.WriteString(", ")

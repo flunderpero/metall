@@ -384,7 +384,7 @@ func ModuleNameFromPath(path string) string {
 }
 
 func newMacroExpander(ctx context.Context, opts CompileOpts) types.MacroExpander {
-	return func(macroSource string, args []string) (string, error) {
+	return func(macroSource string, args []macros.MacroArg) (string, error) {
 		wrapperSource := macros.GenerateWrapper(macroSource, args)
 		source := base.NewSource("__macro__.met", "__macro__", true, []rune(wrapperSource))
 		tmpDir, err := os.MkdirTemp("", "metallc-macro-*")

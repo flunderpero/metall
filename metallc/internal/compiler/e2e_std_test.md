@@ -33,7 +33,9 @@ fun apply(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
     match info {
         case comp::BoolType b: { sb.str("Bool") void }
         case comp::StrType s: { sb.str("Str") void }
+        case comp::VoidType v: { sb.str("void") void }
         case comp::IntType i: { sb.str(i.name) void }
+        case comp::StructType s: { sb.str("struct ").str(s.name) void }
     }
     sb.rune('"').str(" }").nl()
 }
@@ -58,6 +60,10 @@ type_name_macro::apply("i16_name", comp::type_of<I16>())
 type_name_macro::apply("i32_name", comp::type_of<I32>())
 type_name_macro::apply("rune_name", comp::type_of<Rune>())
 
+struct Point { x Int y Int }
+
+type_name_macro::apply("point_name", comp::type_of<Point>())
+
 fun main() void {
     io::println(bool_name())
     io::println(str_name())
@@ -70,6 +76,7 @@ fun main() void {
     io::println(i16_name())
     io::println(i32_name())
     io::println(rune_name())
+    io::println(point_name())
 }
 ```
 
@@ -85,4 +92,5 @@ I8
 I16
 I32
 Rune
+struct test.Point
 ```
