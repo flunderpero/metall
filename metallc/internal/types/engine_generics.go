@@ -502,7 +502,13 @@ func (e *Engine) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 		}
 		return InvalidTypeID, status, true
 	}
-	typeID, mangledName, status := e.instantiateFunWithTypeArgs(binding.TypeID, call.Callee, span, inferred)
+	typeID, mangledName, status := e.instantiateFunWithTypeArgs(
+		binding.Decl,
+		binding.TypeID,
+		call.Callee,
+		span,
+		inferred,
+	)
 	if status.Failed() {
 		if isFieldAccess {
 			e.diagnostics = e.diagnostics[:diagCount]
@@ -516,34 +522,42 @@ func (e *Engine) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 }
 
 func (e *Engine) instantiateFun(
+	funDeclNodeID ast.NodeID,
 	genericTypeID TypeID,
 	argTypeIDs []TypeID,
 	callSiteNodeID ast.NodeID,
 	span base.Span,
 ) (typeID TypeID, mangledName string, status TypeStatus) {
-	funNodeID := e.env.DeclNode(genericTypeID)
-	funNode := base.Cast[ast.Fun](e.ast.Node(funNodeID).Kind)
+	funNode := base.Cast[ast.Fun](e.ast.Node(funDeclNodeID).Kind)
 	argTypeIDs, status = e.applyTypeArgDefaults(funNode.TypeParams, argTypeIDs, span)
 	if status.Failed() {
 		return InvalidTypeID, "", status
 	}
-	return e.instantiateFunWithTypeArgs(genericTypeID, callSiteNodeID, span, argTypeIDs)
+	return e.instantiateFunWithTypeArgs(funDeclNodeID, genericTypeID, callSiteNodeID, span, argTypeIDs)
 }
 
 func (e *Engine) instantiateFunWithTypeArgs(
+	funNodeID ast.NodeID,
 	genericTypeID TypeID,
 	callSiteNodeID ast.NodeID,
 	span base.Span,
 	argTypeIDs []TypeID,
 ) (typeID TypeID, mangledName string, status TypeStatus) {
-	funNodeID := e.env.DeclNode(genericTypeID)
 	funNode := base.Cast[ast.Fun](e.ast.Node(funNodeID).Kind)
 	genericName, ok := e.env.NamedFunRef(funNodeID)
 	if !ok {
 		return InvalidTypeID, "", TypeFailed
 	}
 	mangledName = e.mangledName(genericName, genericTypeID, argTypeIDs)
+	argDisplay := make([]string, len(argTypeIDs))
+	for i, id := range argTypeIDs {
+		argDisplay[i] = e.env.TypeDisplay(id)
+	}
+	debugDedent := e.debug.Print(0, "instantiateFun %s<%s> -> %s", funNode.Name.Name, strings.Join(argDisplay, ", "), mangledName).
+		Indent()
+	defer debugDedent()
 	if cached, ok := e.funs[mangledName]; ok {
+		e.debug.Print(1, "cached")
 		return cached.TypeID, mangledName, TypeOK
 	}
 	defer e.enterChildEnv()()
@@ -671,7 +685,13 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 		// it with the type's type args to get the concrete signature.
 		methodFunNode, isFun := e.ast.Node(binding.Decl).Kind.(ast.Fun)
 		if isFun && len(methodFunNode.TypeParams) > 0 && len(concreteTypeArgs) > 0 {
-			methodTypeID, _, status := e.instantiateFun(binding.TypeID, concreteTypeArgs, scopeNodeID, span)
+			methodTypeID, _, status := e.instantiateFun(
+				binding.Decl,
+				binding.TypeID,
+				concreteTypeArgs,
+				scopeNodeID,
+				span,
+			)
 			if status.Failed() {
 				return false
 			}
@@ -843,10 +863,17 @@ func (e *Engine) resolveGenericMethod(
 		return InvalidTypeID, status, true
 	}
 	argTypeIDs = append(argTypeIDs, extraArgs...)
-	typeID, mangledName, status := e.instantiateFun(binding.TypeID, argTypeIDs, nodeID, fieldAccess.Field.Span)
+	typeID, mangledName, status := e.instantiateFun(
+		binding.Decl,
+		binding.TypeID,
+		argTypeIDs,
+		nodeID,
+		fieldAccess.Field.Span,
+	)
 	if status.Failed() {
 		return InvalidTypeID, status, true
 	}
+	e.debug.Print(1, "resolveGenericMethod: setNamedFunRef(node=%s, %s)", nodeID, mangledName)
 	e.env.setNamedFunRef(nodeID, mangledName)
 	return typeID, TypeOK, true
 }

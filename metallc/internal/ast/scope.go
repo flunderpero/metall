@@ -39,7 +39,7 @@ func NewScope(root NodeID, id ScopeID, parent *Scope, namespace string) *Scope {
 
 func (s *Scope) Bind(name string, decl NodeID) (*Binding, bool) {
 	if b, ok := s.Bindings[name]; ok {
-		return b, false
+		return b, b.Decl == decl
 	}
 	b := &Binding{BindingID(decl), name, decl}
 	s.Bindings[name] = b

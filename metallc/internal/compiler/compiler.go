@@ -54,6 +54,9 @@ type CompileOpts struct {
 	ArenaPageMaxSize    int
 	ArenaPageHeaderSize int
 	MinimalPrelude      bool
+	PrintTypesDebug     bool
+	PrintBindingsDebug  bool
+	DebugTypeCheck      bool
 }
 
 func (o CompileOpts) WithDefaults() CompileOpts {
@@ -108,6 +111,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	preludeAST, _ := ast.PreludeAST(opts.MinimalPrelude)
 	engine := types.NewEngine(parser.AST, preludeAST, moduleResolution, newMacroExpander(ctx, opts))
+	if opts.DebugTypeCheck {
+		engine.SetDebug(base.NewStdoutDebug("types"))
+	}
 	engine.Query(fileID)
 	timingListener.OnTypeCheck(engine, engine.Diagnostics())
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
@@ -115,6 +121,12 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	if len(engine.Diagnostics()) > 0 {
 		return engine.Diagnostics()
+	}
+	if opts.PrintTypesDebug {
+		fmt.Fprintln(os.Stderr, engine.Env().DebugTypes(fileID))
+	}
+	if opts.PrintBindingsDebug {
+		fmt.Fprintln(os.Stderr, engine.Env().DebugBindings(fileID))
 	}
 	lifetime := types.NewLifetimeAnalyzer(engine.AST(), engine.ScopeGraph(), engine.Env())
 	lifetime.Check(fileID)

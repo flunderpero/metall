@@ -824,6 +824,13 @@ func (e *Engine) resolveMethod( //nolint:funlen
 	fieldAccess ast.FieldAccess,
 	targetTyp *Type,
 ) (TypeID, TypeStatus, bool) {
+	e.debug.Print(
+		1,
+		"resolveMethod .%s on %s (node=%s)",
+		fieldAccess.Field.Name,
+		e.env.TypeDisplay(targetTyp.ID),
+		nodeID,
+	)
 	if tpt, ok := targetTyp.Kind.(TypeParamType); ok && tpt.Shape == nil {
 		return InvalidTypeID, TypeFailed, false
 	}
@@ -1193,6 +1200,13 @@ func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) { //nolint:funlen
 		case ast.Fun:
 			if !nodeKind.Extern {
 				funType := base.Cast[FunType](typeKind)
+				e.debug.Print(
+					0,
+					"forwardDeclare checkFunBody: %s (node=%s, type=%s)",
+					nodeKind.Name.Name,
+					decl.node.ID,
+					decl.cachedType.Type.ID,
+				)
 				e.checkFunBody(nodeKind, decl.cachedType.Type.ID, funType)
 			}
 		case ast.Struct, ast.Shape, ast.Union:
@@ -1226,14 +1240,11 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 	cacheKey := funTypeCacheKey(funTyp)
 	cached, ok := e.env.cachedFunType(cacheKey)
 	var funTypeID TypeID
-	var funStatus TypeStatus
 	if ok {
 		funTypeID = cached.Type.ID
-		funStatus = cached.Status
 		e.env.setNodeType(node.ID, cached)
 	} else {
 		funTypeID = e.env.newType(funTyp, node.ID, node.Span, TypeOK)
-		funStatus = TypeOK
 		e.env.cacheFunType(cacheKey, funTypeID)
 	}
 	bindName := fun.Name.Name
@@ -1248,7 +1259,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 		return InvalidTypeID, TypeFailed
 	}
 	e.env.setNamedFunRef(node.ID, e.namespacedName(node.ID, fun.Name.Name))
-	return funTypeID, funStatus
+	return funTypeID, TypeOK
 }
 
 func (e *Engine) resolveMethodBindName(
@@ -1345,6 +1356,8 @@ func (e *Engine) checkUnionCompleteType(unionNode ast.Union, unionType UnionType
 }
 
 func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType) {
+	debugDedent := e.debug.Print(0, "checkFunBody %s (type=%s)", funNode.Name.Name, funTypeID).Indent()
+	defer debugDedent()
 	e.funStack = append(e.funStack, funTypeID)
 	defer func() { e.funStack = e.funStack[:len(e.funStack)-1] }()
 	for i, paramNodeID := range funNode.Params {
@@ -1508,6 +1521,8 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
 	}
+	e.debug.Print(1, "checkIdent %q -> lookup=%q binding.Decl=%s binding.TypeID=%s type=%s",
+		ident.Name, lookupName, binding.Decl, binding.TypeID, e.env.TypeDisplay(binding.TypeID))
 	if binding.Decl != 0 && e.unreachableBindingInOuterScope(nodeID, binding) {
 		e.diag(span, "cannot reference %q from outer scope", ident.Name)
 		return InvalidTypeID, TypeFailed
@@ -1546,7 +1561,7 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
-				typeID, mangledName, status := e.instantiateFun(binding.TypeID, argTypeIDs, nodeID, span)
+				typeID, mangledName, status := e.instantiateFun(binding.Decl, binding.TypeID, argTypeIDs, nodeID, span)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}

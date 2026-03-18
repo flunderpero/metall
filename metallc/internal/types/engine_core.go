@@ -63,6 +63,7 @@ func (c *EngineCore) registerFun(nodeID ast.NodeID) {
 		panic(base.Errorf("no namespaced name for function node %s", nodeID))
 	}
 	if _, ok := c.funs[name]; !ok {
+		c.debug.Print(1, "registerFun %s (node=%s)", name, nodeID)
 		c.funs[name] = FunWork{NodeID: nodeID, TypeID: c.env.TypeOfNode(nodeID).ID, Name: name, Env: c.env}
 	}
 }

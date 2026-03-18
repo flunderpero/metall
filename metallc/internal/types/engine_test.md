@@ -154,6 +154,38 @@ Block: void
 
 ## Functions
 
+**Generic function with same signature as non-generic function**
+
+```metall
+{
+    fun bar(x Int) void {}
+    fun foo<T>(x Int) void {}
+    foo<Str>(1)
+}
+```
+
+```types
+Block: void
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: void
+    Block: void
+  Fun: fun01
+    TypeParam: T
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: void
+    Block: void
+  Call: void
+    Ident: fun02
+      SimpleType: Str
+    Int: Int
+---
+fun01 = fun(Int) void
+fun02 = fun(Int) void
+```
+
 **Fun declaration**
 
 ```metall
