@@ -16,14 +16,17 @@ func (e *Engine) checkMacroModule(
 	if status := e.bindImports(nodeID, module); status.Failed() {
 		return InvalidTypeID, status
 	}
-	if len(module.Decls) != 1 {
-		e.diag(span, "macro modules must contain a single `apply` function")
-		return InvalidTypeID, TypeFailed
+	var applyFun *ast.Fun
+	var applyNode *ast.Node
+	for _, declNodeID := range module.Decls {
+		node := e.ast.Node(declNodeID)
+		if fun, ok := node.Kind.(ast.Fun); ok && fun.Name.Name == "apply" {
+			applyFun = &fun
+			applyNode = node
+		}
 	}
-	applyNode := e.ast.Node(module.Decls[0])
-	applyFun, ok := applyNode.Kind.(ast.Fun)
-	if !ok || applyFun.Name.Name != "apply" {
-		e.diag(applyNode.Span, "macro modules must contain a single `apply` function")
+	if applyFun == nil {
+		e.diag(span, "macro modules must contain an `apply` function")
 		return InvalidTypeID, TypeFailed
 	}
 	if len(applyFun.Params) < 2 {
@@ -232,6 +235,8 @@ func (r *compTypeRenderer) render(typeID TypeID, span base.Span) (string, bool) 
 		return fmt.Sprintf("comp::IntType(%q, %t, %d)", kind.Name, kind.Signed, kind.Bits), true
 	case StructType:
 		return r.renderStruct(kind, span)
+	case UnionType:
+		return r.renderUnion(kind, span)
 	}
 	r.engine.diag(span, "comp::type_of does not support type %s", r.engine.env.TypeDisplay(typeID))
 	return "", false
@@ -248,7 +253,32 @@ func (r *compTypeRenderer) renderStruct(kind StructType, span base.Span) (string
 		ref := r.let(fmt.Sprintf("@a.new(%s)", val))
 		fields = append(fields, fmt.Sprintf("comp::Field(%q, %s, %t)", f.Name, ref, f.Mut))
 	}
-	return fmt.Sprintf("comp::StructType(%q, [%s][..])", kind.Name, strings.Join(fields, ", ")), true
+	return fmt.Sprintf(
+		"comp::StructType(%q, [%s][..])", shortName(kind.Name), strings.Join(fields, ", "),
+	), true
+}
+
+func (r *compTypeRenderer) renderUnion(kind UnionType, span base.Span) (string, bool) {
+	var variants []string
+	for _, v := range kind.Variants {
+		vExpr, ok := r.render(v, span)
+		if !ok {
+			return "", false
+		}
+		val := r.letTyped("comp::Type", vExpr)
+		ref := r.let(fmt.Sprintf("@a.new(%s)", val))
+		variants = append(variants, ref)
+	}
+	return fmt.Sprintf(
+		"comp::UnionType(%q, [%s][..])", shortName(kind.Name), strings.Join(variants, ", "),
+	), true
+}
+
+func shortName(namespacedName string) string {
+	if i := strings.LastIndex(namespacedName, "."); i >= 0 {
+		return namespacedName[i+1:]
+	}
+	return namespacedName
 }
 
 func (e *Engine) macroModuleSource(moduleNodeID ast.NodeID) string {

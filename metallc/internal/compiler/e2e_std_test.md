@@ -36,8 +36,63 @@ fun apply(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
         case comp::VoidType v: { sb.str("void") void }
         case comp::IntType i: { sb.str(i.name) void }
         case comp::StructType s: { sb.str("struct ").str(s.name) void }
+        case comp::UnionType u: { sb.str("union ").str(u.name) void }
     }
     sb.rune('"').str(" }").nl()
+}
+```
+
+```module.fmtstr_macro
+use std::comp
+
+fun quote(sb &mut StrBuilder) void {
+    sb.rune(34)
+    void
+}
+
+fun apply(info comp::Type, sb &mut StrBuilder, @a Arena) void {
+    match info {
+        case comp::StructType s: {
+            sb.str("fun ").str(s.name).str(".fmt_str(v ").str(s.name).str(", sb &mut StrBuilder) void {").nl()
+            sb.str("    sb.str(")
+            quote(sb)
+            sb.str(s.name).str("{")
+            quote(sb)
+            sb.str(")").nl()
+            for i in 0..s.fields.len {
+                let f = s.fields[i]
+                if i > 0 {
+                    sb.str("    sb.str(")
+                    quote(sb)
+                    sb.str(", ").str(f.name).str("=")
+                    quote(sb)
+                    sb.str(")").nl()
+                    void
+                } else {
+                    sb.str("    sb.str(")
+                    quote(sb)
+                    sb.str(f.name).str("=")
+                    quote(sb)
+                    sb.str(")").nl()
+                    void
+                }
+                sb.str("    sb.fmt(v.").str(f.name).str(")").nl()
+                void
+            }
+            sb.str("    sb.str(")
+            quote(sb)
+            sb.str("}")
+            quote(sb)
+            sb.str(")").nl()
+            sb.str("}").nl()
+            void
+        }
+        case comp::BoolType b: { void }
+        case comp::StrType s: { void }
+        case comp::VoidType v: { void }
+        case comp::IntType i: { void }
+        case comp::UnionType u: { void }
+    }
 }
 ```
 
@@ -64,6 +119,10 @@ struct Point { x Int y Int }
 
 type_name_macro::apply("point_name", comp::type_of<Point>())
 
+union Shape = Point | Bool
+
+type_name_macro::apply("shape_name", comp::type_of<Shape>())
+
 fun main() void {
     io::println(bool_name())
     io::println(str_name())
@@ -77,6 +136,7 @@ fun main() void {
     io::println(i32_name())
     io::println(rune_name())
     io::println(point_name())
+    io::println(shape_name())
 }
 ```
 
@@ -92,5 +152,30 @@ I8
 I16
 I32
 Rune
-struct test.Point
+struct Point
+union Shape
+```
+
+**fmtstr macro**
+
+```metall
+use std::comp
+use std::io
+use local::fmtstr_macro
+
+struct Point { x Int y Int }
+
+fmtstr_macro::apply(comp::type_of<Point>())
+
+fun main() void {
+    let @a = Arena()
+    let sb = StrBuilder.new(256, @a)
+    let p = Point(10, 20)
+    p.fmt_str(sb)
+    io::println(sb.to_str())
+}
+```
+
+```output
+Point{x=10, y=20}
 ```

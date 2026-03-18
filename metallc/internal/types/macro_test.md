@@ -41,7 +41,7 @@ fun main() void {}
 ```
 
 ```error
-local/no_apply_macro.met:1:1: macro modules must contain a single `apply` function
+local/no_apply_macro.met:1:1: macro modules must contain an `apply` function
     fun something(sb &mut StrBuilder, @a Arena) void {
     ^
         sb.str("nope")
@@ -58,13 +58,6 @@ fun main() void {}
 ```
 
 ```error
-local/multi_decl_macro.met:1:1: macro modules must contain a single `apply` function
-    struct Oops { x Int }
-    ^
-    fun apply(sb &mut StrBuilder, @a Arena) void {
-        sb.str("nope")
-    }
-    ^
 ```
 
 **macro module missing sb and @a params**

@@ -19,7 +19,12 @@ struct StructType {
     fields []Field
 }
 
-union Type = BoolType | StrType | VoidType | IntType | StructType
+struct UnionType {
+    name Str
+    variants []&Type
+}
+
+union Type = BoolType | StrType | VoidType | IntType | StructType | UnionType
 
 fun type_of<T>() Type {
     panic("comp::type_of must only be used as a macro argument")
