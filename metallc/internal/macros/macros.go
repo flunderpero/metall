@@ -20,7 +20,7 @@ type MacroArg struct {
 	Expr     string
 }
 
-func GenerateWrapper(macroSource string, args []MacroArg) string {
+func GenerateWrapper(macroSource string, funName string, args []MacroArg) string {
 	var sb strings.Builder
 	sb.WriteString(macroSource)
 	sb.WriteString("\nfun main() void {\n")
@@ -29,7 +29,9 @@ func GenerateWrapper(macroSource string, args []MacroArg) string {
 	for _, arg := range args {
 		sb.WriteString(arg.Preamble)
 	}
-	sb.WriteString("    apply(")
+	sb.WriteString("    ")
+	sb.WriteString(funName)
+	sb.WriteString("(")
 	for i, arg := range args {
 		if i > 0 {
 			sb.WriteString(", ")

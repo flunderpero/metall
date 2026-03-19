@@ -28,7 +28,7 @@ hello std
 ```module.type_name_macro
 use std::comp
 
-fun apply(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
+fun type_name(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
     sb.str("fun ").str(name).str("() Str { ").rune('"')
     match info {
         case comp::BoolType b: { sb.str("Bool") void }
@@ -40,6 +40,16 @@ fun apply(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
     }
     sb.rune('"').str(" }").nl()
 }
+
+fun field_count(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
+    match info {
+        case comp::StructType s: {
+            sb.str("fun ").str(name).str("() Int { ").int(s.fields.len).str(" }").nl()
+            void
+        }
+        else: { void }
+    }
+}
 ```
 
 ```module.fmtstr_macro
@@ -50,7 +60,7 @@ fun quote(sb &mut StrBuilder) void {
     void
 }
 
-fun apply(info comp::Type, sb &mut StrBuilder, @a Arena) void {
+fun gen_fmt_str(info comp::Type, sb &mut StrBuilder, @a Arena) void {
     match info {
         case comp::StructType s: {
             sb.str("fun ").str(s.name).str(".fmt_str(v ").str(s.name).str(", sb &mut StrBuilder) void {").nl()
@@ -103,25 +113,26 @@ use std::comp
 use std::io
 use local::type_name_macro
 
-type_name_macro::apply("bool_name", comp::type_of<Bool>())
-type_name_macro::apply("str_name", comp::type_of<Str>())
-type_name_macro::apply("int_name", comp::type_of<Int>())
-type_name_macro::apply("u8_name", comp::type_of<U8>())
-type_name_macro::apply("u16_name", comp::type_of<U16>())
-type_name_macro::apply("u32_name", comp::type_of<U32>())
-type_name_macro::apply("u64_name", comp::type_of<U64>())
-type_name_macro::apply("i8_name", comp::type_of<I8>())
-type_name_macro::apply("i16_name", comp::type_of<I16>())
-type_name_macro::apply("i32_name", comp::type_of<I32>())
-type_name_macro::apply("rune_name", comp::type_of<Rune>())
+type_name_macro::type_name("bool_name", comp::type_of<Bool>())
+type_name_macro::type_name("str_name", comp::type_of<Str>())
+type_name_macro::type_name("int_name", comp::type_of<Int>())
+type_name_macro::type_name("u8_name", comp::type_of<U8>())
+type_name_macro::type_name("u16_name", comp::type_of<U16>())
+type_name_macro::type_name("u32_name", comp::type_of<U32>())
+type_name_macro::type_name("u64_name", comp::type_of<U64>())
+type_name_macro::type_name("i8_name", comp::type_of<I8>())
+type_name_macro::type_name("i16_name", comp::type_of<I16>())
+type_name_macro::type_name("i32_name", comp::type_of<I32>())
+type_name_macro::type_name("rune_name", comp::type_of<Rune>())
 
 struct Point { x Int y Int }
 
-type_name_macro::apply("point_name", comp::type_of<Point>())
+type_name_macro::type_name("point_name", comp::type_of<Point>())
+type_name_macro::field_count("point_fields", comp::type_of<Point>())
 
 union Shape = Point | Bool
 
-type_name_macro::apply("shape_name", comp::type_of<Shape>())
+type_name_macro::type_name("shape_name", comp::type_of<Shape>())
 
 fun main() void {
     io::println(bool_name())
@@ -136,6 +147,7 @@ fun main() void {
     io::println(i32_name())
     io::println(rune_name())
     io::println(point_name())
+    DebugIntern.print_int(point_fields())
     io::println(shape_name())
 }
 ```
@@ -154,6 +166,7 @@ I32
 Rune
 struct Point
 union Shape
+2
 ```
 
 **fmtstr macro**
@@ -165,7 +178,7 @@ use local::fmtstr_macro
 
 struct Point { x Int y Int }
 
-fmtstr_macro::apply(comp::type_of<Point>())
+fmtstr_macro::gen_fmt_str(comp::type_of<Point>())
 
 fun main() void {
     let @a = Arena()

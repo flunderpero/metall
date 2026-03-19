@@ -16,43 +16,53 @@ func (e *Engine) checkMacroModule(
 	if status := e.bindImports(nodeID, module); status.Failed() {
 		return InvalidTypeID, status
 	}
-	var applyFun *ast.Fun
-	var applyNode *ast.Node
+	hasMacroFun := false
 	for _, declNodeID := range module.Decls {
 		node := e.ast.Node(declNodeID)
-		if fun, ok := node.Kind.(ast.Fun); ok && fun.Name.Name == "apply" {
-			applyFun = &fun
-			applyNode = node
+		fun, ok := node.Kind.(ast.Fun)
+		if !ok || len(fun.Params) < 2 {
+			continue
+		}
+		if ok := e.checkMacroFun(node, fun); ok {
+			hasMacroFun = true
 		}
 	}
-	if applyFun == nil {
-		e.diag(span, "macro modules must contain an `apply` function")
+	if !hasMacroFun {
+		e.diag(span, "macro modules must contain at least one macro function")
 		return InvalidTypeID, TypeFailed
 	}
-	if len(applyFun.Params) < 2 {
-		e.diag(applyNode.Span, "macro `apply` must have at least `sb &mut StrBuilder` and `@a Arena` parameters")
-		return InvalidTypeID, TypeFailed
+	typeID := e.env.newType(ModuleType{Name: module.Name, Macro: true}, nodeID, span, TypeOK)
+	return typeID, TypeOK
+}
+
+func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
+	lastTwo := fun.Params[len(fun.Params)-2:]
+	sbParam := e.ast.Node(lastTwo[0])
+	arenaParam := e.ast.Node(lastTwo[1])
+	sbFunParam, sbOK := sbParam.Kind.(ast.FunParam)
+	arenaFunParam, arenaOK := arenaParam.Kind.(ast.FunParam)
+	if !sbOK || !arenaOK || sbFunParam.Name.Name != "sb" || arenaFunParam.Name.Name != "@a" {
+		return false
 	}
-	visibleParams := applyFun.Params[:len(applyFun.Params)-2]
-	retTypeID, status := e.Query(applyFun.ReturnType)
+	visibleParams := fun.Params[:len(fun.Params)-2]
+	retTypeID, status := e.Query(fun.ReturnType)
 	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
+		return false
 	}
 	paramTypeIDs := make([]TypeID, len(visibleParams))
 	for i, paramNodeID := range visibleParams {
 		paramTypeID, status := e.Query(paramNodeID)
 		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
+			return false
 		}
 		paramTypeIDs[i] = paramTypeID
 	}
 	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: true}
-	funTypeID := e.env.newType(funTyp, applyNode.ID, applyNode.Span, TypeOK)
-	scope := e.scopeGraph.NodeScope(applyNode.ID)
-	e.env.bindInScope(scope, applyNode.ID, "apply", funTypeID)
-	e.env.setNamedFunRef(applyNode.ID, "apply")
-	typeID := e.env.newType(ModuleType{Name: module.Name, Macro: true}, nodeID, span, TypeOK)
-	return typeID, TypeOK
+	funTypeID := e.env.newType(funTyp, node.ID, node.Span, TypeOK)
+	scope := e.scopeGraph.NodeScope(node.ID)
+	e.env.bindInScope(scope, node.ID, fun.Name.Name, funTypeID)
+	e.env.setNamedFunRef(node.ID, fun.Name.Name)
+	return true
 }
 
 func (e *Engine) expandMacros(nodeID ast.NodeID, module *ast.Module) ([]ast.NodeID, bool) {
@@ -115,6 +125,8 @@ func (e *Engine) expandMacroCall(
 		panic(base.Errorf("macro expander not set"))
 	}
 	macroModule := base.Cast[ast.Module](e.ast.Node(macroModuleNodeID).Kind)
+	calleeNode := e.ast.Node(call.Callee)
+	funName := base.Cast[ast.Path](calleeNode.Kind).Segments[1]
 	macroSource := e.macroModuleSource(macroModuleNodeID)
 	if macroSource == "" {
 		e.diag(span, "could not read macro module source")
@@ -129,7 +141,7 @@ func (e *Engine) expandMacroCall(
 		}
 		args[i] = arg
 	}
-	expandedSource, err := e.macroExpander(macroSource, args)
+	expandedSource, err := e.macroExpander(macroSource, funName, args)
 	if err != nil {
 		e.diag(span, "macro expansion failed: %s", err)
 		return nil, false

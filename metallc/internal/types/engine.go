@@ -28,7 +28,7 @@ type UnionWork struct {
 	Env    *TypeEnv
 }
 
-type MacroExpander func(macroSource string, args []macros.MacroArg) (expandedSource string, err error)
+type MacroExpander func(macroSource string, funName string, args []macros.MacroArg) (expandedSource string, err error)
 
 type Engine struct {
 	*EngineCore

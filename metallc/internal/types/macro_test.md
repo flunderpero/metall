@@ -11,70 +11,30 @@ fun apply(sb &mut StrBuilder, @a Arena) void {
 }
 ```
 
-```module.bad_macro
-fun apply(sb &mut StrBuilder) void {
-    sb.str("nope")
-}
+```module.no_macro_funs_macro
+fun helper(x Int) Int { x }
 ```
 
-```module.multi_decl_macro
-struct Oops { x Int }
-fun apply(sb &mut StrBuilder, @a Arena) void {
-    sb.str("nope")
-}
-```
-
-```module.no_apply_macro
-fun something(sb &mut StrBuilder, @a Arena) void {
-    sb.str("nope")
+```module.param_macro
+fun apply(n Int, sb &mut StrBuilder, @a Arena) void {
+    sb.str("fun value() Int { ").int(n).str(" }")
 }
 ```
 
 ## Errors
 
-**macro module without apply function**
+**macro module without macro functions**
 
 ```metall
-use local::no_apply_macro
+use local::no_macro_funs_macro
 
 fun main() void {}
 ```
 
 ```error
-local/no_apply_macro.met:1:1: macro modules must contain an `apply` function
-    fun something(sb &mut StrBuilder, @a Arena) void {
-    ^
-        sb.str("nope")
-    }
-    ^
-```
-
-**macro module with non-apply declaration**
-
-```metall
-use local::multi_decl_macro
-
-fun main() void {}
-```
-
-```error
-```
-
-**macro module missing sb and @a params**
-
-```metall
-use local::bad_macro
-
-fun main() void {}
-```
-
-```error
-local/bad_macro.met:1:1: macro `apply` must have at least `sb &mut StrBuilder` and `@a Arena` parameters
-    fun apply(sb &mut StrBuilder) void {
-    ^
-        sb.str("nope")
-    }
-    ^
+local/no_macro_funs_macro.met:1:1: macro modules must contain at least one macro function
+    fun helper(x Int) Int { x }
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
 **non-macro call at top level**
@@ -113,6 +73,48 @@ test.met:3:1: macro expansion failed: compilation failed
     
     hello_macro::apply()
     ^^^^^^^^^^^^^^^^^^^^
+```
+
+**non-literal macro argument**
+
+```metall
+use local::param_macro
+
+fun main() void {
+    let x = 1
+    param_macro::apply(x)
+}
+```
+
+```expander
+```
+
+```error
+test.met:5:24: macro arguments must be compile-time constants
+        let x = 1
+        param_macro::apply(x)
+                           ^
+    }
+```
+
+**macro expansion producing invalid code**
+
+```metall
+use local::hello_macro
+
+hello_macro::apply()
+
+fun main() void {}
+```
+
+```expander
+this is not valid metall code }{][
+```
+
+```error
+local/hello_macro.met.expanded:1:6: unexpected token: <is>
+    this is not valid metall code }{][
+         ^^
 ```
 
 ## Success

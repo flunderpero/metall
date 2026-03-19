@@ -16,11 +16,9 @@ import (
 var macroModuleContents = map[string]string{} //nolint:gochecknoglobals
 
 var macroModuleFilePaths = map[string]string{ //nolint:gochecknoglobals
-	"hello_macro":      "local/hello_macro.met",
-	"broken_macro":     "local/broken_macro.met",
-	"bad_macro":        "local/bad_macro.met",
-	"no_apply_macro":   "local/no_apply_macro.met",
-	"multi_decl_macro": "local/multi_decl_macro.met",
+	"hello_macro":         "local/hello_macro.met",
+	"no_macro_funs_macro": "local/no_macro_funs_macro.met",
+	"param_macro":         "local/param_macro.met",
 }
 
 func TestMacroMD(t *testing.T) {
@@ -67,12 +65,12 @@ func runMacroTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[stri
 	var expander MacroExpander
 	if expanderOutput, ok := tc.Want["expander"]; ok {
 		results["expander"] = expanderOutput
-		expander = func(_ string, _ []macros.MacroArg) (string, error) {
+		expander = func(_ string, _ string, _ []macros.MacroArg) (string, error) {
 			return expanderOutput, nil
 		}
 	} else if _, ok := tc.Want["expander_error"]; ok {
 		results["expander_error"] = tc.Want["expander_error"]
-		expander = func(_ string, _ []macros.MacroArg) (string, error) {
+		expander = func(_ string, _ string, _ []macros.MacroArg) (string, error) {
 			return "", fmt.Errorf("%s", tc.Want["expander_error"])
 		}
 	}
