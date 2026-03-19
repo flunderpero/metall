@@ -65,10 +65,9 @@ func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
 	return true
 }
 
-func (e *Engine) expandMacros(nodeID ast.NodeID, module *ast.Module) ([]ast.NodeID, bool) {
+func (e *Engine) expandMacrosInModule(nodeID ast.NodeID, module *ast.Module) ([]ast.NodeID, bool) {
 	var allDecls []ast.NodeID
 	var newDecls []ast.NodeID
-	expanded := false
 	for _, declNodeID := range module.Decls {
 		node := e.ast.Node(declNodeID)
 		call, ok := node.Kind.(ast.Call)
@@ -76,7 +75,7 @@ func (e *Engine) expandMacros(nodeID ast.NodeID, module *ast.Module) ([]ast.Node
 			allDecls = append(allDecls, declNodeID)
 			continue
 		}
-		isMacro, macroModuleNodeID := e.isMacroCall(nodeID, call)
+		isMacro, macroModuleNodeID := e.isMacroCall(call)
 		if !isMacro {
 			e.diag(node.Span, "only macro calls are allowed at the top level")
 			return nil, false
@@ -87,16 +86,44 @@ func (e *Engine) expandMacros(nodeID ast.NodeID, module *ast.Module) ([]ast.Node
 		}
 		allDecls = append(allDecls, macroDecls...)
 		newDecls = append(newDecls, macroDecls...)
-		expanded = true
 	}
-	if expanded {
+	if len(newDecls) > 0 {
 		module.Decls = allDecls
 		e.ast.Node(nodeID).Kind = *module
 	}
 	return newDecls, true
 }
 
-func (e *Engine) isMacroCall(moduleNodeID ast.NodeID, call ast.Call) (bool, ast.NodeID) {
+func (e *Engine) expandMacrosInBlock(blockNodeID ast.NodeID, block *ast.Block) ([]ast.NodeID, bool) {
+	var allExprs []ast.NodeID
+	var newDecls []ast.NodeID
+	for _, exprNodeID := range block.Exprs {
+		node := e.ast.Node(exprNodeID)
+		call, ok := node.Kind.(ast.Call)
+		if !ok {
+			allExprs = append(allExprs, exprNodeID)
+			continue
+		}
+		isMacro, macroModuleNodeID := e.isMacroCall(call)
+		if !isMacro {
+			allExprs = append(allExprs, exprNodeID)
+			continue
+		}
+		macroDecls, ok := e.expandMacroCall(blockNodeID, call, node.Span, macroModuleNodeID)
+		if !ok {
+			return nil, false
+		}
+		allExprs = append(allExprs, macroDecls...)
+		newDecls = append(newDecls, macroDecls...)
+	}
+	if len(newDecls) > 0 {
+		block.Exprs = allExprs
+		e.ast.Node(blockNodeID).Kind = *block
+	}
+	return newDecls, true
+}
+
+func (e *Engine) isMacroCall(call ast.Call) (bool, ast.NodeID) {
 	calleeNode := e.ast.Node(call.Callee)
 	path, ok := calleeNode.Kind.(ast.Path)
 	if !ok || len(path.Segments) != 2 {
@@ -111,7 +138,8 @@ func (e *Engine) isMacroCall(moduleNodeID ast.NodeID, call ast.Call) (bool, ast.
 	if !ok || !modType.Macro {
 		return false, 0
 	}
-	importedModuleNodeID, ok := e.moduleResolution.Imports[moduleNodeID][moduleName]
+	moduleNode, _ := e.moduleOf(call.Callee)
+	importedModuleNodeID, ok := e.moduleResolution.Imports[moduleNode.ID][moduleName]
 	if !ok {
 		return false, 0
 	}

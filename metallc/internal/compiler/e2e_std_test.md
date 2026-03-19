@@ -192,3 +192,26 @@ fun main() void {
 ```output
 Point{x=10, y=20}
 ```
+
+**macro inside function body**
+
+```metall
+use std::comp
+use std::io
+use local::fmtstr_macro
+
+struct Pair { a Str b Int }
+
+fun main() void {
+    fmtstr_macro::gen_fmt_str(comp::type_of<Pair>())
+
+    let @a = Arena()
+    let sb = StrBuilder.new(256, @a)
+    Pair("hello", 42).fmt_str(sb)
+    io::println(sb.to_str())
+}
+```
+
+```output
+Pair{a=hello, b=42}
+```

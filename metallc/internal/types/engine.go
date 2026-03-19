@@ -148,7 +148,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Unary:
 		typeID, status = e.checkUnary(nodeKind)
 	case ast.Block:
-		typeID, status = e.checkBlock(nodeKind, typeHint)
+		typeID, status = e.checkBlock(nodeID, nodeKind, typeHint)
 	case ast.Call:
 		typeID, status = e.checkCall(nodeKind, nodeID, node.Span)
 	case ast.Deref:
@@ -359,11 +359,17 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 	}
 }
 
-func (e *Engine) checkBlock(block ast.Block, typeHint *TypeID) (TypeID, TypeStatus) {
+func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *TypeID) (TypeID, TypeStatus) {
 	if len(block.Exprs) == 0 {
 		return e.voidTyp, TypeOK
 	}
-	e.forwardDeclare(block.Exprs)
+	e.forwardDeclareTypes(block.Exprs)
+	newDeclIDs, ok := e.expandMacrosInBlock(blockNodeID, &block)
+	if !ok {
+		return InvalidTypeID, TypeFailed
+	}
+	e.forwardDeclareTypes(newDeclIDs)
+	e.forwardDeclareFuns(block.Exprs)
 	depFailed := false
 	var lastExprTypeID TypeID
 	var status TypeStatus
@@ -1040,7 +1046,7 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 		return InvalidTypeID, status
 	}
 	e.forwardDeclareTypes(module.Decls)
-	newDeclIDs, ok := e.expandMacros(nodeID, &module)
+	newDeclIDs, ok := e.expandMacrosInModule(nodeID, &module)
 	if !ok {
 		return InvalidTypeID, TypeFailed
 	}
