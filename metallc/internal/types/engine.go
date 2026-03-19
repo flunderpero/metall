@@ -837,14 +837,11 @@ func (e *Engine) resolveMethod( //nolint:funlen
 		e.env.TypeDisplay(targetTyp.ID),
 		nodeID,
 	)
-	if tpt, ok := targetTyp.Kind.(TypeParamType); ok && tpt.Shape == nil {
-		return InvalidTypeID, TypeFailed, false
-	}
-	if _, ok := targetTyp.Kind.(FunType); ok {
-		return InvalidTypeID, TypeFailed, false
-	}
 	methodName := fieldAccess.Field.Name
-	lookupName := e.env.typeName(targetTyp) + "." + methodName
+	lookupName, ok := e.env.methodFQN(targetTyp, methodName)
+	if !ok {
+		return InvalidTypeID, TypeFailed, false
+	}
 	binding, ok := e.lookup(nodeID, lookupName)
 	if !ok {
 		binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
@@ -1283,7 +1280,12 @@ func (e *Engine) resolveMethodBindName(
 		e.diag(span, "method receiver type not found: %s", structName)
 		return "", false
 	}
-	return e.env.typeName(e.env.Type(binding.TypeID)) + "." + methodName, true
+	fqn, ok := e.env.methodFQN(e.env.Type(binding.TypeID), methodName)
+	if !ok {
+		e.diag(span, "type %s cannot have methods", structName)
+		return "", false
+	}
+	return fqn, true
 }
 
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {

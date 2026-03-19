@@ -5922,6 +5922,123 @@ fun05   = fun(K) Int
 fun06   = fun(Int) Int
 ```
 
+**Type param with superset shape constraint satisfies subset shape**
+
+```metall
+{
+    shape FmtStr {
+        fun FmtStr.fmt_str(self FmtStr, x Int) Int
+    }
+    shape EqFmtStr {
+        fun EqFmtStr.eq(self EqFmtStr, other EqFmtStr) Bool
+        fun EqFmtStr.fmt_str(self EqFmtStr, x Int) Int
+    }
+    fun Int.fmt_str(i Int, x Int) Int { i + x }
+    fun Int.eq(i Int, other Int) Bool { true }
+    fun format<T FmtStr>(t T, x Int) Int { t.fmt_str(x) }
+    fun compare_and_format<T EqFmtStr>(a T, b T, x Int) Int {
+        if a.eq(b) { format<T>(a, x) } else { 0 }
+    }
+    compare_and_format<Int>(1, 2, 3)
+}
+```
+
+```types
+Block: Int
+  Shape: shape01
+    FunDecl: ?
+      FunParam: shape01
+        SimpleType: shape01
+      FunParam: Int
+        SimpleType: Int
+      SimpleType: Int
+  Shape: shape02
+    FunDecl: ?
+      FunParam: shape02
+        SimpleType: shape02
+      FunParam: shape02
+        SimpleType: shape02
+      SimpleType: Bool
+    FunDecl: ?
+      FunParam: shape02
+        SimpleType: shape02
+      FunParam: Int
+        SimpleType: Int
+      SimpleType: Int
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Ident: Int
+        Ident: Int
+  Fun: fun02
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Bool
+    Block: Bool
+      Bool: Bool
+  Fun: fun03
+    TypeParam: T
+      SimpleType: shape01
+    FunParam: T
+      SimpleType: T
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Int
+    Block: Int
+      Call: Int
+        FieldAccess: fun04
+          Ident: T
+        Ident: Int
+  Fun: fun05
+    TypeParam: T
+      SimpleType: shape02
+    FunParam: T
+      SimpleType: T
+    FunParam: T
+      SimpleType: T
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Int
+    Block: Int
+      If: Int
+        Call: Bool
+          FieldAccess: fun06
+            Ident: T
+          Ident: T
+        Block: Int
+          Call: Int
+            Ident: fun07
+              SimpleType: T
+            Ident: T
+            Ident: Int
+        Block: Int
+          Int: Int
+  Call: Int
+    Ident: fun08
+      SimpleType: Int
+    Int: Int
+    Int: Int
+    Int: Int
+---
+shape01 = FmtStr {  }
+shape02 = EqFmtStr {  }
+fun01   = fun(Int, Int) Int
+fun02   = fun(Int, Int) Bool
+fun03   = fun(T, Int) Int
+fun04   = fun(T, Int) Int
+fun05   = fun(T, T, Int) Int
+fun06   = fun(T, T) Bool
+fun07   = fun(T, Int) Int
+fun08   = fun(Int, Int, Int) Int
+```
+
 **Shape satisfied by generic struct**
 
 ```metall
@@ -7853,5 +7970,41 @@ test.met:1:36: symbol already defined: S.foo
     { shape S { fun S.foo(s S) Int fun S.foo(s S) Str } }
                                        ^^^^^
 ```
+
+**Cannot call method on function type**
+
+```metall
+{
+    fun foo() void {}
+    foo.bar()
+}
+```
+
+```error
+test.met:3:5: cannot access field on non-struct type: fun() void
+        fun foo() void {}
+        foo.bar()
+        ^^^
+    }
+```
+
+**Cannot call method on void**
+
+```metall
+{
+    fun foo() void {}
+    foo().bar()
+}
+```
+
+```error
+test.met:3:5: cannot access field on non-struct type: void
+        fun foo() void {}
+        foo().bar()
+        ^^^^^
+    }
+```
+
+
 
 

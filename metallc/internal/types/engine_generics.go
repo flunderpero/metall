@@ -442,7 +442,10 @@ func (e *Engine) inferMethodCallBinding(
 		return nil, false
 	}
 	methodName := fieldAccess.Field.Name
-	lookupName := e.env.typeName(targetTyp) + "." + methodName
+	lookupName, ok := e.env.methodFQN(targetTyp, methodName)
+	if !ok {
+		return nil, false
+	}
 	binding, ok := e.lookup(calleeNodeID, lookupName)
 	if !ok {
 		binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
@@ -453,8 +456,10 @@ func (e *Engine) inferMethodCallBinding(
 		); isStructOrUnion &&
 			len(structOrUnion.TypeArgs) > 0 {
 			if originID, hasOrigin := e.env.GenericOrigin(targetTypeID); hasOrigin {
-				originName := e.env.typeName(e.env.Type(originID))
-				lookupName = originName + "." + methodName
+				lookupName, ok = e.env.methodFQN(e.env.Type(originID), methodName)
+				if !ok {
+					return nil, false
+				}
 				binding, ok = e.lookup(calleeNodeID, lookupName)
 				if !ok {
 					binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
@@ -607,12 +612,14 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 		return true
 	}
 	concreteDisplay := e.env.TypeDisplay(concreteTypeID)
-	// For method lookup we need the scope-resolvable name. For monomorphized
-	// generics (e.g. Pair<Str, Int>) methods are defined on the generic type
-	// (Pair), so we look up via the origin type's name.
-	methodLookupName := e.env.typeName(concreteTyp)
+	// Only types with a named method namespace can satisfy a shape.
+	methodLookupTyp := concreteTyp
+	if _, ok := e.env.methodFQN(concreteTyp, ""); !ok {
+		e.diag(span, "type %s cannot satisfy shape %s", concreteDisplay, shapeType.DeclName)
+		return false
+	}
 	if originID, ok := e.env.GenericOrigin(concreteTypeID); ok {
-		methodLookupName = e.env.typeName(e.env.Type(originID))
+		methodLookupTyp = e.env.Type(originID)
 	}
 	// Field requirements need a StructType.
 	if len(shapeType.Fields) > 0 {
@@ -660,7 +667,7 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 	for _, funDeclNodeID := range shapeNode.Funs {
 		funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
 		_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
-		fullMethodName := methodLookupName + "." + methodName
+		fullMethodName, _ := e.env.methodFQN(methodLookupTyp, methodName)
 		binding, ok := e.lookup(scopeNodeID, fullMethodName)
 		if !ok {
 			binding, ok = e.lookupInTypeModule(concreteTyp, fullMethodName)
@@ -681,6 +688,13 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 		}
 		shapeFunType := base.Cast[FunType](e.env.Type(shapeFunBinding.TypeID).Kind)
 		expectedFunType := e.env.substituteFunType(shapeFunType, shapeTypeID, concreteTypeID)
+		// When the concrete type is a type parameter constrained by a different
+		// shape, the concrete method's signature has the constraint shape as self.
+		// Substitute it with concreteTypeID to match the expected signature.
+		var methodLookupShapeID *TypeID
+		if tpt, ok := concreteTyp.Kind.(TypeParamType); ok && tpt.Shape != nil && *tpt.Shape != shapeTypeID {
+			methodLookupShapeID = tpt.Shape
+		}
 		// When the method is a generic function on a generic type, instantiate
 		// it with the type's type args to get the concrete signature.
 		methodFunNode, isFun := e.ast.Node(binding.Decl).Kind.(ast.Fun)
@@ -696,6 +710,9 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 				return false
 			}
 			concreteFunType := base.Cast[FunType](e.env.Type(methodTypeID).Kind)
+			if methodLookupShapeID != nil {
+				concreteFunType = e.env.substituteFunType(concreteFunType, *methodLookupShapeID, concreteTypeID)
+			}
 			if !expectedFunType.Equal(concreteFunType) {
 				e.diag(span,
 					"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
@@ -705,6 +722,9 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 			}
 		} else {
 			concreteFunType := base.Cast[FunType](e.env.Type(binding.TypeID).Kind)
+			if methodLookupShapeID != nil {
+				concreteFunType = e.env.substituteFunType(concreteFunType, *methodLookupShapeID, concreteTypeID)
+			}
 			if !expectedFunType.Equal(concreteFunType) {
 				e.diag(span,
 					"type %s does not satisfy shape %s: method %s has signature %s, expected %s",

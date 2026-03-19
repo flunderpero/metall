@@ -517,28 +517,33 @@ func (e *TypeEnv) substituteFunType(funType FunType, searchTypeID, replaceTypeID
 	return result
 }
 
-func (e *TypeEnv) typeName(typ *Type) string {
+// methodFQN returns the fully qualified name used to look up a method on this type.
+// Returns false for types that cannot have methods (e.g. FunType, SliceType).
+func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
+	var ns string
 	switch kind := typ.Kind.(type) {
 	case ModuleType:
-		return kind.Name
+		ns = kind.Name
 	case StructType:
-		return kind.Name
+		ns = kind.Name
 	case UnionType:
-		return kind.Name
+		ns = kind.Name
 	case IntType:
-		return kind.Name
+		ns = kind.Name
 	case BoolType:
-		return "Bool"
+		ns = "Bool"
 	case AllocatorType:
-		return "Arena"
+		ns = "Arena"
 	case TypeParamType:
 		if kind.Shape != nil {
-			return base.Cast[ShapeType](e.Type(*kind.Shape).Kind).DeclName
+			ns = base.Cast[ShapeType](e.Type(*kind.Shape).Kind).DeclName
+		} else {
+			return "", false
 		}
-		panic(base.Errorf("typeName: unconstrained type parameter"))
 	default:
-		panic(base.Errorf("typeName: unsupported type kind: %T", typ.Kind))
+		return "", false
 	}
+	return ns + "." + method, true
 }
 
 func funTypeCacheKey(typ FunType) string {
