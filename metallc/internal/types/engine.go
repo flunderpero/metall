@@ -35,15 +35,16 @@ type Engine struct {
 	moduleResolution *modules.ModuleResolution
 	macroExpander    MacroExpander
 
-	loopStack []ast.NodeID
-	funStack  []TypeID
-	typeHint  *TypeID
-	voidTyp   TypeID
-	boolTyp   TypeID
-	strTyp    TypeID
-	runeTyp   TypeID
-	arenaTyp  TypeID
-	intTyp    TypeID
+	loopStack          []ast.NodeID
+	funStack           []TypeID
+	typeHint           *TypeID
+	instantiationScope *ast.NodeID
+	voidTyp            TypeID
+	boolTyp            TypeID
+	strTyp             TypeID
+	runeTyp            TypeID
+	arenaTyp           TypeID
+	intTyp             TypeID
 }
 
 func NewEngine(
@@ -843,6 +844,9 @@ func (e *Engine) resolveMethod( //nolint:funlen
 		return InvalidTypeID, TypeFailed, false
 	}
 	binding, ok := e.lookup(nodeID, lookupName)
+	if !ok && e.instantiationScope != nil {
+		binding, ok = e.lookup(*e.instantiationScope, lookupName)
+	}
 	if !ok {
 		binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
 	}

@@ -594,7 +594,10 @@ func (e *Engine) instantiateFunWithTypeArgs(
 	e.env.reg.genericOrigin[funTypeID] = genericTypeID
 	if !funNode.Extern {
 		e.funs[mangledName] = FunWork{NodeID: funNodeID, TypeID: funTypeID, Name: mangledName, Env: e.env}
+		prevScope := e.instantiationScope
+		e.instantiationScope = &callSiteNodeID
 		e.checkFunBody(funNode, funTypeID, funTyp)
+		e.instantiationScope = prevScope
 	}
 	return funTypeID, mangledName, TypeOK
 }

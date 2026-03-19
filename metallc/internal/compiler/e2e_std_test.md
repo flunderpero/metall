@@ -215,3 +215,30 @@ fun main() void {
 ```output
 Pair{a=hello, b=42}
 ```
+
+**shape impl for non-top-level struct**
+
+```metall
+use std::io
+
+shape Eq {
+    fun Eq.eq(a Eq, b Eq) Bool
+}
+
+fun assert_eq<T Eq>(a T, b T) void {
+    if a.eq(b) { io::println("equal") } else { io::println("not equal") }
+}
+
+fun main() void {
+    struct Point { x Int y Int }
+    fun Point.eq(a Point, b Point) Bool { a.x == b.x and a.y == b.y }
+
+    assert_eq(Point(1, 2), Point(1, 2))
+    assert_eq(Point(1, 2), Point(3, 4))
+}
+```
+
+```output
+equal
+not equal
+```
