@@ -82,6 +82,7 @@ type IRFunGen struct {
 	blockAllocatorRegs []string
 	loopStack          []LoopLabels
 	astCode            map[ast.NodeID]string
+	entryAllocas       strings.Builder
 }
 
 func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
@@ -226,7 +227,7 @@ func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 	arrTyp := base.Cast[types.ArrayType](g.typeOfNode(id).Kind)
 	arrIRType := g.irTypeOfNode(id)
 	reg := g.reg()
-	g.write("%s = alloca %s", reg, arrIRType)
+	g.writeAlloca(reg, arrIRType)
 	g.setCode(id, reg)
 	for i, elem := range lit.Elems {
 		ptrReg := g.reg()
@@ -238,7 +239,7 @@ func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 
 func (g *IRFunGen) genEmptySlice(id ast.NodeID) {
 	reg := g.reg()
-	g.write("%s = alloca {ptr, i64}", reg)
+	g.writeAlloca(reg, "{ptr, i64}")
 	g.write("store {ptr, i64} zeroinitializer, ptr %s", reg)
 	g.setCode(id, reg)
 }
@@ -347,7 +348,7 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 	lenReg := g.reg()
 	g.write("%s = sub i64 %s, %s", lenReg, hiReg, loReg)
 	// Build {ptr, i64} on the stack.
-	g.write("%s = alloca {ptr, i64}", reg)
+	g.writeAlloca(reg, "{ptr, i64}")
 	g.write(
 		"%s_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0",
 		reg, reg,
@@ -375,7 +376,7 @@ func (g *IRFunGen) genTypeConstructionOnStack(id ast.NodeID, lit ast.TypeConstru
 	}
 	irTyp := g.irType(targetTyp.ID)
 	reg := g.reg()
-	g.write("%s = alloca %s", reg, irTyp)
+	g.writeAlloca(reg, irTyp)
 	g.genStructConstructionFields(id, lit, reg)
 }
 
@@ -398,7 +399,7 @@ func (g *IRFunGen) genUnionConstruction(
 	}
 	unionIRType := g.irType(unionTypeID)
 	reg := g.reg()
-	g.write("%s = alloca %s", reg, unionIRType)
+	g.writeAlloca(reg, unionIRType)
 	tagPtr := g.reg()
 	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, unionIRType, reg)
 	g.write("store i64 %d, ptr %s", tag, tagPtr)
@@ -424,7 +425,7 @@ func (g *IRFunGen) genUnionAutoWrap(id ast.NodeID, unionTypeID types.TypeID) {
 	}
 	unionIRType := g.irType(unionTypeID)
 	reg := g.reg()
-	g.write("%s = alloca %s", reg, unionIRType)
+	g.writeAlloca(reg, unionIRType)
 	tagPtr := g.reg()
 	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, unionIRType, reg)
 	g.write("store i64 %d, ptr %s", tag, tagPtr)
@@ -468,7 +469,7 @@ func (g *IRFunGen) genArenaSlice(id ast.NodeID, call ast.Call, fa ast.FieldAcces
 		valReg := g.lookupCode(call.Args[1])
 		g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, sliceType.Elem, lenReg, nil)
 	}
-	g.write("%s = alloca {ptr, i64}", reg)
+	g.writeAlloca(reg, "{ptr, i64}")
 	g.write("%s_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", reg, reg)
 	g.write("store ptr %s_data, ptr %s_ptr_field", reg, reg)
 	g.write("%s_len_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", reg, reg)
@@ -686,7 +687,17 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	if len(astFun.Params) > 0 {
 		g.write(paramAllocas.String())
 	}
+	// Record where to insert entry-block allocas that are collected during
+	// body code generation.
+	entryAllocaInsertPos := g.sb.Len()
 	g.Gen(astFun.Block)
+	if g.entryAllocas.Len() > 0 {
+		ir := g.sb.String()
+		g.sb.Reset()
+		g.sb.WriteString(ir[:entryAllocaInsertPos])
+		g.sb.WriteString(g.entryAllocas.String())
+		g.sb.WriteString(ir[entryAllocaInsertPos:])
+	}
 	// Write the result of the block into the ret reg.
 	lastCode := g.lookupCode(astFun.Block)
 	if retIRTyp != "void" && !bodyHasReturn {
@@ -781,7 +792,7 @@ func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
 		hiReg = incReg
 	}
 	counterReg := g.reg()
-	g.write("%s = alloca i64", counterReg)
+	g.writeAlloca(counterReg, "i64")
 	g.write("store i64 %s, ptr %s", loReg, counterReg)
 	g.setSymbol(forNode.Body, forNode.Binding.Name, counterReg, "i64")
 	labelCond := g.label("for", id)
@@ -1064,7 +1075,7 @@ func (g *IRFunGen) genMatchBinding(bindNode ast.NodeID, name string, typeID type
 		return
 	}
 	allocReg := g.reg()
-	g.write("%s = alloca %s", allocReg, irTyp)
+	g.writeAlloca(allocReg, irTyp)
 	g.write("store %s %s, ptr %s", irTyp, valReg, allocReg)
 	g.setSymbol(bindNode, name, allocReg, irTyp)
 }
@@ -1344,7 +1355,7 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		g.setCode(id, "void")
 	} else if isRetAggregate {
 		resReg = g.reg()
-		g.write("%s = alloca %s", resReg, g.irType(fun.Return))
+		g.writeAlloca(resReg, g.irType(fun.Return))
 		g.setCode(id, resReg)
 	} else {
 		reg := g.reg()
@@ -1506,7 +1517,7 @@ func (g *IRFunGen) genDeref(id ast.NodeID, deref ast.Deref) {
 
 func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 	reg := g.reg()
-	g.write("%s = alloca %%struct.Arena", reg)
+	g.writeAlloca(reg, "%struct.Arena")
 	g.write("call void @arena_create(ptr %s)", reg)
 	g.blockAllocatorRegs = append(g.blockAllocatorRegs, reg)
 	g.setCode(id, reg)
@@ -1534,7 +1545,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 			} else {
 				irTyp := g.irType(exprTypeID)
 				reg := g.reg()
-				g.write("%s = alloca %s", reg, irTyp)
+				g.writeAlloca(reg, irTyp)
 				tmp := g.reg()
 				g.write("%s = load %s, ptr %s", tmp, irTyp, exprReg)
 				g.write("store %s %s, ptr %s", irTyp, tmp, reg)
@@ -1546,7 +1557,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 	}
 	reg := g.reg()
 	typ := g.irType(exprTypeID)
-	g.write("%s = alloca %s", reg, typ)
+	g.writeAlloca(reg, typ)
 	g.write("store %s %s, ptr %s", typ, exprReg, reg)
 	g.setCode(id, reg)
 	g.setSymbol(id, v.Name.Name, reg, typ)
@@ -1803,6 +1814,11 @@ func indexOfStructField(s types.StructType, name string) int {
 		}
 	}
 	panic(base.Errorf("field %q not found in struct %q", name, s.Name))
+}
+
+// writeAlloca emits an alloca into the function's entry block.
+func (g *IRFunGen) writeAlloca(reg, irTyp string) {
+	fmt.Fprintf(&g.entryAllocas, "    %s = alloca %s\n", reg, irTyp)
 }
 
 type IROpts struct {
