@@ -1,0 +1,2 @@
+--- Return the source location of the call site as a string. ---
+fun location() Str { "" }

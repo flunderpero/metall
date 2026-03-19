@@ -1331,6 +1331,11 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		g.setCode(id, "void")
 		return
 	}
+	if funName, ok := g.env.NamedFunRef(call.Callee); ok && funName == "std::debug.location" {
+		locReg := g.addStrConst(span.String())
+		g.setCode(id, locReg)
+		return
+	}
 	sb := strings.Builder{}
 	retType := g.env.Type(fun.Return)
 	isRetAggregate := g.isAggregateType(fun.Return)

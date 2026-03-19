@@ -242,3 +242,18 @@ fun main() void {
 equal
 not equal
 ```
+
+**debug location**
+
+```metall
+use std::debug
+use std::io
+
+fun main() void {
+    io::println(debug::location())
+}
+```
+
+```output
+test.met:5:17
+```
