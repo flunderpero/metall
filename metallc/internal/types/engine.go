@@ -805,7 +805,7 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		return typeID, status
 	}
 	switch targetTyp.Kind.(type) {
-	case StructType, UnionType, IntType, BoolType:
+	case StructType, UnionType, IntType, BoolType, AllocatorType:
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
 	case TypeParamType:
 		e.diag(
