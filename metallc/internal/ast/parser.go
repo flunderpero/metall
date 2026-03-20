@@ -1657,7 +1657,7 @@ func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {
 }
 
 func (p *Parser) next() (*token.Token, bool) {
-	if p.pos >= len(p.tokens) {
+	if p.pos >= len(p.tokens) || p.tokens[p.pos].Kind == token.EOF {
 		p.diagnostic(p.span(), "unexpected end of file")
 		return nil, false
 	}
@@ -1667,7 +1667,7 @@ func (p *Parser) next() (*token.Token, bool) {
 }
 
 func (p *Parser) mayPeek() (*token.Token, bool) {
-	if p.pos >= len(p.tokens) {
+	if p.pos >= len(p.tokens) || p.tokens[p.pos].Kind == token.EOF {
 		return nil, false
 	}
 	return &p.tokens[p.pos], true
@@ -1691,7 +1691,7 @@ func (p *Parser) isMatchElse() bool {
 // The grammar is LL(1)-equivalent (can be left-factored), but a bounded
 // 2-token lookahead is sometimes more practical.
 func (p *Parser) mayPeek1() (*token.Token, bool) {
-	if p.pos+1 >= len(p.tokens) {
+	if p.pos+1 >= len(p.tokens) || p.tokens[p.pos+1].Kind == token.EOF {
 		return nil, false
 	}
 	return &p.tokens[p.pos+1], true

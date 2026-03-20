@@ -407,5 +407,10 @@ func Lex(source *base.Source) []Token {
 		tokens = append(tokens, token)
 		idx = token.Span.End + 1
 	}
+	end := len(source.Content)
+	if end > 0 {
+		end--
+	}
+	tokens = append(tokens, Token{EOF, "", base.NewSpan(source, end, end)})
 	return tokens
 }

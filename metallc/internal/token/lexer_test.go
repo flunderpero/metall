@@ -195,7 +195,8 @@ func TestLexer(t *testing.T) {
 				assert.Equal(want.val, token.Value, "value"+msg)
 				assert.Equal(want.pos, pos, "span"+msg)
 			}
-			assert.Equal(len(tokens), len(tt.want))
+			assert.Equal(len(tokens)-1, len(tt.want)) // -1 for trailing EOF
+			assert.Equal(EOF, tokens[len(tokens)-1].Kind, "last token should be EOF")
 		})
 	}
 }

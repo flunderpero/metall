@@ -279,9 +279,10 @@ fun U64.fmt_str(i U64, sb &mut StrBuilder) void { sb.u64(i) }
 fun U32.fmt_str(i U32, sb &mut StrBuilder) void { sb.u32(i) }
 fun U16.fmt_str(i U16, sb &mut StrBuilder) void { sb.u16(i) }
 fun U8.fmt_str(i U8, sb &mut StrBuilder) void { sb.u8(i) }
+fun Rune.fmt_str(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
 fun Bool.fmt_str(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
 
---- Something that represents the absence of something ---
+--- None represents the absence of something. ---
 -- struct None {}
 
 fun None.fmt_str(n None, sb &mut StrBuilder) void { sb.str("<none>") }
@@ -289,15 +290,26 @@ fun None.fmt_str(n None, sb &mut StrBuilder) void { sb.str("<none>") }
 --- Option represents a value that is either present or not. ---
 -- union Option<T> = T | None
 
-fun Option.fmt_str<T>(o Option<T>, sb &mut StrBuilder) void {
+fun Option.fmt_str<T FmtStr>(o Option<T>, sb &mut StrBuilder) void {
     match o {
-        --- todo: We should find the possiblity to have a .fmt_str method
-                  for Option<T> and Option<T FmtStr> or have a way
-                  to type guard against it. All functions are monomorphized
-                  so we know *at compile time* what T actually is. ---
-        case T: sb.str("<some>")
+        case T t: sb.fmt(t)
         case None n: sb.fmt(n)
     } 
+}
+
+fun Option.eq<T Eq>(o Option<T>, other Option<T>) Bool {
+    match o {
+    case None:
+        match other {
+            case None: true
+            else: false
+        }
+    else t:
+        match other {
+            case None: false
+            else ot: t.eq(ot)
+        } 
+    }
 }
 
 --- An error type. You are free to use anything as error. ---
@@ -310,9 +322,49 @@ fun Err.fmt_str(e Err, sb &mut StrBuilder) void {
 --- A result type. Use this to distinct between "success" and "error" ---
 -- union Result<T> = T | Err
 
-fun Result.fmt_str<T>(r Result<T>, sb &mut StrBuilder) void {
+fun Result.fmt_str<T FmtStr>(r Result<T>, sb &mut StrBuilder) void {
     match r {
-        case T: sb.str("<ok>")
+        case T t: sb.fmt(t)
         case Err: sb.str("<error>")
     }
 }
+
+--- Equality ---
+shape Eq {
+    fun Eq.eq(e Eq, other Eq) Bool
+}
+
+--- Compute a hash for use in maps and sets ---
+shape Hash {
+    fun Hash.hash(v Hash) U64
+    fun Hash.eq(v Hash, other Hash) Bool
+}
+
+fun Str.hash(s Str) U64 {
+    mut state = U64(0)
+    for i in 0..s.data.len {
+        state = state ^ s.data[i].to_u64()
+        state = state * 5871781006564002453
+    }
+    state
+}
+fun I8.eq(i I8, other I8) Bool { i == other }
+fun I16.eq(i I16, other I16) Bool { i == other }
+fun I32.eq(i I32, other I32) Bool { i == other }
+fun Int.eq(i Int, other Int) Bool { i == other }
+fun U8.eq(u U8, other U8) Bool { u == other }
+fun U16.eq(u U16, other U16) Bool { u == other }
+fun U32.eq(u U32, other U32) Bool { u == other }
+fun U64.eq(u U64, other U64) Bool { u == other }
+fun Rune.eq(r Rune, other Rune) Bool { r == other }
+fun Bool.eq(b Bool, other Bool) Bool { b == other }
+fun I8.hash(i I8) U64 { i.to_u64_wrapping() * 5871781006564002453 }
+fun I16.hash(i I16) U64 { i.to_u64_wrapping() * 5871781006564002453 }
+fun I32.hash(i I32) U64 { i.to_u64_wrapping() * 5871781006564002453 }
+fun Int.hash(i Int) U64 { i.to_u64_wrapping() * 5871781006564002453 }
+fun U8.hash(u U8) U64 { u.to_u64() * 5871781006564002453 }
+fun U16.hash(u U16) U64 { u.to_u64() * 5871781006564002453 }
+fun U32.hash(u U32) U64 { u.to_u64() * 5871781006564002453 }
+fun U64.hash(u U64) U64 { u * 5871781006564002453 }
+fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() * 5871781006564002453 }
+fun Bool.hash(b Bool) U64 { if b { 1 } else { 0 } }
