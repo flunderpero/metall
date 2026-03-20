@@ -60,10 +60,10 @@ fun quote(sb &mut StrBuilder) void {
     void
 }
 
-fun gen_fmt_str(info comp::Type, sb &mut StrBuilder, @a Arena) void {
+fun gen_fmt(info comp::Type, sb &mut StrBuilder, @a Arena) void {
     match info {
         case comp::StructType s: {
-            sb.str("fun ").str(s.name).str(".fmt_str(v ").str(s.name).str(", sb &mut StrBuilder) void {").nl()
+            sb.str("fun ").str(s.name).str(".fmt(v ").str(s.name).str(", sb &mut StrBuilder) void {").nl()
             sb.str("    sb.str(")
             quote(sb)
             sb.str(s.name).str("{")
@@ -178,13 +178,13 @@ use local::fmtstr_macro
 
 struct Point { x Int y Int }
 
-fmtstr_macro::gen_fmt_str(comp::type_of<Point>())
+fmtstr_macro::gen_fmt(comp::type_of<Point>())
 
 fun main() void {
     let @a = Arena()
     let sb = StrBuilder.new(256, @a)
     let p = Point(10, 20)
-    p.fmt_str(sb)
+    p.fmt(sb)
     io::println(sb.to_str())
 }
 ```
@@ -203,11 +203,11 @@ use local::fmtstr_macro
 struct Pair { a Str b Int }
 
 fun main() void {
-    fmtstr_macro::gen_fmt_str(comp::type_of<Pair>())
+    fmtstr_macro::gen_fmt(comp::type_of<Pair>())
 
     let @a = Arena()
     let sb = StrBuilder.new(256, @a)
-    Pair("hello", 42).fmt_str(sb)
+    Pair("hello", 42).fmt(sb)
     io::println(sb.to_str())
 }
 ```

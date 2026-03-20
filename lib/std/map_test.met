@@ -1,0 +1,128 @@
+use std::test
+use assert_ = std::assert
+use std::map
+use std::io
+
+-- A hash key type with a constant hash function.
+struct ConstantHash {
+    value Int
+}
+fun ConstantHash.eq(c ConstantHash, other ConstantHash) Bool { c.value == other.value }
+fun ConstantHash.hash(c ConstantHash) U64 { 1 }
+fun ConstantHash.fmt(c ConstantHash, sb &mut StrBuilder) void { sb.int(c.value)}
+
+fun main() void {
+    let @local = Arena()
+    let suite = test::suite("Map", @local)
+    suite.test("happy path", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut = map::Map.new<Int, Str>(4, @local)
+        try assert.eq(0, sut.len)
+        try assert.eq(4, sut.data.len)
+        try assert.eq(false, sut.has(1))
+
+        -- set
+        sut.set(1, "hello")
+        try assert.eq(1, sut.len)
+        try assert.eq("hello", try sut.get(1) else { return Err("key not found") })
+        try assert.eq(true, sut.has(1))
+
+        -- overwrite
+        sut.set(1, "there")
+        try assert.eq("there", try sut.get(1) else { return Err("key not found") })
+        try assert.eq(1, sut.len)
+
+        -- delete
+        try assert.eq(true, sut.del(1))
+        try assert.eq(false, sut.has(1))
+        try assert.eq(Option<Str>(None()), sut.get(1))
+        try assert.eq(0, sut.len)
+        try assert.eq(false, sut.del(1))
+        try assert.eq(Option<Str>(None()), sut.get(1))
+        try assert.eq(0, sut.len)
+    })
+    suite.test("linear probing", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut = map::Map.new<ConstantHash, Str>(3, @local)
+
+        sut.set(ConstantHash(1), "foo1")
+        try assert.eq(1, sut.len)
+        try assert.eq(3, sut.data.len)
+        try assert.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        -- should be stored in slot 1
+        try assert.eq(Option(ConstantHash(1)), sut.data[1].key())
+        try assert.eq<?Str>(sut.get(ConstantHash(123)), None())
+
+        sut.set(ConstantHash(2), "foo2")
+        try assert.eq(2, sut.len)
+        try assert.eq(3, sut.data.len)
+        try assert.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try assert.eq(sut.get(ConstantHash(2)), Option("foo2"))
+        -- should be stored in slot 2
+        try assert.eq(Option(ConstantHash(2)), sut.data[2].key())
+        try assert.eq<?Str>(sut.get(ConstantHash(123)), None())
+
+        sut.set(ConstantHash(3), "foo3")
+        try assert.eq(3, sut.len)
+        try assert.gt_int(sut.data.len, 3)
+        try assert.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try assert.eq(sut.get(ConstantHash(2)), Option("foo2"))
+        try assert.eq(sut.get(ConstantHash(3)), Option("foo3"))
+        -- should be stored in slot 3
+        try assert.eq(Option(ConstantHash(3)), sut.data[3].key())
+        try assert.eq<?Str>(sut.get(ConstantHash(123)), None())
+
+        -- delete entry
+        try assert.eq(true, sut.del(ConstantHash(2)))
+        try assert.eq(2, sut.len)
+        try assert.eq(true, sut.data[2].is_deleted())
+        try assert.eq(false, sut.has(ConstantHash(2)))
+        try assert.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try assert.eq(sut.get(ConstantHash(2)), Option<Str>(None()))
+        try assert.eq(sut.get(ConstantHash(3)), Option("foo3"))
+
+        -- re-add same entry
+        sut.set(ConstantHash(2), "foo2")
+        try assert.eq(true, sut.has(ConstantHash(2)))
+        try assert.eq(3, sut.len)
+        try assert.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try assert.eq(sut.get(ConstantHash(2)), Option("foo2"))
+        try assert.eq(sut.get(ConstantHash(3)), Option("foo3"))
+        -- should reuse slot 2
+        try assert.eq(Option(ConstantHash(2)), sut.data[2].key())
+        try assert.eq<?Str>(sut.get(ConstantHash(123)), None())
+
+        -- delete the first and try to update the third
+        try assert.eq(true, sut.del(ConstantHash(1)))
+        try assert.eq(false, sut.has(ConstantHash(1)))
+        try assert.eq(true, sut.data[1].is_deleted())
+        sut.set(ConstantHash(3), "foo3.1")
+        -- should not use the "delete tombstone" at index 1
+        try assert.eq(true, sut.data[1].is_deleted())
+        -- but overwrite the existing slot for key 3
+        try assert.eq(Option(ConstantHash(3)), sut.data[3].key())
+        try assert.eq(Option("foo3.1"), sut.get(ConstantHash(3)))
+        try assert.eq(true, sut.has(ConstantHash(3)))
+    })
+    suite.test("large map", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut = map::Map.new<Int, Int>(16, @local)
+        let entries = 1000000
+        for i in 0..entries {
+            sut.set(i, i)
+            try assert.eq(Option(i), sut.get(i))
+        }
+        for i in 0..entries {
+            if i % 2 == 0 {
+                sut.del(i)
+                try assert.eq(false, sut.has(i))
+                void
+            } else {
+                sut.set(i, i * 2)
+                try assert.eq(Option(i * 2), sut.get(i))
+            }
+        }
+    })
+    suite.run()
+}
+

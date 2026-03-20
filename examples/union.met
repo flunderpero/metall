@@ -6,7 +6,7 @@ struct Value<T> {
 
 union Mixed<T> = Str | Int | Value<T> | None
 
-fun Mixed.fmt_str<T FmtStr>(m Mixed<T>, sb &mut StrBuilder) void {
+fun Mixed.fmt<T HasFmt>(m Mixed<T>, sb &mut StrBuilder) void {
     match m {
         case Str s: sb.str(s)
         case Value<T> v: sb.fmt(v.value)

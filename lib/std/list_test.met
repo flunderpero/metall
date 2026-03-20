@@ -12,15 +12,15 @@ fun main() void {
         sut.push(2)
         sut.push(3)
         let slice = sut.slice()
-        try assert.eq_int(3, sut.len)
-        try assert.eq_int(3, slice.len)
+        try assert.eq(3, sut.len)
+        try assert.eq(3, slice.len)
         for i in 0..slice.len {
-            try assert.eq_int(i + 1, slice[i])
-            try assert.eq_int(i + 1, sut.get(i))
+            try assert.eq(i + 1, slice[i])
+            try assert.eq(i + 1, sut.get(i))
         }
         sut.set(1, 42)
-        try assert.eq_int(42, sut.get(1))
-        try assert.eq_int(42, slice[1])
+        try assert.eq(42, sut.get(1))
+        try assert.eq(42, slice[1])
     })
     suite.test("references get stale after push", fun(assert &assert_::Assert) !void {
         let @local = Arena()
@@ -28,22 +28,22 @@ fun main() void {
         sut.push(1)
         let slice = sut.slice()
         let ref = &slice[0]
-        try assert.eq_int(1, sut.get(0))
-        try assert.eq_int(1, slice[0])
-        try assert.eq_int(1, ref.*)
+        try assert.eq(1, sut.get(0))
+        try assert.eq(1, slice[0])
+        try assert.eq(1, ref.*)
         for i in 0..1000 {
             sut.push(i)
-            try assert.eq_int(i, sut.get(i + 1))
+            try assert.eq(i, sut.get(i + 1))
         }
         -- setting index 0 to a new value
         -- `ref` and `slice` should still point at the old data
-        try assert.eq_int(1, sut.get(0))
-        try assert.eq_int(1, slice[0])
-        try assert.eq_int(1, ref.*)
+        try assert.eq(1, sut.get(0))
+        try assert.eq(1, slice[0])
+        try assert.eq(1, ref.*)
         sut.set(0, 42)
-        try assert.eq_int(42, sut.get(0))
-        try assert.eq_int(1, slice[0])
-        try assert.eq_int(1, ref.*)
+        try assert.eq(42, sut.get(0))
+        try assert.eq(1, slice[0])
+        try assert.eq(1, ref.*)
     })
     suite.run()
 }

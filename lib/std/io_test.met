@@ -21,7 +21,7 @@ fun main() void {
         let read_bytes = try sut.read(buf)
         let read_str = Str.from_utf8_lossy(read_bytes, @local)
         try sut.close()
-        try assert.eq_str(content, read_str)
+        try assert.eq(content, read_str)
     })
     suite.test("read non-existing file", fun(assert &assert_::Assert) !void {
         let @local = Arena()

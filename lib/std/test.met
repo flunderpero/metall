@@ -35,7 +35,7 @@ fun Suite.run(s &mut Suite) SuiteResult {
             sb.str(s.name).str("(").int(test_index + 1).str("/").int(s.tests.len).str(") ")
             .tab().str(test.name).to_str()
         io::print(prefix)
-        io::print("... ")
+        io::print(" ... ")
         match test.f(assert) {
             case Err e: 
                 failed = failed + 1
@@ -49,7 +49,6 @@ fun Suite.run(s &mut Suite) SuiteResult {
             else: io::println("pass")
         }
     }
-    -- todo: we should exit with error
     SuiteResult(s.tests.len - failed, failed)
 }
 

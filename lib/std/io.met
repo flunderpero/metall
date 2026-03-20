@@ -6,15 +6,15 @@ fun stdout() FD { FD(1) }
 
 fun stderr() FD { FD(2) }
 
-fun print<T FmtStr>(s T) void {
+fun print<T HasFmt>(s T) void {
     -- todo: We should be able to have a shortcut if is is Str.
     let @a = Arena()
     let sb = StrBuilder.new(32, @a)
-    s.fmt_str(sb)
+    s.fmt(sb)
     LibCIntern.write(stdout().fd, sb.to_str().utf8_bytes())
 }
 
-fun println<T FmtStr>(s T) void {
+fun println<T HasFmt>(s T) void {
     print<T>(s)
     LibCIntern.write(stdout().fd, [U8(10)][..])
 }

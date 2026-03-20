@@ -3,10 +3,11 @@ use assert_ = std::assert
 
 fun main() void {
     let @local = Arena()
+
     let str_suite = test::suite("Str", @local)
     str_suite.test("concat", fun(assert &assert_::Assert) !void {
         let @local = Arena()
-        try assert.eq_str("hello there", "hello ".concat("there", @local))
+        try assert.eq("hello there", "hello ".concat("there", @local))
     })
     str_suite.test("contains", fun(assert &assert_::Assert) !void {
         try assert.ok("test".contains("test"))
@@ -18,15 +19,19 @@ fun main() void {
     })
     str_suite.test("decapitalize", fun(assert &assert_::Assert) !void {
         let @local = Arena()
-        try assert.eq_str("hELLO", "HELLO".decapitalize(@local))
+        try assert.eq("hELLO", "HELLO".decapitalize(@local))
+    })
+    str_suite.test("hash", fun(assert &assert_::Assert) !void {
+        try assert.eq(U64(686710930086579414), "hello".hash())
+        try assert.eq(U64(0), "".hash())
     })
     str_suite.run()
 
     let rune_suite = test::suite("Rune", @local)
     rune_suite.test("from_u32_lossy", fun(assert &assert_::Assert) !void {
-        try assert.eq_rune('A', Rune.from_u32_lossy(65))
-        try assert.eq_rune('�', Rune.from_u32_lossy(123456789))
-        try assert.eq_rune('�', Rune.from_u32_lossy(55296)) -- 0xD800
+        try assert.eq('A', Rune.from_u32_lossy(65))
+        try assert.eq('�', Rune.from_u32_lossy(123456789))
+        try assert.eq('�', Rune.from_u32_lossy(55296)) -- 0xD800
     })
     rune_suite.run()
 }

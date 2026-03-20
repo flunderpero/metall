@@ -5926,17 +5926,17 @@ fun06   = fun(Int) Int
 
 ```metall
 {
-    shape FmtStr {
-        fun FmtStr.fmt_str(self FmtStr, x Int) Int
+    shape HasFmt {
+        fun HasFmt.fmt(self HasFmt, x Int) Int
     }
-    shape EqFmtStr {
-        fun EqFmtStr.eq(self EqFmtStr, other EqFmtStr) Bool
-        fun EqFmtStr.fmt_str(self EqFmtStr, x Int) Int
+    shape HasEqFmt {
+        fun HasEqFmt.eq(self HasEqFmt, other HasEqFmt) Bool
+        fun HasEqFmt.fmt(self HasEqFmt, x Int) Int
     }
-    fun Int.fmt_str(i Int, x Int) Int { i + x }
+    fun Int.fmt(i Int, x Int) Int { i + x }
     fun Int.eq(i Int, other Int) Bool { true }
-    fun format<T FmtStr>(t T, x Int) Int { t.fmt_str(x) }
-    fun compare_and_format<T EqFmtStr>(a T, b T, x Int) Int {
+    fun format<T HasFmt>(t T, x Int) Int { t.fmt(x) }
+    fun compare_and_format<T HasEqFmt>(a T, b T, x Int) Int {
         if a.eq(b) { format<T>(a, x) } else { 0 }
     }
     compare_and_format<Int>(1, 2, 3)
@@ -6027,8 +6027,8 @@ Block: Int
     Int: Int
     Int: Int
 ---
-shape01 = FmtStr {  }
-shape02 = EqFmtStr {  }
+shape01 = HasFmt {  }
+shape02 = HasEqFmt {  }
 fun01   = fun(Int, Int) Int
 fun02   = fun(Int, Int) Bool
 fun03   = fun(T, Int) Int

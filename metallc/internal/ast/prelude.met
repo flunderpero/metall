@@ -1,3 +1,20 @@
+--- Equality ---
+shape HasEq {
+    fun HasEq.eq(e HasEq, other HasEq) Bool
+}
+
+--- Hash function for use in hash map implementations.
+
+    This does not produce cryptographic hash. ---
+shape HasHash {
+    fun HasHash.hash(h HasHash) U64
+}
+
+--- Format an object to Str. ---
+shape HasFmt {
+    fun HasFmt.fmt(f HasFmt, sb &mut StrBuilder) void
+}
+
 --- Replace an illegal unicode codepoint with the replacement character U+FFFD. 
     Valid codepoints range from U+0000 to U+10FFFF excluding the surrogate 
     codepoints U+D800 to U+DFFF. ---
@@ -5,6 +22,14 @@ fun Rune.from_u32_lossy(n U32) Rune {
     if n > U32(1114111) { return Rune(65533) }
     if n >= U32(55296) and n <= U32(57343) { return Rune(65533) }
     Rune(n)
+}
+
+fun Str.bytes_len(s Str) Int {
+    s.data.len
+}
+
+fun Str.is_empty(s Str) Bool {
+    s.data.len == 0
 }
 
 --- Replace illegal utf8 sequences with the replacement character U+FFFD. 
@@ -99,6 +124,15 @@ fun Str.to_cstr(s Str, @a Arena) CStr {
     }
     data[data.len - 1] = 0
     CStr(data)
+}
+
+fun Str.hash(s Str) U64 {
+    mut state = U64(0)
+    for i in 0..s.data.len {
+        state = state ^ s.data[i].to_u64()
+        state = state * 5871781006564002453
+    }
+    state
 }
 
 --- A convenient way to build strings. ---
@@ -221,7 +255,7 @@ fun StrBuilder.rune(sb &mut StrBuilder, r Rune) &mut StrBuilder {
     sb
 }
 
-fun StrBuilder.fmt<T FmtStr>(sb &mut StrBuilder, t T) &mut StrBuilder { t.fmt_str(sb) sb }
+fun StrBuilder.fmt<T HasFmt>(sb &mut StrBuilder, t T) &mut StrBuilder { t.fmt(sb) sb }
 
 fun StrBuilder.nl(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(10) sb }
 
@@ -229,7 +263,7 @@ fun StrBuilder.space(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(32) s
 
 fun StrBuilder.tab(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(9) sb }
 
-fun StrBuilder.slice<T FmtStr>(sb &mut StrBuilder, v []T, sep Str) &mut StrBuilder {
+fun StrBuilder.slice<T HasFmt>(sb &mut StrBuilder, v []T, sep Str) &mut StrBuilder {
     for i in 0..v.len {
         if i > 0 {
             sb.str(sep)
@@ -266,38 +300,26 @@ fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) void {
     sb.len = sb.len + 1
 }
 
-shape FmtStr {
-    fun FmtStr.fmt_str(f FmtStr, sb &mut StrBuilder) void
-}
-
-fun Str.fmt_str(s Str, sb &mut StrBuilder) void { sb.str(s) }
-fun Int.fmt_str(i Int, sb &mut StrBuilder) void { sb.int(i) }
-fun I32.fmt_str(i I32, sb &mut StrBuilder) void { sb.i32(i) }
-fun I16.fmt_str(i I16, sb &mut StrBuilder) void { sb.i16(i) }
-fun I8.fmt_str(i I8, sb &mut StrBuilder) void { sb.i8(i) }
-fun U64.fmt_str(i U64, sb &mut StrBuilder) void { sb.u64(i) }
-fun U32.fmt_str(i U32, sb &mut StrBuilder) void { sb.u32(i) }
-fun U16.fmt_str(i U16, sb &mut StrBuilder) void { sb.u16(i) }
-fun U8.fmt_str(i U8, sb &mut StrBuilder) void { sb.u8(i) }
-fun Rune.fmt_str(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
-fun Bool.fmt_str(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
-
 --- None represents the absence of something. ---
 -- struct None {}
 
-fun None.fmt_str(n None, sb &mut StrBuilder) void { sb.str("<none>") }
+fun None.fmt(n None, sb &mut StrBuilder) void { sb.str("<none>") }
+
+fun None.eq(n None, other None) Bool { true }
+
+fun None.hash(n None) U64 { 0 }
 
 --- Option represents a value that is either present or not. ---
 -- union Option<T> = T | None
 
-fun Option.fmt_str<T FmtStr>(o Option<T>, sb &mut StrBuilder) void {
+fun Option.fmt<T HasFmt>(o Option<T>, sb &mut StrBuilder) void {
     match o {
         case T t: sb.fmt(t)
         case None n: sb.fmt(n)
     } 
 }
 
-fun Option.eq<T Eq>(o Option<T>, other Option<T>) Bool {
+fun Option.eq<T HasEq>(o Option<T>, other Option<T>) Bool {
     match o {
     case None:
         match other {
@@ -312,42 +334,54 @@ fun Option.eq<T Eq>(o Option<T>, other Option<T>) Bool {
     }
 }
 
+fun Option.hash<T HasHash>(o Option<T>) U64 {
+    match o {
+    case None n: n.hash()
+    else t: t.hash()
+    }
+}
+
 --- An error type. You are free to use anything as error. ---
 -- struct Err { msg Str }
 
-fun Err.fmt_str(e Err, sb &mut StrBuilder) void { 
-    sb.str("error: ").str(e.msg)
-}
+fun Err.fmt(e Err, sb &mut StrBuilder) void { sb.str("error: ").str(e.msg) }
+
+fun Err.eq(e Err, other Err) Bool { e.msg.eq(other.msg) }
+
+fun Err.hash(e Err) U64 { e.msg.hash() }
 
 --- A result type. Use this to distinct between "success" and "error" ---
 -- union Result<T> = T | Err
 
-fun Result.fmt_str<T FmtStr>(r Result<T>, sb &mut StrBuilder) void {
+fun Result.fmt<T HasFmt>(r Result<T>, sb &mut StrBuilder) void {
     match r {
         case T t: sb.fmt(t)
         case Err: sb.str("<error>")
     }
 }
 
---- Equality ---
-shape Eq {
-    fun Eq.eq(e Eq, other Eq) Bool
-}
-
---- Compute a hash for use in maps and sets ---
-shape Hash {
-    fun Hash.hash(v Hash) U64
-    fun Hash.eq(v Hash, other Hash) Bool
-}
-
-fun Str.hash(s Str) U64 {
-    mut state = U64(0)
-    for i in 0..s.data.len {
-        state = state ^ s.data[i].to_u64()
-        state = state * 5871781006564002453
+fun Result.eq<T HasEq>(r Result<T>, other Result<T>) Bool {
+    match r {
+    case Err e:
+        match other {
+            case Err oe: e.eq(oe)
+            else: false
+        }
+    else t:
+        match other {
+            case Err: false
+            else ot: t.eq(ot)
+        }
     }
-    state
 }
+
+fun Result.hash<T HasHash>(r Result<T>) U64 {
+    match r {
+    case Err e: e.hash()
+    else t: t.hash()
+    } 
+}
+
 fun I8.eq(i I8, other I8) Bool { i == other }
 fun I16.eq(i I16, other I16) Bool { i == other }
 fun I32.eq(i I32, other I32) Bool { i == other }
@@ -368,3 +402,14 @@ fun U32.hash(u U32) U64 { u.to_u64() * 5871781006564002453 }
 fun U64.hash(u U64) U64 { u * 5871781006564002453 }
 fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() * 5871781006564002453 }
 fun Bool.hash(b Bool) U64 { if b { 1 } else { 0 } }
+fun Str.fmt(s Str, sb &mut StrBuilder) void { sb.str(s) }
+fun Int.fmt(i Int, sb &mut StrBuilder) void { sb.int(i) }
+fun I32.fmt(i I32, sb &mut StrBuilder) void { sb.i32(i) }
+fun I16.fmt(i I16, sb &mut StrBuilder) void { sb.i16(i) }
+fun I8.fmt(i I8, sb &mut StrBuilder) void { sb.i8(i) }
+fun U64.fmt(i U64, sb &mut StrBuilder) void { sb.u64(i) }
+fun U32.fmt(i U32, sb &mut StrBuilder) void { sb.u32(i) }
+fun U16.fmt(i U16, sb &mut StrBuilder) void { sb.u16(i) }
+fun U8.fmt(i U8, sb &mut StrBuilder) void { sb.u8(i) }
+fun Rune.fmt(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
+fun Bool.fmt(b Bool, sb &mut StrBuilder) void { sb.bool(b) }

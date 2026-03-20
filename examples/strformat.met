@@ -5,7 +5,7 @@ struct Pair<K, V> {
     second V
 }
 
-fun Pair.fmt_str<K FmtStr, V FmtStr>(p Pair<K, V>, sb &mut StrBuilder) void {
+fun Pair.fmt<K HasFmt, V HasFmt>(p Pair<K, V>, sb &mut StrBuilder) void {
     sb.str("Pair{first=").fmt<K>(p.first).str(", second=").fmt<V>(p.second).str("}")
 }
 
@@ -18,17 +18,17 @@ fun main() void {
     sb.str("Int:    ").int(9223372036854775807).space().int(0 - 9223372036854775807).space().int(0 - 1234567890).nl()
     sb.str("slice:  ").slice<Str>(["a", "b", "c", "d"][0..], ", ").nl().nl()
 
-    sb.str("FmtStr shape:").nl()
+    sb.str("HasFmt shape:").nl()
     sb.str("str:    ")
-    "string".fmt_str(sb)
+    "string".fmt(sb)
     sb.nl()
     sb.str("Int:    ")
-    123.fmt_str(sb)
+    123.fmt(sb)
     sb.nl()
     sb.str("struct: ")
-    Pair<Str, Int>("hello", 123).fmt_str(sb)
+    Pair<Str, Int>("hello", 123).fmt(sb)
     sb.space()
-    Pair<Str, Bool>("world", true).fmt_str(sb)
+    Pair<Str, Bool>("world", true).fmt(sb)
 
     io::println(sb.to_str())
 

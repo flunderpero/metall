@@ -8,90 +8,120 @@ fun Assert.new(@a Arena) &Assert {
     @a.new(Assert(@a, sb))
 }
 
-fun Assert.ok(a &Assert, b Bool) !void { 
+fun Assert.err_msg(a &Assert, user_provided Str, err Str) Str {
+    if user_provided.is_empty() {
+        return err
+    }
+    let sb = StrBuilder.new(user_provided.bytes_len() + err.bytes_len() + 3, a.@a)
+    sb.str(user_provided).str(" (").str(err).str(")")
+    return sb.to_str()
+}
+
+fun Assert.ok(a &Assert, b Bool, msg Str = "") !void { 
     if not b { 
-        return Err("expected: true, got: false")
+        return Err(a.err_msg(msg, "want: true, got: false"))
     }
 }
 
 fun Assert.not_ok(a &Assert, b Bool) !void { 
     if b { 
-        return Err("expected: false, got: true")
+        return Err("want: false, got: true")
     }
 }
 
-fun Assert.contains_str(a &Assert, haystack Str, needle Str) !void {
+fun Assert.contains_str(a &Assert, haystack Str, needle Str, msg Str = "") !void {
     if not haystack.contains(needle) {
         a.sb.reset()
-        a.sb.str("expected '").str(haystack).str("' to contain '").str(needle).str("'")
-        return Err(a.sb.to_str())
+        a.sb.str("want '").str(haystack).str("' to contain '").str(needle).str("'")
+        return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
 
-fun Assert.eq_str(a &Assert, expected Str, got Str) !void {
-    if not expected.contains(got) {
+shape HasEqFmt {
+    fun HasEqFmt.eq(e HasEqFmt, other HasEqFmt) Bool
+    fun HasEqFmt.fmt(e HasEqFmt, sb &mut StrBuilder) void
+}
+
+fun Assert.eq<T HasEqFmt>(a &Assert, want T, got T, msg Str = "") !void {
+    if not want.eq(got) {
         a.sb.reset()
-        a.sb.str("expected ").rune('"').str(expected).rune('"').str(" to equal '").str(got).str("'")
-        return Err(a.sb.to_str())
+        a.sb.str("want ").fmt<T>(want).str(", got ").fmt<T>(got)
+        return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
 
-fun Assert.eq_rune(a &Assert, expected Rune, got Rune) !void {
-    if expected != got {
-        a.sb.reset()
-        a.sb.str("expected '").rune(expected).str("' to equal '").rune(got).str("'")
-        return Err(a.sb.to_str())
-    }
-}
-
-fun Assert.gt_int(a &Assert, left Int, right Int) !void {
+fun Assert.gt_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left > right {
         a.sb.reset()
-        a.sb.str("expected ").int(left).str(" > ").int(right)
-        return Err(a.sb.to_str())
+        a.sb.str("want ").int(left).str(" > ").int(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
 
-fun Assert.gte_int(a &Assert, left Int, right Int) !void {
+fun Assert.gte_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left >= right {
         a.sb.reset()
-        a.sb.str("expected ").int(left).str(" >= ").int(right)
-        return Err(a.sb.to_str())
+        a.sb.str("want ").int(left).str(" >= ").int(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
 
-fun Assert.lt_int(a &Assert, left Int, right Int) !void {
+fun Assert.lt_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left < right {
         a.sb.reset()
-        a.sb.str("expected ").int(left).str(" < ").int(right)
-        return Err(a.sb.to_str())
+        a.sb.str("want ").int(left).str(" < ").int(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
 
-fun Assert.lte_int(a &Assert, left Int, right Int) !void {
+fun Assert.lte_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left <= right {
         a.sb.reset()
-        a.sb.str("expected ").int(left).str(" <= ").int(right)
-        return Err(a.sb.to_str())
+        a.sb.str("want ").int(left).str(" <= ").int(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
 
-fun Assert.eq_int(a &Assert, left Int, right Int) !void {
-    if not left == right {
+fun Assert.gt_u64(a &Assert, left U64, right U64, msg Str = "") !void {
+    if not left > right {
         a.sb.reset()
-        a.sb.str("expected ").int(left).str(" == ").int(right)
-        return Err(a.sb.to_str())
+        a.sb.str("want ").u64(left).str(" > ").u64(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
 
-fun Assert.err<T>(a &Assert, obj !T, err_msg_contains Str) !void {
+fun Assert.gte_u64(a &Assert, left U64, right U64, msg Str = "") !void {
+    if not left >= right {
+        a.sb.reset()
+        a.sb.str("want ").u64(left).str(" >= ").u64(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
+    }
+}
+
+fun Assert.lt_u64(a &Assert, left U64, right U64, msg Str = "") !void {
+    if not left < right {
+        a.sb.reset()
+        a.sb.str("want ").u64(left).str(" < ").u64(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
+    }
+}
+
+fun Assert.lte_u64(a &Assert, left U64, right U64, msg Str = "") !void {
+    if not left <= right {
+        a.sb.reset()
+        a.sb.str("want ").u64(left).str(" <= ").u64(right)
+        return Err(a.err_msg(msg, a.sb.to_str()))
+    }
+}
+
+fun Assert.err<T>(a &Assert, obj !T, err_msg_contains Str, msg Str = "") !void {
     match obj {
         case Err e: 
             if not e.msg.contains(err_msg_contains) {
                 a.sb.reset()
-                a.sb.str("expected error to contain '").str(err_msg_contains).str("', but got: ").str(e.msg)
-                return Err(a.sb.to_str())
+                a.sb.str("want error to contain '").str(err_msg_contains).str("', but got: ").str(e.msg)
+                return Err(a.err_msg(msg, a.sb.to_str()))
             }
-        else: return Err("expected an error")
+        else: return Err(a.err_msg(msg, "want an error"))
     }
 }
