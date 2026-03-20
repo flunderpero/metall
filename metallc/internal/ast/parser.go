@@ -1534,6 +1534,14 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 			p.next()
 			c := p.NewSimpleType(Name{next.Value, next.Span}, nil, next.Span)
 			constraint = &c
+		} else if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
+			if next1, ok := p.mayPeek1(); ok && next1.Kind == token.ColonColon {
+				c, ok := p.ParsePath()
+				if !ok {
+					return nil, false
+				}
+				constraint = &c
+			}
 		}
 		var defaultType *NodeID
 		if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {

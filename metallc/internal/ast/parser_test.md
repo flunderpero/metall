@@ -1810,6 +1810,22 @@ Fun(name="foo")
   block=Block()
 ```
 
+**Constrained type param with path**
+
+```metall
+fun foo<T lib::Showable>(t T) void { }
+```
+
+```ast
+Fun(name="foo")
+  typeParams=TypeParam(name="T")
+    constraint=Path(segments=lib::Showable)
+  params=FunParam(name="t")
+    type=SimpleType(name="T")
+  returnType=SimpleType(name="void")
+  block=Block()
+```
+
 **Multiple type params with partial defaults**
 
 ```metall
