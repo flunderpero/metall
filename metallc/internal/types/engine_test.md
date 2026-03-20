@@ -6192,6 +6192,197 @@ shape02  = Iter {  }
 fun03    = fun(struct01) Int
 ```
 
+**Generic shape method call**
+
+```metall
+{
+    shape Iter<T> {
+        fun Iter.next(it &mut Iter) ?T
+    }
+    struct Nums { mut i Int }
+    fun Nums.next(n &mut Nums) ?Int { let v = n.i n.i = n.i + 1 Option(v) }
+    fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
+    mut n = Nums(0)
+    first<Int, Nums>(&mut n)
+}
+```
+
+```types
+Block: union01
+  Shape: shape01
+    TypeParam: ?
+    FunDecl: ?
+      FunParam: ?
+        RefType: ?
+          SimpleType: ?
+      SimpleType: ?
+        SimpleType: ?
+  Struct: struct02
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    FunParam: &mut struct02
+      RefType: &mut struct02
+        SimpleType: struct02
+    SimpleType: union01
+      SimpleType: Int
+    Block: union01
+      Var: void
+        FieldAccess: Int
+          Ident: &mut struct02
+      Assign: void
+        FieldAccess: Int
+          Ident: &mut struct02
+        Binary: Int
+          FieldAccess: Int
+            Ident: &mut struct02
+          Int: Int
+      TypeConstruction: union01
+        Ident: union01
+        Ident: Int
+  Fun: fun02
+    TypeParam: E
+    TypeParam: T
+      SimpleType: shape02
+        SimpleType: E
+    FunParam: &mut T
+      RefType: &mut T
+        SimpleType: T
+    SimpleType: union02
+      SimpleType: E
+    Block: union02
+      Call: union02
+        FieldAccess: fun03
+          Ident: &mut T
+  Var: void
+    TypeConstruction: struct02
+      Ident: struct02
+      Int: Int
+  Call: union01
+    Ident: fun04
+      SimpleType: Int
+      SimpleType: struct02
+    Ref: &mut struct02
+      Ident: struct02
+---
+struct01 = None {  }
+union01  = Option<Int> = Int | struct01
+shape01  = Iter {  }
+struct02 = Nums { mut i Int }
+fun01    = fun(&mut struct02) union01
+union02  = Option<E> = E | struct01
+fun02    = fun(&mut T) union02
+shape02  = Iter {  }
+fun03    = fun(&mut T) union02
+fun04    = fun(&mut struct02) union01
+```
+
+**Infer type args from shape constraints**
+
+```metall
+{
+    shape Iter<T> {
+        fun Iter.next(it &mut Iter) ?T
+    }
+    struct Nums { mut i Int }
+    fun Nums.next(n &mut Nums) ?Int { let v = n.i n.i = n.i + 1 Option(v) }
+    fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
+    mut n = Nums(0)
+    first(&mut n)
+}
+```
+
+```types
+Block: union01
+  Shape: shape01
+    TypeParam: ?
+    FunDecl: ?
+      FunParam: ?
+        RefType: ?
+          SimpleType: ?
+      SimpleType: ?
+        SimpleType: ?
+  Struct: struct02
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    FunParam: &mut struct02
+      RefType: &mut struct02
+        SimpleType: struct02
+    SimpleType: union01
+      SimpleType: Int
+    Block: union01
+      Var: void
+        FieldAccess: Int
+          Ident: &mut struct02
+      Assign: void
+        FieldAccess: Int
+          Ident: &mut struct02
+        Binary: Int
+          FieldAccess: Int
+            Ident: &mut struct02
+          Int: Int
+      TypeConstruction: union01
+        Ident: union01
+        Ident: Int
+  Fun: fun02
+    TypeParam: E
+    TypeParam: T
+      SimpleType: shape02
+        SimpleType: E
+    FunParam: &mut T
+      RefType: &mut T
+        SimpleType: T
+    SimpleType: union02
+      SimpleType: E
+    Block: union02
+      Call: union02
+        FieldAccess: fun03
+          Ident: &mut T
+  Var: void
+    TypeConstruction: struct02
+      Ident: struct02
+      Int: Int
+  Call: union01
+    Ident: fun04
+    Ref: &mut struct02
+      Ident: struct02
+---
+struct01 = None {  }
+union01  = Option<Int> = Int | struct01
+shape01  = Iter {  }
+struct02 = Nums { mut i Int }
+fun01    = fun(&mut struct02) union01
+union02  = Option<E> = E | struct01
+fun02    = fun(&mut T) union02
+shape02  = Iter {  }
+fun03    = fun(&mut T) union02
+fun04    = fun(&mut struct02) union01
+```
+
+**Generic shape not satisfied**
+
+```metall
+{
+    shape Iter<T> {
+        fun Iter.next(it &mut Iter) ?T
+    }
+    struct Foo { }
+    fun Foo.next(f &mut Foo) ?Str { None() }
+    fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
+    mut f = Foo()
+    first<Int, Foo>(&mut f)
+}
+```
+
+```error
+test.met:9:5: type Foo does not satisfy shape Iter: method next has signature fun(&mut Foo) Option<Str>, expected fun(&mut Iter) Option<T>
+        mut f = Foo()
+        first<Int, Foo>(&mut f)
+        ^^^^^^^^^^^^^^^
+    }
+```
+
 ## Default Type Args
 
 **Default type arg on struct**

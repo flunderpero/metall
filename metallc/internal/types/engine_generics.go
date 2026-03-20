@@ -299,6 +299,10 @@ func (e *Engine) inferTypeArgs(
 			e.collectTypeArgBindings(genericTypeID, concreteTypeIDs[i], bindings)
 		}
 	}
+	// Infer unresolved type params from shape constraints of resolved params.
+	// Example: fun count<E, T Iter<E>>(it &mut T) — when T=StrIter is known,
+	// infer E by matching StrIter's method signatures against Iter's.
+	e.inferTypeArgsFromConstraints(typeParamNodeIDs, bindings)
 	inferred := make([]TypeID, 0, len(typeParamNodeIDs))
 	for _, nodeID := range typeParamNodeIDs {
 		typeParamTypeID := e.env.reg.typeParamTypes[nodeID]
@@ -309,6 +313,92 @@ func (e *Engine) inferTypeArgs(
 		}
 	}
 	return e.applyTypeArgDefaults(typeParamNodeIDs, inferred, span)
+}
+
+// inferTypeArgsFromConstraints tries to resolve unbound type params by examining
+// shape constraints on already-bound type params. For example, if T is bound to
+// StrIter and constrained by Iter<E>, it infers E by matching StrIter's method
+// signatures against Iter's generic method signatures.
+func (e *Engine) inferTypeArgsFromConstraints(typeParamNodeIDs []ast.NodeID, bindings map[TypeID]TypeID) {
+	for _, nodeID := range typeParamNodeIDs {
+		typeParamTypeID := e.env.reg.typeParamTypes[nodeID]
+		concreteTypeID, resolved := bindings[typeParamTypeID]
+		if !resolved {
+			continue
+		}
+		tpt := base.Cast[TypeParamType](e.env.Type(typeParamTypeID).Kind)
+		if tpt.Shape == nil {
+			continue
+		}
+		shapeType := base.Cast[ShapeType](e.env.Type(*tpt.Shape).Kind)
+		if len(shapeType.TypeArgs) == 0 {
+			continue
+		}
+		// The shape has type args (e.g., Iter<E>). Find the generic origin
+		// shape to get the method declarations.
+		genericShapeTypeID := *tpt.Shape
+		if originID, ok := e.env.GenericOrigin(*tpt.Shape); ok {
+			genericShapeTypeID = originID
+		}
+		genericShapeNodeID := e.env.DeclNode(genericShapeTypeID)
+		genericShapeNode := base.Cast[ast.Shape](e.ast.Node(genericShapeNodeID).Kind)
+		// Re-resolve the shape's method signatures with the concrete type to
+		// find what the shape's type params map to.
+		concreteTyp := e.env.Type(concreteTypeID)
+		methodLookupTyp := concreteTyp
+		if originID, ok := e.env.GenericOrigin(concreteTypeID); ok {
+			methodLookupTyp = e.env.Type(originID)
+		}
+		for _, funDeclNodeID := range genericShapeNode.Funs {
+			funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
+			_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
+			fullMethodName, ok := e.env.methodFQN(methodLookupTyp, methodName)
+			if !ok {
+				continue
+			}
+			binding, ok := e.lookup(genericShapeNodeID, fullMethodName)
+			if !ok {
+				binding, ok = e.lookupInTypeModule(concreteTyp, fullMethodName)
+			}
+			if !ok {
+				continue
+			}
+			// Get the generic shape's method signature (with type params).
+			shapeMethodName := shapeType.DeclName + "." + methodName
+			shapeFunBinding, ok := e.lookup(genericShapeNodeID, shapeMethodName)
+			if !ok {
+				shapeTyp := e.env.Type(genericShapeTypeID)
+				shapeFunBinding, ok = e.lookupInTypeModule(shapeTyp, shapeMethodName)
+			}
+			if !ok {
+				continue
+			}
+			shapeFunType := base.Cast[FunType](e.env.Type(shapeFunBinding.TypeID).Kind)
+			concreteFunType := base.Cast[FunType](e.env.Type(binding.TypeID).Kind)
+			// Match the shape's method signature (with shape self-type
+			// substituted for concrete type) against the concrete method.
+			substShapeFun := e.env.substituteFunType(shapeFunType, genericShapeTypeID, concreteTypeID)
+			// Collect bindings from the shape's type params to concrete types.
+			shapeBindings := map[TypeID]TypeID{}
+			for j, param := range substShapeFun.Params {
+				if j < len(concreteFunType.Params) {
+					e.collectTypeArgBindings(param, concreteFunType.Params[j], shapeBindings)
+				}
+			}
+			e.collectTypeArgBindings(substShapeFun.Return, concreteFunType.Return, shapeBindings)
+			// Translate shape type param bindings to function type param bindings.
+			// The shape's type params map to the constraint's type args:
+			// e.g., shape Iter<T> with constraint Iter<E> means shape_T → E.
+			for i, shapeTypeArg := range shapeType.TypeArgs {
+				if i < len(genericShapeNode.TypeParams) {
+					shapeParamTypeID := e.env.reg.typeParamTypes[genericShapeNode.TypeParams[i]]
+					if concreteID, ok := shapeBindings[shapeParamTypeID]; ok {
+						bindings[shapeTypeArg] = concreteID
+					}
+				}
+			}
+		}
+	}
 }
 
 func (e *Engine) inferTypeConstruction(
@@ -781,23 +871,13 @@ func (e *Engine) satisfiesShape( //nolint:funlen
 				panic(base.Errorf("shape method %s not found", shapeMethodName))
 			}
 		}
-		// For instantiated generic shapes (e.g., Iter<Int>), re-resolve the
-		// method signature with type params bound to their args, so compound
-		// types like Option<T> resolve to Option<Int>.
 		var expectedFunType FunType
 		if len(shapeType.TypeArgs) > 0 {
-			genericShapeNodeID := e.env.DeclNode(shapeLookupTypeID)
-			genericShapeNode := base.Cast[ast.Shape](e.ast.Node(genericShapeNodeID).Kind)
-			resolvedTypeID, status := func() (TypeID, TypeStatus) {
-				defer e.enterChildEnv()()
-				e.bindTypeParamsToArgs(genericShapeNode.TypeParams, shapeType.TypeArgs)
-				return e.checkShapeFunDecl(funDecl)
-			}()
+			var status TypeStatus
+			expectedFunType, status = e.resolveGenericShapeFunDecl(shapeType, shapeTypeID, funDecl, concreteTypeID)
 			if status.Failed() {
 				return false
 			}
-			resolvedFunType := base.Cast[FunType](e.env.Type(resolvedTypeID).Kind)
-			expectedFunType = e.env.substituteFunType(resolvedFunType, shapeLookupTypeID, concreteTypeID)
 		} else {
 			shapeFunType := base.Cast[FunType](e.env.Type(shapeFunBinding.TypeID).Kind)
 			expectedFunType = e.env.substituteFunType(shapeFunType, shapeTypeID, concreteTypeID)
@@ -1005,16 +1085,51 @@ func (e *Engine) checkShapeFieldAccess(
 	return InvalidTypeID, TypeFailed, false
 }
 
+// resolveGenericShapeFunDecl resolves a generic shape's method signature with
+// type args applied — re-checks the fun decl with type params bound, then
+// substitutes the shape's self type with the concrete type.
+func (e *Engine) resolveGenericShapeFunDecl(
+	shapeType ShapeType, shapeTypeID TypeID, funDecl ast.FunDecl, selfTypeID TypeID,
+) (FunType, TypeStatus) {
+	genericShapeTypeID := shapeTypeID
+	if originID, ok := e.env.GenericOrigin(shapeTypeID); ok {
+		genericShapeTypeID = originID
+	}
+	genericShapeNode := base.Cast[ast.Shape](e.ast.Node(e.env.DeclNode(genericShapeTypeID)).Kind)
+	resolvedTypeID, status := func() (TypeID, TypeStatus) {
+		defer e.enterChildEnv()()
+		e.bindTypeParamsToArgs(genericShapeNode.TypeParams, shapeType.TypeArgs)
+		return e.checkShapeFunDecl(funDecl)
+	}()
+	if status.Failed() {
+		return FunType{}, status
+	}
+	resolvedFunType := base.Cast[FunType](e.env.Type(resolvedTypeID).Kind)
+	return e.env.substituteFunType(resolvedFunType, genericShapeTypeID, selfTypeID), TypeOK
+}
+
 func (e *Engine) resolveShapeMethod(
 	nodeID ast.NodeID, binding *Binding, targetTyp *Type,
 ) (TypeID, TypeStatus, bool) {
-	if _, isFunDecl := e.ast.Node(binding.Decl).Kind.(ast.FunDecl); !isFunDecl {
+	funDecl, isFunDecl := e.ast.Node(binding.Decl).Kind.(ast.FunDecl)
+	if !isFunDecl {
 		return InvalidTypeID, TypeFailed, false
 	}
 	e.env.setNamedFunRef(nodeID, binding.Name)
 	tpt := base.Cast[TypeParamType](targetTyp.Kind)
-	shapeFunType := base.Cast[FunType](e.env.Type(binding.TypeID).Kind)
-	substFunType := e.env.substituteFunType(shapeFunType, *tpt.Shape, targetTyp.ID)
+	shapeTypeID := *tpt.Shape
+	shapeType := base.Cast[ShapeType](e.env.Type(shapeTypeID).Kind)
+	var substFunType FunType
+	if len(shapeType.TypeArgs) > 0 {
+		var status TypeStatus
+		substFunType, status = e.resolveGenericShapeFunDecl(shapeType, shapeTypeID, funDecl, targetTyp.ID)
+		if status.Failed() {
+			return InvalidTypeID, status, true
+		}
+	} else {
+		shapeFunType := base.Cast[FunType](e.env.Type(binding.TypeID).Kind)
+		substFunType = e.env.substituteFunType(shapeFunType, shapeTypeID, targetTyp.ID)
+	}
 	funTypeID := e.env.newType(substFunType, 0, base.Span{}, TypeOK)
 	return funTypeID, TypeOK, true
 }
