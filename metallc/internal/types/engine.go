@@ -940,6 +940,7 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 		e.env.setMethodCallReceiver(callNodeID, fieldAccess.Target)
 	}
 	argNodes = append(argNodes, call.Args...)
+	argNodes = e.fillCallDefaults(call, callNodeID, argNodes, fun)
 	if len(argNodes) != len(fun.Params) {
 		expected := len(fun.Params)
 		if isMethod {
@@ -974,6 +975,46 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 		return InvalidTypeID, TypeFailed
 	}
 	return fun.Return, TypeOK
+}
+
+func (e *Engine) fillCallDefaults(
+	call ast.Call, callNodeID ast.NodeID, argNodes []ast.NodeID, fun FunType,
+) []ast.NodeID {
+	if len(argNodes) >= len(fun.Params) {
+		return argNodes
+	}
+	defaults := e.funDeclDefaults(call)
+	if defaults == nil {
+		return argNodes
+	}
+	missing := len(fun.Params) - len(argNodes)
+	if missing > len(defaults) {
+		return argNodes
+	}
+	fill := defaults[len(defaults)-missing:]
+	e.env.setCallDefaults(callNodeID, fill)
+	return append(argNodes, fill...)
+}
+
+// funDeclDefaults returns the default expression NodeIDs for the trailing
+// parameters of the function being called, or nil if not applicable.
+func (e *Engine) funDeclDefaults(call ast.Call) []ast.NodeID {
+	binding, ok := e.resolveCallBinding(call)
+	if !ok {
+		return nil
+	}
+	funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun)
+	if !ok {
+		return nil
+	}
+	var defaults []ast.NodeID
+	for _, paramNodeID := range funNode.Params {
+		param := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		if param.Default != nil {
+			defaults = append(defaults, *param.Default)
+		}
+	}
+	return defaults
 }
 
 func (e *Engine) checkSliceUninitSafety(calleeID ast.NodeID, fun FunType) bool {
@@ -1418,6 +1459,22 @@ func (e *Engine) checkFunParam(funParam ast.FunParam) (TypeID, TypeStatus) {
 	typeID, status := e.Query(funParam.Type)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
+	}
+	if funParam.Default != nil {
+		if _, ok := e.ast.Node(funParam.Type).Kind.(ast.RefType); ok {
+			e.diag(e.ast.Node(*funParam.Default).Span, "default parameters cannot be references")
+			return InvalidTypeID, TypeFailed
+		}
+		defaultTypeID, status := e.queryWithHint(*funParam.Default, &typeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if !e.env.isAssignableTo(defaultTypeID, typeID) {
+			e.diag(e.ast.Node(*funParam.Default).Span,
+				"default value type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(typeID), e.env.TypeDisplay(defaultTypeID))
+			return InvalidTypeID, TypeFailed
+		}
 	}
 	return typeID, TypeOK
 }

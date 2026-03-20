@@ -1332,8 +1332,13 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		argNodes = append(argNodes, target)
 	}
 	argNodes = append(argNodes, call.Args...)
+	if defaults, ok := g.env.CallDefaults(id); ok {
+		argNodes = append(argNodes, defaults...)
+	}
 	for _, nodeID := range argNodes {
-		g.Gen(nodeID)
+		if _, ok := g.astCode[nodeID]; !ok {
+			g.Gen(nodeID)
+		}
 	}
 	if funName, ok := g.env.NamedFunRef(call.Callee); ok && funName == "panic" {
 		arg1Reg := g.lookupCode((argNodes[0]))

@@ -446,12 +446,14 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 		return
 	}
 
-	// For method calls, the effective argument list includes the receiver as param 0.
-	args := call.Args
+	// Build the effective argument list: receiver (if method) + explicit args + defaults.
+	args := make([]ast.NodeID, 0, len(call.Args)+2)
 	if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
-		args = make([]ast.NodeID, 0, 1+len(call.Args))
 		args = append(args, receiver)
-		args = append(args, call.Args...)
+	}
+	args = append(args, call.Args...)
+	if defaults, ok := a.env.CallDefaults(nodeID); ok {
+		args = append(args, defaults...)
 	}
 
 	// Apply the effects: map param flows --> return flow.

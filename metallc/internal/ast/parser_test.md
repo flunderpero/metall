@@ -375,6 +375,35 @@ Var(name="f",mut=false)
     exprs[1]=Ident(name="__fun_lit_0")
 ```
 
+**Fun with default param**
+
+```metall
+fun foo(a Int, b Int = 3) void {}
+```
+
+```ast
+Fun(name="foo")
+  params[0]=FunParam(name="a")
+    type=SimpleType(name="Int")
+  params[1]=FunParam(name="b")
+    type=SimpleType(name="Int")
+    default=Int(value=3)
+  returnType=SimpleType(name="void")
+  block=Block()
+```
+
+**Default param must be last**
+
+```metall
+fun foo(a Int = 3, b Int) void {}
+```
+
+```error
+test.met:1:20: parameters with default values must be last
+    fun foo(a Int = 3, b Int) void {}
+                       ^
+```
+
 ## Literals
 
 **Bool true**

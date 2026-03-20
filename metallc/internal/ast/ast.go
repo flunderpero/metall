@@ -129,8 +129,9 @@ type RefType struct {
 func (RefType) isKind() {}
 
 type FunParam struct {
-	Name Name
-	Type NodeID
+	Name    Name
+	Type    NodeID
+	Default *NodeID
 }
 
 func (FunParam) isKind() {}
@@ -525,8 +526,8 @@ func (a *AST) NewFun(
 	)
 }
 
-func (a *AST) NewFunParam(name Name, type_ NodeID, span base.Span) NodeID {
-	return a.node(FunParam{Name: name, Type: type_}, span)
+func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, span base.Span) NodeID {
+	return a.node(FunParam{Name: name, Type: type_, Default: defaultVal}, span)
 }
 
 func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, span base.Span) NodeID {
@@ -719,6 +720,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.ReturnType)
 	case FunParam:
 		f(kind.Type)
+		if kind.Default != nil {
+			f(*kind.Default)
+		}
 	case Struct:
 		for i := range len(kind.TypeParams) {
 			f(kind.TypeParams[i])
@@ -1025,6 +1029,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {
 			addChild("type", kind.Type)
+		}
+		if kind.Default != nil {
+			if !children {
+				addAttr("default", nodeIDKind(*kind.Default))
+			} else {
+				addChild("default", *kind.Default)
+			}
 		}
 	case FunType:
 		if !children {

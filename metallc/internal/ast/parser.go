@@ -950,6 +950,7 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 		return nil, false
 	}
 	funParams := []NodeID{}
+	seenDefault := false
 	for {
 		t, ok := p.mayPeek()
 		if !ok {
@@ -967,7 +968,20 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 				p.diagnostic(t.Span, "expected type, got %s", t.Kind)
 				return funParams, false
 			}
-			param := p.NewFunParam(name, type_, name.Span.Combine(p.span()))
+			var defaultVal *NodeID
+			if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
+				p.next()
+				expr, ok := p.ParseExpr(0)
+				if !ok {
+					return funParams, false
+				}
+				defaultVal = &expr
+				seenDefault = true
+			} else if seenDefault {
+				p.diagnostic(name.Span, "parameters with default values must be last")
+				return funParams, false
+			}
+			param := p.NewFunParam(name, type_, defaultVal, name.Span.Combine(p.span()))
 			funParams = append(funParams, param)
 		case token.Comma:
 			p.next()

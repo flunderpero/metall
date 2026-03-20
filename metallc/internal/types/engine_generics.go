@@ -373,20 +373,20 @@ func (e *Engine) inferUnionConstruction(
 	return typeID, TypeOK, true
 }
 
-func (e *Engine) inferFunCallBinding(call ast.Call) (*Binding, bool) {
+// resolveCallBinding resolves the binding for a call expression, regardless
+// of whether the call has explicit type arguments. This is used by
+// funDeclDefaults to find the function declaration for extracting defaults.
+func (e *Engine) resolveCallBinding(call ast.Call) (*Binding, bool) {
 	calleeNode := e.ast.Node(call.Callee)
 	switch kind := calleeNode.Kind.(type) {
 	case ast.Ident:
-		if len(kind.TypeArgs) > 0 {
-			return nil, false
-		}
 		binding, ok := e.lookup(call.Callee, kind.Name)
 		if !ok || binding.Decl == 0 {
 			return nil, false
 		}
 		return binding, true
 	case ast.Path:
-		if len(kind.TypeArgs) > 0 || len(kind.Segments) != 2 {
+		if len(kind.Segments) != 2 {
 			return nil, false
 		}
 		moduleName := kind.Segments[0]
@@ -412,18 +412,37 @@ func (e *Engine) inferFunCallBinding(call ast.Call) (*Binding, bool) {
 		}
 		return binding, true
 	case ast.FieldAccess:
-		return e.inferMethodCallBinding(call.Callee, kind)
+		return e.resolveMethodCallBinding(call.Callee, kind)
 	default:
 		return nil, false
 	}
 }
 
-func (e *Engine) inferMethodCallBinding(
+// inferFunCallBinding resolves the binding for a call expression that needs
+// type inference. Returns nil for calls with explicit type arguments, since
+// those don't need inference.
+func (e *Engine) inferFunCallBinding(call ast.Call) (*Binding, bool) {
+	calleeNode := e.ast.Node(call.Callee)
+	switch kind := calleeNode.Kind.(type) {
+	case ast.Ident:
+		if len(kind.TypeArgs) > 0 {
+			return nil, false
+		}
+	case ast.Path:
+		if len(kind.TypeArgs) > 0 {
+			return nil, false
+		}
+	case ast.FieldAccess:
+		if len(kind.TypeArgs) > 0 {
+			return nil, false
+		}
+	}
+	return e.resolveCallBinding(call)
+}
+
+func (e *Engine) resolveMethodCallBinding(
 	calleeNodeID ast.NodeID, fieldAccess ast.FieldAccess,
 ) (*Binding, bool) {
-	if len(fieldAccess.TypeArgs) > 0 {
-		return nil, false
-	}
 	targetTypeID, status := e.Query(fieldAccess.Target)
 	if status.Failed() {
 		return nil, false
@@ -488,6 +507,15 @@ func (e *Engine) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 	fieldAccess, isFieldAccess := e.ast.Node(call.Callee).Kind.(ast.FieldAccess)
 	if isFieldAccess {
 		allArgNodeIDs = append([]ast.NodeID{fieldAccess.Target}, call.Args...)
+	}
+	// Fill missing args with defaults for type inference.
+	if len(allArgNodeIDs) < len(genericFunType.Params) {
+		for i := len(allArgNodeIDs); i < len(funNode.Params); i++ {
+			param := base.Cast[ast.FunParam](e.ast.Node(funNode.Params[i]).Kind)
+			if param.Default != nil {
+				allArgNodeIDs = append(allArgNodeIDs, *param.Default)
+			}
+		}
 	}
 	argTypeIDs, status := e.queryArgsForInference(allArgNodeIDs, genericFunType.Params)
 	if status.Failed() {

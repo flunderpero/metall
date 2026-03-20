@@ -88,7 +88,8 @@ type TypeEnv struct {
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
 	methodCallReceiver map[ast.NodeID]ast.NodeID
-	unionWraps         map[ast.NodeID]TypeID // nodeID → union TypeID (auto-wrap variant → union)
+	callDefaults       map[ast.NodeID][]ast.NodeID // callNodeID → default arg NodeIDs to append
+	unionWraps         map[ast.NodeID]TypeID       // nodeID → union TypeID (auto-wrap variant → union)
 }
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
@@ -110,6 +111,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
+		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]TypeID{},
 	}
 }
@@ -124,6 +126,7 @@ func (e *TypeEnv) NewChildEnv() *TypeEnv {
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
+		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]TypeID{},
 	}
 }
@@ -183,6 +186,17 @@ func (e *TypeEnv) MethodCallReceiver(callID ast.NodeID) (ast.NodeID, bool) {
 		return e.parent.MethodCallReceiver(callID)
 	}
 	return 0, false
+}
+
+func (e *TypeEnv) CallDefaults(callID ast.NodeID) ([]ast.NodeID, bool) {
+	defaults, ok := e.callDefaults[callID]
+	if ok {
+		return defaults, true
+	}
+	if e.parent != nil {
+		return e.parent.CallDefaults(callID)
+	}
+	return nil, false
 }
 
 func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
@@ -428,6 +442,10 @@ func (e *TypeEnv) isNamedFun(nodeID ast.NodeID) bool {
 
 func (e *TypeEnv) setMethodCallReceiver(callID ast.NodeID, targetID ast.NodeID) {
 	e.methodCallReceiver[callID] = targetID
+}
+
+func (e *TypeEnv) setCallDefaults(callID ast.NodeID, defaults []ast.NodeID) {
+	e.callDefaults[callID] = defaults
 }
 
 func (e *TypeEnv) isAssignableTo(got TypeID, expected TypeID) bool {

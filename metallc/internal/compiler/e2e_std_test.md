@@ -257,3 +257,49 @@ fun main() void {
 ```output
 test.met:5:17
 ```
+
+**default parameters**
+
+```metall
+use std::io
+
+struct Point { x Int y Int }
+
+union Shape = Point | Int
+
+fun move_to(target Point = Point(0, 0), dx Int = 1) Point {
+    Point(target.x + dx, target.y)
+}
+
+fun sum(s Shape = Shape(0)) Int {
+    match s {
+        case Point p: p.x + p.y
+        case Int n: n
+    }
+}
+
+fun main() void {
+    -- default struct argument
+    io::println(move_to().x)
+    io::println(move_to().y)
+    io::println(move_to(Point(10, 20)).x)
+    io::println(move_to(Point(10, 20)).y)
+    io::println(move_to(Point(10, 20), 5).x)
+
+    -- default union argument
+    io::println(sum())
+    io::println(sum(Shape(Point(3, 4))))
+    io::println(sum(Shape(99)))
+}
+```
+
+```output
+1
+0
+11
+20
+15
+0
+7
+99
+```

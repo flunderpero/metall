@@ -6620,6 +6620,216 @@ union02 = MyResult = T | Str
 fun01   = fun(union01) union01
 ```
 
+## Default Parameters
+
+**Call with default arg omitted**
+
+```metall
+{ fun foo(a Int, b Int = 3) Int { a + b } foo(1) }
+```
+
+```types
+Block: Int
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Ident: Int
+        Ident: Int
+  Call: Int
+    Ident: fun01
+    Int: Int
+---
+fun01 = fun(Int, Int) Int
+```
+
+**Call with default arg provided**
+
+```metall
+{ fun foo(a Int, b Int = 3) Int { a + b } foo(1, 5) }
+```
+
+```types
+Block: Int
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Ident: Int
+        Ident: Int
+  Call: Int
+    Ident: fun01
+    Int: Int
+    Int: Int
+---
+fun01 = fun(Int, Int) Int
+```
+
+**Call with multiple defaults partially provided**
+
+```metall
+{ fun foo(a Int, b Int = 2, c Int = 3) Int { a + b + c } foo(1, 10) }
+```
+
+```types
+Block: Int
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Binary: Int
+          Ident: Int
+          Ident: Int
+        Ident: Int
+  Call: Int
+    Ident: fun01
+    Int: Int
+    Int: Int
+---
+fun01 = fun(Int, Int, Int) Int
+```
+
+**All defaults omitted**
+
+```metall
+{ fun foo(a Int = 1, b Int = 2) Int { a + b } foo() }
+```
+
+```types
+Block: Int
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Ident: Int
+        Ident: Int
+  Call: Int
+    Ident: fun01
+---
+fun01 = fun(Int, Int) Int
+```
+
+**Method with default arg**
+
+```metall
+{
+    struct Foo { x Int }
+    fun Foo.add(f Foo, n Int = 1) Int { f.x + n }
+    Foo(10).add()
+}
+```
+
+```types
+Block: Int
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    FunParam: struct01
+      SimpleType: struct01
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        FieldAccess: Int
+          Ident: struct01
+        Ident: Int
+  Call: Int
+    FieldAccess: fun01
+      TypeConstruction: struct01
+        Ident: struct01
+        Int: Int
+---
+struct01 = Foo { x Int }
+fun01    = fun(struct01, Int) Int
+```
+
+**Default value type mismatch**
+
+```metall
+{ fun foo(a Int = "hello") Int { 0 } }
+```
+
+```error
+test.met:1:19: default value type mismatch: expected Int, got Str
+    { fun foo(a Int = "hello") Int { 0 } }
+                      ^^^^^^^
+```
+
+**Default on ref param**
+
+```metall
+{ fun foo(a &mut Int = 3) void {} }
+```
+
+```error
+test.met:1:24: default parameters cannot be references
+    { fun foo(a &mut Int = 3) void {} }
+                           ^
+```
+
+**Too few args even with defaults**
+
+```metall
+{ fun foo(a Int, b Int, c Int = 3) Int { 0 } foo() }
+```
+
+```error
+test.met:1:46: argument count mismatch: expected 3, got 0
+    { fun foo(a Int, b Int, c Int = 3) Int { 0 } foo() }
+                                                 ^^^^^
+```
+
+**Defaults do not apply to struct construction**
+
+```metall
+{ struct Foo { x Int y Int } Foo(1) }
+```
+
+```error
+test.met:1:30: argument count mismatch: expected 2, got 1
+    { struct Foo { x Int y Int } Foo(1) }
+                                 ^^^^^^
+```
+
+**Defaults do not apply to union construction**
+
+```metall
+{ union U = Int | Str U() }
+```
+
+```error
+test.met:1:23: union constructor takes exactly 1 argument, got 0
+    { union U = Int | Str U() }
+                          ^^^
+```
+
 ## Errors
 
 **Undefined symbol**
