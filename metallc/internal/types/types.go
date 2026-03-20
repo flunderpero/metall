@@ -128,6 +128,7 @@ type ShapeType struct {
 	Name     string // namespaced name (e.g. "test.HasFields")
 	DeclName string // declared local name (e.g. "HasFields"), used by typeName
 	Fields   []StructField
+	TypeArgs []TypeID
 }
 
 func (ShapeType) isTypeKind() {}

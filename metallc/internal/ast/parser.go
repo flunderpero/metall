@@ -303,6 +303,10 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
+	typeParams, ok := p.parseTypeParams()
+	if !ok {
+		return ParseFailed, false
+	}
 	if _, ok := p.expect(token.LCurly); !ok {
 		return ParseFailed, false
 	}
@@ -326,7 +330,7 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 		}
 		funs = append(funs, funDecl)
 	}
-	return p.NewShape(name, fields, funs, t.Span.Combine(p.span())), true
+	return p.NewShape(name, typeParams, fields, funs, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseUnion() (NodeID, bool) {
@@ -1500,7 +1504,7 @@ func (p *Parser) isStructTarget(nodeID NodeID) bool {
 	return len(last) > 0 && unicode.IsUpper(rune(last[0]))
 }
 
-func (p *Parser) parseTypeParams() ([]NodeID, bool) {
+func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
 	if t, ok := p.mayPeek(); !ok || t.Kind != token.LtImmediate {
 		return nil, true
 	}
@@ -1532,7 +1536,11 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 		var constraint *NodeID
 		if next, ok := p.mayPeek(); ok && next.Kind == token.TypeIdent {
 			p.next()
-			c := p.NewSimpleType(Name{next.Value, next.Span}, nil, next.Span)
+			typeArgs, ok := p.parseTypeArgs()
+			if !ok {
+				return nil, false
+			}
+			c := p.NewSimpleType(Name{next.Value, next.Span}, typeArgs, next.Span.Combine(p.span()))
 			constraint = &c
 		} else if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
 			if next1, ok := p.mayPeek1(); ok && next1.Kind == token.ColonColon {

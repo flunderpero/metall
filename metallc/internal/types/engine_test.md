@@ -6114,6 +6114,84 @@ struct03 = Wrapper<Int> { value Int }
 fun06    = fun(struct03) Int
 ```
 
+**Generic shape**
+
+```metall
+{
+    shape Iter<T> {
+        fun Iter.next(it Iter) ?T
+    }
+    struct Range { cur Int max Int }
+    fun Range.next(r Range) ?Int {
+        if r.cur >= r.max { return None() }
+        Option(r.cur)
+    }
+    fun sum<T Iter<Int>>(it T) Int { 0 }
+    sum<Range>(Range(0, 10))
+}
+```
+
+```types
+Block: Int
+  Shape: shape01
+    TypeParam: ?
+    FunDecl: ?
+      FunParam: ?
+        SimpleType: ?
+      SimpleType: ?
+        SimpleType: ?
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    FunParam: struct01
+      SimpleType: struct01
+    SimpleType: union01
+      SimpleType: Int
+    Block: union01
+      If: void
+        Binary: Bool
+          FieldAccess: Int
+            Ident: struct01
+          FieldAccess: Int
+            Ident: struct01
+        Block: void
+          Return: void
+            TypeConstruction: struct02
+              Ident: struct02
+      TypeConstruction: union01
+        Ident: union01
+        FieldAccess: Int
+          Ident: struct01
+  Fun: fun02
+    TypeParam: T
+      SimpleType: shape02
+        SimpleType: Int
+    FunParam: T
+      SimpleType: T
+    SimpleType: Int
+    Block: Int
+      Int: Int
+  Call: Int
+    Ident: fun03
+      SimpleType: struct01
+    TypeConstruction: struct01
+      Ident: struct01
+      Int: Int
+      Int: Int
+---
+shape01  = Iter {  }
+struct01 = Range { cur Int, max Int }
+struct02 = None {  }
+union01  = Option<Int> = Int | struct02
+fun01    = fun(struct01) union01
+fun02    = fun(T) Int
+shape02  = Iter {  }
+fun03    = fun(struct01) Int
+```
+
 ## Default Type Args
 
 **Default type arg on struct**
@@ -6828,6 +6906,64 @@ test.met:1:30: argument count mismatch: expected 2, got 1
 test.met:1:23: union constructor takes exactly 1 argument, got 0
     { union U = Int | Str U() }
                           ^^^
+```
+
+**Generic method call with default arg and explicit type args**
+
+```metall
+{
+    shape HasFmt {
+        fun HasFmt.fmt(f HasFmt) Str
+    }
+    struct Foo { x Int }
+    fun Foo.fmt(f Foo) Str { "foo" }
+    fun show<T HasFmt>(t T, prefix Str = "") Str { t.fmt() }
+    show<Foo>(Foo(1))
+}
+```
+
+```types
+Block: Str
+  Shape: shape01
+    FunDecl: ?
+      FunParam: shape01
+        SimpleType: shape01
+      SimpleType: Str
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    FunParam: struct01
+      SimpleType: struct01
+    SimpleType: Str
+    Block: Str
+      String: Str
+  Fun: fun02
+    TypeParam: T
+      SimpleType: shape01
+    FunParam: T
+      SimpleType: T
+    FunParam: Str
+      SimpleType: Str
+      String: Str
+    SimpleType: Str
+    Block: Str
+      Call: Str
+        FieldAccess: fun03
+          Ident: T
+  Call: Str
+    Ident: fun04
+      SimpleType: struct01
+    TypeConstruction: struct01
+      Ident: struct01
+      Int: Int
+---
+shape01  = HasFmt {  }
+struct01 = Foo { x Int }
+fun01    = fun(struct01) Str
+fun02    = fun(T, Str) Str
+fun03    = fun(T) Str
+fun04    = fun(struct01, Str) Str
 ```
 
 ## Errors

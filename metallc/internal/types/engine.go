@@ -16,13 +16,7 @@ type FunWork struct {
 	Env    *TypeEnv
 }
 
-type StructWork struct {
-	NodeID ast.NodeID
-	TypeID TypeID
-	Env    *TypeEnv
-}
-
-type UnionWork struct {
+type TypeWork struct {
 	NodeID ast.NodeID
 	TypeID TypeID
 	Env    *TypeEnv
@@ -104,8 +98,8 @@ func (e *Engine) Funs() []FunWork {
 	return result
 }
 
-func (e *Engine) Structs() []StructWork {
-	var result []StructWork
+func (e *Engine) Structs() []TypeWork {
+	var result []TypeWork
 	for _, sw := range e.structs {
 		structTyp := base.Cast[StructType](e.env.Type(sw.TypeID).Kind)
 		if !e.env.hasTypeParam(structTyp.TypeArgs) {
@@ -115,8 +109,8 @@ func (e *Engine) Structs() []StructWork {
 	return result
 }
 
-func (e *Engine) Unions() []UnionWork {
-	var result []UnionWork
+func (e *Engine) Unions() []TypeWork {
+	var result []TypeWork
 	for _, uw := range e.unions {
 		unionTyp := base.Cast[UnionType](e.env.Type(uw.TypeID).Kind)
 		if !e.env.hasTypeParam(unionTyp.TypeArgs) {
@@ -1725,6 +1719,8 @@ func (e *Engine) checkSimpleType(nodeID ast.NodeID, simpleType ast.SimpleType, s
 			return e.instantiateStruct(kind, binding.TypeID, simpleType.TypeArgs, span)
 		case UnionType:
 			return e.instantiateUnion(kind, binding.TypeID, simpleType.TypeArgs, span)
+		case ShapeType:
+			return e.instantiateShape(kind, binding.TypeID, simpleType.TypeArgs, span)
 		default:
 			e.diag(span, "type arguments on non-generic type: %s", simpleType.Name.Name)
 			return InvalidTypeID, TypeFailed

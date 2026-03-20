@@ -12,8 +12,9 @@ type EngineCore struct {
 	scopeGraph  *ast.ScopeGraph
 	env         *TypeEnv
 	funs        map[string]FunWork
-	structs     map[string]StructWork
-	unions      map[string]UnionWork
+	structs     map[string]TypeWork
+	unions      map[string]TypeWork
+	shapes      map[string]TypeWork
 }
 
 func NewEngineCore(a *ast.AST, g *ast.ScopeGraph) *EngineCore {
@@ -23,8 +24,9 @@ func NewEngineCore(a *ast.AST, g *ast.ScopeGraph) *EngineCore {
 		scopeGraph: g,
 		env:        NewRootEnv(a, g),
 		funs:       map[string]FunWork{},
-		structs:    map[string]StructWork{},
-		unions:     map[string]UnionWork{},
+		structs:    map[string]TypeWork{},
+		unions:     map[string]TypeWork{},
+		shapes:     map[string]TypeWork{},
 	}
 }
 
@@ -74,13 +76,13 @@ func (c *EngineCore) registerStruct(structType StructType, nodeID ast.NodeID, ty
 		return
 	}
 	if _, ok := c.structs[structType.Name]; !ok {
-		c.structs[structType.Name] = StructWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
+		c.structs[structType.Name] = TypeWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
 	}
 }
 
 func (c *EngineCore) registerUnion(unionType UnionType, nodeID ast.NodeID, typeID TypeID) {
 	if _, ok := c.unions[unionType.Name]; !ok {
-		c.unions[unionType.Name] = UnionWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
+		c.unions[unionType.Name] = TypeWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
 	}
 }
 

@@ -179,9 +179,10 @@ type TypeParam struct {
 func (TypeParam) isKind() {}
 
 type Shape struct {
-	Name   Name
-	Fields []NodeID // StructField nodes
-	Funs   []NodeID // FunDecl nodes
+	Name       Name
+	TypeParams []NodeID
+	Fields     []NodeID // StructField nodes
+	Funs       []NodeID // FunDecl nodes
 }
 
 func (Shape) isKind() {}
@@ -542,8 +543,8 @@ func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, s
 	return a.node(TypeParam{Name: name, Constraint: constraint, Default: defaultType}, span)
 }
 
-func (a *AST) NewShape(name Name, fields []NodeID, funs []NodeID, span base.Span) NodeID {
-	return a.node(Shape{Name: name, Fields: fields, Funs: funs}, span)
+func (a *AST) NewShape(name Name, typeParams []NodeID, fields []NodeID, funs []NodeID, span base.Span) NodeID {
+	return a.node(Shape{Name: name, TypeParams: typeParams, Fields: fields, Funs: funs}, span)
 }
 
 func (a *AST) NewUnion(name Name, typeParams []NodeID, variants []NodeID, span base.Span) NodeID {
@@ -731,6 +732,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 			f(kind.Fields[i])
 		}
 	case Shape:
+		for i := range len(kind.TypeParams) {
+			f(kind.TypeParams[i])
+		}
 		for i := range len(kind.Fields) {
 			f(kind.Fields[i])
 		}
@@ -1061,9 +1065,15 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	case Shape:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if !children {
+			if len(kind.TypeParams) > 0 {
+				addAttr("typeParams", nodeIDList(kind.TypeParams))
+			}
 			addAttr("fields", nodeIDList(kind.Fields))
 			addAttr("funs", nodeIDList(kind.Funs))
 		} else {
+			if len(kind.TypeParams) > 0 {
+				addChild("typeParams", kind.TypeParams...)
+			}
 			addChild("fields", kind.Fields...)
 			addChild("funs", kind.Funs...)
 		}

@@ -194,7 +194,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	}
 }
 
-func (g *IRGen) genStruct(env *types.TypeEnv, s types.StructWork) {
+func (g *IRGen) genStruct(env *types.TypeEnv, s types.TypeWork) {
 	astStruct := base.Cast[ast.Struct](g.ast.Node(s.NodeID).Kind)
 	typ := env.Type(s.TypeID)
 	structType := base.Cast[types.StructType](typ.Kind)
@@ -213,7 +213,7 @@ func (g *IRGen) genStruct(env *types.TypeEnv, s types.StructWork) {
 	g.write("}\n")
 }
 
-func (g *IRGen) genUnion(env *types.TypeEnv, u types.UnionWork) {
+func (g *IRGen) genUnion(env *types.TypeEnv, u types.TypeWork) {
 	typ := env.Type(u.TypeID)
 	unionType := base.Cast[types.UnionType](typ.Kind)
 	payloadSize := unionPayloadSize(env, unionType)
@@ -1841,8 +1841,8 @@ func GenIR(
 	a *ast.AST,
 	module ast.Module,
 	funs []types.FunWork,
-	structs []types.StructWork,
-	unions []types.UnionWork,
+	structs []types.TypeWork,
+	unions []types.TypeWork,
 	opts IROpts,
 ) (string, error) {
 	g := NewIRGen(a, module, opts)
