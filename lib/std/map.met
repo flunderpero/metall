@@ -12,8 +12,8 @@ union MapSlot<K Key, V> = MapEntry<K, V> | Bool
 
 fun MapSlot.is_free<K Key, V>(s MapSlot<K, V>) Bool {
     match s {
-    case Bool deleted: not deleted
-    else: false
+        case Bool deleted: not deleted
+        else: false
     }
 }
 
@@ -26,8 +26,8 @@ fun MapSlot.is_deleted<K Key, V>(s MapSlot<K, V>) Bool {
 
 fun MapSlot.key<K Key, V>(s MapSlot<K, V>) ?K {
     match s {
-    case Bool: None()
-    else entry: entry.key
+        case Bool: None()
+        else entry: entry.key
     }
 }
 
@@ -132,6 +132,38 @@ fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
         }
     }
     m.data = new_data
+}
+
+struct MapIter<K Key, V> {
+    data []MapSlot<K, V>
+    mut pos Int
+}
+
+fun MapIter.next<K Key, V>(it &mut MapIter<K, V>) ?MapEntry<K, V> {
+    for i in it.pos..it.data.len {
+        match it.data[i] {
+            case Bool: 
+            else e: 
+                it.pos = i + 1
+                return e 
+        }
+    }
+    None()
+}
+
+--- Iterate over all map entries. 
+
+    It works by accessing the backing slice directly. All
+    changes done via `Map.set()` and `Map.del()` are reflected in 
+    the iterator.
+    Every `Map.set()` may make the iterator data stale if it needs
+    to re-allocate, so that it doesn't reflect changes via `Map.set()` 
+    and `Map.del()` anymore.
+
+    Having said all of this: Don't mutate a map while iterating
+    over it. ---
+fun Map.iter<K Key, V>(m &Map<K, V>) MapIter<K, V> {
+    MapIter<K, V>(m.data, 0)
 }
 
 fun set_internal<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {

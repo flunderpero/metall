@@ -1,0 +1,51 @@
+struct RunResult {
+    status Int
+    output Str
+}
+
+--- Run a program in the system's shell to completion and capture its stdout/stderr. 
+
+    Return an `Err` only if we fail to start the program not if the
+    program exits with a non-zero status code.
+---
+fun shell(cmd []Str, @a Arena) !RunResult {
+    let sb = StrBuilder.new(256, @a)
+    for i in 0..cmd.len {
+        sb.str(cmd[i])
+        sb.str(" ")
+        void
+    }
+    sb.str("2>&1")
+    LibCIntern.reset_errno()
+    let f = LibCIntern.popen(sb.to_str().to_cstr(@a), "r".to_cstr(@a))
+    if f == 0 {
+        let errno = LibCIntern.errno()
+        let errstr = LibCIntern.strerror(errno)
+        return Err(errstr)
+    }
+    let out = StrBuilder.new(4096, @a)
+    let buf = @a.slice_uninit_mut<U8>(4096)
+    for {
+        LibCIntern.reset_errno()
+        let bytes_read = LibCIntern.fread(f, buf)
+        if bytes_read <= 0 { 
+            let errno = LibCIntern.errno()
+            if errno == 0 {
+                break
+            }
+            let errstr = LibCIntern.strerror(errno)
+            return Err(errstr)
+        }
+        out.utf8_lossy(buf[0..bytes_read])
+        void
+    }
+    LibCIntern.reset_errno()
+    let raw_status = LibCIntern.pclose(f)
+    if raw_status < 0 {
+        let errno = LibCIntern.errno()
+        let errstr = LibCIntern.strerror(errno)
+        return Err(errstr)
+    }
+    let status = ((raw_status >> 8) & 255).to_int()  -- WEXITSTATUS(raw_status)
+    RunResult(status, out.to_str())
+}

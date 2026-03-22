@@ -2,6 +2,8 @@ use std::test
 use assert_ = std::assert
 use std::map
 use std::io
+use std::list
+use std::iter
 
 -- A hash key type with a constant hash function.
 struct ConstantHash {
@@ -122,6 +124,28 @@ fun main() void {
                 try assert.eq(Option(i * 2), sut.get(i))
             }
         }
+    })
+    suite.test("iter", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let m = map::Map.new<Int, Str>(16, @local)
+        m.set(1, "a")
+        m.set(2, "b")
+        m.set(3, "c")
+        mut sut = m.iter()
+        let l = list::List.new<map::MapEntry<Int, Str>>(map::MapEntry<Int, Str>(0, ""), @local)
+        iter::collect(&mut sut, l)
+        l.sort_in_place(fun (a map::MapEntry<Int, Str>, b map::MapEntry<Int, Str>) Int {
+            if a.key == b.key { return 0 }
+            if a.key < b.key { return 0 - 1 }
+            1
+        })
+        try assert.eq(3, l.len)
+        try assert.eq(1, l.get(0).key)
+        try assert.eq("a", l.get(0).value)
+        try assert.eq(2, l.get(1).key)
+        try assert.eq("b", l.get(1).value)
+        try assert.eq(3, l.get(2).key)
+        try assert.eq("c", l.get(2).value)
     })
     suite.run()
 }

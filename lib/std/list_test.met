@@ -45,5 +45,38 @@ fun main() void {
         try assert.eq(1, slice[0])
         try assert.eq(1, ref.*)
     })
+    suite.test("iter", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let l = list::List.new<Int>(0, @local)
+        l.push(1)
+        l.push(2)
+        l.push(3)
+        mut iter = l.iter()
+        let it = &mut iter
+        assert.eq(Option(1), it.peek())
+        assert.eq(Option(1), it.next())
+        -- iterator reflects underlying data
+        l.set(1, 42)
+        assert.eq(Option(42), it.next())
+        -- but push (when it re-allocates) makes underlying data stale
+        for i in 0..256 { l.push(i) }
+        l.set(2, 123)
+        assert.eq(Option(3), it.next())
+        -- and pushed elements are never reflected
+        assert.eq(Option<Int>(None()), it.next(), "hh")
+    })
+    suite.test("sort_in_place", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut = list::List.new<Int>(0, @local)
+        sut.push(3)
+        sut.push(2)
+        sut.push(4)
+        sut.push(1)
+        sut.sort_in_place(fun (a Int, b Int) Int { if a == b { return 0 } if a < b { return 0 - 1 } return 1 })
+        try assert.eq(1, sut.get(0))
+        try assert.eq(2, sut.get(1))
+        try assert.eq(3, sut.get(2))
+        try assert.eq(4, sut.get(3))
+    })
     suite.run()
 }

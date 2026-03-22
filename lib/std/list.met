@@ -1,3 +1,5 @@
+use std::slice
+
 --- A re-allocating array list. ---
 struct List<T> {
     -- todo: This is bad API design. We use the .len field to determine the length as a public API.
@@ -11,7 +13,7 @@ struct List<T> {
 }
 
 fun List.new<T>(default T, @a Arena) &mut List<T> {
-    -- todo: we should be able to use unitialized memory even if a T is not allowed
+    -- todo: We should be able to use unitialized memory even if a T is not allowed.
     let data = @a.slice_mut<T>(32, default)
     @a.new_mut(List(0, data, default, @a))
 }
@@ -32,7 +34,7 @@ fun List.push<T>(l &mut List<T>, v T) void {
     l.len = l.len + 1
 }
 
---- Get a slice to the *current* backing slice.
+--- Get a slice to the current backing slice.
 
     The returned slice will not reflect items added to the list
     and it points to stale data once the backing slice gets re-allocated
@@ -42,9 +44,64 @@ fun List.slice<T>(l &List<T>) []mut T {
 }
 
 fun List.get<T>(l &List<T>, i Int) T {
+    if i >= l.len or i < 0 {
+        panic("index out of bounds")
+    }
     return l.data[i]
 }
 
 fun List.set<T>(l &mut List<T>, i Int, v T) void {
+    if i >= l.len or i < 0 {
+        panic("index out of bounds")
+    }
     l.data[i] = v
+}
+
+--- Sort the list in place. 
+
+    todo: Use a proper `Ordering` enum once we support enums. ---
+fun List.sort_in_place<T>(l &mut List<T>, cmp fun(T, T) Int) void {
+    quicksort(l.data[0..l.len], cmp) 
+}
+
+fun quicksort<T>(s []mut T, cmp fun(T, T) Int) void {
+    fun partition<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) Int {
+        let pivot = s[hi]
+        mut i = lo
+        for j in lo..hi {
+            if cmp(s[j], pivot) < 0 {
+                let swap = s[i]
+                s[i] = s[j]
+                s[j] = swap
+                i = i + 1
+            }
+        }
+        let swap = s[i]
+        s[i] = s[hi]
+        s[hi] = swap
+        i
+    }
+    fun qs<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) void {
+        if lo >= hi {
+            return void
+        }
+        let p = partition(s, lo, hi, cmp)
+        qs(s, lo, p - 1, cmp)
+        qs(s, p + 1, hi, cmp)
+    }
+    qs(s, 0, s.len - 1, cmp)
+}
+
+--- An iterartor over the elements of the list.
+
+    It works by accessing the backing slice directly. All
+    changes done via `List.set()` are reflected in the iterator.
+    Every `List.push()` may make the iterator data stale if it needs
+    to re-allocate, so that it doesn't reflect changes via `List.set()` 
+    anymore. New elements are never reflected in the iterator. 
+
+    Having said all of this: Don't mutate a list while iterating
+    over it. ---
+fun List.iter<T>(l &List<T>) slice::SliceIter<T> { 
+    slice::SliceIter<T>(l.data[0..l.len], 0) 
 }

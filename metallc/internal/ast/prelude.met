@@ -5,7 +5,7 @@ shape HasEq {
 
 --- Hash function for use in hash map implementations.
 
-    This does not produce cryptographic hash. ---
+    This does not produce cryptographic hashes. ---
 shape HasHash {
     fun HasHash.hash(h HasHash) U64
 }
@@ -13,6 +13,11 @@ shape HasHash {
 --- Format an object to Str. ---
 shape HasFmt {
     fun HasFmt.fmt(f HasFmt, sb &mut StrBuilder) void
+}
+
+--- Iterator ---
+shape Iter<T> {
+    fun Iter.next(it &mut Iter) ?T
 }
 
 --- Replace an illegal unicode codepoint with the replacement character U+FFFD. 
@@ -24,6 +29,26 @@ fun Rune.from_u32_lossy(n U32) Rune {
     Rune(n)
 }
 
+struct StrIter {
+    bytes []U8
+    mut pos Int
+}
+
+--- Iterate over all runes (Unicode code points) in the string. ---
+fun StrIter.next(it &mut StrIter) ?Rune {
+    -- todo: Parse runes
+    if it.pos == it.bytes.len {
+        return None()
+    }
+    let r = Rune.from_u32_lossy(it.bytes[it.pos].to_u32())
+    it.pos = it.pos + 1
+    r
+}
+
+fun Str.iter(s Str) StrIter { 
+    StrIter(s.data, 0)
+}
+
 fun Str.bytes_len(s Str) Int {
     s.data.len
 }
@@ -33,6 +58,7 @@ fun Str.is_empty(s Str) Bool {
 }
 
 --- Replace illegal utf8 sequences with the replacement character U+FFFD. 
+
     todo: Actually do that. :-) ---
 fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
 	mut copy = @a.slice_uninit_mut<U8>(data.len)
@@ -150,30 +176,42 @@ fun StrBuilder.new(capacity Int, @a Arena) &mut StrBuilder {
 --- Reset the StrBuilder.
 
     This will start overwriting the output buffer (`sb.out`).
-    It should be save because we never expose `StrBuffer.out`. ---
+    It should be save because we never expose `StrBuilder.out`. ---
 fun StrBuilder.reset(sb &mut StrBuilder) void {
     sb.len = 0
 }
 
-fun StrBuilder.u64(sb &mut StrBuilder, v U64) &mut StrBuilder {
+fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false) &mut StrBuilder {
+    if base != 2 and base != 8 and base != 10 and base != 16 {
+        panic("invalid base")
+    }
     if v == 0 {
         sb.rune('0')
         return sb
     }
+    let ubase = base.to_u64_wrapping()
+    let digits = if upper {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
+    } else {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
+    }
     mut x = v
-    mut digits = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    mut result = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     mut i = 19
     for x > 0 {
-        let digit = '0'.to_u32().to_u8_wrapping() + (x % 10).to_u8_wrapping()
-        digits[i] = digit
+        let digit = digits[(x % ubase).to_int_wrapping()]
+        result[i] = digit
         i = i - 1
-        x = x / 10
+        x = x / ubase
     }
-    sb.private_slice(digits[(i+1)..20])
+    sb.private_slice(result[(i+1)..20])
     sb
 }
 
-fun StrBuilder.int(sb &mut StrBuilder, v Int) &mut StrBuilder {
+fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false) &mut StrBuilder {
+    if base != 2 and base != 8 and base != 10 and base != 16 {
+        panic("invalid base")
+    }
     if v == 0 {
         sb.rune('0')
         return sb
@@ -182,28 +220,56 @@ fun StrBuilder.int(sb &mut StrBuilder, v Int) &mut StrBuilder {
     if v < 0 {
         x = x * -1
     }
-    mut digits = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let digits = if upper {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
+    } else {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
+    }
+    mut result = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     mut i = 19
     for x > 0 {
-        let digit = '0'.to_u32().to_u8_wrapping() + (x % 10).to_u8_wrapping()
-        digits[i] = digit
+        let digit = digits[(x % base)]
+        result[i] = digit
         i = i - 1
-        x = x / 10
+        x = x / base
     }
     if v < 0 {
-        digits[i] = '-'.to_u32().to_u8_wrapping()
+        result[i] = '-'.to_u32().to_u8_wrapping()
         i = i - 1
     }
-    sb.private_slice(digits[(i+1)..20])
+    sb.private_slice(result[(i+1)..20])
     sb
 }
 
-fun StrBuilder.u32(sb &mut StrBuilder, v U32) &mut StrBuilder { sb.u64(v.to_u64()) sb }
-fun StrBuilder.u16(sb &mut StrBuilder, v U16) &mut StrBuilder { sb.u64(v.to_u64()) sb }
-fun StrBuilder.u8(sb &mut StrBuilder, v U8) &mut StrBuilder { sb.u64(v.to_u64()) sb }
-fun StrBuilder.i32(sb &mut StrBuilder, v I32) &mut StrBuilder { sb.int(v.to_int()) sb }
-fun StrBuilder.i16(sb &mut StrBuilder, v I16) &mut StrBuilder { sb.int(v.to_int()) sb }
-fun StrBuilder.i8(sb &mut StrBuilder, v I8) &mut StrBuilder { sb.int(v.to_int()) sb }
+fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false) &mut StrBuilder { 
+    sb.u64(v.to_u64(), base, upper) 
+    sb 
+}
+
+fun StrBuilder.u16(sb &mut StrBuilder, v U16, base Int = 10, upper Bool = false) &mut StrBuilder { 
+    sb.u64(v.to_u64(), base, upper)
+    sb
+}
+
+fun StrBuilder.u32(sb &mut StrBuilder, v U32, base Int = 10, upper Bool = false) &mut StrBuilder {
+    sb.u64(v.to_u64(), base, upper)
+    sb
+}
+
+fun StrBuilder.i8(sb &mut StrBuilder, v I8, base Int = 10, upper Bool = false) &mut StrBuilder {
+    sb.int(v.to_int(), base, upper)
+    sb
+}
+
+fun StrBuilder.i16(sb &mut StrBuilder, v I16, base Int = 10, upper Bool = false) &mut StrBuilder {
+    sb.int(v.to_int(), base, upper)
+    sb
+}
+
+fun StrBuilder.i32(sb &mut StrBuilder, v I32, base Int = 10, upper Bool = false) &mut StrBuilder {
+    sb.int(v.to_int(), base, upper)
+    sb
+}
 
 fun StrBuilder.str(sb &mut StrBuilder, s Str) &mut StrBuilder {
     sb.private_slice(s.utf8_bytes())
@@ -281,6 +347,16 @@ fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
 
 fun StrBuilder.to_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
 
+fun StrBuilder.utf8_lossy(sb &mut StrBuilder, s []U8) &mut StrBuilder {
+    -- todo: Parse `s` as utf8 lossy
+    sb.ensure_capacity(s.len)
+    for i in 0..s.len {
+        sb.out[sb.len + i] = s[i]
+    }
+    sb.len = sb.len + s.len
+    sb
+}
+
 fun StrBuilder.private_slice(sb &mut StrBuilder, s []U8) void {
     sb.ensure_capacity(s.len)
     for i in 0..s.len {
@@ -316,23 +392,23 @@ fun Option.fmt<T HasFmt>(o Option<T>, sb &mut StrBuilder) void {
 
 fun Option.eq<T HasEq>(o Option<T>, other Option<T>) Bool {
     match o {
-    case None:
-        match other {
-            case None: true
-            else: false
-        }
-    else t:
-        match other {
-            case None: false
-            else ot: t.eq(ot)
-        } 
+        case None:
+            match other {
+                case None: true
+                else: false
+            }
+        else t:
+            match other {
+                case None: false
+                else ot: t.eq(ot)
+            } 
     }
 }
 
 fun Option.hash<T HasHash>(o Option<T>) U64 {
     match o {
-    case None n: n.hash()
-    else t: t.hash()
+        case None n: n.hash()
+        else t: t.hash()
     }
 }
 
@@ -357,23 +433,23 @@ fun Result.fmt<T HasFmt>(r Result<T>, sb &mut StrBuilder) void {
 
 fun Result.eq<T HasEq>(r Result<T>, other Result<T>) Bool {
     match r {
-    case Err e:
-        match other {
-            case Err oe: e.eq(oe)
-            else: false
+        case Err e:
+            match other {
+                case Err oe: e.eq(oe)
+                else: false
+            }
+        else t:
+            match other {
+                case Err: false
+                else ot: t.eq(ot)
+            }
         }
-    else t:
-        match other {
-            case Err: false
-            else ot: t.eq(ot)
-        }
-    }
 }
 
 fun Result.hash<T HasHash>(r Result<T>) U64 {
     match r {
-    case Err e: e.hash()
-    else t: t.hash()
+        case Err e: e.hash()
+        else t: t.hash()
     } 
 }
 
@@ -408,3 +484,144 @@ fun U16.fmt(i U16, sb &mut StrBuilder) void { sb.u16(i) }
 fun U8.fmt(i U8, sb &mut StrBuilder) void { sb.u8(i) }
 fun Rune.fmt(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
 fun Bool.fmt(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
+fun U8.to_i8_checked(u U8) !I8 { if u > U8(127) { return Err("number out of range") } u.to_i8_wrapping() }
+fun U16.to_i16_checked(u U16) !I16 { if u > U16(32767) { return Err("number out of range") } u.to_i16_wrapping() }
+fun U32.to_i32_checked(u U32) !I32 { if u > U32(2147483647) { return Err("number out of range") } u.to_i32_wrapping() }
+fun U64.to_int_checked(u U64) !Int { if u > U64(9223372036854775807) { return Err("number out of range") } u.to_int_wrapping() }
+fun I8.to_u8_checked(i I8) !U8 { if i < 0 { return Err("number out of range") } i.to_u8_wrapping() }
+fun I16.to_u16_checked(i I16) !U16 { if i < 0 { return Err("number out of range") } i.to_u16_wrapping() }
+fun I32.to_u32_checked(i I32) !U32 { if i < 0 { return Err("number out of range") } i.to_u32_wrapping() }
+fun Int.to_u64_checked(i Int) !U64 { if i < 0 { return Err("number out of range") } i.to_u64_wrapping() }
+fun U64.to_u32_checked(u U64) !U32 { if u > U64(4294967295) { return Err("number out of range") } u.to_u32_wrapping() }
+fun U64.to_u16_checked(u U64) !U16 { if u > U64(65535) { return Err("number out of range") } u.to_u16_wrapping() }
+fun U64.to_u8_checked(u U64) !U8 { if u > U64(255) { return Err("number out of range") } u.to_u8_wrapping() }
+fun U32.to_u16_checked(u U32) !U16 { if u > U32(65535) { return Err("number out of range") } u.to_u16_wrapping() }
+fun U32.to_u8_checked(u U32) !U8 { if u > U32(255) { return Err("number out of range") } u.to_u8_wrapping() }
+fun U16.to_u8_checked(u U16) !U8 { if u > U16(255) { return Err("number out of range") } u.to_u8_wrapping() }
+fun Int.to_i32_checked(i Int) !I32 { if i < -2147483648 or i > 2147483647 { return Err("number out of range") } i.to_i32_wrapping() }
+fun Int.to_i16_checked(i Int) !I16 { if i < -32768 or i > 32767 { return Err("number out of range") } i.to_i16_wrapping() }
+fun Int.to_i8_checked(i Int) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
+fun I32.to_i16_checked(i I32) !I16 { if i < -32768 or i > 32767 { return Err("number out of range") } i.to_i16_wrapping() }
+fun I32.to_i8_checked(i I32) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
+fun I16.to_i8_checked(i I16) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
+fun I16.to_i8_clamped(i I16) I8 { if i < -128 { return -128 } if i > 127 { return 127 } i.to_i8_wrapping() }
+fun I32.to_i8_clamped(i I32) I8 { if i < -128 { return -128 } if i > 127 { return 127 } i.to_i8_wrapping() }
+fun Int.to_i8_clamped(i Int) I8 { if i < -128 { return (-128) } if i > 127 { return 127 } i.to_i8_wrapping() }
+fun I32.to_i16_clamped(i I32) I16 { if i < -32768 { return -32768 } if i > 32767 { return 32767 } i.to_i16_wrapping() }
+fun Int.to_i16_clamped(i Int) I16 { if i < -32768 { return -32768 } if i > 32767 { return 32767 } i.to_i16_wrapping() }
+fun Int.to_i32_clamped(i Int) I32 { if i < -2147483648 { return I32(-2147483648) } if i > 2147483647 { return I32(2147483647) } i.to_i32_wrapping() }
+fun U16.to_u8_clamped(u U16) U8 { if u > U16(255) { return 255 } u.to_u8_wrapping() }
+fun U32.to_u8_clamped(u U32) U8 { if u > U32(255) { return 255 } u.to_u8_wrapping() }
+fun U64.to_u8_clamped(u U64) U8 { if u > U64(255) { return 255 } u.to_u8_wrapping() }
+fun U32.to_u16_clamped(u U32) U16 { if u > U32(65535) { return 65535 } u.to_u16_wrapping() }
+fun U64.to_u16_clamped(u U64) U16 { if u > U64(65535) { return 65535 } u.to_u16_wrapping() }
+fun U64.to_u32_clamped(u U64) U32 { if u > U64(4294967295) { return 4294967295 } u.to_u32_wrapping() }
+fun U8.to_i8_clamped(u U8) I8 { if u > U8(127) { return 127 } u.to_i8_wrapping() }
+fun U16.to_i16_clamped(u U16) I16 { if u > U16(32767) { return 32767 } u.to_i16_wrapping() }
+fun U16.to_i8_clamped(u U16) I8 { if u > U16(127) { return 127 } u.to_i8_wrapping() }
+fun U32.to_i32_clamped(u U32) I32 { if u > U32(2147483647) { return 2147483647 } u.to_i32_wrapping() }
+fun U32.to_i16_clamped(u U32) I16 { if u > U32(32767) { return 32767 } u.to_i16_wrapping() }
+fun U32.to_i8_clamped(u U32) I8 { if u > U32(127) { return 127 } u.to_i8_wrapping() }
+fun U64.to_int_clamped(u U64) Int { if u > U64(9223372036854775807) { return 9223372036854775807 } u.to_int_wrapping() }
+fun U64.to_i32_clamped(u U64) I32 { if u > U64(2147483647) { return 2147483647 } u.to_i32_wrapping() }
+fun I8.to_u8_clamped(i I8) U8 { if i < 0 { return 0 } i.to_u8_wrapping() }
+fun I8.to_u16_clamped(i I8) U16 { if i < 0 { return 0 } i.to_u16_wrapping() }
+fun I8.to_u32_clamped(i I8) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
+fun I8.to_u64_clamped(i I8) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
+fun I16.to_u8_clamped(i I16) U8 { if i < 0 { return 0 } if i > 255 { return 255 } i.to_u8_wrapping() }
+fun I16.to_u16_clamped(i I16) U16 { if i < 0 { return 0 } i.to_u16_wrapping() }
+fun I16.to_u32_clamped(i I16) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
+fun I16.to_u64_clamped(i I16) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
+fun I32.to_u8_clamped(i I32) U8 { if i < 0 { return 0 } if i > 255 { return 255 } i.to_u8_wrapping() }
+fun I32.to_u16_clamped(i I32) U16 { if i < 0 { return 0 } if i > 65535 { return 65535 } i.to_u16_wrapping() }
+fun I32.to_u32_clamped(i I32) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
+fun I32.to_u64_clamped(i I32) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
+fun Int.to_u8_clamped(i Int) U8 { if i < 0 { return 0 } if i > 255 { return 255 } i.to_u8_wrapping() }
+fun Int.to_u16_clamped(i Int) U16 { if i < 0 { return 0 } if i > 65535 { return 65535 } i.to_u16_wrapping() }
+fun Int.to_u32_clamped(i Int) U32 { if i < 0 { return 0 } if i > 4294967295 { return 4294967295 } i.to_u32_wrapping() }
+fun Int.to_u64_clamped(i Int) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
+
+fun Int.from_ascii_str(str []U8, base Int = 10) !Int {
+    mut s = str[..]
+    let negate = if s[0] == 45 {
+        if s.len == 1 {
+            return Err("parse error: '-' must be followed by digits")
+        }
+        s = s[1..]
+        true
+    } else { false }
+    mut result = try U64.from_ascii_str(s, base)
+    if negate {
+        if result > 9223372036854775808 {
+            return Err("parse error: number out of range")
+        }
+        if result == 9223372036854775808 {
+            -9223372036854775808
+        } else {
+            0 - result.to_int_wrapping()
+        }
+    } else {
+        if result >= 9223372036854775808 {
+            return Err("parse error: number out of range")
+        }
+        result.to_int_wrapping()
+    }
+}
+
+fun U64.from_ascii_str(s []U8, base Int = 10) !U64 {
+    if base != 2 and base != 8 and base != 10 and base != 16 {
+        panic("invalid base")
+    }
+    if s.len == 0 {
+        return Err("parse error: empty slice")
+    }
+    let base_u64 = base.to_u64_wrapping()
+    mut result U64 = 0
+    for i in 0..s.len {
+        mut digit = s[i].to_u64()
+        if base_u64 == 16 {
+            if digit >= 65 and digit <= 70 {
+                digit = digit - 55
+            } else {
+                if (digit >= 97 and digit <= 102) {
+                    digit = digit - 87
+                } else {
+                    if digit < 48 or digit > 57 {
+                        return Err("parse error: not a valid digit")
+                    }
+                    digit = digit - 48
+                }
+            }
+        } else {
+            if digit < 48 or digit >= base_u64 + 48 {
+                return Err("parse error: not a valid digit")
+            }
+            digit = digit - 48
+        }
+        let result_before = result
+        result = result * base_u64 + digit
+        if result < result_before {
+            return Err("parse error: number out of range")
+        }
+    }
+    result
+}
+
+fun I8.from_ascii_str(s []U8, base Int = 10) !I8 {
+    try (try Int.from_ascii_str(s, base)).to_i8_checked() else { return Err("parse error: number out of range") }
+}
+fun I16.from_ascii_str(s []U8, base Int = 10) !I16 {
+    try (try Int.from_ascii_str(s, base)).to_i16_checked() else { return Err("parse error: number out of range") }
+}
+fun I32.from_ascii_str(s []U8, base Int = 10) !I32 {
+    try (try Int.from_ascii_str(s, base)).to_i32_checked() else { return Err("parse error: number out of range") }
+}
+fun U8.from_ascii_str(s []U8, base Int = 10) !U8 {
+    try (try U64.from_ascii_str(s, base)).to_u8_checked() else { return Err("parse error: number out of range") }
+}
+fun U16.from_ascii_str(s []U8, base Int = 10) !U16 {
+    try (try U64.from_ascii_str(s, base)).to_u16_checked() else { return Err("parse error: number out of range") }
+}
+fun U32.from_ascii_str(s []U8, base Int = 10) !U32 {
+    try (try U64.from_ascii_str(s, base)).to_u32_checked() else { return Err("parse error: number out of range") }
+}

@@ -2492,32 +2492,6 @@ fun main() void {
 18446744073709551615
 ```
 
-**clamped conversions**
-
-```metall
-fun main() void {
-    DebugIntern.print_int(I32(200).to_i8_clamped().to_int())
-    DebugIntern.print_int((I32(0) - I32(200)).to_i8_clamped().to_int())
-    DebugIntern.print_int(U16(300).to_u8_clamped().to_int())
-    DebugIntern.print_int(U16(100).to_u8_clamped().to_int())
-    DebugIntern.print_uint((-1).to_u64_clamped())
-    DebugIntern.print_uint(42.to_u64_clamped())
-    DebugIntern.print_int(U8(200).to_i8_clamped().to_int())
-    DebugIntern.print_int(U8(50).to_i8_clamped().to_int())
-}
-```
-
-```output
-127
--128
-255
-100
-0
-42
-127
-50
-```
-
 **typed int arithmetic**
 
 ```metall

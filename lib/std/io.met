@@ -1,88 +1,12 @@
-struct FD {
-    fd I32
-}
-
-fun stdout() FD { FD(1) }
-
-fun stderr() FD { FD(2) }
-
 fun print<T HasFmt>(s T) void {
     -- todo: We should be able to have a shortcut if is is Str.
     let @a = Arena()
     let sb = StrBuilder.new(32, @a)
     s.fmt(sb)
-    LibCIntern.write(stdout().fd, sb.to_str().utf8_bytes())
+    LibCIntern.write(1, sb.to_str().utf8_bytes())
 }
 
 fun println<T HasFmt>(s T) void {
     print<T>(s)
-    LibCIntern.write(stdout().fd, [U8(10)][..])
-}
-
-struct File {
-    -- todo: must be private
-    mut file_ptr U64
-}
-
-fun File.open(filename Str, mode Str, @a Arena) !&mut File {
-    let @local = Arena()
-    if not (mode.eq("r") or mode.eq("w") or mode.eq("a") or mode.eq("r+") or mode.eq("w+") or mode.eq("a+")) {
-        return Err("invalid open mode")
-    }
-    LibCIntern.reset_errno()
-    let file_ptr = LibCIntern.fopen(filename.to_cstr(@local), mode.to_cstr(@local))
-    if file_ptr == 0 {
-        return internal_errno()
-    }
-    let file = @a.new_mut(File(file_ptr))
-    file
-}
-
-fun File.write(f &mut File, data []U8) !Int {
-    if f.file_ptr == 0 {
-        return Err("file is closed")
-    }
-    LibCIntern.reset_errno()
-    let bytes_written = LibCIntern.fwrite(f.file_ptr, data)
-    if bytes_written != data.len {
-        return internal_errno()
-    }
-    bytes_written
-}
-
---- Read into `buf` and return a slice of `buf` with the data read. ---
-fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
-    if f.file_ptr == 0 {
-        return Err("file is closed")
-    }
-    LibCIntern.reset_errno()
-    let bytes_read = LibCIntern.fread(f.file_ptr, buf)
-    if bytes_read < buf.len {
-        let errno = LibCIntern.errno()
-        if errno == 0 {
-            return buf[0..bytes_read]
-        }
-        let errstr = LibCIntern.strerror(errno)
-        return Err(errstr)
-    }
-    buf[0..bytes_read]
-}
-
-fun File.close(f &mut File) !void {
-    if f.file_ptr == 0 {
-        -- is already closed
-        return void
-    }
-    LibCIntern.reset_errno()
-    let res = LibCIntern.fclose(f.file_ptr)
-    f.file_ptr = 0 -- mark as closed
-    if res != 0 {
-        return internal_errno()
-    }
-}
-
-fun internal_errno() Err {
-    let errno = LibCIntern.errno()
-    let errstr = LibCIntern.strerror(errno)
-    return Err(errstr)
+    LibCIntern.write(1, [U8(10)][..])
 }

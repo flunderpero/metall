@@ -1,0 +1,218 @@
+--- Count the elements in the iterator. The iterator is consumed. ---
+fun count<A, I Iter<A>>(it &mut I) Int {
+    mut count = 0
+    for {
+        match it.next() {
+            case None: break
+            else: count = count + 1
+        }
+    }
+    count
+}
+
+struct MapIter<A, B, I Iter<A>> {
+    src &mut I
+    f fun(A) B
+}
+
+fun MapIter.next<A, B, I Iter<A>>(it &mut MapIter<A, B, I>) ?B {
+    match it.src.next() {
+        case None: None()
+        else e: it.f(e)
+    }
+}
+
+--- Map all values in the iterator to another value. ---
+fun map<A, B, I Iter<A>>(it &mut I, f fun(A) B) MapIter<A, B, I> {
+    MapIter<A, B, I>(it, f)
+}
+
+struct FilterIter<A, I Iter<A>> {
+    src &mut I
+    f fun(A) Bool
+}
+
+fun FilterIter.next<A, I Iter<A>>(it &mut FilterIter<A, I>) ?A {
+    for {
+        match it.src.next() {
+            case None: return None()
+            else a: 
+                if it.f(a) {
+                    return a
+                }
+        }
+    }
+    panic("unreachable")
+    None()
+}
+
+--- Filter out values that don't match the predicate. ---
+fun filter<A, I Iter<A>>(it &mut I, f fun(A) Bool) FilterIter<A, I> {
+    FilterIter<A, I>(it, f)
+}
+
+--- Test if all elements match the given predicate. 
+    
+    Consume the iterator up to and including first non-matching element. ---
+fun all<A, I Iter<A>>(it &mut I, f fun(A) Bool) Bool {
+    for {
+        match it.next() {
+            case None: return true
+            else a: 
+                if not f(a) {
+                    return false
+                }
+        }
+    }
+    panic("unreachable")
+    false
+}
+
+--- Test if any element matches the given predicate.
+
+    Consume the iterator up to and including the first matching element. ---
+fun any<A, I Iter<A>>(it &mut I, f fun(A) Bool) Bool {
+    for {
+        match it.next() {
+            case None: return false
+            else a:
+                if f(a) {
+                    return true
+                }
+        }
+    }
+    panic("unreachable")
+    false
+}
+
+struct ChainIter<A, I1 Iter<A>, I2 Iter<A>> {
+    it1 &mut I1
+    it2 &mut I2
+    mut use1 Bool
+}
+
+fun ChainIter.next<A, I1 Iter<A>, I2 Iter<A>>(it &mut ChainIter<A, I1, I2>) ?A {
+    if it.use1 {
+        match it.it1.next() {
+            case None: it.use1 = false
+            else a: return a
+        }
+    }
+    it.it2.next()
+}
+
+--- Chain two iterators together to create a unified iterator over both sets of elements. ---
+fun chain<A, I1 Iter<A>, I2 Iter<A>>(it1 &mut I1, it2 &mut I2) ChainIter<A, I1, I2> {
+    ChainIter<A, I1, I2>(it1, it2, true)
+}
+
+shape CollectTarget<A> {
+    fun CollectTarget.push<A>(c &mut CollectTarget, v A) void
+}
+
+--- Collect the iterator into a something with a `push()` method. ---
+fun collect<A, I Iter<A>, T CollectTarget<A>>(it &mut I, target &mut T) void {
+    for {
+        match it.next() {
+            case None: return void
+            else a: target.push(a)
+        }
+    }
+    panic("unreachable")
+}
+
+--- Fold the iterator into a final value. Use this to sum up values for instance. ---
+fun fold<A, B, I Iter<A>>(it &mut I, initial B, f fun(B, A) B) B {
+    mut value = initial
+    for {
+        match it.next() {
+            case None: return value
+            else a: value = f(value, a)
+        }
+    }
+    panic("unreachable")
+    initial
+}
+
+struct PeekIter<A, I Iter<A>> {
+    it &mut I
+    mut peeked ?A
+}
+
+fun PeekIter.peek<A, I Iter<A>>(p &mut PeekIter<A, I>) ?A {
+    match p.peeked {
+        case None:
+            p.peeked = p.it.next()
+            p.peeked
+        else a: a
+    }
+}
+
+fun PeekIter.next<A, I Iter<A>>(p &mut PeekIter<A, I>) ?A {
+    match p.peeked {
+        case None: p.it.next()
+        else a: 
+            p.peeked = None()
+            a
+    }
+}
+
+shape PeekableIter<A> {
+    fun PeekableIter.peek<A>(it &mut PeekableIter) ?A
+    fun PeekableIter.next<A>(it &mut PeekableIter) ?A
+}
+
+--- Return an iterator with a `peek()` function. ---
+fun peekable<A, I Iter<A>>(it &mut I) PeekIter<A, I> {
+    PeekIter(it, Option<A>(None()))
+}
+
+struct TakeIter<A, I Iter<A>> {
+    it &mut I
+    mut left Int
+}
+
+fun TakeIter.next<A, I Iter<A>>(t &mut TakeIter<A, I>) ?A {
+    if t.left > 0 {
+        t.left = t.left - 1
+        return t.it.next()
+    }
+    None()
+}
+
+--- Take up to n elements from the iterator. ---
+fun take<A, I Iter<A>>(it &mut I, n Int) TakeIter<A, I> {
+    TakeIter(it, n)
+}
+
+struct TakeWhileIter<A, I PeekableIter<A>> {
+    it &mut I
+    f fun(A) Bool
+}
+
+fun TakeWhileIter.next<A, I PeekableIter<A>>(t &mut TakeWhileIter<A, I>) ?A {
+    match t.it.peek() {
+        case None: return None()
+        else a:
+            if t.f(a) {
+                t.it.next()
+                return a
+            }
+            return None()
+    }
+    panic("unreachable")
+    None()
+}
+
+--- Take elements as long as the predicate returns `true`.
+
+    This only works on peekable iterators so that we don't consume the first non-matching element. --- 
+fun take_while<A, I PeekableIter<A>>(it &mut I, f fun(A) Bool) TakeWhileIter<A, I> {
+    TakeWhileIter(it, f)
+}
+
+--- Find the first match. ---
+fun find<A, I Iter<A>>(it &mut I, f fun(A) Bool) ?A {
+    mut filterit = filter(it, f)
+    return (&mut filterit).next()
+}

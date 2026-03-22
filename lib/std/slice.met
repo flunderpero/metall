@@ -1,0 +1,20 @@
+struct SliceIter<T> {
+    data []T
+    mut pos Int
+}
+
+fun SliceIter.next<T>(it &mut SliceIter<T>) ?T {
+    if it.pos == it.data.len {
+        return None()
+    }
+    let e = it.data[it.pos]
+    it.pos = it.pos + 1
+    e
+}
+
+fun SliceIter.peek<T>(it &mut SliceIter<T>) ?T {
+    if it.pos == it.data.len {
+        return None()
+    }
+    it.data[it.pos]
+}

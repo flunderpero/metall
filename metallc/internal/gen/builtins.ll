@@ -6,6 +6,8 @@ declare i32 @printf(ptr, ...)
 declare i32 @fflush(ptr)
 declare ptr @fopen(ptr, ptr)
 declare i32 @fclose(ptr)
+declare ptr @popen(ptr, ptr)
+declare i32 @pclose(ptr)
 declare i64 @fwrite(ptr, i64, i64, ptr)
 declare i64 @fread(ptr, i64, i64, ptr)
 declare ptr @__error()
@@ -198,57 +200,6 @@ define internal i32 @"Int.to_i32_wrapping"(i64 %v) alwaysinline {
     ret i32 %r
 }
 
-; >>> Signed narrowing clamped conversions.
-
-define internal i8 @"I16.to_i8_clamped"(i16 %v) alwaysinline {
-    %lo = icmp slt i16 %v, -128
-    %v1 = select i1 %lo, i16 -128, i16 %v
-    %hi = icmp sgt i16 %v1, 127
-    %v2 = select i1 %hi, i16 127, i16 %v1
-    %r = trunc i16 %v2 to i8
-    ret i8 %r
-}
-define internal i8 @"I32.to_i8_clamped"(i32 %v) alwaysinline {
-    %lo = icmp slt i32 %v, -128
-    %v1 = select i1 %lo, i32 -128, i32 %v
-    %hi = icmp sgt i32 %v1, 127
-    %v2 = select i1 %hi, i32 127, i32 %v1
-    %r = trunc i32 %v2 to i8
-    ret i8 %r
-}
-define internal i8 @"Int.to_i8_clamped"(i64 %v) alwaysinline {
-    %lo = icmp slt i64 %v, -128
-    %v1 = select i1 %lo, i64 -128, i64 %v
-    %hi = icmp sgt i64 %v1, 127
-    %v2 = select i1 %hi, i64 127, i64 %v1
-    %r = trunc i64 %v2 to i8
-    ret i8 %r
-}
-define internal i16 @"I32.to_i16_clamped"(i32 %v) alwaysinline {
-    %lo = icmp slt i32 %v, -32768
-    %v1 = select i1 %lo, i32 -32768, i32 %v
-    %hi = icmp sgt i32 %v1, 32767
-    %v2 = select i1 %hi, i32 32767, i32 %v1
-    %r = trunc i32 %v2 to i16
-    ret i16 %r
-}
-define internal i16 @"Int.to_i16_clamped"(i64 %v) alwaysinline {
-    %lo = icmp slt i64 %v, -32768
-    %v1 = select i1 %lo, i64 -32768, i64 %v
-    %hi = icmp sgt i64 %v1, 32767
-    %v2 = select i1 %hi, i64 32767, i64 %v1
-    %r = trunc i64 %v2 to i16
-    ret i16 %r
-}
-define internal i32 @"Int.to_i32_clamped"(i64 %v) alwaysinline {
-    %lo = icmp slt i64 %v, -2147483648
-    %v1 = select i1 %lo, i64 -2147483648, i64 %v
-    %hi = icmp sgt i64 %v1, 2147483647
-    %v2 = select i1 %hi, i64 2147483647, i64 %v1
-    %r = trunc i64 %v2 to i32
-    ret i32 %r
-}
-
 ; >>> Unsigned narrowing wrapping conversions (trunc).
 
 define internal i8 @"U16.to_u8_wrapping"(i16 %v) alwaysinline {
@@ -273,45 +224,6 @@ define internal i16 @"U64.to_u16_wrapping"(i64 %v) alwaysinline {
 }
 define internal i32 @"U64.to_u32_wrapping"(i64 %v) alwaysinline {
     %r = trunc i64 %v to i32
-    ret i32 %r
-}
-
-; >>> Unsigned narrowing clamped conversions.
-
-define internal i8 @"U16.to_u8_clamped"(i16 %v) alwaysinline {
-    %hi = icmp ugt i16 %v, 255
-    %v1 = select i1 %hi, i16 255, i16 %v
-    %r = trunc i16 %v1 to i8
-    ret i8 %r
-}
-define internal i8 @"U32.to_u8_clamped"(i32 %v) alwaysinline {
-    %hi = icmp ugt i32 %v, 255
-    %v1 = select i1 %hi, i32 255, i32 %v
-    %r = trunc i32 %v1 to i8
-    ret i8 %r
-}
-define internal i8 @"U64.to_u8_clamped"(i64 %v) alwaysinline {
-    %hi = icmp ugt i64 %v, 255
-    %v1 = select i1 %hi, i64 255, i64 %v
-    %r = trunc i64 %v1 to i8
-    ret i8 %r
-}
-define internal i16 @"U32.to_u16_clamped"(i32 %v) alwaysinline {
-    %hi = icmp ugt i32 %v, 65535
-    %v1 = select i1 %hi, i32 65535, i32 %v
-    %r = trunc i32 %v1 to i16
-    ret i16 %r
-}
-define internal i16 @"U64.to_u16_clamped"(i64 %v) alwaysinline {
-    %hi = icmp ugt i64 %v, 65535
-    %v1 = select i1 %hi, i64 65535, i64 %v
-    %r = trunc i64 %v1 to i16
-    ret i16 %r
-}
-define internal i32 @"U64.to_u32_clamped"(i64 %v) alwaysinline {
-    %hi = icmp ugt i64 %v, 4294967295
-    %v1 = select i1 %hi, i64 4294967295, i64 %v
-    %r = trunc i64 %v1 to i32
     ret i32 %r
 }
 
@@ -343,53 +255,6 @@ define internal i64 @"U64.to_int_wrapping"(i64 %v) alwaysinline {
 }
 define internal i32 @"U64.to_i32_wrapping"(i64 %v) alwaysinline {
     %r = trunc i64 %v to i32
-    ret i32 %r
-}
-
-; >>> Unsigned to signed narrowing/same-width clamped conversions.
-
-define internal i8 @"U8.to_i8_clamped"(i8 %v) alwaysinline {
-    %hi = icmp ugt i8 %v, 127
-    %r = select i1 %hi, i8 127, i8 %v
-    ret i8 %r
-}
-define internal i16 @"U16.to_i16_clamped"(i16 %v) alwaysinline {
-    %hi = icmp ugt i16 %v, 32767
-    %r = select i1 %hi, i16 32767, i16 %v
-    ret i16 %r
-}
-define internal i8 @"U16.to_i8_clamped"(i16 %v) alwaysinline {
-    %hi = icmp ugt i16 %v, 127
-    %v1 = select i1 %hi, i16 127, i16 %v
-    %r = trunc i16 %v1 to i8
-    ret i8 %r
-}
-define internal i32 @"U32.to_i32_clamped"(i32 %v) alwaysinline {
-    %hi = icmp ugt i32 %v, 2147483647
-    %r = select i1 %hi, i32 2147483647, i32 %v
-    ret i32 %r
-}
-define internal i16 @"U32.to_i16_clamped"(i32 %v) alwaysinline {
-    %hi = icmp ugt i32 %v, 32767
-    %v1 = select i1 %hi, i32 32767, i32 %v
-    %r = trunc i32 %v1 to i16
-    ret i16 %r
-}
-define internal i8 @"U32.to_i8_clamped"(i32 %v) alwaysinline {
-    %hi = icmp ugt i32 %v, 127
-    %v1 = select i1 %hi, i32 127, i32 %v
-    %r = trunc i32 %v1 to i8
-    ret i8 %r
-}
-define internal i64 @"U64.to_int_clamped"(i64 %v) alwaysinline {
-    %hi = icmp ugt i64 %v, 9223372036854775807
-    %r = select i1 %hi, i64 9223372036854775807, i64 %v
-    ret i64 %r
-}
-define internal i32 @"U64.to_i32_clamped"(i64 %v) alwaysinline {
-    %hi = icmp ugt i64 %v, 2147483647
-    %v1 = select i1 %hi, i64 2147483647, i64 %v
-    %r = trunc i64 %v1 to i32
     ret i32 %r
 }
 
@@ -456,113 +321,6 @@ define internal i64 @"Int.to_u64_wrapping"(i64 %v) alwaysinline {
     ret i64 %v
 }
 
-; >>> Signed to unsigned clamped conversions (clamp negative to 0, then clamp upper bound).
-
-define internal i8 @"I8.to_u8_clamped"(i8 %v) alwaysinline {
-    %neg = icmp slt i8 %v, 0
-    %r = select i1 %neg, i8 0, i8 %v
-    ret i8 %r
-}
-define internal i16 @"I8.to_u16_clamped"(i8 %v) alwaysinline {
-    %neg = icmp slt i8 %v, 0
-    %v1 = select i1 %neg, i8 0, i8 %v
-    %r = zext i8 %v1 to i16
-    ret i16 %r
-}
-define internal i32 @"I8.to_u32_clamped"(i8 %v) alwaysinline {
-    %neg = icmp slt i8 %v, 0
-    %v1 = select i1 %neg, i8 0, i8 %v
-    %r = zext i8 %v1 to i32
-    ret i32 %r
-}
-define internal i64 @"I8.to_u64_clamped"(i8 %v) alwaysinline {
-    %neg = icmp slt i8 %v, 0
-    %v1 = select i1 %neg, i8 0, i8 %v
-    %r = zext i8 %v1 to i64
-    ret i64 %r
-}
-define internal i8 @"I16.to_u8_clamped"(i16 %v) alwaysinline {
-    %neg = icmp slt i16 %v, 0
-    %v1 = select i1 %neg, i16 0, i16 %v
-    %hi = icmp sgt i16 %v1, 255
-    %v2 = select i1 %hi, i16 255, i16 %v1
-    %r = trunc i16 %v2 to i8
-    ret i8 %r
-}
-define internal i16 @"I16.to_u16_clamped"(i16 %v) alwaysinline {
-    %neg = icmp slt i16 %v, 0
-    %r = select i1 %neg, i16 0, i16 %v
-    ret i16 %r
-}
-define internal i32 @"I16.to_u32_clamped"(i16 %v) alwaysinline {
-    %neg = icmp slt i16 %v, 0
-    %v1 = select i1 %neg, i16 0, i16 %v
-    %r = zext i16 %v1 to i32
-    ret i32 %r
-}
-define internal i64 @"I16.to_u64_clamped"(i16 %v) alwaysinline {
-    %neg = icmp slt i16 %v, 0
-    %v1 = select i1 %neg, i16 0, i16 %v
-    %r = zext i16 %v1 to i64
-    ret i64 %r
-}
-define internal i8 @"I32.to_u8_clamped"(i32 %v) alwaysinline {
-    %neg = icmp slt i32 %v, 0
-    %v1 = select i1 %neg, i32 0, i32 %v
-    %hi = icmp sgt i32 %v1, 255
-    %v2 = select i1 %hi, i32 255, i32 %v1
-    %r = trunc i32 %v2 to i8
-    ret i8 %r
-}
-define internal i16 @"I32.to_u16_clamped"(i32 %v) alwaysinline {
-    %neg = icmp slt i32 %v, 0
-    %v1 = select i1 %neg, i32 0, i32 %v
-    %hi = icmp sgt i32 %v1, 65535
-    %v2 = select i1 %hi, i32 65535, i32 %v1
-    %r = trunc i32 %v2 to i16
-    ret i16 %r
-}
-define internal i32 @"I32.to_u32_clamped"(i32 %v) alwaysinline {
-    %neg = icmp slt i32 %v, 0
-    %r = select i1 %neg, i32 0, i32 %v
-    ret i32 %r
-}
-define internal i64 @"I32.to_u64_clamped"(i32 %v) alwaysinline {
-    %neg = icmp slt i32 %v, 0
-    %v1 = select i1 %neg, i32 0, i32 %v
-    %r = zext i32 %v1 to i64
-    ret i64 %r
-}
-define internal i8 @"Int.to_u8_clamped"(i64 %v) alwaysinline {
-    %neg = icmp slt i64 %v, 0
-    %v1 = select i1 %neg, i64 0, i64 %v
-    %hi = icmp sgt i64 %v1, 255
-    %v2 = select i1 %hi, i64 255, i64 %v1
-    %r = trunc i64 %v2 to i8
-    ret i8 %r
-}
-define internal i16 @"Int.to_u16_clamped"(i64 %v) alwaysinline {
-    %neg = icmp slt i64 %v, 0
-    %v1 = select i1 %neg, i64 0, i64 %v
-    %hi = icmp sgt i64 %v1, 65535
-    %v2 = select i1 %hi, i64 65535, i64 %v1
-    %r = trunc i64 %v2 to i16
-    ret i16 %r
-}
-define internal i32 @"Int.to_u32_clamped"(i64 %v) alwaysinline {
-    %neg = icmp slt i64 %v, 0
-    %v1 = select i1 %neg, i64 0, i64 %v
-    %hi = icmp sgt i64 %v1, 4294967295
-    %v2 = select i1 %hi, i64 4294967295, i64 %v1
-    %r = trunc i64 %v2 to i32
-    ret i32 %r
-}
-define internal i64 @"Int.to_u64_clamped"(i64 %v) alwaysinline {
-    %neg = icmp slt i64 %v, 0
-    %r = select i1 %neg, i64 0, i64 %v
-    ret i64 %r
-}
-
 ; >>> Rune builtins.
 
 define internal i32 @"Rune.to_u32"(i32 %v) alwaysinline {
@@ -604,6 +362,22 @@ define internal i64 @LibCIntern.fread(i64 %fd, ptr byval({ptr, i64}) %buf) {
 define internal i32 @LibCIntern.fclose(i64 %fd) {
     %fp = inttoptr i64 %fd to ptr
     %result = call i32 @fclose(ptr %fp)
+    ret i32 %result
+}
+
+define internal i64 @LibCIntern.popen(ptr byval(%CStr) %cmd, ptr byval(%CStr) %mode) {
+    %cmd_data_field = getelementptr %CStr, ptr %cmd, i32 0, i32 0, i32 0
+    %cmd_ptr = load ptr, ptr %cmd_data_field
+    %mode_data_field = getelementptr %CStr, ptr %mode, i32 0, i32 0, i32 0
+    %mode_ptr = load ptr, ptr %mode_data_field
+    %fp = call ptr @popen(ptr %cmd_ptr, ptr %mode_ptr)
+    %fd = ptrtoint ptr %fp to i64
+    ret i64 %fd
+}
+
+define internal i32 @LibCIntern.pclose(i64 %fd) {
+    %fp = inttoptr i64 %fd to ptr
+    %result = call i32 @pclose(ptr %fp)
     ret i32 %result
 }
 

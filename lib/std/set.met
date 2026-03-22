@@ -24,4 +24,3 @@ fun Set.del<T map::Key>(s &mut Set<T>, value T) Bool {
 fun Set.has<T map::Key>(s &Set<T>, value T) Bool {
     s.m.has(value)
 }
-

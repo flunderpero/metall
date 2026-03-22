@@ -50,6 +50,14 @@ fun Assert.eq<T HasEqFmt>(a &Assert, want T, got T, msg Str = "") !void {
     }
 }
 
+fun Assert.neq<T HasEqFmt>(a &Assert, want T, got T, msg Str = "") !void {
+    if want.eq(got) {
+        a.sb.reset()
+        a.sb.str("want ").fmt<T>(want).str("not to equal ").fmt<T>(got)
+        return Err(a.err_msg(msg, a.sb.to_str()))
+    }
+}
+
 fun Assert.gt_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left > right {
         a.sb.reset()
