@@ -124,6 +124,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genDeref(id, kind)
 	case ast.If:
 		g.genIf(id, kind)
+	case ast.When:
+		g.genWhen(id, kind)
 	case ast.Match:
 		g.genMatch(id, kind)
 	case ast.For:
@@ -879,6 +881,78 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 				elseCode,
 				phiElseLabel,
 			)
+			code = phi
+		}
+	}
+	g.setCode(id, code)
+}
+
+func (g *IRFunGen) genWhen(id ast.NodeID, when ast.When) { //nolint:funlen
+	caseLabels := make([]Label, len(when.Cases))
+	nextLabels := make([]Label, len(when.Cases))
+	for i := range when.Cases {
+		caseLabels[i] = g.label(fmt.Sprintf("when_case_%d", i), id)
+		if i+1 < len(when.Cases) {
+			nextLabels[i] = g.label(fmt.Sprintf("when_next_%d", i), id)
+		}
+	}
+	contLabel := g.label("endwhen", id)
+	elseLabel := contLabel
+	if when.Else != nil {
+		elseLabel = g.label("when_else", id)
+	}
+	for i, case_ := range when.Cases {
+		g.Gen(case_.Cond)
+		cond := g.lookupCode(case_.Cond)
+		targetFalse := elseLabel
+		if i+1 < len(when.Cases) {
+			targetFalse = nextLabels[i]
+		}
+		g.write("br i1 %s, label %%%s, label %%%s", cond, caseLabels[i], targetFalse)
+		g.writeLabel(caseLabels[i])
+		g.Gen(case_.Body)
+		caseLabels[i] = g.lastLabel
+		if !g.ast.BlockBreaksControlFlow(case_.Body, false) {
+			g.write("br label %%%s", contLabel)
+		}
+		if i+1 < len(when.Cases) {
+			g.writeLabel(nextLabels[i])
+		}
+	}
+	phiLabels := make([]Label, 0, len(when.Cases)+1)
+	phiNodes := make([]ast.NodeID, 0, len(when.Cases)+1)
+	for i, case_ := range when.Cases {
+		if g.ast.BlockBreaksControlFlow(case_.Body, false) {
+			continue
+		}
+		phiLabels = append(phiLabels, caseLabels[i])
+		phiNodes = append(phiNodes, case_.Body)
+	}
+	if when.Else != nil {
+		g.writeLabel(elseLabel)
+		g.Gen(*when.Else)
+		phiElseLabel := g.lastLabel
+		if !g.ast.BlockBreaksControlFlow(*when.Else, false) {
+			g.write("br label %%%s", contLabel)
+			phiLabels = append(phiLabels, phiElseLabel)
+			phiNodes = append(phiNodes, *when.Else)
+		}
+	}
+	g.writeLabel(contLabel)
+	code := "void"
+	if len(phiNodes) > 0 {
+		firstType := g.typeOfNode(phiNodes[0])
+		typ := g.irType(firstType.ID)
+		if g.isAggregateType(firstType.ID) {
+			typ = "ptr"
+		}
+		if typ != "void" {
+			phi := g.reg()
+			parts := make([]string, len(phiNodes))
+			for i, nodeID := range phiNodes {
+				parts[i] = fmt.Sprintf("[%s, %%%s]", g.lookupCode(nodeID), phiLabels[i])
+			}
+			g.write("%s = phi %s %s", phi, typ, strings.Join(parts, ", "))
 			code = phi
 		}
 	}

@@ -140,6 +140,7 @@ func TestLexer(t *testing.T) {
 		{"union", `union`, []want{{Union, "", "1:1-1:5"}}},
 		{"match", `match`, []want{{Match, "", "1:1-1:5"}}},
 		{"case", `case`, []want{{Case, "", "1:1-1:4"}}},
+		{"when", `when`, []want{{When, "", "1:1-1:4"}}},
 		{"underscore is ident", `_`, []want{{Ident, "_", "1:1"}}},
 		{"for", `for`, []want{{For, "", "1:1-1:3"}}},
 		{"break", `break`, []want{{Break, "", "1:1-1:5"}}},

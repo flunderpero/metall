@@ -152,6 +152,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkModule(nodeID, nodeKind, node.Span)
 	case ast.If:
 		typeID, status = e.checkIf(nodeKind, typeHint)
+	case ast.When:
+		typeID, status = e.checkWhen(nodeKind, typeHint)
 	case ast.For:
 		typeID, status = e.checkFor(nodeID, nodeKind)
 	case ast.Break:
@@ -524,6 +526,66 @@ func (e *Engine) checkIf(if_ ast.If, typeHint *TypeID) (TypeID, TypeStatus) {
 		return InvalidTypeID, TypeFailed
 	}
 	return thenType, TypeOK
+}
+
+func (e *Engine) checkWhen(when ast.When, typeHint *TypeID) (TypeID, TypeStatus) {
+	bodyNodeIDs := make([]ast.NodeID, 0, len(when.Cases)+1)
+	for _, case_ := range when.Cases {
+		bodyNodeIDs = append(bodyNodeIDs, case_.Body)
+	}
+	if when.Else != nil {
+		bodyNodeIDs = append(bodyNodeIDs, *when.Else)
+	}
+	for _, case_ := range when.Cases {
+		condType, status := e.Query(case_.Cond)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if condType != e.boolTyp {
+			e.diag(
+				e.ast.Node(case_.Cond).Span,
+				"when case condition must evaluate to a boolean value, got %s",
+				e.env.TypeDisplay(condType),
+			)
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	var resultType *TypeID
+	if when.Else == nil {
+		resultType = &e.voidTyp
+	}
+	mergeBodyType := func(body ast.NodeID) (TypeStatus, bool) {
+		bodyType, status := e.queryWithHint(body, typeHint)
+		if status.Failed() {
+			return TypeDepFailed, false
+		}
+		if e.ast.BlockBreaksControlFlow(body, false) {
+			return TypeOK, true
+		}
+		if resultType == nil {
+			resultType = &bodyType
+			return TypeOK, true
+		}
+		if bodyType != *resultType {
+			e.diag(
+				e.ast.Node(body).Span,
+				"when branch type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(*resultType),
+				e.env.TypeDisplay(bodyType),
+			)
+			return TypeFailed, false
+		}
+		return TypeOK, true
+	}
+	for _, bodyNodeID := range bodyNodeIDs {
+		if status, ok := mergeBodyType(bodyNodeID); !ok {
+			return InvalidTypeID, status
+		}
+	}
+	if resultType == nil {
+		return e.voidTyp, TypeOK
+	}
+	return *resultType, TypeOK
 }
 
 func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, span base.Span) (TypeID, TypeStatus) {

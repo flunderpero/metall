@@ -221,6 +221,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeFor(nodeID, kind)
 	case ast.If:
 		a.analyzeIf(nodeID, kind)
+	case ast.When:
+		a.analyzeWhen(nodeID, kind)
 	case ast.Match:
 		a.analyzeMatch(nodeID, kind)
 	case ast.Var:
@@ -578,6 +580,19 @@ func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 	}
 	a.flows[nodeID] = merged
 	a.debug(1, nodeID, "analyzeIf: %s", merged)
+}
+
+func (a *LifetimeCheck) analyzeWhen(nodeID ast.NodeID, when ast.When) {
+	a.ast.Walk(nodeID, a.Check)
+	merged := Flow{}
+	for _, case_ := range when.Cases {
+		merged = merged.Merge(a.flow(case_.Body))
+	}
+	if when.Else != nil {
+		merged = merged.Merge(a.flow(*when.Else))
+	}
+	a.flows[nodeID] = merged
+	a.debug(1, nodeID, "analyzeWhen: %s", merged)
 }
 
 // analyzeFor: `for cond { body }`.

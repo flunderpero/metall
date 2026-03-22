@@ -123,6 +123,47 @@ test.met:9:19: reference escaping its allocation scope (via deref assignment)
 ```error
 ```
 
+**when branch escapes to outer**
+
+```metall
+{
+    mut x = 123
+    mut y = &x
+    when {
+        case true:
+            mut z = 456
+            y = &z
+        else:
+    }
+}
+```
+
+```error
+test.met:7:17: reference escaping its allocation scope (via mutation of outer variable)
+                mut z = 456
+                y = &z
+                    ^^
+            else:
+```
+
+**when branch merge no escape**
+
+```metall
+{
+    mut x = 123
+    mut y = &x
+    mut z = 456
+    when {
+        case true:
+            y = &z
+        else:
+    }
+}
+```
+
+```error
+```
+
 **deref assign through ref chain escapes**
 
 ```metall
@@ -2049,4 +2090,3 @@ test.met:5:26: reference escaping its allocation scope (via block result)
 
 ```error
 ```
-

@@ -12,6 +12,7 @@
   "for"
   "in"
   "match"
+  "when"
   "case"
   "try"
   "is"

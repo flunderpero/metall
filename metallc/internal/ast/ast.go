@@ -355,6 +355,18 @@ type MatchElse struct {
 	Body    NodeID // Block
 }
 
+type When struct {
+	Cases []WhenCase
+	Else  *NodeID // Block, nil if absent
+}
+
+func (When) isKind() {}
+
+type WhenCase struct {
+	Cond NodeID
+	Body NodeID // Block
+}
+
 // TryPattern is used as the pattern in a match arm desugared from `try` without `is`.
 // It signals the type checker to use the first variant of the union.
 type TryPattern struct{}
@@ -441,6 +453,10 @@ func (a *AST) NewTryPattern(span base.Span) NodeID {
 
 func (a *AST) NewIf(cond NodeID, then NodeID, else_ *NodeID, span base.Span) NodeID {
 	return a.node(If{Cond: cond, Then: then, Else: else_}, span)
+}
+
+func (a *AST) NewWhen(cases []WhenCase, else_ *NodeID, span base.Span) NodeID {
+	return a.node(When{Cases: cases, Else: else_}, span)
 }
 
 func (a *AST) NewFor(binding *Name, cond *NodeID, body NodeID, span base.Span) NodeID {
@@ -684,6 +700,14 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		if kind.Else != nil {
 			f(kind.Else.Body)
+		}
+	case When:
+		for _, case_ := range kind.Cases {
+			f(case_.Cond)
+			f(case_.Body)
+		}
+		if kind.Else != nil {
+			f(*kind.Else)
 		}
 	case If:
 		f(kind.Cond)
@@ -930,6 +954,17 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 					addAttr("else.binding", kind.Else.Binding.Name)
 				}
 				addChild("else.body", kind.Else.Body)
+			}
+		}
+	case When:
+		addAttr("cases", fmt.Sprintf("%d", len(kind.Cases)))
+		if children {
+			for i, case_ := range kind.Cases {
+				addChild(fmt.Sprintf("case[%d].cond", i), case_.Cond)
+				addChild(fmt.Sprintf("case[%d].body", i), case_.Body)
+			}
+			if kind.Else != nil {
+				addChild("else", *kind.Else)
 			}
 		}
 	case If:
@@ -1302,6 +1337,17 @@ func (a *AST) blockBreaksControlFlow(blockID NodeID, checkForReturnOnly bool) bo
 		if ifNode, ok := lastExpr.Kind.(If); ok {
 			return ifNode.Else != nil && a.blockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
 				a.blockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
+		}
+		if whenNode, ok := lastExpr.Kind.(When); ok {
+			if len(whenNode.Cases) == 0 || whenNode.Else == nil {
+				return false
+			}
+			for _, case_ := range whenNode.Cases {
+				if !a.blockBreaksControlFlow(case_.Body, checkForReturnOnly) {
+					return false
+				}
+			}
+			return a.blockBreaksControlFlow(*whenNode.Else, checkForReturnOnly)
 		}
 		if matchNode, ok := lastExpr.Kind.(Match); ok {
 			for _, arm := range matchNode.Arms {

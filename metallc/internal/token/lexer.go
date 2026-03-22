@@ -79,6 +79,7 @@ const (
 	Unknown
 	Use
 	Void
+	When
 	Whitespace
 )
 
@@ -151,6 +152,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Unknown:               "<unknown>",
 	Use:                   "<use>",
 	Void:                  "<void>",
+	When:                  "<when>",
 	Whitespace:            "<whitespace>",
 }
 
@@ -196,6 +198,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"union":    Union,
 	"use":      Use,
 	"void":     Void,
+	"when":     When,
 }
 
 func (k TokenKind) String() string {

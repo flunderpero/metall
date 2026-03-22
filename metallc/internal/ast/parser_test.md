@@ -497,6 +497,28 @@ If()
     exprs=Int(value=123)
 ```
 
+**When expression**
+
+```metall
+when {
+    case a: 1
+    case b: 2
+    else: 3
+}
+```
+
+```ast
+When(cases=2)
+  case[0].cond=Ident(name="a")
+  case[0].body=Block()
+    exprs=Int(value=1)
+  case[1].cond=Ident(name="b")
+  case[1].body=Block()
+    exprs=Int(value=2)
+  else=Block()
+    exprs=Int(value=3)
+```
+
 ## Structs
 
 **Struct declaration**

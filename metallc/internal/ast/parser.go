@@ -680,6 +680,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = match
+	case token.When:
+		when, ok := p.ParseWhen()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = when
 	case token.Try:
 		try_, ok := p.parseTry()
 		if !ok {
@@ -1150,6 +1156,73 @@ func (p *Parser) ParseIf() (NodeID, bool) {
 	return p.NewIf(cond, then, &else_, t.Span.Combine(p.span())), true
 }
 
+func (p *Parser) ParseWhen() (NodeID, bool) { //nolint:funlen
+	t, ok := p.expect(token.When)
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.LCurly); !ok {
+		return ParseFailed, false
+	}
+	var cases []WhenCase
+	var elseBody *NodeID
+	for {
+		next, ok := p.mayPeek()
+		if !ok || next.Kind == token.RCurly {
+			break
+		}
+		switch next.Kind { //nolint:exhaustive
+		case token.Case:
+			p.next()
+			cond, ok := p.ParseExpr(0)
+			if !ok {
+				return ParseFailed, false
+			}
+			if _, ok := p.expect(token.Colon); !ok {
+				return ParseFailed, false
+			}
+			bodyExprs, ok := p.parseCaseBody()
+			if !ok {
+				return ParseFailed, false
+			}
+			bodySpan := p.span()
+			if len(bodyExprs) > 0 {
+				bodySpan = p.Node(bodyExprs[0]).Span.Combine(p.span())
+			}
+			cases = append(cases, WhenCase{Cond: cond, Body: p.NewBlock(bodyExprs, bodySpan)})
+		case token.Else:
+			p.next()
+			if _, ok := p.expect(token.Colon); !ok {
+				return ParseFailed, false
+			}
+			bodyExprs, ok := p.parseCaseBody()
+			if !ok {
+				return ParseFailed, false
+			}
+			bodySpan := p.span()
+			if len(bodyExprs) > 0 {
+				bodySpan = p.Node(bodyExprs[0]).Span.Combine(p.span())
+			}
+			body := p.NewBlock(bodyExprs, bodySpan)
+			elseBody = &body
+			goto done
+		default:
+			p.diagnostic(next.Span, "expected case or else, got %s", next.Kind)
+			return ParseFailed, false
+		}
+	}
+
+done:
+	if _, ok := p.expect(token.RCurly); !ok {
+		return ParseFailed, false
+	}
+	if len(cases) == 0 {
+		p.diagnostic(t.Span, "when requires at least one case")
+		return ParseFailed, false
+	}
+	return p.NewWhen(cases, elseBody, t.Span.Combine(p.span())), true
+}
+
 func (p *Parser) ParseIdent() (NodeID, bool) {
 	t, ok := p.expect(token.Ident)
 	if !ok {
@@ -1465,7 +1538,7 @@ func (p *Parser) parseMatchArmBindingAndBody() (*Name, *NodeID, NodeID, bool) {
 	if _, ok := p.expect(token.Colon); !ok {
 		return nil, nil, ParseFailed, false
 	}
-	bodyExprs, ok := p.parseMatchArmBody()
+	bodyExprs, ok := p.parseCaseBody()
 	if !ok {
 		return nil, nil, ParseFailed, false
 	}
@@ -1477,7 +1550,7 @@ func (p *Parser) parseMatchArmBindingAndBody() (*Name, *NodeID, NodeID, bool) {
 	return binding, guard, body, true
 }
 
-func (p *Parser) parseMatchArmBody() ([]NodeID, bool) {
+func (p *Parser) parseCaseBody() ([]NodeID, bool) {
 	var exprs []NodeID
 	for {
 		t, ok := p.mayPeek()

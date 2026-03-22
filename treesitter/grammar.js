@@ -256,6 +256,7 @@ module.exports = grammar({
 
         // Control flow.
         $.if_expression,
+        $.when_expression,
         $.for_expression,
         $.match_expression,
         $.try_expression,
@@ -391,6 +392,30 @@ module.exports = grammar({
         field("then", $.block),
         optional(seq("else", field("else", $.block))),
       )),
+
+    when_expression: ($) =>
+      seq(
+        "when",
+        "{",
+        repeat1($.when_case),
+        optional($.when_else),
+        "}",
+      ),
+
+    when_case: ($) =>
+      seq(
+        "case",
+        field("condition", $._expression),
+        ":",
+        repeat($._expression),
+      ),
+
+    when_else: ($) =>
+      seq(
+        "else",
+        ":",
+        repeat($._expression),
+      ),
 
     for_expression: ($) =>
       choice(

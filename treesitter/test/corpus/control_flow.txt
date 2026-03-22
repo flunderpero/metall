@@ -69,6 +69,35 @@ fun f() void { for { break } }
       (for_expression body: (block (break_expression))))))
 
 ================================================================================
+When expression
+================================================================================
+
+fun f() Int {
+    when {
+        case a: 1
+        case b: 2
+        else: 3
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (when_expression
+        (when_case
+          condition: (identifier)
+          (integer_literal))
+        (when_case
+          condition: (identifier)
+          (integer_literal))
+        (when_else
+          (integer_literal))))))
+
+================================================================================
 For-in range
 ================================================================================
 

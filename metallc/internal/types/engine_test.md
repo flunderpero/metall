@@ -1653,6 +1653,40 @@ Block: void
       Int: Int
 ```
 
+**When expression**
+
+```metall
+{
+    let x = false
+    let y = true
+    let z = when {
+        case x: 1
+        case y: 2
+        else: 3
+    }
+    z
+}
+```
+
+```types
+Block: Int
+  Var: void
+    Bool: Bool
+  Var: void
+    Bool: Bool
+  Var: void
+    When: Int
+      Ident: Bool
+      Block: Int
+        Int: Int
+      Ident: Bool
+      Block: Int
+        Int: Int
+      Block: Int
+        Int: Int
+  Ident: Int
+```
+
 **If with one branch return**
 
 ```metall
@@ -8541,7 +8575,3 @@ test.met:3:5: cannot access field on non-struct type: void
         ^^^^^
     }
 ```
-
-
-
-

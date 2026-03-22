@@ -519,6 +519,25 @@ fun main() void {
 123
 ```
 
+**when branch chain**
+
+```metall
+fun main() void {
+    let a = false
+    let b = true
+    let x = when {
+        case a: 1
+        case b: 2
+        else: 3
+    }
+    DebugIntern.print_int(x)
+}
+```
+
+```output
+2
+```
+
 **ref deref**
 
 ```metall
@@ -3704,4 +3723,3 @@ hello
 hello 
 hello 
 ```
-
