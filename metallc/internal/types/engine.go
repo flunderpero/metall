@@ -263,6 +263,9 @@ func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint *TypeID) (TypeID, Typ
 	e.typeHint = typeHint
 	typeID, status := e.Query(nodeID)
 	e.typeHint = saved
+	if !status.Failed() && typeID != *typeHint {
+		typeID = e.tryUnionAutoWrap(nodeID, typeID, *typeHint)
+	}
 	return typeID, status
 }
 

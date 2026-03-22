@@ -3395,6 +3395,28 @@ fun main() void {
 fail
 ```
 
+**union auto-wrap in generic function call with struct construction**
+
+```metall
+struct Wrapper { value Str }
+union Foo = Wrapper | Int
+
+fun replace<T>(old T, new T) T { new }
+
+fun main() void {
+    let old Foo = 42
+    let x = replace(old, Wrapper("hello"))
+    match x {
+        case Wrapper w: DebugIntern.print_str(w.value)
+        else: DebugIntern.print_str("other")
+    }
+}
+```
+
+```output
+hello
+```
+
 ## Function Literals
 
 **function literal basic**
