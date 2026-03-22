@@ -1,19 +1,12 @@
 use std::test
+use std::list
 use assert_ = std::assert
 
 fun main() void {
     let @local = Arena()
 
-    let rune_suite = test::suite("Rune", @local)
-    rune_suite.test("from_u32_lossy", fun(assert &assert_::Assert) !void {
-        try assert.eq('A', Rune.from_u32_lossy(65))
-        try assert.eq('�', Rune.from_u32_lossy(123456789))
-        try assert.eq('�', Rune.from_u32_lossy(55296)) -- 0xD800
-    })
-    _ = rune_suite.run()
-
-    let str_builder_suite = test::suite("StrBuilder", @local)
-    str_builder_suite.test("u64", fun(assert &assert_::Assert) !void {
+    let suite = test::suite("StrBuilder", @local)
+    suite.test("u64", fun(assert &assert_::Assert) !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         _ = sut.u64(13370).str(" ")
@@ -24,7 +17,7 @@ fun main() void {
         _ = sut.u64(13370, 16, true)
         try assert.eq("13370 11010000111010 32072 13370 343a 343A", sut.to_str())
     })
-    str_builder_suite.test("int", fun(assert &assert_::Assert) !void {
+    suite.test("int", fun(assert &assert_::Assert) !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         _ = sut.int(13370).str(" ")
@@ -36,5 +29,16 @@ fun main() void {
         _ = sut.int(13370, 16, true)
         try assert.eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.to_str())
     })
-    _ = str_builder_suite.run()
+    suite.test("join", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut = StrBuilder.new(32, @local)
+        let l = list::List.new<Int>(0, @local)
+        l.push(1)
+        l.push(2)
+        l.push(3)
+        mut it = l.iter()
+        _ = sut.join(&mut it, ", ")
+        try assert.eq("1, 2, 3", sut.to_str())
+    })
+    _ = suite.run()
 }

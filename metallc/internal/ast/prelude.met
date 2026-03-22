@@ -339,6 +339,23 @@ fun StrBuilder.slice<T HasFmt>(sb &mut StrBuilder, v []T, sep Str) &mut StrBuild
     sb
 }
 
+fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep Str) &mut StrBuilder {
+    mut first = true
+    for {
+        match it.next() {
+            case None: break
+            else a: 
+                if first {
+                    first = false
+                } else {
+                    _ = sb.str(sep)
+                }
+                _ = sb.fmt(a)
+        } 
+    }
+    sb
+}
+
 fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
     if sb.out.len - sb.len < capacity {
         let new_out = sb.@a.slice_uninit_mut<U8>((sb.len + capacity) * 2)

@@ -1,0 +1,63 @@
+use std::test
+use std::debug
+use assert_ = std::assert
+
+fun main() void {
+    let @local = Arena()
+
+    let suite = test::suite("Str", @local)
+    suite.test("concat", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        try assert.eq("hello there", "hello ".concat("there", @local))
+    })
+    suite.test("index", fun(assert &assert_::Assert) !void {
+        try assert.eq(0, "test".index("test"))
+        try assert.eq(2, "test".index("st"))
+        try assert.eq(-1, "test".index("a"))
+        try assert.eq(-1, "test".index("test1"))
+        try assert.eq(-1, "".index("test1"))
+        try assert.eq(0, "".index(""))
+    })
+    suite.test("contains", fun(assert &assert_::Assert) !void {
+        try assert.ok("test".contains("test"))
+        try assert.not_ok("test".contains("a"))
+        try assert.not_ok("test".contains("test1"))
+        try assert.ok("test".contains(""))
+        try assert.not_ok("".contains("test"))
+        try assert.ok("".contains(""))
+    })
+    suite.test("hash", fun(assert &assert_::Assert) !void {
+        try assert.eq(U64(686710930086579414), "hello".hash())
+        try assert.eq(U64(0), "".hash())
+    })
+    suite.test("iter", fun(assert &assert_::Assert) !void {
+        let s = "hi!"
+        mut iter = s.iter()
+        let it = &mut iter
+        try assert.eq(Option('h'), it.next())
+        try assert.eq(Option('i'), it.next())
+        try assert.eq(Option('!'), it.next())
+        try assert.eq(Option<Rune>(None()), it.next())
+    })
+    suite.test("split", fun(assert &assert_::Assert) !void {
+        mut it = "these are some words".split(" ")
+        try assert.eq(Option("these"), (&mut it).next())
+        try assert.eq(Option("are"), (&mut it).next())
+        try assert.eq(Option("some"), (&mut it).next())
+        try assert.eq(Option("words"), (&mut it).next())
+        try assert.eq(Option<Str>(None()), (&mut it).next())
+
+        it = "".split(" ")
+        try assert.eq(Option<Str>(None()), (&mut it).next())
+
+        it = "test".split("")
+        try assert.eq(Option<Str>(None()), (&mut it).next(), "empty separator does not yield anything")
+
+        it = "a b  ".split(" ")
+        try assert.eq(Option("a"), (&mut it).next())
+        try assert.eq(Option("b"), (&mut it).next())
+        try assert.eq(Option(""), (&mut it).next())
+        try assert.eq(Option<Str>(None()), (&mut it).next())
+    })
+    _ = suite.run()
+}

@@ -1,0 +1,14 @@
+use std::test
+use assert_ = std::assert
+
+fun main() void {
+    let @local = Arena()
+
+    let suite = test::suite("Rune", @local)
+    suite.test("from_u32_lossy", fun(assert &assert_::Assert) !void {
+        try assert.eq('A', Rune.from_u32_lossy(65))
+        try assert.eq('�', Rune.from_u32_lossy(123456789))
+        try assert.eq('�', Rune.from_u32_lossy(55296)) -- 0xD800
+    })
+    _ = suite.run()
+}
