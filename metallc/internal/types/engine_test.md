@@ -219,21 +219,6 @@ Fun: fun01
 fun01 = fun(Int, Str) Int
 ```
 
-**Fun void return coerces body to void**
-
-```metall
-fun foo() void { 123 }
-```
-
-```types
-Fun: fun01
-  SimpleType: void
-  Block: Int
-    Int: Int
----
-fun01 = fun() void
-```
-
 **Fun params**
 
 ```metall
@@ -2662,7 +2647,7 @@ fun01 = fun([5]Int) void
 **Array type ids are stable**
 
 ```metall
-fun foo(a [5]Int, b [5]Int, c [6]Int) void { [1, 2, 3, 4, 5]}
+fun foo(a [5]Int, b [5]Int, c [6]Int) void { _ = [1, 2, 3, 4, 5]}
 ```
 
 ```types
@@ -2677,13 +2662,15 @@ Fun: fun01
     ArrayType: [6]Int
       SimpleType: Int
   SimpleType: void
-  Block: [5]Int
-    ArrayLiteral: [5]Int
-      Int: Int
-      Int: Int
-      Int: Int
-      Int: Int
-      Int: Int
+  Block: void
+    Assign: void
+      Ident: ?
+      ArrayLiteral: [5]Int
+        Int: Int
+        Int: Int
+        Int: Int
+        Int: Int
+        Int: Int
 ---
 fun01 = fun([5]Int, [5]Int, [6]Int) void
 ```
@@ -7289,7 +7276,7 @@ test.met:1:25: symbol already defined: foo
 struct Foo<T> { one T }
 fun Foo.bar<T>(f &Foo<T>) T { f.one }
 fun Foo.bar<T>(f &Foo<T>) T { f.one }
-fun main() void { let f = Foo<Int>(42) let r = &f r.bar() }
+fun main() void { let f = Foo<Int>(42) let r = &f _ = r.bar() }
 ```
 
 ```error
@@ -7297,7 +7284,7 @@ test.met:3:5: symbol already defined: test.Foo.bar
     fun Foo.bar<T>(f &Foo<T>) T { f.one }
     fun Foo.bar<T>(f &Foo<T>) T { f.one }
         ^^^^^^^
-    fun main() void { let f = Foo<Int>(42) let r = &f r.bar() }
+    fun main() void { let f = Foo<Int>(42) let r = &f _ = r.bar() }
 ```
 
 **Fun return mismatch**

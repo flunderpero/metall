@@ -48,7 +48,7 @@ fun main() void {}
 
 ```metall
 use lib
-fun main() void { lib::get_lib() }
+fun main() void { _ = lib::get_lib() }
 ```
 
 **call imported function return type**
@@ -168,7 +168,7 @@ fun01 = fun() void
 
 ```metall
 use l = lib
-fun main() void { l::get_lib() }
+fun main() void { _ = l::get_lib() }
 ```
 
 **generic function from import**

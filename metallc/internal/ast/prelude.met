@@ -364,7 +364,7 @@ fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) &mut StrBuilder {
 --- None represents the absence of something. ---
 -- struct None {}
 
-fun None.fmt(n None, sb &mut StrBuilder) void { sb.str("<none>") }
+fun None.fmt(n None, sb &mut StrBuilder) void { _ = sb.str("<none>") }
 
 fun None.eq(n None, other None) Bool { true }
 
@@ -374,7 +374,7 @@ fun None.hash(n None) U64 { 0 }
 -- union Option<T> = T | None
 
 fun Option.fmt<T HasFmt>(o Option<T>, sb &mut StrBuilder) void {
-    match o {
+    _ = match o {
         case T t: sb.fmt(t)
         case None n: sb.fmt(n)
     } 
@@ -405,7 +405,7 @@ fun Option.hash<T HasHash>(o Option<T>) U64 {
 --- An error type. You are free to use anything as error. ---
 -- struct Err { msg Str }
 
-fun Err.fmt(e Err, sb &mut StrBuilder) void { sb.str("error: ").str(e.msg) }
+fun Err.fmt(e Err, sb &mut StrBuilder) void { _ = sb.str("error: ").str(e.msg) }
 
 fun Err.eq(e Err, other Err) Bool { e.msg.eq(other.msg) }
 
@@ -415,7 +415,7 @@ fun Err.hash(e Err) U64 { e.msg.hash() }
 -- union Result<T> = T | Err
 
 fun Result.fmt<T HasFmt>(r Result<T>, sb &mut StrBuilder) void {
-    match r {
+    _ = match r {
         case T t: sb.fmt(t)
         case Err: sb.str("<error>")
     }

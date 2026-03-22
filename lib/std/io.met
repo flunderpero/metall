@@ -3,10 +3,10 @@ fun print<T HasFmt>(s T) void {
     let @a = Arena()
     let sb = StrBuilder.new(32, @a)
     s.fmt(sb)
-    LibCIntern.write(1, sb.to_str().utf8_bytes())
+    _ = LibCIntern.write(1, sb.to_str().utf8_bytes())
 }
 
 fun println<T HasFmt>(s T) void {
     print<T>(s)
-    LibCIntern.write(1, [U8(10)][..])
+    _ = LibCIntern.write(1, [U8(10)][..])
 }

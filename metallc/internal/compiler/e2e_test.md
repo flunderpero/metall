@@ -3559,60 +3559,60 @@ test.met:2:5: hello
 
 ```metall
 fun main() void {
-    1 / 0
+    _ = 1 / 0
 }
 ```
 
 ```panic
-test.met:2:5: division by zero
+test.met:2:9: division by zero
 ```
 
 **int modulo by zero**
 
 ```metall
 fun main() void {
-    1 % 0
+    _ = 1 % 0
 }
 ```
 
 ```panic
-test.met:2:5: division by zero
+test.met:2:9: division by zero
 ```
 
 **rune arithmetic overflow**
 
 ```metall
 fun main() void {
-    '😀' * 9
+    _ = '😀' * 9
 }
 ```
 
 ```panic
-test.met:2:5: illegal rune
+test.met:2:9: illegal rune
 ```
 
 **rune arithmetic underflow**
 
 ```metall
 fun main() void {
-    'a' - 'b'
+    _ = 'a' - 'b'
 }
 ```
 
 ```panic
-test.met:2:5: illegal rune
+test.met:2:9: illegal rune
 ```
 
 **rune arithmetic into surrogate**
 
 ```metall
 fun main() void {
-    '퟿' + 1
+    _ = '퟿' + 1
 }
 ```
 
 ```panic
-test.met:2:5: illegal rune
+test.met:2:9: illegal rune
 ```
 
 **array index out of bounds**

@@ -1534,7 +1534,7 @@ func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType
 	if e.ast.BlockReturns(funNode.Block) {
 		return
 	}
-	if funType.Return != e.voidTyp && !e.env.isAssignableTo(blockTypeID, funType.Return) {
+	if !e.env.isAssignableTo(blockTypeID, funType.Return) {
 		diagSpan := blockNode.Span
 		if len(block.Exprs) > 0 {
 			lastNode := e.ast.Node(block.Exprs[len(block.Exprs)-1])
