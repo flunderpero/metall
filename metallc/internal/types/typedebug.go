@@ -160,6 +160,10 @@ func (db *debugBindings) scopeDetail(label string, scope *ast.Scope) string {
 			sb.WriteString(fmt.Sprintf("\n  %s: ?", ab.Name))
 			continue
 		}
+		if _, isTypeParam := db.env.ast.Node(ab.Decl).Kind.(ast.TypeParam); isTypeParam {
+			sb.WriteString(fmt.Sprintf("\n  %s: ?", ab.Name))
+			continue
+		}
 		typeLabel := db.typeLabels.typeLabelForID(b.TypeID)
 		if b.Mut {
 			sb.WriteString(fmt.Sprintf("\n  %s: %s (mut)", ab.Name, typeLabel))
@@ -223,7 +227,6 @@ func (d *debugTypes) typeLabelForID(typeID TypeID) string { //nolint:funlen
 	case IntType:
 		return kind.Name
 	case TypeParamType:
-		// Use the AST name for the type param.
 		if typ.Type.NodeID != 0 {
 			tp := base.Cast[ast.TypeParam](d.env.ast.Node(typ.Type.NodeID).Kind)
 			return tp.Name.Name

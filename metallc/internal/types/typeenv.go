@@ -71,6 +71,7 @@ type arrayTypeCacheKey struct {
 type TypeRegistry struct {
 	types          map[TypeID]*cachedType
 	typeParamTypes map[ast.NodeID]TypeID // TypeParam NodeID → TypeParamType TypeID
+	genericSpecs   map[TypeID]*GenericSpec
 	refTypes       map[refTypeCacheKey]*cachedType
 	arrayTypes     map[arrayTypeCacheKey]*cachedType
 	sliceTypes     map[sliceTypeCacheKey]*cachedType
@@ -100,6 +101,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		reg: &TypeRegistry{
 			types:          map[TypeID]*cachedType{},
 			typeParamTypes: map[ast.NodeID]TypeID{},
+			genericSpecs:   map[TypeID]*GenericSpec{},
 			refTypes:       map[refTypeCacheKey]*cachedType{},
 			arrayTypes:     map[arrayTypeCacheKey]*cachedType{},
 			sliceTypes:     map[sliceTypeCacheKey]*cachedType{},
@@ -164,6 +166,11 @@ func (e *TypeEnv) DeclNode(typeID TypeID) ast.NodeID {
 func (e *TypeEnv) GenericOrigin(typeID TypeID) (TypeID, bool) {
 	origin, ok := e.reg.genericOrigin[typeID]
 	return origin, ok
+}
+
+func (e *TypeEnv) GenericSpec(typeID TypeID) (*GenericSpec, bool) {
+	spec, ok := e.reg.genericSpecs[typeID]
+	return spec, ok
 }
 
 func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
@@ -253,7 +260,7 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 		astTypeParam := base.Cast[ast.TypeParam](e.ast.Node(cached.Type.NodeID).Kind)
 		return astTypeParam.Name.Name
 	case ShapeType:
-		return kind.Name
+		return e.typeNameAndTypeArgsString(kind.Name, kind.TypeArgs)
 	case AllocatorType:
 		return fmt.Sprint(kind.Impl)
 	case ModuleType:
@@ -480,6 +487,8 @@ func (e *TypeEnv) containsTypeParam(id TypeID) bool {
 		return e.hasTypeParam(kind.TypeArgs)
 	case UnionType:
 		return e.hasTypeParam(kind.TypeArgs)
+	case ShapeType:
+		return e.hasTypeParam(kind.TypeArgs)
 	case ArrayType:
 		return e.containsTypeParam(kind.Elem)
 	case SliceType:
@@ -508,31 +517,6 @@ func (e *TypeEnv) isSafeUninitialized(typeID TypeID) bool {
 	default:
 		return false
 	}
-}
-
-func (e *TypeEnv) substituteType(srcTypeID, searchTypeID, replaceTypeID TypeID) TypeID {
-	if srcTypeID == searchTypeID {
-		return replaceTypeID
-	}
-	if refTyp, ok := e.Type(srcTypeID).Kind.(RefType); ok {
-		inner := e.substituteType(refTyp.Type, searchTypeID, replaceTypeID)
-		if inner != refTyp.Type {
-			return e.buildRefType(0, inner, refTyp.Mut, base.Span{})
-		}
-	}
-	return srcTypeID
-}
-
-func (e *TypeEnv) substituteFunType(funType FunType, searchTypeID, replaceTypeID TypeID) FunType {
-	result := FunType{
-		Params: make([]TypeID, len(funType.Params)),
-		Return: e.substituteType(funType.Return, searchTypeID, replaceTypeID),
-		Macro:  funType.Macro,
-	}
-	for i, p := range funType.Params {
-		result.Params[i] = e.substituteType(p, searchTypeID, replaceTypeID)
-	}
-	return result
 }
 
 // methodFQN returns the fully qualified name used to look up a method on this type.
