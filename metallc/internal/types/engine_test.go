@@ -124,9 +124,15 @@ func TestIntTypes(t *testing.T) {
 				assert.Equal(0, len(e.diagnostics), "%s(%s) should be valid: %s", info.Name, val, e.diagnostics)
 			}
 		}
-		// NOTE: Signed min values (e.g. I8(-128)) can't be expressed as
-		// literals because the language has no negative literal syntax and
-		// `0 - 128` produces an Int which can't be narrowed to I8.
+		// Signed min values (e.g. I8(-128)) use negative integer literals.
+		for _, info := range intTypes {
+			if info.Name == "Rune" || !info.Signed {
+				continue
+			}
+			src := fmt.Sprintf("%s(%s)", info.Name, info.Min.String())
+			e := typeCheck(t, src)
+			assert.Equal(0, len(e.diagnostics), "%s(%s) should be valid: %s", info.Name, info.Min, e.diagnostics)
+		}
 	})
 
 	t.Run("literal out of range", func(t *testing.T) {

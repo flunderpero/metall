@@ -2160,7 +2160,7 @@ fun main() void {
     DebugIntern.print_int(1 << 32)
     DebugIntern.print_int(a >> 16)
     DebugIntern.print_int(~a)
-    let c = 0 - 1
+    let c = -1
     DebugIntern.print_int(c >> 32)
     DebugIntern.print_int(~c)
 }
@@ -2479,7 +2479,7 @@ fun main() void {
     DebugIntern.print_int(U16(300).to_u8_wrapping().to_int())
     DebugIntern.print_int(U64(4294967296).to_u32_wrapping().to_int())
     DebugIntern.print_int((I8(0) - I8(1)).to_u8_wrapping().to_int())
-    DebugIntern.print_uint((0 - 1).to_u64_wrapping())
+    DebugIntern.print_uint((-1).to_u64_wrapping())
 }
 ```
 
@@ -2500,7 +2500,7 @@ fun main() void {
     DebugIntern.print_int((I32(0) - I32(200)).to_i8_clamped().to_int())
     DebugIntern.print_int(U16(300).to_u8_clamped().to_int())
     DebugIntern.print_int(U16(100).to_u8_clamped().to_int())
-    DebugIntern.print_uint((0 - 1).to_u64_clamped())
+    DebugIntern.print_uint((-1).to_u64_clamped())
     DebugIntern.print_uint(42.to_u64_clamped())
     DebugIntern.print_int(U8(200).to_i8_clamped().to_int())
     DebugIntern.print_int(U8(50).to_i8_clamped().to_int())
@@ -3619,7 +3619,7 @@ test.met:3:27: index out of bounds
 ```metall
 fun main() void {
     let arr = [10, 20, 30]
-    let i = 0 - 1
+    let i = -1
     DebugIntern.print_int(arr[i])
 }
 ```

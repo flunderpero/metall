@@ -446,6 +446,40 @@ RuneLiteral(value='a'(97))
 RuneLiteral(value='é'(233))
 ```
 
+**Negative integer literal**
+
+```metall
+-123
+```
+
+```ast
+Int(value=-123)
+```
+
+**Negative integer literal in expression**
+
+```metall
+x = -42
+```
+
+```ast
+Assign()
+  lhs=Ident(name="x")
+  rhs=Int(value=-42)
+```
+
+**Subtraction should not be parsed as negative literal**
+
+```metall
+a - 123
+```
+
+```ast
+Binary(op=-)
+  lhs=Ident(name="a")
+  rhs=Int(value=123)
+```
+
 ## If
 
 **If then else**

@@ -178,14 +178,9 @@ fun StrBuilder.int(sb &mut StrBuilder, v Int) &mut StrBuilder {
         sb.rune('0')
         return sb
     }
-    -- todo: We do not support negative int literals yet.
-    if v == 0 - 9223372036854775807 {
-        sb.str("-9223372036854775807")
-        return sb
-    } 
     mut x = v
     if v < 0 {
-        x = x * (0 - 1)
+        x = x * -1
     }
     mut digits = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     mut i = 19

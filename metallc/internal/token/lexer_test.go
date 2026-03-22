@@ -115,6 +115,7 @@ func TestLexer(t *testing.T) {
 		{"gtgt", ">>", []want{{GtGt, "", "1:1-1:2"}}},
 		{"star", "*", []want{{Star, "", "1:1"}}},
 		{"number (int)", `123`, []want{{Number, "123", "1:1-1:3"}}},
+		{"number (negative int)", `-123`, []want{{Number, "-123", "1:1-1:4"}}},
 		{"string", `"ride"`, []want{{String, "ride", "1:1-1:6"}}},
 		{"rune", `'a'`, []want{{Rune, "a", "1:1-1:3"}}},
 		{"rune unicode", `'é'`, []want{{Rune, "é", "1:1-1:3"}}},

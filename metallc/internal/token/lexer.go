@@ -296,6 +296,20 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		return Token{Kind: Gt, Value: "", Span: span}
 	case c == '-':
+		if idx < len(source.Content) && unicode.IsDigit(source.Content[idx]) {
+			value := []rune{c, source.Content[idx]}
+			idx += 1
+			for idx < len(source.Content) {
+				c := source.Content[idx]
+				if !unicode.IsDigit(c) {
+					break
+				}
+				idx += 1
+				value = append(value, c)
+			}
+			span.End = idx - 1
+			return Token{Number, string(value), span}
+		}
 		if idx >= len(source.Content) || source.Content[idx] != '-' {
 			return Token{Kind: Minus, Value: "", Span: span}
 		}

@@ -136,7 +136,7 @@ fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
 
 fun set_internal<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {
     mut hash = key.hash()
-    mut first_deleted_at = 0 - 1
+    mut first_deleted_at = -1
     let capacity = data.len
     mut pos = (hash % capacity.to_u64_wrapping()).to_int_wrapping()
     for {
@@ -149,7 +149,7 @@ fun set_internal<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {
                 data[pos] = MapEntry(key, value)
                 return 1
             }
-            if first_deleted_at == 0 - 1 {
+            if first_deleted_at == -1 {
                 first_deleted_at = pos
             }
         else existing:

@@ -15,7 +15,7 @@ fun main() void {
     sb.str("StrBuilder:").nl()
     sb.str("runes:  ").rune('a').rune('ä').rune('€').rune('𝄞').nl()
     sb.str("u64:    ").u64(0).space().u64(18446744073709551615).nl()
-    sb.str("Int:    ").int(9223372036854775807).space().int(0 - 9223372036854775807).space().int(0 - 1234567890).nl()
+    sb.str("Int:    ").int(9223372036854775807).space().int(-9223372036854775807).space().int(-1234567890).nl()
     sb.str("slice:  ").slice<Str>(["a", "b", "c", "d"][0..], ", ").nl().nl()
 
     sb.str("HasFmt shape:").nl()
