@@ -93,8 +93,15 @@ fun Str.starts_with(s Str, other Str) Bool {
 }
 
 fun Str.contains(s Str, other Str) Bool {
+    s.index(other) != -1
+}
+
+--- Return the index of `other` in `s`.
+
+    -1 if `s` is not in `other`. ---
+fun Str.index(s Str, other Str) Int {
     if s.data.len < other.data.len {
-        return false
+        return -1
     }
     for i in 0..s.data.len - other.data.len + 1 {
         mut found = true
@@ -105,10 +112,10 @@ fun Str.contains(s Str, other Str) Bool {
             }
         }
         if found {
-            return true
+            return i
         }
     }
-    false
+    -1
 }
 
 fun Str.concat(s Str, other Str, @a Arena) Str {
@@ -125,21 +132,6 @@ fun Str.concat(s Str, other Str, @a Arena) Str {
 --- Return a slice to the underlying utf8 data. ---
 fun Str.utf8_bytes(s Str) []U8 {
     s.data
-}
-
---- Convert the first rune to lowercase. ---
-fun Str.decapitalize(s Str, @a Arena) Str {
-    -- todo: implement for non-ascii characters
-    let first = s.data[0].to_u32()
-    if first >= 'A'.to_u32() and first <= 'Z'.to_u32() {
-        let copy = @a.slice_uninit_mut<U8>(s.data.len)
-        copy[0] = s.data[0] + 32
-        for i in 1..s.data.len {
-            copy[i] = s.data[i]
-        }
-        return Str(copy)
-    }
-    s
 }
 
 --- Return a 0-terminated variant of the string. ---
@@ -159,6 +151,30 @@ fun Str.hash(s Str) U64 {
         state = state * 5871781006564002453
     }
     state
+}
+
+struct StrSplitIter {
+    mut data []U8
+    sep Str
+}
+
+fun StrSplitIter.next(it &mut StrSplitIter) ?Str {
+    if it.data.len == 0 or it.sep.is_empty() {
+        return None()
+    }
+    mut i = Str(it.data).index(it.sep)
+    if i == -1 {
+        let res = Str(it.data)
+        it.data = it.data[0..0]
+        return res
+    }
+    let res = Str(it.data[0..i])
+    it.data = it.data[i + it.sep.bytes_len()..]
+    res
+}
+
+fun Str.split(s Str, sep Str) StrSplitIter {
+    StrSplitIter(s.data, sep)
 }
 
 --- A convenient way to build strings. ---

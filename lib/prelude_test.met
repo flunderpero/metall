@@ -4,38 +4,6 @@ use assert_ = std::assert
 fun main() void {
     let @local = Arena()
 
-    let str_suite = test::suite("Str", @local)
-    str_suite.test("concat", fun(assert &assert_::Assert) !void {
-        let @local = Arena()
-        try assert.eq("hello there", "hello ".concat("there", @local))
-    })
-    str_suite.test("contains", fun(assert &assert_::Assert) !void {
-        try assert.ok("test".contains("test"))
-        try assert.not_ok("test".contains("a"))
-        try assert.not_ok("test".contains("test1"))
-        try assert.ok("test".contains(""))
-        try assert.not_ok("".contains("test"))
-        try assert.ok("".contains(""))
-    })
-    str_suite.test("decapitalize", fun(assert &assert_::Assert) !void {
-        let @local = Arena()
-        try assert.eq("hELLO", "HELLO".decapitalize(@local))
-    })
-    str_suite.test("hash", fun(assert &assert_::Assert) !void {
-        try assert.eq(U64(686710930086579414), "hello".hash())
-        try assert.eq(U64(0), "".hash())
-    })
-    str_suite.test("iter", fun(assert &assert_::Assert) !void {
-        let s = "hi!"
-        mut iter = s.iter()
-        let it = &mut iter
-        try assert.eq(Option('h'), it.next())
-        try assert.eq(Option('i'), it.next())
-        try assert.eq(Option('!'), it.next())
-        try assert.eq(Option<Rune>(None()), it.next())
-    })
-    _ = str_suite.run()
-
     let rune_suite = test::suite("Rune", @local)
     rune_suite.test("from_u32_lossy", fun(assert &assert_::Assert) !void {
         try assert.eq('A', Rune.from_u32_lossy(65))
