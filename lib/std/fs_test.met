@@ -12,7 +12,7 @@ fun main() void {
 
         -- write file
         mut sut = try fs::File.open(filename, "w", @local)
-        try sut.write(content.utf8_bytes())
+        _ = try sut.write(content.utf8_bytes())
         try sut.close()
 
         -- read it again
@@ -30,5 +30,5 @@ fun main() void {
             else: return Err("expected an error")
         }
     })
-    suite.run()
+    _ = suite.run()
 }

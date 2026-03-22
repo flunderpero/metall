@@ -3470,7 +3470,6 @@ fun main() void {
         let x = try might_fail(true)
         DebugIntern.print_int(x)
         try might_fail(false)
-        0
     }
     match short_form() {
         case Int: DebugIntern.print_str("int")

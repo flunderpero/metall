@@ -4,7 +4,7 @@ use std::io
 fun write(filename Str, content Str) !void {
     let @local = Arena()
     let f = try fs::File.open(filename, "w", @local)
-    try f.write(content.utf8_bytes())
+    _ = try f.write(content.utf8_bytes())
     try f.close()
 }
 
@@ -15,7 +15,7 @@ fun read(filename Str, @a Arena) !Str {
     let buf = @local.slice_uninit_mut<U8>(1024)
     for {
         let res = try f.read(buf)
-        sb.str(Str.from_utf8_lossy(res, @local))
+        _ = sb.str(Str.from_utf8_lossy(res, @local))
         if res.len < 1024 {
             break
         }

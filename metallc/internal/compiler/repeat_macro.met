@@ -1,8 +1,7 @@
 fun apply(n Int, sb &mut StrBuilder, @a Arena) void {
-    sb.str("fun repeat() void {").nl()
+    _ = sb.str("fun repeat() void {").nl()
     for i in 0..n {
-        sb.str("    DebugIntern.print_str(").rune('"').str("hello ").rune('"').str(")").nl()
-        void
+        _ = sb.str("    DebugIntern.print_str(").rune('"').str("hello ").rune('"').str(")").nl()
     }
-    sb.str("}")
+    _ = sb.str("}")
 }

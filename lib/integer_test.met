@@ -110,7 +110,7 @@ fun main() void {
         try assert.err(I16(128).to_i8_checked(), "number out of range")
         try assert.err(I16(-129).to_i8_checked(), "number out of range")
     })
-    checked_suite.run()
+    _ = checked_suite.run()
 
     let clamped_suite = test::suite("to_x_clamped", @local)
     --- Signed narrowing clamped ---
@@ -322,7 +322,7 @@ fun main() void {
         try assert.eq(U64(9223372036854775807), Int(9223372036854775807).to_u64_clamped())
         try assert.eq(U64(0), Int(-1).to_u64_clamped())
     })
-    clamped_suite.run()
+    _ = clamped_suite.run()
 
     let from_ascii_str_suite = test::suite("from_ascii_str", @local)
     from_ascii_str_suite.test("I8.from_ascii_str", fun(assert &assert_::Assert) !void {
@@ -453,5 +453,5 @@ fun main() void {
         try assert.err(U64.from_ascii_str("2".utf8_bytes(), 2), "parse error: not a valid digit")
         try assert.err(U64.from_ascii_str("3".utf8_bytes(), 2), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.run()
+    _ = from_ascii_str_suite.run()
 }

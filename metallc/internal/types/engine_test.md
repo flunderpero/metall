@@ -45,12 +45,14 @@ RuneLiteral: Rune
 **Block**
 
 ```metall
-{ 123 "hello" }
+{ _ = 123 "hello" }
 ```
 
 ```types
 Block: Str
-  Int: Int
+  Assign: void
+    Ident: ?
+    Int: Int
   String: Str
 ```
 
@@ -150,6 +152,18 @@ Block: void
   Assign: void
     Ident: Int
     Int: Int
+```
+
+**Discard void is illegal**
+
+```metall
+_ = void
+```
+
+```error
+test.met:1:5: cannot discard void expression
+    _ = void
+        ^^^^
 ```
 
 ## Functions
@@ -555,22 +569,22 @@ fun01 = fun(Int) Int
 ```metall
 {
     let x = 1
-    fun(a Int) Int { x + a }
+    _ = fun(a Int) Int { x + a }
     fun bar(a Int) Int { x + a }
 }
 ```
 
 ```error
 test.met:4:26: symbol not defined: x
-        fun(a Int) Int { x + a }
+        _ = fun(a Int) Int { x + a }
         fun bar(a Int) Int { x + a }
                              ^
     }
 
-test.met:3:22: cannot reference "x" from outer scope
+test.met:3:26: cannot reference "x" from outer scope
         let x = 1
-        fun(a Int) Int { x + a }
-                         ^
+        _ = fun(a Int) Int { x + a }
+                             ^
         fun bar(a Int) Int { x + a }
 ```
 
@@ -578,22 +592,22 @@ test.met:3:22: cannot reference "x" from outer scope
 
 ```metall
 fun foo(a Int) fun(Int) Int {
-    fun(b Int) Int { a + b }
+    _ = fun(b Int) Int { a + b }
     fun bar(b Int) Int { a + b }
 }
 ```
 
 ```error
 test.met:3:26: cannot reference "a" from outer scope
-        fun(b Int) Int { a + b }
+        _ = fun(b Int) Int { a + b }
         fun bar(b Int) Int { a + b }
                              ^
     }
 
-test.met:2:22: cannot reference "a" from outer scope
+test.met:2:26: cannot reference "a" from outer scope
     fun foo(a Int) fun(Int) Int {
-        fun(b Int) Int { a + b }
-                         ^
+        _ = fun(b Int) Int { a + b }
+                             ^
         fun bar(b Int) Int { a + b }
 ```
 
@@ -602,22 +616,22 @@ test.met:2:22: cannot reference "a" from outer scope
 ```metall
 {
     let @a = Arena()
-    fun() void { @a }
+    _ = fun() void { @a }
     fun bar() void { @a }
 }
 ```
 
 ```error
 test.met:4:22: symbol not defined: @a
-        fun() void { @a }
+        _ = fun() void { @a }
         fun bar() void { @a }
                          ^^
     }
 
-test.met:3:18: cannot reference "@a" from outer scope
+test.met:3:22: cannot reference "@a" from outer scope
         let @a = Arena()
-        fun() void { @a }
-                     ^^
+        _ = fun() void { @a }
+                         ^^
         fun bar() void { @a }
 ```
 
@@ -627,7 +641,7 @@ test.met:3:18: cannot reference "@a" from outer scope
 {
     fun double(x Int) Int { x + x }
     struct Foo { x Int }
-    fun(a Int) Int { double(a) }
+    _ = fun(a Int) Int { double(a) }
     fun bar(a Int) Int { Foo(double(a)).x }
 }
 ```
@@ -645,16 +659,18 @@ Block: fun01
   Struct: struct01
     StructField: ?
       SimpleType: ?
-  Block: fun01
-    Fun: fun01
-      FunParam: Int
+  Assign: void
+    Ident: ?
+    Block: fun01
+      Fun: fun01
+        FunParam: Int
+          SimpleType: Int
         SimpleType: Int
-      SimpleType: Int
-      Block: Int
-        Call: Int
-          Ident: fun01
-          Ident: Int
-    Ident: fun01
+        Block: Int
+          Call: Int
+            Ident: fun01
+            Ident: Int
+      Ident: fun01
   Fun: fun01
     FunParam: Int
       SimpleType: Int
@@ -4290,7 +4306,7 @@ struct02 = Node { value T, next &struct03 }
 {
     struct Foo<T> { one T }
     let a = Foo<Int>(1)
-    {
+    _ = {
         struct Foo<T> { one T two T }
         let b = Foo<Int>(2, 3)
         b.two
@@ -4310,21 +4326,23 @@ Block: Int
       Ident: struct02
         SimpleType: Int
       Int: Int
-  Block: Int
-    Struct: struct03
-      TypeParam: ?
-      StructField: ?
-        SimpleType: ?
-      StructField: ?
-        SimpleType: ?
-    Var: void
-      TypeConstruction: struct04
+  Assign: void
+    Ident: ?
+    Block: Int
+      Struct: struct03
+        TypeParam: ?
+        StructField: ?
+          SimpleType: ?
+        StructField: ?
+          SimpleType: ?
+      Var: void
+        TypeConstruction: struct04
+          Ident: struct04
+            SimpleType: Int
+          Int: Int
+          Int: Int
+      FieldAccess: Int
         Ident: struct04
-          SimpleType: Int
-        Int: Int
-        Int: Int
-    FieldAccess: Int
-      Ident: struct04
   FieldAccess: Int
     Ident: struct02
 ---
@@ -4383,8 +4401,8 @@ struct04 = Bar<Int> { inner struct05 }
 {
     struct Box<T> { value T }
     fun id<T>(x T) T { x }
-    id<Int>(42)
-    id<Str>("hello")
+    _ = id<Int>(42)
+    _ = id<Str>("hello")
     let b = id<Box<Int>>(Box<Int>(99))
     b.value
 }
@@ -4403,14 +4421,18 @@ Block: Int
     SimpleType: T
     Block: T
       Ident: T
-  Call: Int
-    Ident: fun02
-      SimpleType: Int
-    Int: Int
-  Call: Str
-    Ident: fun03
-      SimpleType: Str
-    String: Str
+  Assign: void
+    Ident: ?
+    Call: Int
+      Ident: fun02
+        SimpleType: Int
+      Int: Int
+  Assign: void
+    Ident: ?
+    Call: Str
+      Ident: fun03
+        SimpleType: Str
+      String: Str
   Var: void
     Call: struct02
       Ident: fun04
@@ -4468,7 +4490,7 @@ fun02 = fun(Int, Str) Int
 ```metall
 {
     fun id<T>(x T) T { x }
-    id<Int>(1)
+    _ = id<Int>(1)
     id<Int>(2)
 }
 ```
@@ -4482,10 +4504,12 @@ Block: Int
     SimpleType: T
     Block: T
       Ident: T
-  Call: Int
-    Ident: fun02
-      SimpleType: Int
-    Int: Int
+  Assign: void
+    Ident: ?
+    Call: Int
+      Ident: fun02
+        SimpleType: Int
+      Int: Int
   Call: Int
     Ident: fun02
       SimpleType: Int
@@ -4836,7 +4860,7 @@ fun02 = fun(Int) Int
     struct Foo { value Int }
     fun Foo.get<T>(f Foo, x T) T { x }
     let g = Foo.get<Str>
-    g(Foo(1), "hello")
+    _ = g(Foo(1), "hello")
     let h = Foo.get<Int>
     h(Foo(1), 42)
 }
@@ -4859,12 +4883,14 @@ Block: Int
   Var: void
     Ident: fun02
       SimpleType: Str
-  Call: Str
-    Ident: fun02
-    TypeConstruction: struct01
-      Ident: struct01
-      Int: Int
-    String: Str
+  Assign: void
+    Ident: ?
+    Call: Str
+      Ident: fun02
+      TypeConstruction: struct01
+        Ident: struct01
+        Int: Int
+      String: Str
   Var: void
     Ident: fun03
       SimpleType: Int
@@ -8574,4 +8600,42 @@ test.met:3:5: cannot access field on non-struct type: void
         foo().bar()
         ^^^^^
     }
+```
+
+## Try
+
+**Try as last expression in function body**
+
+```metall module
+fun foo() Result<void> {
+    try Result<void>(void)
+}
+fun main() void {}
+```
+
+```types
+Module: test
+  Fun: fun01
+    SimpleType: union01
+      SimpleType: void
+    Block: union01
+      Match: void
+        TypeConstruction: union01
+          Ident: union01
+            SimpleType: void
+          Ident: void
+        TryPattern: void
+        Block: void
+          Ident: void
+        Block: union01
+          Return: void
+            Ident: struct01
+  Fun: fun02
+    SimpleType: void
+    Block: void
+---
+struct01 = Err { msg Str }
+union01  = Result<void> = void | struct01
+fun01    = fun() union01
+fun02    = fun() void
 ```

@@ -82,7 +82,7 @@ fun01 = fun() void
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) p.x p.y void }
+fun main() void { let p = lib::Point(1, 2) _ = p.x _ = p.y }
 ```
 
 ```bindings
@@ -96,11 +96,14 @@ Module: scope01
           Path: scope04
           Int: scope04
           Int: scope04
-      FieldAccess: scope04
+      Assign: scope04
         Ident: scope04
-      FieldAccess: scope04
+        FieldAccess: scope04
+          Ident: scope04
+      Assign: scope04
         Ident: scope04
-      Ident: scope04
+        FieldAccess: scope04
+          Ident: scope04
 ---
 scope01:
 scope02:
@@ -117,21 +120,21 @@ struct01 = Point { x Int, y Int }
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) p.sum() void }
+fun main() void { let p = lib::Point(1, 2) _ = p.sum() }
 ```
 
 **call method on imported struct via path**
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) lib::Point.sum(p) void }
+fun main() void { let p = lib::Point(1, 2) _ = lib::Point.sum(p) }
 ```
 
 **assign imported function to variable**
 
 ```metall
 use lib
-fun main() void { let f = lib::get_lib f() void }
+fun main() void { let f = lib::get_lib _ = f() }
 ```
 
 **local import call**
@@ -231,9 +234,8 @@ fun01 = fun() void
 use generic
 fun main() void {
     let p = generic::Pair<Int, Str>(1, "hi")
-    p.first
-    p.second
-    void
+    _ = p.first
+    _ = p.second
 }
 ```
 
@@ -250,11 +252,14 @@ Module: scope01
             SimpleType: scope04
           Int: scope04
           String: scope04
-      FieldAccess: scope04
+      Assign: scope04
         Ident: scope04
-      FieldAccess: scope04
+        FieldAccess: scope04
+          Ident: scope04
+      Assign: scope04
         Ident: scope04
-      Ident: scope04
+        FieldAccess: scope04
+          Ident: scope04
 ---
 scope01:
 scope02:

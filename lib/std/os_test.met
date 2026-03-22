@@ -17,5 +17,5 @@ fun main() void {
         try assert.neq(0, res.status)
         try assert.contains_str(res.output, "not found")
     })
-    suite.run()
+    _ = suite.run()
 }

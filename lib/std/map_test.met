@@ -116,9 +116,8 @@ fun main() void {
         }
         for i in 0..entries {
             if i % 2 == 0 {
-                sut.del(i)
+                try assert.eq(true, sut.del(i))
                 try assert.eq(false, sut.has(i))
-                void
             } else {
                 sut.set(i, i * 2)
                 try assert.eq(Option(i * 2), sut.get(i))
@@ -147,6 +146,6 @@ fun main() void {
         try assert.eq(3, l.get(2).key)
         try assert.eq("c", l.get(2).value)
     })
-    suite.run()
+    _ = suite.run()
 }
 

@@ -1,4 +1,3 @@
-fun apply(s Str, sb &mut StrBuilder, @a Arena) !void {
-    sb.str("fun hello_from_macro(s Str, @a Arena) Str {").rune('"').str(s).rune('"').str(".concat(s, @a)}")
-    void
+fun apply(s Str, sb &mut StrBuilder, @a Arena) void {
+    _ = sb.str("fun hello_from_macro(s Str, @a Arena) Str {").rune('"').str(s).rune('"').str(".concat(s, @a)}")
 }

@@ -710,6 +710,9 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 	a.debug(1, nodeID, "analyzeAssign: lhs=%s rhs=%s", a.ast.Debug(assign.LHS, false, 0), rhs)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
+		if lhsKind.Name == "_" {
+			return // discard
+		}
 		// `x = expr` - replace x's flow, preserve its storage taint.
 		ss := a.scopeState(nodeID)
 		storageTaint := ss.ScopeTaint

@@ -267,6 +267,18 @@ func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint *TypeID) (TypeID, Typ
 }
 
 func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
+	// `_ = expr` discards the result of expr.
+	if ident, ok := e.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
+		rhsTypeID, status := e.Query(assign.RHS)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if rhsTypeID == e.voidTyp {
+			e.diag(e.ast.Node(assign.RHS).Span, "cannot discard void expression")
+			return InvalidTypeID, TypeFailed
+		}
+		return e.voidTyp, TypeOK
+	}
 	lhsTypeID, status := e.typeOfPlace(assign.LHS)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -401,6 +413,19 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 			lastExprTypeID, status = e.queryWithHint(exprNodeID, typeHint)
 		} else {
 			lastExprTypeID, status = e.Query(exprNodeID)
+			if !status.Failed() && lastExprTypeID != e.voidTyp {
+				switch e.ast.Node(exprNodeID).Kind.(type) {
+				case ast.Fun, ast.Struct, ast.Shape, ast.Union:
+					// Declarations are not expressions — skip the check.
+				default:
+					e.diag(
+						e.ast.Node(exprNodeID).Span,
+						"expression result of type %s is unused, assign to _ to discard",
+						e.env.TypeDisplay(lastExprTypeID),
+					)
+					depFailed = true
+				}
+			}
 		}
 		if status.Failed() {
 			depFailed = true
@@ -1651,6 +1676,10 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 }
 
 func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
+	if ident.Name == "_" {
+		e.diag(span, "_ can only be used as the left-hand side of an assignment")
+		return InvalidTypeID, TypeFailed
+	}
 	lookupName := ident.Name
 	if structName, methodName, ok := strings.Cut(ident.Name, "."); ok {
 		resolved, ok := e.resolveMethodBindName(nodeID, structName, methodName, span)

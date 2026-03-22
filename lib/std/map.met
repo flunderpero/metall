@@ -127,8 +127,7 @@ fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
         match m.data[i] {
         case Bool:
         else entry: 
-            set_internal(new_data, entry.key, entry.value)
-            void
+            _ = set_internal(new_data, entry.key, entry.value)
         }
     }
     m.data = new_data

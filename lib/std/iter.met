@@ -195,7 +195,7 @@ fun TakeWhileIter.next<A, I PeekableIter<A>>(t &mut TakeWhileIter<A, I>) ?A {
         case None: return None()
         else a:
             if t.f(a) {
-                t.it.next()
+                _ = t.it.next()
                 return a
             }
             return None()

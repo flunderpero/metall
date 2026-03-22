@@ -1168,6 +1168,11 @@ func (g *IRFunGen) writeLabel(label Label) {
 
 func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.Gen(assign.RHS)
+	// `_ = expr` discards the result.
+	if ident, ok := g.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
+		g.setCode(id, "void")
+		return
+	}
 	rhs := g.lookupCode(assign.RHS)
 	ptrReg := g.genPlaceAddr(assign.LHS)
 	rhsTypeID := g.typeIDOfNode(assign.RHS)

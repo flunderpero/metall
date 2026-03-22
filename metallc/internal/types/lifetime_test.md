@@ -1354,12 +1354,12 @@ test.met:4:9: reference escaping its allocation scope (via block result)
     }
 
     fun foo(a &mut Foo, b &Int) Int {
-        bar(a, b)
+        _ = bar(a, b)
         42
     }
 
     fun bar(a &mut Foo, b &Int) Int {
-        foo(a, b)
+        _ = foo(a, b)
         1337
     }
 

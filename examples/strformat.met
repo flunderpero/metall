@@ -6,28 +6,28 @@ struct Pair<K, V> {
 }
 
 fun Pair.fmt<K HasFmt, V HasFmt>(p Pair<K, V>, sb &mut StrBuilder) void {
-    sb.str("Pair{first=").fmt<K>(p.first).str(", second=").fmt<V>(p.second).str("}")
+    _ = sb.str("Pair{first=").fmt<K>(p.first).str(", second=").fmt<V>(p.second).str("}")
 }
 
 fun main() void {
     let @a = Arena()
     let sb = StrBuilder.new(16, @a)
-    sb.str("StrBuilder:").nl()
-    sb.str("runes:  ").rune('a').rune('ä').rune('€').rune('𝄞').nl()
-    sb.str("u64:    ").u64(0).space().u64(18446744073709551615).nl()
-    sb.str("slice:  ").slice<Str>(["a", "b", "c", "d"][0..], ", ").nl().nl()
-    sb.str("Int:    ").int(9223372036854775807).space().int(-9223372036854775808).space().int(-1234567890).nl()
+    _ = sb.str("StrBuilder:").nl()
+    _ = sb.str("runes:  ").rune('a').rune('ä').rune('€').rune('𝄞').nl()
+    _ = sb.str("u64:    ").u64(0).space().u64(18446744073709551615).nl()
+    _ = sb.str("slice:  ").slice<Str>(["a", "b", "c", "d"][0..], ", ").nl().nl()
+    _ = sb.str("Int:    ").int(9223372036854775807).space().int(-9223372036854775808).space().int(-1234567890).nl()
 
-    sb.str("HasFmt shape:").nl()
-    sb.str("str:    ")
+    _ = sb.str("HasFmt shape:").nl()
+    _ = sb.str("str:    ")
     "string".fmt(sb)
-    sb.nl()
-    sb.str("Int:    ")
+    _ = sb.nl()
+    _ = sb.str("Int:    ")
     123.fmt(sb)
-    sb.nl()
-    sb.str("struct: ")
+    _ = sb.nl()
+    _ = sb.str("struct: ")
     Pair<Str, Int>("hello", 123).fmt(sb)
-    sb.space()
+    _ = sb.space()
     Pair<Str, Bool>("world", true).fmt(sb)
 
     io::println(sb.to_str())

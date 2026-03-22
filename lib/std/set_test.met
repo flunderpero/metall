@@ -25,6 +25,6 @@ fun main() void {
         try assert.eq(false, sut.has(1))
         try assert.eq(true, sut.has(2))
     })
-    suite.run()
+    _ = suite.run()
 }
 

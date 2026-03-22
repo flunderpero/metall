@@ -104,7 +104,13 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 	}
 
 	for i, ab := range bodies {
-		bodyTypeID, bodyStatus := e.queryWithHint(ab.body, typeHint)
+		hint := typeHint
+		// For `try`, the success arm body should not receive the outer
+		// type hint — it yields the unwrapped value, not the Result.
+		if match.Try && i < len(match.Arms) {
+			hint = nil
+		}
+		bodyTypeID, bodyStatus := e.queryWithHint(ab.body, hint)
 		if bodyStatus.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
