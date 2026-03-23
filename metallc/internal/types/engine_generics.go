@@ -752,6 +752,11 @@ func (e *Engine) inferTypeArgs(
 		}
 		inferred = append(inferred, concreteID)
 	}
+	if len(inferred) < spec.MinArgs() {
+		// Inference couldn't determine all type arguments — fail silently
+		// so the caller can try the non-inference path.
+		return nil, TypeFailed
+	}
 	return e.SolveGenericArgs(spec, inferred, scopeNodeID, span)
 }
 
@@ -899,13 +904,14 @@ func (e *Engine) inferUnionConstruction(
 	targetKind TypeKind,
 	lit ast.TypeConstruction,
 	span base.Span,
-) ([]TypeID, TypeStatus, bool) {
+) ([]TypeID, TypeStatus) {
 	if len(lit.Args) != 1 {
-		return nil, TypeFailed, false
+		e.diag(span, "union constructor takes exactly 1 argument, got %d", len(lit.Args))
+		return nil, TypeFailed
 	}
 	argTypeID, status := e.Query(lit.Args[0])
 	if status.Failed() {
-		return nil, TypeDepFailed, true
+		return nil, TypeDepFailed
 	}
 	unionType := base.Cast[UnionType](targetKind)
 	bindings := map[TypeID]TypeID{}
@@ -915,7 +921,7 @@ func (e *Engine) inferUnionConstruction(
 	decl, _ := e.NormalizeGenericDecl(e.env.DeclNode(binding.TypeID), binding.TypeID, "")
 	spec, status := e.BuildGenericSpec(decl.originTypeID, decl.typeParams)
 	if status.Failed() {
-		return nil, status, true
+		return nil, status
 	}
 	inferred := make([]TypeID, 0, len(spec.Params))
 	for _, param := range spec.Params {
@@ -925,8 +931,7 @@ func (e *Engine) inferUnionConstruction(
 		}
 		inferred = append(inferred, concreteID)
 	}
-	inferred, status = e.SolveGenericArgs(spec, inferred, lit.Target, span)
-	return inferred, status, true
+	return e.SolveGenericArgs(spec, inferred, lit.Target, span)
 }
 
 func (e *Engine) inferNamedConstruction(
@@ -947,11 +952,7 @@ func (e *Engine) inferNamedConstruction(
 		if len(kind.TypeParams) == 0 {
 			return InvalidTypeID, TypeFailed, false
 		}
-		var ok bool
-		inferred, status, ok = e.inferUnionConstruction(binding, targetKind, lit, span)
-		if !ok {
-			return InvalidTypeID, TypeFailed, false
-		}
+		inferred, status = e.inferUnionConstruction(binding, targetKind, lit, span)
 		if status.Failed() {
 			return InvalidTypeID, status, true
 		}
@@ -1077,16 +1078,12 @@ func (e *Engine) InferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 	}
 	argTypeIDs, status := e.queryArgsForInference(allArgNodeIDs, genericFunType.Params)
 	if status.Failed() {
-		if isFieldAccess {
-			return InvalidTypeID, TypeFailed, false
-		}
 		return InvalidTypeID, TypeDepFailed, true
 	}
 	diagCount := len(e.diagnostics)
 	inferred, status := e.inferTypeArgs(funNode.TypeParams, genericFunType.Params, argTypeIDs, call.Callee, span)
 	if status.Failed() {
-		if isFieldAccess {
-			e.diagnostics = e.diagnostics[:diagCount]
+		if isFieldAccess && len(e.diagnostics) == diagCount {
 			return InvalidTypeID, TypeFailed, false
 		}
 		return InvalidTypeID, status, true
@@ -1099,10 +1096,6 @@ func (e *Engine) InferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 		inferred,
 	)
 	if status.Failed() {
-		if isFieldAccess {
-			e.diagnostics = e.diagnostics[:diagCount]
-			return InvalidTypeID, TypeFailed, false
-		}
 		return InvalidTypeID, status, true
 	}
 	e.env.setNamedFunRef(call.Callee, mangledName)
