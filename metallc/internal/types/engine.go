@@ -868,12 +868,16 @@ func (e *Engine) checkIntConstruction(
 		return InvalidTypeID, TypeDepFailed
 	}
 	if argTypeID != targetTypeID {
-		if targetTyp.Name != "Rune" || !ast.IsPreludeNode(nodeID) {
-			argSpan := e.ast.Node(argNodeID).Span
-			e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
-				e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
-			return InvalidTypeID, TypeFailed
+		if targetTyp.Name == "Rune" && ast.IsPreludeNode(nodeID) {
+			argTyp := e.env.Type(argTypeID)
+			if argIntTyp, ok := argTyp.Kind.(IntType); ok && argIntTyp.Bits == targetTyp.Bits {
+				return targetTypeID, TypeOK
+			}
 		}
+		argSpan := e.ast.Node(argNodeID).Span
+		e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
+			e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
+		return InvalidTypeID, TypeFailed
 	}
 	return targetTypeID, TypeOK
 }
