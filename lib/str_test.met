@@ -31,13 +31,27 @@ fun main() void {
         try assert.eq(U64(0), "".hash())
     })
     suite.test("iter", fun(assert &assert_::Assert) !void {
-        let s = "hi!"
+        -- This is a test string with 1, 2, 3, and 4 byte utf8 sequences.
+        let s = "AÄ€😀"
         mut iter = s.iter()
         let it = &mut iter
-        try assert.eq(Option('h'), it.next())
-        try assert.eq(Option('i'), it.next())
-        try assert.eq(Option('!'), it.next())
+        try assert.eq(Option('A'), it.next())
+        try assert.eq(Option('Ä'), it.next())
+        try assert.eq(Option('€'), it.next())
+        try assert.eq(Option('😀'), it.next())
         try assert.eq(Option<Rune>(None()), it.next())
+    })
+    suite.test("iter_index", fun(assert &assert_::Assert) !void {
+        -- This is a test string with 1, 2, 3, and 4 byte utf8 sequences.
+        let s = "AÄ€😀B"
+        mut iter = s.iter_index()
+        let it = &mut iter
+        try assert.eq(Option(RuneIndex('A', 0)), it.next())
+        try assert.eq(Option(RuneIndex('Ä', 1)), it.next())
+        try assert.eq(Option(RuneIndex('€', 3)), it.next())
+        try assert.eq(Option(RuneIndex('😀', 6)), it.next())
+        try assert.eq(Option(RuneIndex('B', 10)), it.next())
+        try assert.eq(Option<RuneIndex>(None()), it.next())
     })
     suite.test("split", fun(assert &assert_::Assert) !void {
         mut it = "these are some words".split(" ")

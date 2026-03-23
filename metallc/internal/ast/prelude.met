@@ -29,24 +29,92 @@ fun Rune.from_u32_lossy(n U32) Rune {
     Rune(n)
 }
 
-struct StrIter {
+struct RuneIndex {
+    rune Rune
+    index Int
+}
+
+fun RuneIndex.eq(r RuneIndex, other RuneIndex) Bool {
+    r.index == other.index and r.rune == other.rune
+}
+
+fun RuneIndex.fmt(r RuneIndex, sb &mut StrBuilder) void {
+    sb.str("RuneIndex(")
+    sb.rune(r.rune)
+    sb.str(", ")
+    sb.int(r.index)
+    sb.str(")")
+}
+
+struct StrRuneIndexIter {
     bytes []U8
-    mut pos Int
+    mut index Int
+}
+
+--- Iterate over all runes (Unicode code points) in the string
+    and return the rune and its byte offset. ---
+fun StrRuneIndexIter.next(it &mut StrRuneIndexIter) ?RuneIndex {
+    if it.index == it.bytes.len {
+        return None()
+    }
+    let index = it.index
+    let rune = Str.internal_rune_at(it.bytes, &mut it.index)
+    RuneIndex(rune, index)
+}
+
+struct StrRuneIter {
+    bytes []U8
+    mut index Int
 }
 
 --- Iterate over all runes (Unicode code points) in the string. ---
-fun StrIter.next(it &mut StrIter) ?Rune {
-    -- todo: Parse runes
-    if it.pos == it.bytes.len {
+fun StrRuneIter.next(it &mut StrRuneIter) ?Rune {
+    if it.index == it.bytes.len {
         return None()
     }
-    let r = Rune.from_u32_lossy(it.bytes[it.pos].to_u32())
-    it.pos = it.pos + 1
-    r
+    Str.internal_rune_at(it.bytes, &mut it.index)
 }
 
-fun Str.iter(s Str) StrIter { 
-    StrIter(s.data, 0)
+fun Str.internal_rune_at(bytes []U8, index &mut Int) Rune {
+    -- Decoding utf8 sequences to runes. Remember that it is guaranteed that Str
+    -- always contains valid utf8.
+    let b0 = bytes[index.*].to_u32()
+    index.* = index.* + 1
+    when {
+    case b0 < 128:
+        Rune(b0)
+    case b0 < 224:
+        let b1 = bytes[index.*].to_u32()
+        index.* = index.* + 1
+        Rune((b0 & 31) << 6 | (b1 & 63))
+    case b0 < 240:
+        let b1 = bytes[index.*].to_u32()
+        index.* = index.* + 1
+        let b2 = bytes[index.*].to_u32()
+        index.* = index.* + 1
+        Rune((b0 & 15)  << 12 | (b1 & 63) << 6  | (b2 & 63))
+    case b0 < 248:
+        let b1 = bytes[index.*].to_u32()
+        index.* = index.* + 1
+        let b2 = bytes[index.*].to_u32()
+        index.* = index.* + 1
+        let b3 = bytes[index.*].to_u32()
+        index.* = index.* + 1
+        Rune((b0 & 7)   << 18 | (b1 & 63) << 12 | (b2 & 63) << 6 | (b3 & 63))
+    else:
+        panic("invalid utf8")
+        Rune(0)
+    }
+}
+
+--- Create an iterator over all runes in this string. ---
+fun Str.iter(s Str) StrRuneIter { 
+    StrRuneIter(s.data, 0)
+}
+
+--- Create an iterator over all runes and their bytes-index in this string. ---
+fun Str.iter_index(s Str) StrRuneIndexIter { 
+    StrRuneIndexIter(s.data, 0)
 }
 
 fun Str.bytes_len(s Str) Int {
