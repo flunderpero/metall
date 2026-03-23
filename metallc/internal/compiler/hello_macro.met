@@ -1,5 +1,11 @@
 fun apply(sb &mut StrBuilder, @a Arena) void {
-    _ = sb.str("fun greet() void {").nl()
-    _ = sb.str("    DebugIntern.print_str(").rune('"').str("hello from macro").rune('"').str(")").nl()
-    _ = sb.str("}")
+    sb.str("fun greet() void {")
+    sb.nl()
+    sb.str("    DebugIntern.print_str(")
+    sb.rune('"')
+    sb.str("hello from macro")
+    sb.rune('"')
+    sb.str(")")
+    sb.nl()
+    sb.str("}")
 }

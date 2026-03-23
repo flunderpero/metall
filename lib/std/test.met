@@ -31,9 +31,17 @@ fun Suite.run(s &mut Suite) SuiteResult {
     for test_index in 0..s.tests.len {
         let test = s.tests.get(test_index)
         let sb = StrBuilder.new(32, @local)
-        let prefix = 
-            sb.str(s.name).str("(").int(test_index + 1).str("/").int(s.tests.len).str(") ")
-            .tab().str(test.name).to_str()
+        let prefix = {
+            sb.str(s.name)
+            sb.str("(")
+            sb.int(test_index + 1)
+            sb.str("/")
+            sb.int(s.tests.len)
+            sb.str(") ")
+            sb.tab()
+            sb.str(test.name)
+            sb.to_str() 
+        }
         io::print(prefix)
         io::print(" ... ")
         match test.f(assert) {

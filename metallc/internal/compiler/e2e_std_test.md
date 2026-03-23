@@ -29,22 +29,32 @@ hello std
 use std::comp
 
 fun type_name(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
-    _ = sb.str("fun ").str(name).str("() Str { ").rune('"')
+    sb.str("fun ")
+    sb.str(name)
+    sb.str("() Str { ")
+    sb.rune('"')
     match info {
-        case comp::BoolType b: { _ = sb.str("Bool") }
-        case comp::StrType s: { _ = sb.str("Str") }
-        case comp::VoidType v: { _ = sb.str("void") }
-        case comp::IntType i: { _ = sb.str(i.name) }
-        case comp::StructType s: { _ = sb.str("struct ").str(s.name) }
-        case comp::UnionType u: { _ = sb.str("union ").str(u.name) }
+        case comp::BoolType b: { sb.str("Bool") }
+        case comp::StrType s: { sb.str("Str") }
+        case comp::VoidType v: { sb.str("void") }
+        case comp::IntType i: { sb.str(i.name) }
+        case comp::StructType s: { sb.str("struct ") sb.str(s.name) }
+        case comp::UnionType u: { sb.str("union ") sb.str(u.name) }
     }
-    _ = sb.rune('"').str(" }").nl()
+    sb.rune('"')
+    sb.str(" }")
+    sb.nl()
 }
 
 fun field_count(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
     match info {
         case comp::StructType s: {
-            _ = sb.str("fun ").str(name).str("() Int { ").int(s.fields.len).str(" }").nl()
+            sb.str("fun ")
+            sb.str(name)
+            sb.str("() Int { ")
+            sb.int(s.fields.len)
+            sb.str(" }")
+            sb.nl()
         }
         else: { }
     }
@@ -55,41 +65,55 @@ fun field_count(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
 use std::comp
 
 fun quote(sb &mut StrBuilder) void {
-    _ = sb.rune(34)
+    sb.rune(34)
 }
 
 fun gen_fmt(info comp::Type, sb &mut StrBuilder, @a Arena) void {
     match info {
         case comp::StructType s: {
-            _ = sb.str("fun ").str(s.name).str(".fmt(v ").str(s.name).str(", sb &mut StrBuilder) void {").nl()
-            _ = sb.str("    _ = sb.str(")
+            sb.str("fun ")
+            sb.str(s.name)
+            sb.str(".fmt(v ")
+            sb.str(s.name)
+            sb.str(", sb &mut StrBuilder) void {")
+            sb.nl()
+            sb.str("    sb.str(")
             quote(sb)
-            _ = sb.str(s.name).str("{")
+            sb.str(s.name)
+            sb.str("{")
             quote(sb)
-            _ = sb.str(")").nl()
+            sb.str(")")
+            sb.nl()
             for i in 0..s.fields.len {
                 let f = s.fields[i]
                 if i > 0 {
-                    _ = sb.str("    _ = sb.str(")
+                    sb.str("    sb.str(")
                     quote(sb)
-                    _ = sb.str(", ").str(f.name).str("=")
+                    sb.str(", ")
+                    sb.str(f.name)
+                    sb.str("=")
                     quote(sb)
-                    _ = sb.str(")").nl()
+                    sb.str(")")
+                    sb.nl()
                 } else {
-                    _ = sb.str("    _ = sb.str(")
+                    sb.str("    sb.str(")
                     quote(sb)
-                    _ = sb.str(f.name).str("=")
+                    sb.str(f.name)
+                    sb.str("=")
                     quote(sb)
-                    _ = sb.str(")").nl()
+                    sb.str(")")
+                    sb.nl()
                 }
-                _ = sb.str("    _ = sb.fmt(v.").str(f.name).str(")").nl()
+                sb.str("    sb.fmt(v.") sb.str(f.name) sb.str(")") sb.nl()
             }
-            _ = sb.str("    _ = sb.str(")
+            sb.str("    sb.str(")
             quote(sb)
-            _ = sb.str("}")
+            sb.str("}")
             quote(sb)
-            _ = sb.str(")").nl()
-            _ = sb.str("}").nl()
+            sb.str(")")
+            sb.nl()
+            sb.str("}")
+            sb.nl()
         }
         case comp::BoolType b: { }
         case comp::StrType s: { }

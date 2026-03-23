@@ -15,7 +15,7 @@ fun read(filename Str, @a Arena) !Str {
     let buf = @local.slice_uninit_mut<U8>(1024)
     for {
         let res = try f.read(buf)
-        _ = sb.str(Str.from_utf8_lossy(res, @local))
+        sb.str(Str.from_utf8_lossy(res, @local))
         if res.len < 1024 {
             break
         }

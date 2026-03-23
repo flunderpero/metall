@@ -10,10 +10,8 @@ struct RunResult {
 ---
 fun shell(cmd []Str, @a Arena) !RunResult {
     let sb = StrBuilder.new(256, @a)
-    for i in 0..cmd.len {
-        _ = sb.str(cmd[i]).str(" ")
-    }
-    _ = sb.str("2>&1")
+    sb.slice(cmd, " ")
+    sb.str(" 2>&1")
     LibCIntern.reset_errno()
     let f = LibCIntern.popen(sb.to_str().to_cstr(@a), "r".to_cstr(@a))
     if f == 0 {
@@ -34,7 +32,7 @@ fun shell(cmd []Str, @a Arena) !RunResult {
             let errstr = LibCIntern.strerror(errno)
             return Err(errstr)
         }
-        _ = out.utf8_lossy(buf[0..bytes_read])
+        out.utf8_lossy(buf[0..bytes_read])
     }
     LibCIntern.reset_errno()
     let raw_status = LibCIntern.pclose(f)

@@ -13,7 +13,10 @@ fun Assert.err_msg(a &Assert, user_provided Str, err Str) Str {
         return err
     }
     let sb = StrBuilder.new(user_provided.bytes_len() + err.bytes_len() + 3, a.@a)
-    _ = sb.str(user_provided).str(" (").str(err).str(")")
+    sb.str(user_provided)
+    sb.str(" (")
+    sb.str(err)
+    sb.str(")")
     return sb.to_str()
 }
 
@@ -32,7 +35,11 @@ fun Assert.not_ok(a &Assert, b Bool) !void {
 fun Assert.contains_str(a &Assert, haystack Str, needle Str, msg Str = "") !void {
     if not haystack.contains(needle) {
         a.sb.reset()
-        _ = a.sb.str("want '").str(haystack).str("' to contain '").str(needle).str("'")
+        a.sb.str("want '")
+        a.sb.str(haystack)
+        a.sb.str("' to contain '")
+        a.sb.str(needle)
+        a.sb.str("'")
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -45,7 +52,10 @@ shape HasEqFmt {
 fun Assert.eq<T HasEqFmt>(a &Assert, want T, got T, msg Str = "") !void {
     if not want.eq(got) {
         a.sb.reset()
-        _ = a.sb.str("want ").fmt<T>(want).str(", got ").fmt<T>(got)
+        a.sb.str("want ")
+        a.sb.fmt<T>(want)
+        a.sb.str(", got ")
+        a.sb.fmt<T>(got)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -53,7 +63,10 @@ fun Assert.eq<T HasEqFmt>(a &Assert, want T, got T, msg Str = "") !void {
 fun Assert.neq<T HasEqFmt>(a &Assert, want T, got T, msg Str = "") !void {
     if want.eq(got) {
         a.sb.reset()
-        _ = a.sb.str("want ").fmt<T>(want).str("not to equal ").fmt<T>(got)
+        a.sb.str("want ")
+        a.sb.fmt<T>(want)
+        a.sb.str("not to equal ")
+        a.sb.fmt<T>(got)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -61,7 +74,10 @@ fun Assert.neq<T HasEqFmt>(a &Assert, want T, got T, msg Str = "") !void {
 fun Assert.gt_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left > right {
         a.sb.reset()
-        _ = a.sb.str("want ").int(left).str(" > ").int(right)
+        a.sb.str("want ")
+        a.sb.int(left)
+        a.sb.str(" > ")
+        a.sb.int(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -69,7 +85,10 @@ fun Assert.gt_int(a &Assert, left Int, right Int, msg Str = "") !void {
 fun Assert.gte_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left >= right {
         a.sb.reset()
-        _ = a.sb.str("want ").int(left).str(" >= ").int(right)
+        a.sb.str("want ")
+        a.sb.int(left)
+        a.sb.str(" >= ")
+        a.sb.int(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -77,7 +96,10 @@ fun Assert.gte_int(a &Assert, left Int, right Int, msg Str = "") !void {
 fun Assert.lt_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left < right {
         a.sb.reset()
-        _ = a.sb.str("want ").int(left).str(" < ").int(right)
+        a.sb.str("want ")
+        a.sb.int(left)
+        a.sb.str(" < ")
+        a.sb.int(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -85,7 +107,10 @@ fun Assert.lt_int(a &Assert, left Int, right Int, msg Str = "") !void {
 fun Assert.lte_int(a &Assert, left Int, right Int, msg Str = "") !void {
     if not left <= right {
         a.sb.reset()
-        _ = a.sb.str("want ").int(left).str(" <= ").int(right)
+        a.sb.str("want ")
+        a.sb.int(left)
+        a.sb.str(" <= ")
+        a.sb.int(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -93,7 +118,10 @@ fun Assert.lte_int(a &Assert, left Int, right Int, msg Str = "") !void {
 fun Assert.gt_u64(a &Assert, left U64, right U64, msg Str = "") !void {
     if not left > right {
         a.sb.reset()
-        _ = a.sb.str("want ").u64(left).str(" > ").u64(right)
+        a.sb.str("want ")
+        a.sb.u64(left)
+        a.sb.str(" > ")
+        a.sb.u64(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -101,7 +129,10 @@ fun Assert.gt_u64(a &Assert, left U64, right U64, msg Str = "") !void {
 fun Assert.gte_u64(a &Assert, left U64, right U64, msg Str = "") !void {
     if not left >= right {
         a.sb.reset()
-        _ = a.sb.str("want ").u64(left).str(" >= ").u64(right)
+        a.sb.str("want ")
+        a.sb.u64(left)
+        a.sb.str(" >= ")
+        a.sb.u64(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -109,7 +140,10 @@ fun Assert.gte_u64(a &Assert, left U64, right U64, msg Str = "") !void {
 fun Assert.lt_u64(a &Assert, left U64, right U64, msg Str = "") !void {
     if not left < right {
         a.sb.reset()
-        _ = a.sb.str("want ").u64(left).str(" < ").u64(right)
+        a.sb.str("want ")
+        a.sb.u64(left)
+        a.sb.str(" < ")
+        a.sb.u64(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -117,7 +151,10 @@ fun Assert.lt_u64(a &Assert, left U64, right U64, msg Str = "") !void {
 fun Assert.lte_u64(a &Assert, left U64, right U64, msg Str = "") !void {
     if not left <= right {
         a.sb.reset()
-        _ = a.sb.str("want ").u64(left).str(" <= ").u64(right)
+        a.sb.str("want ")
+        a.sb.u64(left)
+        a.sb.str(" <= ")
+        a.sb.u64(right)
         return Err(a.err_msg(msg, a.sb.to_str()))
     }
 }
@@ -127,7 +164,10 @@ fun Assert.err<T>(a &Assert, obj !T, err_msg_contains Str, msg Str = "") !void {
         case Err e: 
             if not e.msg.contains(err_msg_contains) {
                 a.sb.reset()
-                _ = a.sb.str("want error to contain '").str(err_msg_contains).str("', but got: ").str(e.msg)
+                a.sb.str("want error to contain '")
+                a.sb.str(err_msg_contains)
+                a.sb.str("', but got: ")
+                a.sb.str(e.msg)
                 return Err(a.err_msg(msg, a.sb.to_str()))
             }
         else: return Err(a.err_msg(msg, "want an error"))

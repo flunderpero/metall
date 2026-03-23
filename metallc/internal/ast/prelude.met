@@ -197,12 +197,13 @@ fun StrBuilder.reset(sb &mut StrBuilder) void {
     sb.len = 0
 }
 
-fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false) &mut StrBuilder {
+fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false) void {
     if base != 2 and base != 8 and base != 10 and base != 16 {
         panic("invalid base")
     }
     if v == 0 {
-        return sb.rune('0')
+        sb.rune('0')
+        return void
     }
     let ubase = base.to_u64_wrapping()
     let digits = if upper {
@@ -222,12 +223,13 @@ fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false)
     sb.private_slice(result[(i+1)..20])
 }
 
-fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false) &mut StrBuilder {
+fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false) void {
     if base != 2 and base != 8 and base != 10 and base != 16 {
         panic("invalid base")
     }
     if v == 0 {
-        return sb.rune('0')
+        sb.rune('0')
+        return void
     }
     mut x = v
     if v < 0 {
@@ -253,35 +255,35 @@ fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false)
     sb.private_slice(result[(i+1)..20])
 }
 
-fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false) &mut StrBuilder { 
+fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false) void { 
     sb.u64(v.to_u64(), base, upper) 
 }
 
-fun StrBuilder.u16(sb &mut StrBuilder, v U16, base Int = 10, upper Bool = false) &mut StrBuilder { 
+fun StrBuilder.u16(sb &mut StrBuilder, v U16, base Int = 10, upper Bool = false) void { 
     sb.u64(v.to_u64(), base, upper)
 }
 
-fun StrBuilder.u32(sb &mut StrBuilder, v U32, base Int = 10, upper Bool = false) &mut StrBuilder {
+fun StrBuilder.u32(sb &mut StrBuilder, v U32, base Int = 10, upper Bool = false) void {
     sb.u64(v.to_u64(), base, upper)
 }
 
-fun StrBuilder.i8(sb &mut StrBuilder, v I8, base Int = 10, upper Bool = false) &mut StrBuilder {
+fun StrBuilder.i8(sb &mut StrBuilder, v I8, base Int = 10, upper Bool = false) void {
     sb.int(v.to_int(), base, upper)
 }
 
-fun StrBuilder.i16(sb &mut StrBuilder, v I16, base Int = 10, upper Bool = false) &mut StrBuilder {
+fun StrBuilder.i16(sb &mut StrBuilder, v I16, base Int = 10, upper Bool = false) void {
     sb.int(v.to_int(), base, upper)
 }
 
-fun StrBuilder.i32(sb &mut StrBuilder, v I32, base Int = 10, upper Bool = false) &mut StrBuilder {
+fun StrBuilder.i32(sb &mut StrBuilder, v I32, base Int = 10, upper Bool = false) void {
     sb.int(v.to_int(), base, upper)
 }
 
-fun StrBuilder.str(sb &mut StrBuilder, s Str) &mut StrBuilder {
+fun StrBuilder.str(sb &mut StrBuilder, s Str) void {
     sb.private_slice(s.utf8_bytes())
 }
 
-fun StrBuilder.bool(sb &mut StrBuilder, b Bool) &mut StrBuilder {
+fun StrBuilder.bool(sb &mut StrBuilder, b Bool) void {
     if b {
         sb.str("true")
     } else {
@@ -289,20 +291,20 @@ fun StrBuilder.bool(sb &mut StrBuilder, b Bool) &mut StrBuilder {
     }
 }
 
-fun StrBuilder.rune(sb &mut StrBuilder, r Rune) &mut StrBuilder {
+fun StrBuilder.rune(sb &mut StrBuilder, r Rune) void {
     let u = r.to_u32()
     if u < U32(1) << 7 {
         sb.ensure_capacity(1)
         sb.out[sb.len] = u.to_u8_wrapping()
         sb.len = sb.len + 1
-        return sb
+        return void
     }
     if u < U32(1) << 11 {
         sb.ensure_capacity(2)
         sb.out[sb.len] = (U32(192) | (u >> 6)).to_u8_wrapping()
         sb.out[sb.len + 1] = (U32(128) | (u & 63)).to_u8_wrapping()
         sb.len = sb.len + 2
-        return sb
+        return void
     }
     if u < U32(1) << 16 {
         sb.ensure_capacity(3)
@@ -310,7 +312,7 @@ fun StrBuilder.rune(sb &mut StrBuilder, r Rune) &mut StrBuilder {
         sb.out[sb.len + 1] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
         sb.out[sb.len + 2] = (U32(128) | (u & 63)).to_u8_wrapping()
         sb.len = sb.len + 3
-        return sb
+        return void
     }
     sb.ensure_capacity(4)
     sb.out[sb.len]     = (U32(240) | (u >> 18)).to_u8_wrapping()
@@ -318,28 +320,26 @@ fun StrBuilder.rune(sb &mut StrBuilder, r Rune) &mut StrBuilder {
     sb.out[sb.len + 2] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
     sb.out[sb.len + 3] = (U32(128) | (u & 63)).to_u8_wrapping()
     sb.len = sb.len + 4
-    sb
 }
 
-fun StrBuilder.fmt<T HasFmt>(sb &mut StrBuilder, t T) &mut StrBuilder { t.fmt(sb) sb }
+fun StrBuilder.fmt<T HasFmt>(sb &mut StrBuilder, t T) void { t.fmt(sb) }
 
-fun StrBuilder.nl(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(10) }
+fun StrBuilder.nl(sb &mut StrBuilder) void { sb.private_byte(10) }
 
-fun StrBuilder.space(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(32) }
+fun StrBuilder.space(sb &mut StrBuilder) void { sb.private_byte(32) }
 
-fun StrBuilder.tab(sb &mut StrBuilder) &mut StrBuilder { sb.private_byte(9) }
+fun StrBuilder.tab(sb &mut StrBuilder) void { sb.private_byte(9) }
 
-fun StrBuilder.slice<T HasFmt>(sb &mut StrBuilder, v []T, sep Str) &mut StrBuilder {
+fun StrBuilder.slice<T HasFmt>(sb &mut StrBuilder, v []T, sep Str) void {
     for i in 0..v.len {
         if i > 0 {
             sb.str(sep)
         }
-        _ = sb.fmt<T>(v[i])
+        sb.fmt<T>(v[i])
     } 
-    sb
 }
 
-fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep Str) &mut StrBuilder {
+fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep Str) void {
     mut first = true
     for {
         match it.next() {
@@ -348,12 +348,11 @@ fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep Str)
                 if first {
                     first = false
                 } else {
-                    _ = sb.str(sep)
+                    sb.str(sep)
                 }
-                _ = sb.fmt(a)
+                sb.fmt(a)
         } 
     }
-    sb
 }
 
 fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
@@ -368,36 +367,33 @@ fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
 
 fun StrBuilder.to_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
 
-fun StrBuilder.utf8_lossy(sb &mut StrBuilder, s []U8) &mut StrBuilder {
+fun StrBuilder.utf8_lossy(sb &mut StrBuilder, s []U8) void {
     -- todo: Parse `s` as utf8 lossy
     sb.ensure_capacity(s.len)
     for i in 0..s.len {
         sb.out[sb.len + i] = s[i]
     }
     sb.len = sb.len + s.len
-    sb
 }
 
-fun StrBuilder.private_slice(sb &mut StrBuilder, s []U8) &mut StrBuilder {
+fun StrBuilder.private_slice(sb &mut StrBuilder, s []U8) void {
     sb.ensure_capacity(s.len)
     for i in 0..s.len {
         sb.out[sb.len + i] = s[i]
     }
     sb.len = sb.len + s.len
-    sb
 }
 
-fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) &mut StrBuilder {
+fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) void {
     sb.ensure_capacity(1)
     sb.out[sb.len] = b
     sb.len = sb.len + 1
-    sb
 }
 
 --- None represents the absence of something. ---
 -- struct None {}
 
-fun None.fmt(n None, sb &mut StrBuilder) void { _ = sb.str("<none>") }
+fun None.fmt(n None, sb &mut StrBuilder) void { sb.str("<none>") }
 
 fun None.eq(n None, other None) Bool { true }
 
@@ -407,7 +403,7 @@ fun None.hash(n None) U64 { 0 }
 -- union Option<T> = T | None
 
 fun Option.fmt<T HasFmt>(o Option<T>, sb &mut StrBuilder) void {
-    _ = match o {
+    match o {
         case T t: sb.fmt(t)
         case None n: sb.fmt(n)
     } 
@@ -438,7 +434,7 @@ fun Option.hash<T HasHash>(o Option<T>) U64 {
 --- An error type. You are free to use anything as error. ---
 -- struct Err { msg Str }
 
-fun Err.fmt(e Err, sb &mut StrBuilder) void { _ = sb.str("error: ").str(e.msg) }
+fun Err.fmt(e Err, sb &mut StrBuilder) void { sb.str("error: ") sb.str(e.msg) }
 
 fun Err.eq(e Err, other Err) Bool { e.msg.eq(other.msg) }
 
@@ -448,7 +444,7 @@ fun Err.hash(e Err) U64 { e.msg.hash() }
 -- union Result<T> = T | Err
 
 fun Result.fmt<T HasFmt>(r Result<T>, sb &mut StrBuilder) void {
-    _ = match r {
+    match r {
         case T t: sb.fmt(t)
         case Err: sb.str("<error>")
     }
@@ -496,17 +492,17 @@ fun U32.hash(u U32) U64 { u.to_u64() * 5871781006564002453 }
 fun U64.hash(u U64) U64 { u * 5871781006564002453 }
 fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() * 5871781006564002453 }
 fun Bool.hash(b Bool) U64 { if b { 1 } else { 0 } }
-fun Str.fmt(s Str, sb &mut StrBuilder) void { _ = sb.str(s) }
-fun Int.fmt(i Int, sb &mut StrBuilder) void { _ = sb.int(i) }
-fun I32.fmt(i I32, sb &mut StrBuilder) void { _ = sb.i32(i) }
-fun I16.fmt(i I16, sb &mut StrBuilder) void { _ = sb.i16(i) }
-fun I8.fmt(i I8, sb &mut StrBuilder) void { _ = sb.i8(i) }
-fun U64.fmt(i U64, sb &mut StrBuilder) void { _ = sb.u64(i) }
-fun U32.fmt(i U32, sb &mut StrBuilder) void { _ = sb.u32(i) }
-fun U16.fmt(i U16, sb &mut StrBuilder) void { _ = sb.u16(i) }
-fun U8.fmt(i U8, sb &mut StrBuilder) void { _ = sb.u8(i) }
-fun Rune.fmt(r Rune, sb &mut StrBuilder) void { _ = sb.rune(r) }
-fun Bool.fmt(b Bool, sb &mut StrBuilder) void { _ = sb.bool(b) }
+fun Str.fmt(s Str, sb &mut StrBuilder) void { sb.str(s) }
+fun Int.fmt(i Int, sb &mut StrBuilder) void { sb.int(i) }
+fun I32.fmt(i I32, sb &mut StrBuilder) void { sb.i32(i) }
+fun I16.fmt(i I16, sb &mut StrBuilder) void { sb.i16(i) }
+fun I8.fmt(i I8, sb &mut StrBuilder) void { sb.i8(i) }
+fun U64.fmt(i U64, sb &mut StrBuilder) void { sb.u64(i) }
+fun U32.fmt(i U32, sb &mut StrBuilder) void { sb.u32(i) }
+fun U16.fmt(i U16, sb &mut StrBuilder) void { sb.u16(i) }
+fun U8.fmt(i U8, sb &mut StrBuilder) void { sb.u8(i) }
+fun Rune.fmt(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
+fun Bool.fmt(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
 fun U8.to_i8_checked(u U8) !I8 { if u > U8(127) { return Err("number out of range") } u.to_i8_wrapping() }
 fun U16.to_i16_checked(u U16) !I16 { if u > U16(32767) { return Err("number out of range") } u.to_i16_wrapping() }
 fun U32.to_i32_checked(u U32) !I32 { if u > U32(2147483647) { return Err("number out of range") } u.to_i32_wrapping() }
