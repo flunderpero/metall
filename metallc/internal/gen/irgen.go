@@ -218,8 +218,29 @@ func (g *IRGen) genStruct(env *types.TypeEnv, s types.TypeWork) {
 func (g *IRGen) genUnion(env *types.TypeEnv, u types.TypeWork) {
 	typ := env.Type(u.TypeID)
 	unionType := base.Cast[types.UnionType](typ.Kind)
-	payloadSize := unionPayloadSize(env, unionType)
-	g.write("%%%s = type { i64, [%d x i8] } ; %s\n", u.TypeID, payloadSize, unionType.Name)
+	// LLVM has no native union type. The standard approach is to use a struct
+	// whose payload field is the type of the largest variant.
+	// Using [N x i8] instead would cause SROA to decompose stores into
+	// byte-level operations, which can make instcombine fail to reach a fixpoint.
+	// See https://mapping-high-level-constructs-to-llvm-ir.readthedocs.io/en/latest/basic-constructs/unions.html
+	payloadIRType := unionPayloadIRType(env, unionType)
+	g.write("%%%s = type { i64, %s } ; %s\n", u.TypeID, payloadIRType, unionType.Name)
+}
+
+func unionPayloadIRType(env *types.TypeEnv, union types.UnionType) string {
+	var maxSize int64
+	var maxIRType string
+	for _, variantID := range union.Variants {
+		size := irTypeSize(env, variantID)
+		if size > maxSize {
+			maxSize = size
+			maxIRType = irType(env, variantID)
+		}
+	}
+	if maxSize == 0 {
+		return "[0 x i8]"
+	}
+	return maxIRType
 }
 
 func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
