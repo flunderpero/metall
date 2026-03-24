@@ -3806,3 +3806,124 @@ hello
 hello 
 hello 
 ```
+
+**and short-circuits on false**
+
+```metall
+fun side_effect() Bool {
+    DebugIntern.print_str("rhs")
+    true
+}
+
+fun main() void {
+    if false and side_effect() {
+        DebugIntern.print_str("branch")
+    }
+    DebugIntern.print_str("done")
+}
+```
+
+```output
+done
+```
+
+**and evaluates rhs on true**
+
+```metall
+fun side_effect() Bool {
+    DebugIntern.print_str("rhs")
+    true
+}
+
+fun main() void {
+    if true and side_effect() {
+        DebugIntern.print_str("branch")
+    }
+    DebugIntern.print_str("done")
+}
+```
+
+```output
+rhs
+branch
+done
+```
+
+**or short-circuits on true**
+
+```metall
+fun side_effect() Bool {
+    DebugIntern.print_str("rhs")
+    true
+}
+
+fun main() void {
+    if true or side_effect() {
+        DebugIntern.print_str("branch")
+    }
+    DebugIntern.print_str("done")
+}
+```
+
+```output
+branch
+done
+```
+
+**or evaluates rhs on false**
+
+```metall
+fun side_effect() Bool {
+    DebugIntern.print_str("rhs")
+    true
+}
+
+fun main() void {
+    if false or side_effect() {
+        DebugIntern.print_str("branch")
+    }
+    DebugIntern.print_str("done")
+}
+```
+
+```output
+rhs
+branch
+done
+```
+
+**and short-circuits in variable binding**
+
+```metall
+fun side_effect() Bool {
+    DebugIntern.print_str("rhs")
+    true
+}
+
+fun main() void {
+    let x = false and side_effect()
+    DebugIntern.print_bool(x)
+}
+```
+
+```output
+false
+```
+
+**or short-circuits in variable binding**
+
+```metall
+fun side_effect() Bool {
+    DebugIntern.print_str("rhs")
+    false
+}
+
+fun main() void {
+    let x = true or side_effect()
+    DebugIntern.print_bool(x)
+}
+```
+
+```output
+true
+```

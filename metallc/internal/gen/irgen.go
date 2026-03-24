@@ -1323,13 +1323,17 @@ func (g *IRFunGen) genUnary(id ast.NodeID, unary ast.Unary) {
 }
 
 func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
+	if binary.Op == ast.BinaryOpAnd || binary.Op == ast.BinaryOpOr {
+		g.genShortCircuit(id, binary)
+		return
+	}
 	g.Gen(binary.LHS)
 	g.Gen(binary.RHS)
 	lhs := g.lookupCode(binary.LHS)
 	rhs := g.lookupCode(binary.RHS)
 	irTyp := g.irTypeOfNode(binary.LHS)
 	reg := g.reg()
-	switch binary.Op {
+	switch binary.Op { //nolint:exhaustive
 	case ast.BinaryOpAdd:
 		g.write("%s = add %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
 	case ast.BinaryOpSub:
@@ -1365,10 +1369,6 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 			cmpOp = "u" + cmpOp[1:]
 		}
 		g.write("%s = icmp %s %s %s, %s", reg, cmpOp, irTyp, lhs, rhs)
-	case ast.BinaryOpAnd:
-		g.write("%s = and %s %s, %s", reg, irTyp, lhs, rhs)
-	case ast.BinaryOpOr:
-		g.write("%s = or %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpBitAnd:
 		g.write("%s = and %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpBitOr:
@@ -1390,6 +1390,34 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpDiv, ast.BinaryOpMul, ast.BinaryOpMod,
 		ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
 		g.runeCheckIfNeeded(binary.LHS, reg)
+	}
+	g.setCode(id, reg)
+}
+
+func (g *IRFunGen) genShortCircuit(id ast.NodeID, binary ast.Binary) {
+	g.Gen(binary.LHS)
+	lhs := g.lookupCode(binary.LHS)
+	lhsLabel := g.label("sc_lhs", id)
+	rhsLabel := g.label("sc_rhs", id)
+	endLabel := g.label("sc_end", id)
+	g.write("br label %%%s", lhsLabel)
+	g.writeLabel(lhsLabel)
+	if binary.Op == ast.BinaryOpAnd {
+		g.write("br i1 %s, label %%%s, label %%%s", lhs, rhsLabel, endLabel)
+	} else {
+		g.write("br i1 %s, label %%%s, label %%%s", lhs, endLabel, rhsLabel)
+	}
+	g.writeLabel(rhsLabel)
+	g.Gen(binary.RHS)
+	rhs := g.lookupCode(binary.RHS)
+	rhsEndLabel := g.lastLabel
+	g.write("br label %%%s", endLabel)
+	g.writeLabel(endLabel)
+	reg := g.reg()
+	if binary.Op == ast.BinaryOpAnd {
+		g.write("%s = phi i1 [false, %%%s], [%s, %%%s]", reg, lhsLabel, rhs, rhsEndLabel)
+	} else {
+		g.write("%s = phi i1 [true, %%%s], [%s, %%%s]", reg, lhsLabel, rhs, rhsEndLabel)
 	}
 	g.setCode(id, reg)
 }
