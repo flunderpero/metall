@@ -53,6 +53,251 @@ fun main() void {
         try assert.eq(Option(RuneIndex('B', 10)), it.next())
         try assert.eq(Option<RuneIndex>(None()), it.next())
     })
+    suite.test("from_utf8_checked", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        -- valid: ascii
+        try assert.eq(Result("ABC"), Str.from_utf8_checked([U8(65), 66, 67][..]))
+        -- valid: 2-byte
+        try assert.eq(Result("ä"), Str.from_utf8_checked([U8(195), 164][..]))
+        -- valid: 3-byte
+        try assert.eq(Result("€"), Str.from_utf8_checked([U8(226), 130, 172][..]))
+        -- valid: 4-byte
+        try assert.eq(Result("𝄞"), Str.from_utf8_checked([U8(240), 157, 132, 158][..]))
+        -- valid: mixed
+        try assert.eq(Result("Aä€𝄞"), Str.from_utf8_checked([U8(65), 195, 164, 226, 130, 172, 240, 157, 132, 158][..]))
+        -- empty is valid
+        let empty []U8 = []
+        try assert.eq(Result(""), Str.from_utf8_checked(empty))
+
+        -- bare continuation at start
+        try assert.err(Str.from_utf8_checked([U8(128), 65][..]), "invalid utf8 sequence")
+        -- bare continuation in middle
+        try assert.err(Str.from_utf8_checked([U8(65), 128, 66][..]), "invalid utf8 sequence")
+        -- bare continuation at end
+        try assert.err(Str.from_utf8_checked([U8(65), 191][..]), "invalid utf8 sequence")
+        -- multiple consecutive continuations
+        try assert.err(Str.from_utf8_checked([U8(128), 191][..]), "invalid utf8 sequence")
+
+        -- invalid lead byte 248
+        try assert.err(Str.from_utf8_checked([U8(248), 65][..]), "invalid utf8 sequence")
+        -- invalid lead byte 255
+        try assert.err(Str.from_utf8_checked([U8(255)][..]), "invalid utf8 sequence")
+
+        -- truncated 2-byte: lead at end
+        try assert.err(Str.from_utf8_checked([U8(65), 195][..]), "invalid utf8 sequence")
+        -- truncated 2-byte: continuation replaced by ascii
+        try assert.err(Str.from_utf8_checked([U8(195), 65][..]), "invalid utf8 sequence")
+        -- truncated 2-byte: continuation replaced by lead
+        try assert.err(Str.from_utf8_checked([U8(226), 195, 164][..]), "invalid utf8 sequence")
+
+        -- truncated 3-byte: no continuations
+        try assert.err(Str.from_utf8_checked([U8(65), 226][..]), "invalid utf8 sequence")
+        -- truncated 3-byte: one continuation then end
+        try assert.err(Str.from_utf8_checked([U8(65), 226, 130][..]), "invalid utf8 sequence")
+        -- truncated 3-byte: second continuation replaced by ascii
+        try assert.err(Str.from_utf8_checked([U8(226), 130, 65][..]), "invalid utf8 sequence")
+
+        -- truncated 4-byte: no continuations
+        try assert.err(Str.from_utf8_checked([U8(65), 240][..]), "invalid utf8 sequence")
+        -- truncated 4-byte: one continuation
+        try assert.err(Str.from_utf8_checked([U8(65), 240, 157][..]), "invalid utf8 sequence")
+        -- truncated 4-byte: two continuations
+        try assert.err(Str.from_utf8_checked([U8(65), 240, 157, 132][..]), "invalid utf8 sequence")
+        -- truncated 4-byte: third continuation replaced by ascii
+        try assert.err(Str.from_utf8_checked([U8(240), 157, 132, 65][..]), "invalid utf8 sequence")
+
+        -- surrogate U+D800
+        try assert.err(Str.from_utf8_checked([U8(237), 160, 128][..]), "invalid utf8 sequence")
+        -- surrogate U+DFFF
+        try assert.err(Str.from_utf8_checked([U8(237), 191, 191][..]), "invalid utf8 sequence")
+        -- surrogate in middle, valid chars around it
+        try assert.err(Str.from_utf8_checked([U8(65), 237, 160, 128, 66][..]), "invalid utf8 sequence")
+
+        -- overlong: U+0000 encoded as 2-byte [192, 128]
+        try assert.err(Str.from_utf8_checked([U8(192), 128][..]), "invalid utf8 sequence")
+
+        -- above U+10FFFF: [244, 144, 128, 128]
+        try assert.err(Str.from_utf8_checked([U8(244), 144, 128, 128][..]), "invalid utf8 sequence")
+    })
+    suite.test("from_utf8_lossy", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        -- ascii
+        try assert.eq("ABC", Str.from_utf8_lossy([U8(65), 66, 67][..], @local))
+        -- 2-byte
+        try assert.eq("ä", Str.from_utf8_lossy([U8(195), 164][..], @local))
+        -- -- 3-byte
+        try assert.eq("€", Str.from_utf8_lossy([U8(226), 130, 172][..], @local))
+        -- -- 4-byte
+        try assert.eq("𝄞", Str.from_utf8_lossy([U8(240), 157, 132, 158][..], @local))
+        -- -- mixed
+        try assert.eq("Aä€𝄞", Str.from_utf8_lossy([U8(65), 195, 164, 226, 130, 172, 240, 157, 132, 158][..], @local))
+        -- empty is valid
+        let empty []U8 = []
+        try assert.eq("", Str.from_utf8_lossy(empty, @local))
+
+        let sb = StrBuilder.new(32, @local)
+        let r = Rune.from_u32_lossy(65533)
+
+        -- bare continuation byte
+        sb.reset()
+        sb.rune(r)
+        sb.str("A")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(128), 65][..], @local))
+
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        sb.str("B")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 128, 66][..], @local))
+
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 128][..], @local))
+
+        -- multiple consecutive: one replacement each
+        sb.reset()
+        sb.rune(r)
+        sb.rune(r)
+        sb.str("A")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(128), 191, 65][..], @local))
+
+        -- invalid lead byte (248+)
+        sb.reset()
+        sb.rune(r)
+        sb.str("A")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(248), 65][..], @local))
+
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        sb.str("B")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 248, 66][..], @local))
+
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 248][..], @local))
+
+        -- truncated 2-byte
+        -- lead at end of input
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 195][..], @local))
+
+        -- continuation replaced by ASCII (must not consume the A)
+        sb.reset()
+        sb.rune(r)
+        sb.str("A")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(195), 65][..], @local))
+
+        -- continuation replaced by valid multi-byte lead (must not consume ä)
+        sb.reset()
+        sb.rune(r)
+        sb.str("ä")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(226), 195, 164][..], @local))
+
+        -- truncated 3-byte
+        -- no continuations before end
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 226][..], @local))
+
+        -- one continuation then end of input
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 226, 130][..], @local))
+
+        -- second continuation replaced by ASCII
+        sb.reset()
+        sb.rune(r)
+        sb.str("A")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(226), 130, 65][..], @local))
+
+        -- TRUNCATED 4-BYTE
+        -- no continuations before end
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 240][..], @local))
+
+        -- one continuation then end
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 240, 157][..], @local))
+
+        -- two continuations then end
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 240, 157, 132][..], @local))
+
+        -- third continuation replaced by ASCII
+        sb.reset()
+        sb.rune(r)
+        sb.str("A")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(240), 157, 132, 65][..], @local))
+
+        -- surrogate halves
+        -- U+D800 = [237, 160, 128]
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        sb.str("B")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 237, 160, 128, 66][..], @local))
+
+        -- U+DFFF = [237, 191, 191]
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        sb.str("B")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 237, 191, 191, 66][..], @local))
+
+        -- valid sequences survive after recovery
+        sb.reset()
+        sb.rune(r)
+        sb.str("ä")
+        sb.rune(r)
+        sb.str("€")
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(128), 195, 164, 128, 226, 130, 172, 128][..], @local))
+
+        -- overlong: [192, 128] → one replacement, then nothing (128 is bare continuation, another replacement)
+        sb.reset()
+        sb.rune(r)
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(192), 128][..], @local))
+
+        -- overlong: [193, 191] → same
+        sb.reset()
+        sb.rune(r)
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(193), 191][..], @local))
+
+        -- overlong in middle, valid chars around it
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        sb.rune(r)
+        sb.str("B")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 192, 128, 66][..], @local))
+
+        -- above U+10FFFF: [244, 144, 128, 128] → one replacement
+        sb.reset()
+        sb.rune(r)
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(244), 144, 128, 128][..], @local))
+
+        -- above U+10FFFF in middle
+        sb.reset()
+        sb.str("A")
+        sb.rune(r)
+        sb.str("B")
+        try assert.eq(sb.to_str(), Str.from_utf8_lossy([U8(65), 244, 144, 128, 128, 66][..], @local))
+    })
     suite.test("split", fun(assert &assert_::Assert) !void {
         mut it = "these are some words".split(" ")
         try assert.eq(Option("these"), (&mut it).next())

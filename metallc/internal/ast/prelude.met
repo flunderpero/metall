@@ -51,7 +51,7 @@ struct StrRuneIndexIter {
     mut index Int
 }
 
---- Iterate over all runes (Unicode code points) in the string
+--- Iterate over all runes (unicode code points) in the string
     and return the rune and its byte offset. ---
 fun StrRuneIndexIter.next(it &mut StrRuneIndexIter) ?RuneIndex {
     if it.index == it.bytes.len {
@@ -75,36 +75,39 @@ fun StrRuneIter.next(it &mut StrRuneIter) ?Rune {
     Str.internal_rune_at(it.bytes, &mut it.index)
 }
 
-fun Str.internal_rune_at(bytes []U8, index &mut Int) Rune {
+fun Str.internal_rune_at(bytes []U8, index_out &mut Int) Rune {
     -- Decoding utf8 sequences to runes. Remember that it is guaranteed that Str
     -- always contains valid utf8.
-    let b0 = bytes[index.*].to_u32()
-    index.* = index.* + 1
-    when {
+    mut index = index_out.*
+    let b0 = bytes[index].to_u32()
+    index = index + 1
+    let rune = when {
     case b0 < 128:
         Rune(b0)
     case b0 < 224:
-        let b1 = bytes[index.*].to_u32()
-        index.* = index.* + 1
+        let b1 = bytes[index].to_u32()
+        index = index + 1
         Rune((b0 & 31) << 6 | (b1 & 63))
     case b0 < 240:
-        let b1 = bytes[index.*].to_u32()
-        index.* = index.* + 1
-        let b2 = bytes[index.*].to_u32()
-        index.* = index.* + 1
-        Rune((b0 & 15)  << 12 | (b1 & 63) << 6  | (b2 & 63))
+        let b1 = bytes[index].to_u32()
+        index = index + 1
+        let b2 = bytes[index].to_u32()
+        index = index + 1
+        Rune((b0 & 15) << 12 | (b1 & 63) << 6  | (b2 & 63))
     case b0 < 248:
-        let b1 = bytes[index.*].to_u32()
-        index.* = index.* + 1
-        let b2 = bytes[index.*].to_u32()
-        index.* = index.* + 1
-        let b3 = bytes[index.*].to_u32()
-        index.* = index.* + 1
-        Rune((b0 & 7)   << 18 | (b1 & 63) << 12 | (b2 & 63) << 6 | (b3 & 63))
+        let b1 = bytes[index].to_u32()
+        index = index + 1
+        let b2 = bytes[index].to_u32()
+        index = index + 1
+        let b3 = bytes[index].to_u32()
+        index = index + 1
+        Rune((b0 & 7) << 18 | (b1 & 63) << 12 | (b2 & 63) << 6 | (b3 & 63))
     else:
         panic("invalid utf8")
         Rune(0)
     }
+    index_out.* = index
+    rune
 }
 
 --- Create an iterator over all runes in this string. ---
@@ -125,15 +128,93 @@ fun Str.is_empty(s Str) Bool {
     s.data.len == 0
 }
 
---- Replace illegal utf8 sequences with the replacement character U+FFFD. 
-
-    todo: Actually do that. :-) ---
+--- Replace illegal utf8 sequences with the replacement character U+FFFD. ---
 fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
+    let replacement_rune = [U8(239), 191, 189][..]
 	mut copy = @a.slice_uninit_mut<U8>(data.len)
-	for i in 0..data.len {
-		copy[i] = data[i]
+    mut copy_index = 0
+    mut index = 0
+	for index < data.len {
+        let sequence_start = index
+        let valid = Str.internal_check_rune_at(data, &mut index)
+        let bytes = if valid { data[sequence_start..index] } else { replacement_rune }
+        for i in 0..bytes.len {
+            if copy_index == copy.len {
+                mut copy2 = @a.slice_uninit_mut<U8>(copy.len + 32)
+                for c in 0..copy.len {
+                    copy2[c] = copy[c]
+                }
+                copy = copy2
+            }
+            copy[copy_index] = bytes[i]
+            copy_index = copy_index + 1
+        }
 	}
-	Str(copy)
+	Str(copy[0..copy_index])
+}
+
+--- Create a string from the given utf8 sequence. 
+    
+    Return an error if the input is not a valid utf8 sequence. ---
+fun Str.from_utf8_checked(data []U8) !Str {
+    mut index = 0
+	for index < data.len {
+        let valid = Str.internal_check_rune_at(data, &mut index)
+        if not valid {
+            return Err("invalid utf8 sequence")
+        }
+    }
+    Str(data)
+}
+
+fun Str.internal_check_rune_at(data []U8, index_out &mut Int) Bool {
+    mut index = index_out.*
+    let b0 = data[index]
+    index = index + 1
+    mut valid = false
+    when {
+    case b0 < 128:
+        valid = true
+    case b0 < 192:
+        -- bare continuation byte, always invalid
+    case b0 < 224:
+        if b0 >= 194 and index < data.len and (data[index] & 192) == 128 {
+            index = index + 1
+            valid = true
+        }
+    case b0 < 240:
+        if index < data.len and (data[index] & 192) == 128 {
+            index = index + 1
+            if index < data.len and (data[index] & 192) == 128 {
+                index = index + 1
+                 let cp = (b0.to_u32() & 15) << 12 
+                    | (data[index - 2].to_u32() & 63) << 6 
+                    | (data[index - 1].to_u32() & 63)
+                if cp < 55296 or cp > 57343 {
+                    valid = true
+                }
+            }
+        }
+    case b0 < 248:
+        if index < data.len and (data[index] & 192) == 128 {
+            index = index + 1
+            if index < data.len and (data[index] & 192) == 128 {
+                index = index + 1
+                if index < data.len and (data[index] & 192) == 128 {
+                    index = index + 1
+                    let cp = (b0.to_u32() & 7) << 18
+                        | (data[index - 3].to_u32() & 63) << 12
+                        | (data[index - 2].to_u32() & 63) << 6
+                        | (data[index - 1].to_u32() & 63)
+                    if cp <= 1114111 {
+                        valid = true
+                    }
+                }
+            }
+        }
+    }
+    index_out.* = index
+    return valid
 }
 
 fun Str.eq(s Str, other Str) Bool {
@@ -435,21 +516,17 @@ fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
 
 fun StrBuilder.to_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
 
-fun StrBuilder.utf8_lossy(sb &mut StrBuilder, s []U8) void {
-    -- todo: Parse `s` as utf8 lossy
-    sb.ensure_capacity(s.len)
-    for i in 0..s.len {
-        sb.out[sb.len + i] = s[i]
-    }
-    sb.len = sb.len + s.len
+fun StrBuilder.utf8_lossy(sb &mut StrBuilder, bytes []U8) void {
+    let s = Str.from_utf8_lossy(bytes, sb.@a)
+    sb.str(s)
 }
 
-fun StrBuilder.private_slice(sb &mut StrBuilder, s []U8) void {
-    sb.ensure_capacity(s.len)
-    for i in 0..s.len {
-        sb.out[sb.len + i] = s[i]
+fun StrBuilder.private_slice(sb &mut StrBuilder, bytes []U8) void {
+    sb.ensure_capacity(bytes.len)
+    for i in 0..bytes.len {
+        sb.out[sb.len + i] = bytes[i]
     }
-    sb.len = sb.len + s.len
+    sb.len = sb.len + bytes.len
 }
 
 fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) void {
