@@ -17,6 +17,9 @@ func (e *Engine) checkMatch(match ast.Match, span base.Span, typeHint *TypeID) (
 			e.env.TypeDisplay(exprTypeID))
 		return InvalidTypeID, TypeFailed
 	}
+	if len(union.Variants) == 0 {
+		return InvalidTypeID, TypeDepFailed
+	}
 	if len(match.Arms) == 0 && match.Else == nil {
 		e.diag(span, "match requires at least one arm")
 		return InvalidTypeID, TypeFailed

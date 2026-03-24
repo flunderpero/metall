@@ -1264,6 +1264,27 @@ union01 = Maybe<Int> = Int | Bool
 union02 = Maybe = T | Bool
 ```
 
+**Union with unknown variant**
+
+```metall
+{
+    union Foo = Str | DoesNotExist
+    fun test(f Foo) Str {
+        match f {
+            case Str s: s
+        }
+    }
+}
+```
+
+```error
+test.met:2:23: symbol not defined: DoesNotExist
+    {
+        union Foo = Str | DoesNotExist
+                          ^^^^^^^^^^^^
+        fun test(f Foo) Str {
+```
+
 ## Union Auto-Wrap
 
 **Auto-wrap in let binding**
