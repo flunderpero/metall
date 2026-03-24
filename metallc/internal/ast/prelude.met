@@ -29,6 +29,69 @@ fun Rune.from_u32_lossy(n U32) Rune {
     Rune(n)
 }
 
+--- Fail if the rune represents an illegal unicode codepoint.
+    Valid codepoints range from U+0000 to U+10FFFF excluding the surrogate 
+    codepoints U+D800 to U+DFFF. ---
+fun Rune.from_u32_checked(n U32) !Rune { 
+    if n > U32(1114111) { return Err("rune out of range") }
+    if n >= U32(55296) and n <= U32(57343) { return Err("rune in invalid surrogate range") }
+    Rune(n)
+}
+
+-- todo: This currently only supports ASCII runes.
+fun Rune.is_whitespace(r Rune) Bool {
+    r.is_ascii_whitespace()
+}
+
+-- todo: This currently only supports ASCII runes.
+fun Rune.is_lower(r Rune) Bool {
+    r.is_ascii_lower()
+}
+
+-- todo: This currently only supports ASCII runes.
+fun Rune.is_upper(r Rune) Bool {
+    r.is_ascii_upper()
+}
+
+-- todo: This currently only supports ASCII runes.
+fun Rune.is_digit(r Rune) Bool {
+    r.is_ascii_digit()
+}
+
+-- todo: This currently only supports ASCII runes.
+fun Rune.is_alpha(r Rune) Bool {
+    r.is_ascii_alpha()
+}
+
+-- todo: This currently only supports ASCII runes.
+fun Rune.is_alphanumeric(r Rune) Bool {
+    r.is_ascii_alphanumeric()
+}
+
+fun Rune.is_ascii_whitespace(r Rune) Bool {
+    r == ' ' or r == '\t' or r == '\n' or r == '\r' or r == '\x0C'
+}
+
+fun Rune.is_ascii_lower(r Rune) Bool {
+    r >= 'a' and r <= 'z'
+}
+
+fun Rune.is_ascii_upper(r Rune) Bool {
+    r >= 'A' and r <= 'Z'
+}
+
+fun Rune.is_ascii_digit(r Rune) Bool {
+    r >= '0' and r <= '9'
+}
+
+fun Rune.is_ascii_alpha(r Rune) Bool {
+    r.is_ascii_lower() or r.is_ascii_upper()
+}
+
+fun Rune.is_ascii_alphanumeric(r Rune) Bool {
+    r.is_ascii_alpha() or r.is_ascii_digit()
+}
+
 struct RuneIndex {
     rune Rune
     index Int
