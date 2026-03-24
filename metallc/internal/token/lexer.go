@@ -27,6 +27,7 @@ const (
 	DotDot
 	Else
 	EOF
+	Error
 	Eq
 	EqEq
 	Excl
@@ -100,6 +101,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	DotDot:                "..",
 	Else:                  "<else>",
 	EOF:                   "<EOF>",
+	Error:                 "<error>",
 	Eq:                    "=",
 	EqEq:                  "==",
 	Excl:                  "!",
@@ -234,7 +236,118 @@ type Token struct {
 }
 
 func (t Token) String() string {
+	if t.Kind == Error {
+		return fmt.Sprintf("%s: %s: %s", t.Span, t.Kind, t.Value)
+	}
 	return fmt.Sprintf("%s: %s", t.Span, t.Kind)
+}
+
+func hexDigit(c rune) (rune, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
+}
+
+// parseHexEscape parses \xNN byte escapes. idx points to the first hex digit after \x.
+func parseHexEscape(source *base.Source, idx int) (rune, int, bool) {
+	if idx+2 > len(source.Content) {
+		return 0, idx, false
+	}
+	val := rune(0)
+	for i := range 2 {
+		d, ok := hexDigit(source.Content[idx+i])
+		if !ok {
+			return 0, idx, false
+		}
+		val = val*16 + d
+	}
+	return val, idx + 2, true
+}
+
+// parseUnicodeEscape parses \u{NNNNNN} unicode escapes. idx points to the '{' after \u.
+func parseUnicodeEscape(source *base.Source, idx int) (rune, int, bool) {
+	if idx >= len(source.Content) || source.Content[idx] != '{' {
+		return 0, idx, false
+	}
+	idx++ // skip {
+	val := rune(0)
+	digits := 0
+	for idx < len(source.Content) && source.Content[idx] != '}' {
+		d, ok := hexDigit(source.Content[idx])
+		if !ok {
+			return 0, idx, false
+		}
+		digits++
+		if digits > 6 {
+			return 0, idx, false
+		}
+		val = val*16 + d
+		idx++
+	}
+	if idx >= len(source.Content) || digits == 0 || val > 0x10FFFF {
+		return 0, idx, false
+	}
+	idx++ // skip }
+	return val, idx, true
+}
+
+func parseEscape(source *base.Source, idx int, quote rune) (rune, int, string) {
+	if idx+1 >= len(source.Content) {
+		return 0, idx, "unexpected end of escape sequence"
+	}
+	escapeChar := source.Content[idx+1]
+	switch escapeChar {
+	case 'n':
+		return '\n', idx + 2, ""
+	case 't':
+		return '\t', idx + 2, ""
+	case '0':
+		return '\000', idx + 2, ""
+	case 'r':
+		return '\r', idx + 2, ""
+	case '\\':
+		return '\\', idx + 2, ""
+	case '\'':
+		if quote == '\'' {
+			return '\'', idx + 2, ""
+		}
+	case '"':
+		if quote == '"' {
+			return '"', idx + 2, ""
+		}
+	case 'x':
+		if r, newIdx, ok := parseHexEscape(source, idx+2); ok {
+			return r, newIdx, ""
+		}
+		return 0, idx, "invalid byte escape sequence"
+	case 'u':
+		if r, newIdx, ok := parseUnicodeEscape(source, idx+2); ok {
+			return r, newIdx, ""
+		}
+		return 0, idx, "invalid unicode escape sequence"
+	}
+	return 0, idx, fmt.Sprintf(`unknown escape sequence '\%c'`, escapeChar)
+}
+
+// skipToClosingQuote advances idx past the closing quote character, skipping escaped characters.
+// Returns the index of the closing quote, or len(source.Content) if not found.
+func skipToClosingQuote(source *base.Source, idx int, quote rune) int {
+	for idx < len(source.Content) {
+		if source.Content[idx] == quote {
+			return idx
+		}
+		if source.Content[idx] == '\\' {
+			idx++ // skip the escaped character
+		}
+		idx++
+	}
+	return idx
 }
 
 func lexToken(source *base.Source, idx int) Token { //nolint:funlen
@@ -254,17 +367,39 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 				span.End = idx
 				return Token{String, string(value), span}
 			}
-			idx += 1
-			value = append(value, c)
+			if c == '\\' {
+				r, newIdx, errMsg := parseEscape(source, idx, '"')
+				if errMsg != "" {
+					span.End = skipToClosingQuote(source, idx+1, '"')
+					return Token{Error, errMsg, span}
+				}
+				value = append(value, r)
+				idx = newIdx
+			} else {
+				idx += 1
+				value = append(value, c)
+			}
 		}
 		return Token{EOF, "", span}
 	case c == '\'':
 		if idx < len(source.Content) && source.Content[idx] != '\'' {
-			value := source.Content[idx]
-			idx += 1
-			if idx < len(source.Content) && source.Content[idx] == '\'' {
-				span.End = idx
-				return Token{Rune, string(value), span}
+			if source.Content[idx] == '\\' {
+				r, newIdx, errMsg := parseEscape(source, idx, '\'')
+				if errMsg != "" {
+					span.End = skipToClosingQuote(source, idx+1, '\'')
+					return Token{Error, errMsg, span}
+				}
+				if newIdx < len(source.Content) && source.Content[newIdx] == '\'' {
+					span.End = newIdx
+					return Token{Rune, string([]rune{r}), span}
+				}
+			} else {
+				value := source.Content[idx]
+				idx += 1
+				if idx < len(source.Content) && source.Content[idx] == '\'' {
+					span.End = idx
+					return Token{Rune, string([]rune{value}), span}
+				}
 			}
 		}
 		return Token{Unknown, string(c), span}
