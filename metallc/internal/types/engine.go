@@ -1,6 +1,7 @@
 package types
 
 import (
+	"math/big"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -220,7 +221,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.String:
 		typeID, status = e.checkString()
 	case ast.RuneLiteral:
-		typeID, status = e.checkRuneLiteral(nodeKind, node.Span)
+		typeID, status = e.checkRuneLiteral(nodeKind, node.Span, typeHint)
 	case ast.Var:
 		typeID, status = e.checkVar(nodeID, nodeKind, node.Span)
 	default:
@@ -242,11 +243,25 @@ func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint *TypeID) (TypeID, Typ
 	hintedType, ok := e.env.cachedTypeInfo(*typeHint)
 	if ok {
 		node := e.ast.Node(nodeID)
-		// Integer literals are context-sensitive, so they may need to be retyped even if
+		// Integer and rune literals are context-sensitive, so they may need to be retyped even if
 		// this node was already cached earlier under a more generic inference path.
 		if intNode, ok := node.Kind.(ast.Int); ok {
 			if _, ok := hintedType.Type.Kind.(IntType); ok {
 				typeID, status := e.checkInt(intNode, node.Span, typeHint)
+				if status.Failed() {
+					return InvalidTypeID, status
+				}
+				cached, ok := e.env.cachedTypeInfo(typeID)
+				if !ok {
+					panic(base.Errorf("type %s not found", typeID))
+				}
+				e.env.setNodeType(nodeID, cached)
+				return typeID, TypeOK
+			}
+		}
+		if runeLit, ok := node.Kind.(ast.RuneLiteral); ok {
+			if _, ok := hintedType.Type.Kind.(IntType); ok {
+				typeID, status := e.checkRuneLiteral(runeLit, node.Span, typeHint)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
@@ -1885,7 +1900,7 @@ func (e *Engine) checkString() (TypeID, TypeStatus) {
 	return e.strTyp, TypeOK
 }
 
-func (e *Engine) checkRuneLiteral(lit ast.RuneLiteral, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkRuneLiteral(lit ast.RuneLiteral, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
 	const maxUnicodeCodepoint = 0x10FFFF
 	const surrogateMin = 0xD800
 	const surrogateMax = 0xDFFF
@@ -1896,6 +1911,14 @@ func (e *Engine) checkRuneLiteral(lit ast.RuneLiteral, span base.Span) (TypeID, 
 	if lit.Value >= surrogateMin && lit.Value <= surrogateMax {
 		e.diag(span, "invalid rune literal: value U+%04X is in the surrogate range (U+D800..U+DFFF)", lit.Value)
 		return InvalidTypeID, TypeFailed
+	}
+	if typeHint != nil {
+		if info, ok := e.env.Type(*typeHint).Kind.(IntType); ok && *typeHint != e.runeTyp {
+			val := new(big.Int).SetUint64(uint64(lit.Value))
+			if val.Cmp(info.Min) >= 0 && val.Cmp(info.Max) <= 0 {
+				return *typeHint, TypeOK
+			}
+		}
 	}
 	return e.runeTyp, TypeOK
 }

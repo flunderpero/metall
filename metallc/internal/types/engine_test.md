@@ -3679,6 +3679,41 @@ Binary: U8
   Int: U8
 ```
 
+**Rune literal materialization binary**
+
+```metall
+U8(32) == ' '
+```
+
+```types
+Binary: Bool
+  TypeConstruction: U8
+    Ident: U8
+    Int: U8
+  RuneLiteral: U8
+```
+
+**Rune literal materialization call arg**
+
+```metall
+{ fun foo(a U8) U8 { a } foo('a') }
+```
+
+```types
+Block: U8
+  Fun: fun01
+    FunParam: U8
+      SimpleType: U8
+    SimpleType: U8
+    Block: U8
+      Ident: U8
+  Call: U8
+    Ident: fun01
+    RuneLiteral: U8
+---
+fun01 = fun(U8) U8
+```
+
 **Int materialization call arg**
 
 ```metall
