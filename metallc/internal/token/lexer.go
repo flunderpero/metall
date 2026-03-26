@@ -175,6 +175,16 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'~': Tilde,
 }
 
+// KeywordNames maps keyword token kinds back to their string names.
+var KeywordNames map[TokenKind]string //nolint:gochecknoglobals
+
+func init() { //nolint:gochecknoinits
+	KeywordNames = make(map[TokenKind]string, len(keywords))
+	for name, kind := range keywords {
+		KeywordNames[kind] = name
+	}
+}
+
 var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"and":      And,
 	"break":    Break,

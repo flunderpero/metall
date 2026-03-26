@@ -317,6 +317,21 @@ Fun(name="Foo.bar")
     exprs=Int(value=123)
 ```
 
+**Namespaced fun with keyword method name**
+
+```metall
+fun Foo.match(f Foo) Int { 123 }
+```
+
+```ast
+Fun(name="Foo.match")
+  params=FunParam(name="f")
+    type=SimpleType(name="Foo")
+  returnType=SimpleType(name="Int")
+  block=Block()
+    exprs=Int(value=123)
+```
+
 **Namespaced fun in file**
 
 ```metall module

@@ -1695,7 +1695,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 		if _, ok := p.expect(token.Dot); !ok {
 			return FunDecl{}, base.Span{}, false
 		}
-		method, ok := p.expect(token.Ident)
+		method, ok := p.expectIdentOrKeyword()
 		if !ok {
 			return FunDecl{}, base.Span{}, false
 		}
@@ -1821,6 +1821,24 @@ func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {
 		return nil, false
 	}
 	return t, true
+}
+
+// expectIdentOrKeyword consumes the next token if it is an identifier or a keyword,
+// returning it as an Ident token with the keyword's name as its value.
+func (p *Parser) expectIdentOrKeyword() (*token.Token, bool) {
+	t, ok := p.next()
+	if !ok {
+		return nil, false
+	}
+	if t.Kind == token.Ident {
+		return t, true
+	}
+	if name, ok := token.KeywordNames[t.Kind]; ok {
+		t.Value = name
+		return t, true
+	}
+	p.diagnostic(p.span(), "unexpected token: expected %s, got %s", token.Ident, t.Kind)
+	return nil, false
 }
 
 func (p *Parser) expectNumber() (*big.Int, bool) {
