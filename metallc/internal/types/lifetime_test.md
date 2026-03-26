@@ -2177,3 +2177,46 @@ test.met:5:26: reference escaping its allocation scope (via block result)
 
 ```error
 ```
+
+**subslice of by-value param array field escapes via return**
+
+```metall
+{
+    struct Foo {
+        bytes [4]U8
+        len Int
+    }
+    fun Foo.as_slice(f Foo) []U8 {
+        f.bytes[0..f.len]
+    }
+    let f = Foo([U8(65), 0, 0, 0], 1)
+    f.as_slice()
+}
+```
+
+```error
+test.met:7:9: reference escaping its allocation scope (via block result)
+        fun Foo.as_slice(f Foo) []U8 {
+            f.bytes[0..f.len]
+            ^^^^^^^^^^^^^^^^^
+        }
+```
+
+**subslice of ref param array field does not escape**
+
+```metall
+{
+    struct Foo {
+        bytes [4]U8
+        len Int
+    }
+    fun Foo.as_slice(f &Foo) []U8 {
+        f.bytes[0..f.len]
+    }
+    mut f = Foo([U8(65), 0, 0, 0], 1)
+    _ = Foo.as_slice(&f)
+}
+```
+
+```error
+```

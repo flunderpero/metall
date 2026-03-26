@@ -280,6 +280,13 @@ func (a *LifetimeCheck) placeStorage(nodeID ast.NodeID) (TaintID, AliasSet) {
 		}
 		return vt.StorageTaint, AliasSet{{foundIn.ID, kind.Name}}
 	case ast.FieldAccess:
+		// If the target is a ref, the field lives in the referent's storage,
+		// not in the ref variable's stack slot - auto-deref like analyzeFieldAccess.
+		if _, ok := a.env.TypeOfNode(kind.Target).Kind.(RefType); ok {
+			f := a.flow(kind.Target)
+			derefed := a.derefFlow(f.PointsTo)
+			return 0, derefed.PointsTo
+		}
 		return a.placeStorage(kind.Target)
 	case ast.Index:
 		return a.placeStorage(kind.Target)
@@ -961,9 +968,15 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	}
 
 	// Which param taints appear in the return value?
+	// Any taint that is NOT a param taint is function-local (e.g. the storage
+	// taint of a by-value param's stack slot) and must not escape.
 	for _, t := range blockFlow.Taints {
 		if idx, ok := paramTaintToIdx[t]; ok {
 			effects.ReturnTaints[t] = idx
+		} else {
+			a.diagEscape(fun.Block, blockFlow.Taints,
+				a.scopeByID(paramScope.ID), "via block result")
+			break
 		}
 	}
 
