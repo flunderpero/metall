@@ -1038,6 +1038,93 @@ test.met:7:20: reference escaping its allocation scope (via mutation of outer va
 ```error
 ```
 
+**valid subslice to outer scope**
+
+```metall
+{
+    let x = [1, 2, 3, 4, 5]
+    let s = {
+        x[1..3]
+    }
+}
+```
+
+```error
+```
+
+**valid subslice to struct's slice scope**
+
+```metall
+{
+    struct Wrapper { data []Int }
+    let x = [1, 2, 3, 4, 5]
+    let w = Wrapper(x[..])
+    let s = {
+        w.data[1..3]
+    }
+}
+```
+
+```error
+```
+
+**valid subslice to Str slice**
+
+```metall
+{
+    fun Str.as_bytes(s Str) []U8 { s.data }
+
+    let s = {
+        "test".as_bytes()[0..3]
+    }
+}
+```
+
+```error
+```
+
+**valid subslice to Str slice fun**
+
+```metall
+{
+    fun Str.as_bytes(s Str) []U8 { s.data }
+
+    struct Wrapper { text []U8 }
+
+    fun Wrapper.new(s Str) Wrapper {
+        let text = s.as_bytes()
+        Wrapper(text[0..text.len])
+    }
+
+    let x = Wrapper.new("test")
+}
+```
+
+```error
+```
+
+**valid subslice to slice wrapper slice fun**
+
+```metall
+{
+
+    struct Wrapper { text []U8 }
+
+    fun Wrapper.as_bytes(w Wrapper) []U8 { w.text }
+
+    fun Wrapper.new(w Wrapper) Wrapper {
+        let text = w.as_bytes()
+        Wrapper(text[0..text.len])
+    }
+
+    let w = Wrapper([U8(1), 2, 3][..])
+    let x = Wrapper.new(w)
+}
+```
+
+```error
+```
+
 **subslice escapes scope**
 
 ```metall

@@ -28,6 +28,7 @@ func runLifetimeTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[s
 	assert.Equal(0, len(e.diagnostics), "type check failed:\n%s", e.diagnostics)
 
 	a := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env())
+	a.Debug = base.NewStdoutDebug("lifetime")
 	a.Check(exprID)
 
 	return map[string]string{

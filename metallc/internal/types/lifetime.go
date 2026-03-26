@@ -390,6 +390,18 @@ func (a *LifetimeCheck) analyzeIndex(nodeID ast.NodeID, index ast.Index) {
 	a.debug(1, nodeID, "analyzeIndex: %s", flow)
 }
 
+func (a *LifetimeCheck) isReferenceType(typeID TypeID) bool {
+	if typeID == InvalidTypeID {
+		return false
+	}
+	typ := a.env.Type(typeID)
+	switch typ.Kind.(type) {
+	case RefType, SliceType:
+		return true
+	}
+	return false
+}
+
 // analyzeSubSlice: `arr[lo..hi]` produces a fat pointer into the target's storage.
 // Like a ref, it must carry the target's storage taint so it can't outlive the source.
 func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
@@ -397,7 +409,12 @@ func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 	targetFlow := a.flow(sub.Target)
 	storageTaint, _ := a.placeStorage(sub.Target)
 	taints := targetFlow.Taints
-	if storageTaint != 0 {
+
+	// Slices and references are already reference types. Subslicing them
+	// produces a new slice pointing to the same data, so it doesn't depend
+	// on the storage of the reference variable itself.
+	isRef := a.isReferenceType(a.env.TypeOfNode(sub.Target).ID)
+	if storageTaint != 0 && !isRef {
 		taints = taints.Merge(TaintSet{storageTaint})
 	}
 	for _, t := range taints {
@@ -407,7 +424,8 @@ func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 	}
 	flow := Flow{Taints: taints, PointsTo: targetFlow.PointsTo}
 	a.flows[nodeID] = flow
-	a.debug(1, nodeID, "analyzeSubSlice: %s storageTaint=%s", flow, storageTaint)
+	a.debug(1, nodeID, "analyzeSubSlice: %s target=%s storageTaint=%s isRef=%v",
+		flow, a.ast.Debug(sub.Target, false, 0), storageTaint, isRef)
 }
 
 // analyzeCall applies the callee's FunEffects to map argument flows into
