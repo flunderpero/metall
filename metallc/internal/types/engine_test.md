@@ -3693,6 +3693,40 @@ Binary: Bool
   RuneLiteral: U8
 ```
 
+**Int literal on LHS of binary**
+
+```metall
+{ let byte = U8(32) 10 == byte }
+```
+
+```types
+Block: Bool
+  Var: void
+    TypeConstruction: U8
+      Ident: U8
+      Int: U8
+  Binary: Bool
+    Int: U8
+    Ident: U8
+```
+
+**Rune literal on LHS of binary**
+
+```metall
+{ let byte = U8(32) ' ' == byte }
+```
+
+```types
+Block: Bool
+  Var: void
+    TypeConstruction: U8
+      Ident: U8
+      Int: U8
+  Binary: Bool
+    RuneLiteral: U8
+    Ident: U8
+```
+
 **Rune literal materialization call arg**
 
 ```metall

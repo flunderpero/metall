@@ -348,8 +348,29 @@ func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
 	}
 }
 
-func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
-	lhsTypeID, status := e.Query(binary.LHS)
+func (e *Engine) isLiteral(nodeID ast.NodeID) bool {
+	switch e.ast.Node(nodeID).Kind.(type) {
+	case ast.Int, ast.RuneLiteral:
+		return true
+	}
+	return false
+}
+
+func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:funlen
+	// When the LHS is a literal but the RHS is not, resolve the RHS first so its
+	// concrete type can serve as a type hint for the literal (e.g. `10 == byte`).
+	lhsIsLiteral := e.isLiteral(binary.LHS) && !e.isLiteral(binary.RHS)
+	var lhsTypeID, rhsTypeID TypeID
+	var status TypeStatus
+	if lhsIsLiteral {
+		rhsTypeID, status = e.Query(binary.RHS)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		lhsTypeID, status = e.queryWithHint(binary.LHS, &rhsTypeID)
+	} else {
+		lhsTypeID, status = e.Query(binary.LHS)
+	}
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
@@ -384,9 +405,11 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) {
 		)
 		return InvalidTypeID, TypeDepFailed
 	}
-	rhsTypeID, status := e.queryWithHint(binary.RHS, &lhsTypeID)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
+	if !lhsIsLiteral {
+		rhsTypeID, status = e.queryWithHint(binary.RHS, &lhsTypeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
 	}
 	if rhsTypeID != lhsTypeID {
 		span := e.ast.Node(binary.RHS).Span
