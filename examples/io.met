@@ -4,7 +4,7 @@ use std::io
 fun write(filename Str, content Str) !void {
     let @local = Arena()
     let f = try fs::File.open(filename, "w", @local)
-    _ = try f.write(content.utf8_bytes())
+    _ = try f.write(content.as_bytes())
     try f.close()
 }
 

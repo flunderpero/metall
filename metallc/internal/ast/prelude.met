@@ -342,7 +342,7 @@ fun Str.concat(s Str, other Str, @a Arena) Str {
 }
 
 --- Return a slice to the underlying utf8 data. ---
-fun Str.utf8_bytes(s Str) []U8 {
+fun Str.as_bytes(s Str) []U8 {
     s.data
 }
 
@@ -492,7 +492,7 @@ fun StrBuilder.i32(sb &mut StrBuilder, v I32, base Int = 10, upper Bool = false)
 }
 
 fun StrBuilder.str(sb &mut StrBuilder, s Str) void {
-    sb.private_slice(s.utf8_bytes())
+    sb.private_slice(s.as_bytes())
 }
 
 fun StrBuilder.bool(sb &mut StrBuilder, b Bool) void {
