@@ -56,6 +56,14 @@ fun List.set<T>(l &mut List<T>, i Int, v T) void {
     l.data[i] = v
 }
 
+fun List.eq<T HasEq>(l &List<T>, other &List<T>) Bool {
+    l.slice().eq(other.slice())
+}
+
+fun List.fmt<T HasFmt>(l &List<T>, sb &mut StrBuilder) void {
+    sb.fmt(l.slice())
+}
+
 --- Sort the list in place. 
 
     todo: Use a proper `Ordering` enum once we support enums. ---

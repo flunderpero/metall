@@ -549,7 +549,7 @@ func (e *TypeEnv) containsTypeParam(id TypeID) bool {
 }
 
 // methodFQN returns the fully qualified name used to look up a method on this type.
-// Returns false for types that cannot have methods (e.g. FunType, SliceType).
+// Returns false for types that cannot have methods (e.g. FunType).
 func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 	var ns string
 	switch kind := typ.Kind.(type) {
@@ -563,6 +563,8 @@ func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 		ns = kind.Name
 	case BoolType:
 		ns = "Bool"
+	case SliceType:
+		ns = "Slice"
 	case AllocatorType:
 		ns = "Arena"
 	case TypeParamType:

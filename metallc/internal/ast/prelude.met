@@ -542,12 +542,41 @@ fun StrBuilder.space(sb &mut StrBuilder) void { sb.private_byte(32) }
 
 fun StrBuilder.tab(sb &mut StrBuilder) void { sb.private_byte(9) }
 
-fun StrBuilder.slice<T HasFmt>(sb &mut StrBuilder, v []T, sep Str) void {
+--- Format the slice and cap the output at *roughly* `max_len` bytes. ---
+fun StrBuilder.slice<T HasFmt>(
+    sb &mut StrBuilder, 
+    v []T, 
+    sep Str = ", ", 
+    max_len Int = 9223372036854775807, 
+    remaining Bool = false
+) void {
+    if max_len <= 3 {
+        sb.str("...")
+        return void
+    }
+    let start = sb.len
     for i in 0..v.len {
         if i > 0 {
             sb.str(sep)
         }
         sb.fmt<T>(v[i])
+        if max_len > 0 and sb.len - start > max_len - 3 {
+            sb.len = start + max_len - 3
+            -- walk back to the start of a rune
+            for (sb.out[sb.len] & 192) == 128 {
+                sb.len = sb.len - 1
+            }
+            sb.str("...")
+            if remaining {
+                let rest = v.len - i - 1
+                if rest > 0 {
+                    sb.str(" +")
+                    sb.int(rest)
+                    sb.str(" more")
+                }
+            }
+            break
+        }
     } 
 }
 
@@ -596,6 +625,24 @@ fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) void {
     sb.ensure_capacity(1)
     sb.out[sb.len] = b
     sb.len = sb.len + 1
+}
+
+fun Slice.fmt<T HasFmt>(s []T, sb &mut StrBuilder) void {
+    sb.rune('[')
+    sb.slice(s, ", ", 240, true)
+    sb.rune(']')
+}
+
+fun Slice.eq<T HasEq>(s []T, other []T) Bool {
+    if s.len != other.len {
+        return false
+    }
+    for i in 0..s.len {
+        if not s[i].eq(other[i]) {
+            return false
+        }
+    }
+    return true
 }
 
 --- None represents the absence of something. ---

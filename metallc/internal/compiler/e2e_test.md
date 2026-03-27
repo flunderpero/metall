@@ -4217,3 +4217,21 @@ fun main() void {
 ```output
 42
 ```
+
+## Slice Methods
+
+**slice method**
+
+```metall
+fun Slice.first<T>(s []T) T { s[0] }
+
+fun main() void {
+    let x = [10, 20, 30]
+    DebugIntern.print_int(x[..].first())
+}
+```
+
+```output
+10
+```
+

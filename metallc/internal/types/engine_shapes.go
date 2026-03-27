@@ -214,14 +214,18 @@ func (e *Engine) MethodSignature(
 		}
 		return rewritten, TypeOK
 	}
-	if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok {
-		if typ, ok := IsStructOrUnion(receiverType.Kind); ok && len(typ.TypeArgs) > 0 && len(funNode.TypeParams) > 0 {
+	if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok && len(funNode.TypeParams) > 0 {
+		seedArgs, ok := ImplicitTypeArgs(receiverType.Kind)
+		if !ok {
+			return FunType{}, TypeFailed
+		}
+		if len(seedArgs) > 0 {
 			decl, _ := e.NormalizeGenericDecl(binding.Decl, binding.TypeID, "")
 			spec, status := e.BuildGenericSpec(decl.originTypeID, decl.typeParams)
 			if status.Failed() {
 				return FunType{}, status
 			}
-			argTypeIDs, status := e.SolveGenericArgs(spec, typ.TypeArgs, scopeNodeID, span)
+			argTypeIDs, status := e.SolveGenericArgs(spec, seedArgs, scopeNodeID, span)
 			if status.Failed() {
 				return FunType{}, status
 			}
@@ -368,8 +372,8 @@ func (e *Engine) ResolveMethodBinding(
 		return binding.TypeID, TypeOK, true
 	}
 	var argTypeIDs []TypeID
-	if typ, ok := IsStructOrUnion(targetTyp.Kind); ok {
-		argTypeIDs = append(argTypeIDs, typ.TypeArgs...)
+	if typeArgs, ok := ImplicitTypeArgs(targetTyp.Kind); ok {
+		argTypeIDs = append(argTypeIDs, typeArgs...)
 	}
 	extraArgs, status := e.QueryTypeArgs(fieldAccess.TypeArgs)
 	if status.Failed() {

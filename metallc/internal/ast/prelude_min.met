@@ -129,6 +129,9 @@ union Result_<T> = T | Err
 --- A placeholder type for the builtin `CStr` type. ---
 struct CStr_ { data []U8 }
 
+--- Placeholder type for slice method namespace. ---
+struct Slice_<T> {}
+
 --- A placeholder for all internal debug functions. ---
 struct DebugIntern_ {}
 

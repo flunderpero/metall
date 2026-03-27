@@ -78,5 +78,37 @@ fun main() void {
         try assert.eq(3, sut.get(2))
         try assert.eq(4, sut.get(3))
     })
+    suite.test("eq", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut1 = list::List.new<Int>(@local)
+        let sut2 = list::List.new<Int>(@local)
+
+        try assert.eq(sut1, sut2)
+
+        sut1.push(1)
+        sut2.push(1)
+        try assert.eq(sut1, sut2)
+
+        sut1.push(2)
+        try assert.neq(sut1, sut2)
+
+        sut2.push(2)
+        try assert.eq(sut1, sut2)
+
+        sut1.push(3)
+        sut2.push(4)
+        try assert.neq(sut1, sut2)
+    })
+    suite.test("fmt", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut = list::List.new<Str>(@local)
+        sut.push("hello")
+        sut.push("there")
+        sut.push("again")
+
+        let sb = StrBuilder.new(32, @local)
+        sb.fmt(sut)
+        assert.eq("[hello, there, again]", sb.to_str())
+    })
     _ = suite.run()
 }

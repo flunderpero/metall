@@ -65,19 +65,18 @@ func (f FunType) Equal(other FunType) bool {
 
 func (FunType) isTypeKind() {}
 
-type StructOrUnion struct {
-	Name     string
-	TypeArgs []TypeID
-}
-
-func IsStructOrUnion(kind TypeKind) (StructOrUnion, bool) {
+// ImplicitTypeArgs returns the type arguments that parameterize a type.
+// For structs/unions these are explicit TypeArgs; for slices/arrays it's the element type.
+func ImplicitTypeArgs(kind TypeKind) ([]TypeID, bool) {
 	switch k := kind.(type) {
 	case StructType:
-		return StructOrUnion{k.Name, k.TypeArgs}, true
+		return k.TypeArgs, true
 	case UnionType:
-		return StructOrUnion{k.Name, k.TypeArgs}, true
+		return k.TypeArgs, true
+	case SliceType:
+		return []TypeID{k.Elem}, true
 	default:
-		return StructOrUnion{}, false
+		return nil, false
 	}
 }
 

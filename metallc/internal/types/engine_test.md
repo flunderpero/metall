@@ -8080,7 +8080,7 @@ test.met:1:3: continue statement outside of loop
 ```
 
 ```error
-test.met:1:61: unknown field on slice: foo
+test.met:1:61: unknown field: []Int.foo
     { let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x.foo }
                                                                 ^^^
 ```
@@ -8961,3 +8961,62 @@ test.met:1:31: unsafe keyword can only be used on unsafe functions
     { fun foo() Int { 42 } unsafe foo() }
                                   ^^^^^
 ```
+
+## Slice and Array Methods
+
+**Slice method with shape constraint**
+
+```metall
+{
+    shape Show { fun Show.show(self Show) Int }
+    fun Slice.first<T Show>(s []T) Int { s[0].show() }
+    fun Int.show(self Int) Int { self }
+    let x = [1, 2, 3]
+    x[..].first()
+}
+```
+
+```types
+Block: Int
+  Shape: shape01
+    FunDecl: ?
+      FunParam: shape01
+        SimpleType: shape01
+      SimpleType: Int
+  Fun: fun01
+    TypeParam: T
+      SimpleType: shape01
+    FunParam: []T
+      SliceType: []T
+        SimpleType: T
+    SimpleType: Int
+    Block: Int
+      Call: Int
+        FieldAccess: fun02
+          Index: T
+            Ident: []T
+            Int: Int
+  Fun: fun03
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Int
+    Block: Int
+      Ident: Int
+  Var: void
+    ArrayLiteral: [3]Int
+      Int: Int
+      Int: Int
+      Int: Int
+  Call: Int
+    FieldAccess: fun04
+      SubSlice: []Int
+        Ident: [3]Int
+        Range: void
+---
+shape01 = Show {  }
+fun01   = fun([]T) Int
+fun02   = fun(T) Int
+fun03   = fun(Int) Int
+fun04   = fun([]Int) Int
+```
+

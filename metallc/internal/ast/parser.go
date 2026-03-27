@@ -29,6 +29,7 @@ var ReservedWords = []string{ //nolint:gochecknoglobals
 	"U32",
 	"U64",
 	"Rune",
+	"Slice",
 	"Str",
 	"DebugIntern",
 	"LibCIntern",

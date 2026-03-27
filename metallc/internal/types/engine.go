@@ -941,12 +941,8 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	if refTyp, ok := targetTyp.Kind.(RefType); ok {
 		targetTyp = e.env.Type(refTyp.Type)
 	}
-	if _, ok := targetTyp.Kind.(SliceType); ok {
-		if fieldAccess.Field.Name == "len" {
-			return e.intTyp, TypeOK
-		}
-		e.diag(fieldAccess.Field.Span, "unknown field on slice: %s", fieldAccess.Field.Name)
-		return InvalidTypeID, TypeFailed
+	if _, ok := targetTyp.Kind.(SliceType); ok && fieldAccess.Field.Name == "len" {
+		return e.intTyp, TypeOK
 	}
 	if _, ok := targetTyp.Kind.(ArrayType); ok {
 		if fieldAccess.Field.Name == "len" {
@@ -970,7 +966,7 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		return typeID, status
 	}
 	switch targetTyp.Kind.(type) {
-	case StructType, UnionType, IntType, BoolType, AllocatorType:
+	case StructType, UnionType, IntType, BoolType, AllocatorType, SliceType:
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
 	case TypeParamType:
 		e.diag(

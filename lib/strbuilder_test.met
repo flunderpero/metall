@@ -40,6 +40,28 @@ fun main() void {
         sut.int(13370, 16, true)
         try assert.eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.to_str())
     })
+    suite.test("slice", fun(assert &assert_::Assert) !void {
+        let @local = Arena()
+        let sut = StrBuilder.new(32, @local)
+        let s = ["hello", "there", "again"][..]
+
+        sut.slice(s, " ")
+        try assert.eq("hello there again", sut.to_str())
+
+        sut.reset()
+        sut.slice(s, ", ", 13)
+        try assert.eq("hello, the...", sut.to_str())
+
+        sut.reset()
+        sut.slice(s, ", ", 3)
+        try assert.eq("...", sut.to_str())
+
+        -- Make sure we don't truncate the output in the middle of a rune.
+        let u = ["hi", "😀😀", "ha"][..]
+        sut.reset()
+        sut.slice(u, " ", 13)
+        try assert.eq("hi 😀...", sut.to_str())
+    })
     suite.test("join", fun(assert &assert_::Assert) !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
