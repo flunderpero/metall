@@ -2256,6 +2256,31 @@ lib/lib.met:4:5: reference escaping its allocation scope (via block result)
     }
 ```
 
+**arena alloc size arg does not alias source into result**
+
+```metall
+{
+    struct W { data []Int }
+    fun alloc_ints(@a Arena, n Int, default Int) []mut Int {
+        @a.slice_mut<Int>(n, default)
+    }
+    fun alloc_ws(@a Arena, n Int, default W) []mut W {
+        @a.slice_mut<W>(n, default)
+    }
+    fun process(items []Int) void {
+        let @a = Arena()
+        let buf = alloc_ws(@a, items.len, W([0][0..0]))
+        for i in 0..items.len {
+            buf[i] = W(alloc_ints(@a, 1, items[i]))
+        }
+    }
+    process([1, 2, 3][..])
+}
+```
+
+```error
+```
+
 ## Module Constants
 
 **Module-level constants have static lifetime and can be referenced from functions**

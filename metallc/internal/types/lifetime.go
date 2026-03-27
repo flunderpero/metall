@@ -371,12 +371,14 @@ func (a *LifetimeCheck) isArenaAllocCall(nodeID ast.NodeID) bool {
 
 func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) {
 	fa := base.Cast[ast.FieldAccess](a.ast.Node(call.Callee).Kind)
-	merged := a.flow(fa.Target)
+	result := a.flow(fa.Target)
 	for _, argNodeID := range call.Args {
-		merged = merged.Merge(a.flow(argNodeID))
+		if a.typeContainsRefOrAlloc(a.env.TypeOfNode(argNodeID).ID) {
+			result = result.Merge(a.flow(argNodeID))
+		}
 	}
-	a.flows[nodeID] = merged
-	a.debug(1, nodeID, "analyzeArenaAllocCall: %s", merged)
+	a.flows[nodeID] = result
+	a.debug(1, nodeID, "analyzeArenaAllocCall: %s", result)
 }
 
 func (a *LifetimeCheck) analyzeArrayLiteral(nodeID ast.NodeID, lit ast.ArrayLiteral) {
