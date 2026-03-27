@@ -577,17 +577,17 @@ test.met:5:9: reference escaping its allocation scope (via block result)
 {
     let x = {
         let @myalloc = Arena()
-        @myalloc.slice_uninit<Int>(5)
+        unsafe @myalloc.slice_uninit<Int>(5)
     }
     x
 }
 ```
 
 ```error
-test.met:4:9: reference escaping its allocation scope (via block result)
+test.met:4:16: reference escaping its allocation scope (via block result)
             let @myalloc = Arena()
-            @myalloc.slice_uninit<Int>(5)
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            unsafe @myalloc.slice_uninit<Int>(5)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         }
 ```
 

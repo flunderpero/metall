@@ -43,7 +43,7 @@ fun main() void {
     suite.test("join", fun(assert &assert_::Assert) !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
-        let l = list::List.new<Int>(0, @local)
+        let l = list::List.new<Int>(@local)
         l.push(1)
         l.push(2)
         l.push(3)

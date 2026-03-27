@@ -7,7 +7,7 @@ fun main() void {
     let suite = test::suite("List", @local)
     suite.test("happy path", fun(assert &assert_::Assert) !void {
         let @local = Arena()
-        let sut = list::List.new<Int>(0, @local)
+        let sut = list::List.new<Int>(@local)
         sut.push(1)
         sut.push(2)
         sut.push(3)
@@ -24,7 +24,7 @@ fun main() void {
     })
     suite.test("references get stale after push", fun(assert &assert_::Assert) !void {
         let @local = Arena()
-        let sut = list::List.new<Int>(0, @local)
+        let sut = list::List.new<Int>(@local)
         sut.push(1)
         let slice = sut.slice()
         let ref = &slice[0]
@@ -47,7 +47,7 @@ fun main() void {
     })
     suite.test("iter", fun(assert &assert_::Assert) !void {
         let @local = Arena()
-        let l = list::List.new<Int>(0, @local)
+        let l = list::List.new<Int>(@local)
         l.push(1)
         l.push(2)
         l.push(3)
@@ -67,7 +67,7 @@ fun main() void {
     })
     suite.test("sort_in_place", fun(assert &assert_::Assert) !void {
         let @local = Arena()
-        let sut = list::List.new<Int>(0, @local)
+        let sut = list::List.new<Int>(@local)
         sut.push(3)
         sut.push(2)
         sut.push(4)

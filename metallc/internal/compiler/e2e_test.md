@@ -1394,7 +1394,7 @@ world
 ```metall
 fun main() void {
     let @a = Arena()
-    let x = @a.slice_uninit_mut<Int>(3)
+    let x = unsafe @a.slice_uninit_mut<Int>(3)
     x[0] = 42
     let y = x
     y[0] = 99
@@ -1454,9 +1454,9 @@ world
 ```metall
 fun main() void {
     let @a = Arena()
-    let x = @a.slice_uninit_mut<Int>(3)
+    let x = unsafe @a.slice_uninit_mut<Int>(3)
     x[0] = 42
-    let y = @a.slice_uninit<Int>(3)
+    let y = unsafe @a.slice_uninit<Int>(3)
     DebugIntern.print_int(x[0])
 }
 ```
@@ -1470,7 +1470,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    let x = @a.slice_uninit_mut<Int>(3)
+    let x = unsafe @a.slice_uninit_mut<Int>(3)
     x[0] = 42
     let y = x
     y[0] = 99
@@ -1490,7 +1490,7 @@ fun main() void {
 fun main() void {
     let @a = Arena()
     let size = 3
-    let x = @a.slice_uninit_mut<Int>(size)
+    let x = unsafe @a.slice_uninit_mut<Int>(size)
     x[0] = 10
     x[1] = 20
     x[2] = 30
@@ -1514,7 +1514,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    let x = @a.slice_uninit_mut<Int>(3)
+    let x = unsafe @a.slice_uninit_mut<Int>(3)
     x[0] = 10
     x[1] = 20
     x[2] = 30
@@ -1571,7 +1571,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    let x = @a.slice_uninit_mut<Int>(100)
+    let x = unsafe @a.slice_uninit_mut<Int>(100)
     x[99] = 42
     DebugIntern.print_int(x[99])
 }
@@ -1586,7 +1586,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    let x = @a.slice_uninit_mut<Int>(100)
+    let x = unsafe @a.slice_uninit_mut<Int>(100)
     x[99] = 42
     DebugIntern.print_int(x[99])
 }
@@ -1782,7 +1782,7 @@ fun main() void {
 fun main() void {
     let @a = Arena()
     struct Foo { mut one Int }
-    let a = @a.slice_uninit_mut<Foo>(1)
+    let a = unsafe @a.slice_uninit_mut<Foo>(1)
     a[0] = Foo(1)
     a[0].one = 42
     DebugIntern.print_int(a[0].one)
@@ -1815,7 +1815,7 @@ fun main() void {
 fun main() void {
     let @a = Arena()
     struct Foo { mut one Int }
-    let a = @a.slice_uninit_mut<Foo>(1)
+    let a = unsafe @a.slice_uninit_mut<Foo>(1)
     a[0] = Foo(1)
     let b = &mut a[0]
     b.one = 42
@@ -1931,7 +1931,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    let sl = @a.slice_uninit_mut<Int>(5)
+    let sl = unsafe @a.slice_uninit_mut<Int>(5)
     sl[0] = 100
     sl[1] = 200
     sl[2] = 300
@@ -1973,7 +1973,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    let sl = @a.slice_uninit_mut<Int>(4)
+    let sl = unsafe @a.slice_uninit_mut<Int>(4)
     sl[0] = 1
     sl[1] = 2
     sl[2] = 3
@@ -3996,4 +3996,22 @@ fun main() void {
 ```output
 42
 43
+```
+
+## Unsafe
+
+**unsafe uninit slice of ref type**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = unsafe @a.slice_uninit_mut<&Int>(3)
+    mut v = 42
+    x[0] = &v
+    DebugIntern.print_int(x[0].*)
+}
+```
+
+```output
+42
 ```

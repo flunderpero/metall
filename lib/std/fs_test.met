@@ -17,7 +17,7 @@ fun main() void {
 
         -- read it again
         sut = try fs::File.open(filename, "r", @local)
-        let buf = @local.slice_uninit_mut<U8>(1024)
+        let buf = unsafe @local.slice_uninit_mut<U8>(1024)
         let read_bytes = try sut.read(buf)
         let read_str = Str.from_utf8_lossy(read_bytes, @local)
         try sut.close()

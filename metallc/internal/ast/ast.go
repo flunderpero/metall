@@ -149,6 +149,7 @@ type Fun struct {
 	FunDecl
 	Block  NodeID
 	Extern bool
+	Unsafe bool
 }
 
 func (Fun) isKind() {}
@@ -376,6 +377,7 @@ func (TryPattern) isKind() {}
 type Call struct {
 	Callee NodeID
 	Args   []NodeID
+	Unsafe bool
 }
 
 func (Call) isKind() {}
@@ -483,8 +485,8 @@ func (a *AST) NewBlock(exprs []NodeID, span base.Span) NodeID {
 	return a.node(Block{Exprs: exprs}, span)
 }
 
-func (a *AST) NewCall(callee NodeID, args []NodeID, span base.Span) NodeID {
-	return a.node(Call{Callee: callee, Args: args}, span)
+func (a *AST) NewCall(callee NodeID, args []NodeID, unsafe bool, span base.Span) NodeID {
+	return a.node(Call{Callee: callee, Args: args, Unsafe: unsafe}, span)
 }
 
 func (a *AST) NewTypeConstruction(target NodeID, args []NodeID, span base.Span) NodeID {
@@ -531,12 +533,13 @@ func (a *AST) NewFunDecl(
 }
 
 func (a *AST) NewFun(
-	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID, span base.Span,
+	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID, unsafe bool, span base.Span,
 ) NodeID {
 	return a.node(
 		Fun{
 			FunDecl: FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType},
 			Extern:  false,
+			Unsafe:  unsafe,
 			Block:   block,
 		},
 		span,

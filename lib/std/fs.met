@@ -29,7 +29,9 @@ fun File.write(f &mut File, data []U8) !Int {
     bytes_written
 }
 
---- Read into `buf` and return a slice of `buf` with the data read. ---
+--- Read into `buf` and return a slice of `buf` with the data read. 
+
+    `buf` can be uninitialized. ---
 fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
     if f.file_ptr == 0 {
         return Err("file is closed")

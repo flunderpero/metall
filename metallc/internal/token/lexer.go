@@ -76,6 +76,7 @@ const (
 	True
 	Try
 	TypeIdent
+	Unsafe
 	Union
 	Unknown
 	Use
@@ -150,6 +151,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	True:                  "true",
 	Try:                   "<try>",
 	TypeIdent:             "<type identifier>",
+	Unsafe:                "<unsafe>",
 	Union:                 "<union>",
 	Unknown:               "<unknown>",
 	Use:                   "<use>",
@@ -207,6 +209,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"struct":   Struct,
 	"true":     True,
 	"try":      Try,
+	"unsafe":   Unsafe,
 	"union":    Union,
 	"use":      Use,
 	"void":     Void,

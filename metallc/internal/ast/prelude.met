@@ -194,7 +194,7 @@ fun Str.is_empty(s Str) Bool {
 --- Replace illegal utf8 sequences with the replacement character U+FFFD. ---
 fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
     let replacement_rune = [U8(239), 191, 189][..]
-	mut copy = @a.slice_uninit_mut<U8>(data.len)
+	mut copy = unsafe @a.slice_uninit_mut<U8>(data.len)
     mut copy_index = 0
     mut index = 0
 	for index < data.len {
@@ -203,7 +203,7 @@ fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
         let bytes = if valid { data[sequence_start..index] } else { replacement_rune }
         for i in 0..bytes.len {
             if copy_index == copy.len {
-                mut copy2 = @a.slice_uninit_mut<U8>(copy.len + 32)
+                mut copy2 = unsafe @a.slice_uninit_mut<U8>(copy.len + 32)
                 for c in 0..copy.len {
                     copy2[c] = copy[c]
                 }
@@ -331,7 +331,7 @@ fun Str.index(s Str, other Str) Int {
 }
 
 fun Str.concat(s Str, other Str, @a Arena) Str {
-    let data = @a.slice_uninit_mut<U8>(s.data.len + other.data.len)
+    let data = unsafe @a.slice_uninit_mut<U8>(s.data.len + other.data.len)
     for i in 0..s.data.len {
         data[i] = s.data[i]
     }
@@ -348,7 +348,7 @@ fun Str.as_bytes(s Str) []U8 {
 
 --- Return a 0-terminated variant of the string. ---
 fun Str.to_cstr(s Str, @a Arena) CStr {
-    mut data = @a.slice_uninit_mut<U8>(s.data.len + 1)
+    mut data = unsafe @a.slice_uninit_mut<U8>(s.data.len + 1)
     for i in 0..s.data.len {
         data[i] = s.data[i]
     }
@@ -397,7 +397,7 @@ struct StrBuilder {
 }
 
 fun StrBuilder.new(capacity Int, @a Arena) &mut StrBuilder {
-    let out = @a.slice_uninit_mut<U8>(capacity)
+    let out = unsafe @a.slice_uninit_mut<U8>(capacity)
     @a.new_mut<StrBuilder>(StrBuilder(out, 0, @a))
 }
 
@@ -569,7 +569,7 @@ fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep Str)
 
 fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
     if sb.out.len - sb.len < capacity {
-        let new_out = sb.@a.slice_uninit_mut<U8>((sb.len + capacity) * 2)
+        let new_out = unsafe sb.@a.slice_uninit_mut<U8>((sb.len + capacity) * 2)
         for i in 0..sb.len {
             new_out[i] = sb.out[i]
         }

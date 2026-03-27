@@ -55,7 +55,9 @@
 
 ; >>> Functions
 
+(function_declaration "unsafe" @keyword)
 (function_declaration "fun" @keyword.function)
+(call_expression "unsafe" @keyword)
 (function_name (identifier) @function)
 (function_name (type_identifier) @type)
 

@@ -548,25 +548,6 @@ func (e *TypeEnv) containsTypeParam(id TypeID) bool {
 	}
 }
 
-func (e *TypeEnv) isSafeUninitialized(typeID TypeID) bool {
-	typ := e.Type(typeID)
-	switch kind := typ.Kind.(type) {
-	case IntType:
-		return true
-	case StructType:
-		for _, field := range kind.Fields {
-			if !e.isSafeUninitialized(field.Type) {
-				return false
-			}
-		}
-		return len(kind.Fields) > 0
-	case ArrayType:
-		return e.isSafeUninitialized(kind.Elem)
-	default:
-		return false
-	}
-}
-
 // methodFQN returns the fully qualified name used to look up a method on this type.
 // Returns false for types that cannot have methods (e.g. FunType, SliceType).
 func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {

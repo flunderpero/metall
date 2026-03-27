@@ -42,7 +42,7 @@ fun main() void {
     suite.test("chain", fun(assert &assert_::Assert) !void {
         let @local = Arena()
         mut it1 = "aa".iter()
-        let l = list::List.new<Rune>('a', @local)
+        let l = list::List.new<Rune>(@local)
         l.push('b')
         l.push('b')
         mut it2 = l.iter()
@@ -55,7 +55,7 @@ fun main() void {
     })
     suite.test("fold", fun(assert &assert_::Assert) !void {
         let @local = Arena()
-        let l = list::List.new<U8>(0, @local)
+        let l = list::List.new<U8>(@local)
         l.push(1)
         l.push(2)
         l.push(3)
@@ -102,7 +102,7 @@ fun main() void {
 
         -- list.iter() is already peekable
         let @local = Arena()
-        mut l = list::List.new<Int>(0, @local)
+        mut l = list::List.new<Int>(@local)
         l.push(1)
         l.push(2)
         l.push(3)
@@ -116,7 +116,7 @@ fun main() void {
     suite.test("collect", fun(assert &assert_::Assert) !void {
         let @local = Arena()
         mut it = "hello".iter()
-        mut l = list::List.new<Rune>('0', @local)
+        mut l = list::List.new<Rune>(@local)
         iter::collect(&mut it, l)
         try assert.eq(5, l.len)
     })

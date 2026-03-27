@@ -12,7 +12,7 @@ fun read(filename Str, @a Arena) !Str {
     let @local = Arena()
     let f = try fs::File.open(filename, "r", @local)
     let sb = StrBuilder.new(32, @a)
-    let buf = @local.slice_uninit_mut<U8>(1024)
+    let buf = unsafe @local.slice_uninit_mut<U8>(1024)
     for {
         let res = try f.read(buf)
         sb.str(Str.from_utf8_lossy(res, @local))

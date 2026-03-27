@@ -308,12 +308,4 @@ func TestIntTypes(t *testing.T) {
 			assert.Equal(0, len(e.diagnostics), "%s(%s) identity should be allowed: %s", name, name, e.diagnostics)
 		}
 	})
-
-	t.Run("safe uninitialized", func(t *testing.T) {
-		for _, name := range allIntTypes {
-			src := fmt.Sprintf("{ let @a = Arena() let x = @a.slice_uninit<%s>(5) }", name)
-			e := typeCheck(t, src)
-			assert.Equal(0, len(e.diagnostics), "%s should be safe uninitialized: %s", name, e.diagnostics)
-		}
-	})
 }

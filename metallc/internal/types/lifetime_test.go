@@ -59,7 +59,7 @@ func runLifetimeExprTest(assert base.Assert, tc mdtest.TestCase, results map[str
 	assert.Equal(0, len(e.diagnostics), "type check failed:\n%s", e.diagnostics)
 
 	a := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env())
-	a.Debug = base.NewStdoutDebug("lifetime")
+	// a.Debug = base.NewStdoutDebug("lifetime")
 	a.Check(exprID)
 
 	results["error"] = a.Diagnostics.String()

@@ -1065,7 +1065,7 @@ func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
 	return e.env.Lookup(typModule.Decls[0], name)
 }
 
-func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) { //nolint:funlen
 	if _, status, ok := e.InferFunCall(call, span); ok && status.Failed() {
 		return InvalidTypeID, status
 	}
@@ -1119,7 +1119,18 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 			return InvalidTypeID, TypeFailed
 		}
 	}
-	if e.checkSliceUninitSafety(call.Callee, fun) {
+	calleeIsUnsafe := false
+	if binding, ok := e.resolveCallBinding(call); ok {
+		if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok {
+			calleeIsUnsafe = funNode.Unsafe
+		}
+	}
+	if calleeIsUnsafe && !call.Unsafe {
+		e.diag(span, "calling unsafe function requires the unsafe keyword")
+		return InvalidTypeID, TypeFailed
+	}
+	if call.Unsafe && !calleeIsUnsafe {
+		e.diag(span, "unsafe keyword can only be used on unsafe functions")
 		return InvalidTypeID, TypeFailed
 	}
 	return fun.Return, TypeOK
@@ -1163,29 +1174,6 @@ func (e *Engine) funDeclDefaults(call ast.Call) []ast.NodeID {
 		}
 	}
 	return defaults
-}
-
-func (e *Engine) checkSliceUninitSafety(calleeID ast.NodeID, fun FunType) bool {
-	name, ok := e.env.NamedFunRef(calleeID)
-	if !ok {
-		return false
-	}
-	if !strings.Contains(name, "Arena.slice_uninit") {
-		return false
-	}
-	retType := e.env.Type(fun.Return)
-	sliceType, ok := retType.Kind.(SliceType)
-	if !ok {
-		return false
-	}
-	if !e.env.isSafeUninitialized(sliceType.Elem) {
-		fa := base.Cast[ast.FieldAccess](e.ast.Node(calleeID).Kind)
-		diagSpan := e.ast.Node(fa.TypeArgs[0]).Span
-		e.diag(diagSpan, "%s is not safe to leave uninitialized, use slice with a default value",
-			e.env.TypeDisplay(sliceType.Elem))
-		return true
-	}
-	return false
 }
 
 func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {

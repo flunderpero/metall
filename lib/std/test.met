@@ -61,5 +61,5 @@ fun Suite.run(s &mut Suite) SuiteResult {
 }
 
 fun suite(name Str, @a Arena) &mut Suite {
-    @a.new_mut<Suite>(Suite(name, false, list::List.new<Test>(Test("", fun(a &assert_::Assert) !void {}), @a)))
+    @a.new_mut<Suite>(Suite(name, false, list::List.new<Test>(@a)))
 }

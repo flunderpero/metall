@@ -20,7 +20,7 @@ fun shell(cmd []Str, @a Arena) !RunResult {
         return Err(errstr)
     }
     let out = StrBuilder.new(4096, @a)
-    let buf = @a.slice_uninit_mut<U8>(4096)
+    let buf = unsafe @a.slice_uninit_mut<U8>(4096)
     for {
         LibCIntern.reset_errno()
         let bytes_read = LibCIntern.fread(f, buf)

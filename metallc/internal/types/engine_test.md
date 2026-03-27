@@ -2439,7 +2439,7 @@ fun01    = fun(Arena, struct01) &mut struct01
 **Make uninit slice**
 
 ```metall
-{ let @a = Arena() @a.slice_uninit_mut<Int>(5) }
+{ let @a = Arena() unsafe @a.slice_uninit_mut<Int>(5) }
 ```
 
 ```types
@@ -2511,7 +2511,7 @@ fun01    = fun(Arena, struct01) &struct01
 **Make uninit immutable slice**
 
 ```metall
-{ let @myalloc = Arena() @myalloc.slice_uninit<Int>(5) }
+{ let @myalloc = Arena() unsafe @myalloc.slice_uninit<Int>(5) }
 ```
 
 ```types
@@ -2548,7 +2548,7 @@ fun01 = fun(Arena, Int, Int) []Int
 **Make slice**
 
 ```metall
-{ let @myalloc = Arena() @myalloc.slice_uninit<Int>(5) }
+{ let @myalloc = Arena() unsafe @myalloc.slice_uninit<Int>(5) }
 ```
 
 ```types
@@ -2585,7 +2585,7 @@ fun01 = fun(Arena, Int, Int) []Int
 **Make uninit Int slice**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit<Int>(5) }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(5) }
 ```
 
 ```types
@@ -2604,7 +2604,7 @@ fun01 = fun(Arena, Int) []Int
 **Make uninit safe struct slice**
 
 ```metall
-{ struct Foo{one Int two Int} let @a = Arena() let x = @a.slice_uninit<Foo>(3) }
+{ struct Foo{one Int two Int} let @a = Arena() let x = unsafe @a.slice_uninit<Foo>(3) }
 ```
 
 ```types
@@ -2845,7 +2845,7 @@ Block: Int
 **Slice index read**
 
 ```metall
-{ let @myalloc = Arena() let x = @myalloc.slice_uninit<Int>(3) x[1] }
+{ let @myalloc = Arena() let x = unsafe @myalloc.slice_uninit<Int>(3) x[1] }
 ```
 
 ```types
@@ -2867,7 +2867,7 @@ fun01 = fun(Arena, Int) []Int
 **Slice index write**
 
 ```metall
-{ let @myalloc = Arena() let x = @myalloc.slice_uninit_mut<Int>(3) x[1] = 5 }
+{ let @myalloc = Arena() let x = unsafe @myalloc.slice_uninit_mut<Int>(3) x[1] = 5 }
 ```
 
 ```types
@@ -2891,7 +2891,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Slice len**
 
 ```metall
-{ let @myalloc = Arena() let x = @myalloc.slice_uninit<Int>(3) x.len }
+{ let @myalloc = Arena() let x = unsafe @myalloc.slice_uninit<Int>(3) x.len }
 ```
 
 ```types
@@ -2912,7 +2912,7 @@ fun01 = fun(Arena, Int) []Int
 **Slice as fun param**
 
 ```metall
-{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = @a.slice_uninit<Int>(3) foo(x) }
+{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = unsafe @a.slice_uninit<Int>(3) foo(x) }
 ```
 
 ```types
@@ -2944,7 +2944,7 @@ fun02 = fun(Arena, Int) []Int
 **Slice as fun param and return**
 
 ```metall
-{ let @a = Arena() fun foo(s []Int) []Int { s } let x = @a.slice_uninit<Int>(3) foo(x) }
+{ let @a = Arena() fun foo(s []Int) []Int { s } let x = unsafe @a.slice_uninit<Int>(3) foo(x) }
 ```
 
 ```types
@@ -2975,7 +2975,7 @@ fun02 = fun(Arena, Int) []Int
 **Struct with slice field**
 
 ```metall
-{ let @a = Arena() struct Foo { one []Int } let s = @a.slice_uninit<Int>(3) let x = Foo(s) x.one[0] }
+{ let @a = Arena() struct Foo { one []Int } let s = unsafe @a.slice_uninit<Int>(3) let x = Foo(s) x.one[0] }
 ```
 
 ```types
@@ -3007,7 +3007,7 @@ fun01    = fun(Arena, Int) []Int
 **Ref to slice**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit<Int>(3) &x }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) &x }
 ```
 
 ```types
@@ -3028,7 +3028,7 @@ fun01 = fun(Arena, Int) []Int
 **Slice index through ref**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit<Int>(3) let y = &x y[0] }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) let y = &x y[0] }
 ```
 
 ```types
@@ -3053,7 +3053,7 @@ fun01 = fun(Arena, Int) []Int
 **Slice len through ref**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit<Int>(3) let y = &x y.len }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) let y = &x y.len }
 ```
 
 ```types
@@ -3077,7 +3077,7 @@ fun01 = fun(Arena, Int) []Int
 **Mut ref slice index write**
 
 ```metall
-{ let @a = Arena() mut x = @a.slice_uninit_mut<Int>(3) let y = &mut x y[0] = 42 }
+{ let @a = Arena() mut x = unsafe @a.slice_uninit_mut<Int>(3) let y = &mut x y[0] = 42 }
 ```
 
 ```types
@@ -3104,7 +3104,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Make mut slice**
 
 ```metall
-{ let @a = Arena() @a.slice_uninit_mut<Int>(5) }
+{ let @a = Arena() unsafe @a.slice_uninit_mut<Int>(5) }
 ```
 
 ```types
@@ -3122,7 +3122,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Mut slice assignable to immutable**
 
 ```metall
-{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = @a.slice_uninit_mut<Int>(3) foo(x) }
+{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = unsafe @a.slice_uninit_mut<Int>(3) foo(x) }
 ```
 
 ```types
@@ -3154,7 +3154,7 @@ fun02 = fun(Arena, Int) []mut Int
 **Mut slice index write no mut binding**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit_mut<Int>(3) x[0] = 5 }
+{ let @a = Arena() let x = unsafe @a.slice_uninit_mut<Int>(3) x[0] = 5 }
 ```
 
 ```types
@@ -3198,7 +3198,7 @@ Block: []mut Int
 **Subslice mut slice**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit_mut<Int>(5) x[1..3] }
+{ let @a = Arena() let x = unsafe @a.slice_uninit_mut<Int>(5) x[1..3] }
 ```
 
 ```types
@@ -3222,7 +3222,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Subslice mut slice through mut ref**
 
 ```metall
-{ let @a = Arena() mut x = @a.slice_uninit_mut<Int>(5) let y = &mut x y[1..3] }
+{ let @a = Arena() mut x = unsafe @a.slice_uninit_mut<Int>(5) let y = &mut x y[1..3] }
 ```
 
 ```types
@@ -3249,7 +3249,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Subslice mut slice through immutable ref**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit_mut<Int>(5) let y = &x y[1..3] }
+{ let @a = Arena() let x = unsafe @a.slice_uninit_mut<Int>(5) let y = &x y[1..3] }
 ```
 
 ```types
@@ -3276,7 +3276,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Subslice slice**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit<Int>(5) x[1..3] }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(5) x[1..3] }
 ```
 
 ```types
@@ -3344,7 +3344,7 @@ fun01 = fun(Arena, Int, []Int) [][]Int
 **Empty slice in assignment**
 
 ```metall
-{ let @a = Arena() mut x = @a.slice_uninit<Int>(3) x = [] }
+{ let @a = Arena() mut x = unsafe @a.slice_uninit<Int>(3) x = [] }
 ```
 
 ```types
@@ -7602,13 +7602,13 @@ test.met:1:26: unknown field: Str.nope
 **Str cannot be constructed directly**
 
 ```metall
-{ let @a = Arena() let d = @a.slice_uninit<U8>(1) Str(d) }
+{ let @a = Arena() let d = @a.slice<U8>(1, 0) Str(d) }
 ```
 
 ```error
-test.met:1:51: Str cannot be constructed directly; use Str.from_utf8_lossy() instead
-    { let @a = Arena() let d = @a.slice_uninit<U8>(1) Str(d) }
-                                                      ^^^^^^
+test.met:1:47: Str cannot be constructed directly; use Str.from_utf8_lossy() instead
+    { let @a = Arena() let d = @a.slice<U8>(1, 0) Str(d) }
+                                                  ^^^^^^
 ```
 
 **If condition must be bool**
@@ -8010,13 +8010,13 @@ test.met:1:3: continue statement outside of loop
 **Unknown field on slice**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit<Int>(3) x.foo }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x.foo }
 ```
 
 ```error
-test.met:1:54: unknown field on slice: foo
-    { let @a = Arena() let x = @a.slice_uninit<Int>(3) x.foo }
-                                                         ^^^
+test.met:1:61: unknown field on slice: foo
+    { let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x.foo }
+                                                                ^^^
 ```
 
 **Unknown field on array**
@@ -8034,13 +8034,13 @@ test.met:1:23: unknown field on array: foo
 **Make slice non-int length**
 
 ```metall
-{ let @a = Arena() @a.slice_uninit<Int>("hello") }
+{ let @a = Arena() unsafe @a.slice_uninit<Int>("hello") }
 ```
 
 ```error
-test.met:1:41: type mismatch at argument 1: expected Int, got Str
-    { let @a = Arena() @a.slice_uninit<Int>("hello") }
-                                            ^^^^^^^
+test.met:1:48: type mismatch at argument 1: expected Int, got Str
+    { let @a = Arena() unsafe @a.slice_uninit<Int>("hello") }
+                                                   ^^^^^^^
 ```
 
 **Make wrong default type**
@@ -8065,54 +8065,6 @@ test.met:1:37: type mismatch at argument 2: expected Int, got Str
 test.met:1:37: type mismatch at argument 2: expected Int, got Str
     { let @a = Arena() @a.slice<Int>(3, "hello") }
                                         ^^^^^^^
-```
-
-**Make uninit Bool**
-
-```metall
-{ let @a = Arena() @a.slice_uninit<Bool>(3) }
-```
-
-```error
-test.met:1:36: Bool is not safe to leave uninitialized, use slice with a default value
-    { let @a = Arena() @a.slice_uninit<Bool>(3) }
-                                       ^^^^
-```
-
-**Make uninit Str**
-
-```metall
-{ let @a = Arena() @a.slice_uninit<Str>(3) }
-```
-
-```error
-test.met:1:36: Str is not safe to leave uninitialized, use slice with a default value
-    { let @a = Arena() @a.slice_uninit<Str>(3) }
-                                       ^^^
-```
-
-**Make uninit ref**
-
-```metall
-{ struct Foo{one Int} let @a = Arena() @a.slice_uninit<&Foo>(3) }
-```
-
-```error
-test.met:1:56: &Foo is not safe to leave uninitialized, use slice with a default value
-    { struct Foo{one Int} let @a = Arena() @a.slice_uninit<&Foo>(3) }
-                                                           ^^^^
-```
-
-**Make uninit struct with ref field**
-
-```metall
-{ struct Foo{one &Int} let @a = Arena() @a.slice_uninit<Foo>(3) }
-```
-
-```error
-test.met:1:57: Foo is not safe to leave uninitialized, use slice with a default value
-    { struct Foo{one &Int} let @a = Arena() @a.slice_uninit<Foo>(3) }
-                                                            ^^^
 ```
 
 **Empty slice without context**
@@ -8142,37 +8094,37 @@ test.met:1:9: cannot infer type of empty slice []
 **Write to immutable slice element**
 
 ```metall
-{ let @a = Arena() let x = @a.slice_uninit<Int>(3) x[0] = 5 }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x[0] = 5 }
 ```
 
 ```error
-test.met:1:52: cannot assign to element of immutable array or slice
-    { let @a = Arena() let x = @a.slice_uninit<Int>(3) x[0] = 5 }
-                                                       ^^^^
+test.met:1:59: cannot assign to element of immutable array or slice
+    { let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x[0] = 5 }
+                                                              ^^^^
 ```
 
 **Write through mut ref to immutable slice**
 
 ```metall
-{ let @a = Arena() mut x = @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }
+{ let @a = Arena() mut x = unsafe @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }
 ```
 
 ```error
-test.met:1:67: cannot assign to element of immutable array or slice
-    { let @a = Arena() mut x = @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }
-                                                                      ^^^^
+test.met:1:74: cannot assign to element of immutable array or slice
+    { let @a = Arena() mut x = unsafe @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }
+                                                                             ^^^^
 ```
 
 **Immutable slice not assignable to mut slice param**
 
 ```metall
-{ let @a = Arena() fun foo(s []mut Int) void {} let x = @a.slice_uninit<Int>(3) foo(x) }
+{ let @a = Arena() fun foo(s []mut Int) void {} let x = unsafe @a.slice_uninit<Int>(3) foo(x) }
 ```
 
 ```error
-test.met:1:85: type mismatch at argument 1: expected []mut Int, got []Int
-    { let @a = Arena() fun foo(s []mut Int) void {} let x = @a.slice_uninit<Int>(3) foo(x) }
-                                                                                        ^
+test.met:1:92: type mismatch at argument 1: expected []mut Int, got []Int
+    { let @a = Arena() fun foo(s []mut Int) void {} let x = unsafe @a.slice_uninit<Int>(3) foo(x) }
+                                                                                               ^
 ```
 
 **Cannot return allocator from fun**
@@ -8916,4 +8868,30 @@ test.met:1:9: function calls are not allowed in module-level constants
     let x = 'a'.to_u32()
             ^^^^^^^^^^^^
     fun main() void {}
+```
+
+## Unsafe
+
+**Calling unsafe function without unsafe keyword**
+
+```metall
+{ let @a = Arena() @a.slice_uninit<Int>(5) }
+```
+
+```error
+test.met:1:20: calling unsafe function requires the unsafe keyword
+    { let @a = Arena() @a.slice_uninit<Int>(5) }
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+**Using unsafe on non-unsafe function**
+
+```metall
+{ fun foo() Int { 42 } unsafe foo() }
+```
+
+```error
+test.met:1:31: unsafe keyword can only be used on unsafe functions
+    { fun foo() Int { 42 } unsafe foo() }
+                                  ^^^^^
 ```

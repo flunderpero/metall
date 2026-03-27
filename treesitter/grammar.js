@@ -32,6 +32,8 @@ module.exports = grammar({
   conflicts: ($) => [
     [$.qualified_name],
     [$.simple_type],
+    [$.call_expression],
+    [$.function_declaration],
   ],
 
   rules: {
@@ -131,6 +133,7 @@ module.exports = grammar({
 
     function_declaration: ($) =>
       seq(
+        optional("unsafe"),
         "fun",
         field("name", $.function_name),
         optional(field("type_parameters", $.type_parameters)),
@@ -357,6 +360,7 @@ module.exports = grammar({
 
     call_expression: ($) =>
       prec(PREC.POSTFIX, seq(
+        optional("unsafe"),
         field("callee", $._expression),
         optional(field("type_arguments", $.type_arguments)),
         "(", field("arguments", optional($.argument_list)), ")",

@@ -105,6 +105,11 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if union, ok := p.ParseUnion(); ok {
 				decls = append(decls, union)
 			}
+		case token.Unsafe:
+			p.next()
+			if fun, ok := p.ParseUnsafeFun(true); ok {
+				decls = append(decls, fun)
+			}
 		case token.Let:
 			if v, ok := p.ParseVar(); ok {
 				decls = append(decls, v)
@@ -205,6 +210,10 @@ func (p *Parser) ParseFunDecl() (NodeID, bool) {
 }
 
 func (p *Parser) ParseFun() (NodeID, bool) {
+	return p.ParseUnsafeFun(false)
+}
+
+func (p *Parser) ParseUnsafeFun(unsafe bool) (NodeID, bool) {
 	decl, startSpan, ok := p.parseFunDecl()
 	if !ok {
 		return ParseFailed, false
@@ -213,7 +222,7 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFun(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType, block,
+	return p.NewFun(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType, block, unsafe,
 		startSpan.Combine(p.span())), true
 }
 
@@ -583,7 +592,7 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			if p.isStructTarget(callee) {
 				expr = p.NewTypeConstruction(callee, args, span.Combine(p.span()))
 			} else {
-				expr = p.NewCall(callee, args, span.Combine(p.span()))
+				expr = p.NewCall(callee, args, false, span.Combine(p.span()))
 			}
 			continue
 		case token.LBracketImmediate:
@@ -806,6 +815,28 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = var_
+	case token.Unsafe:
+		p.next()
+		span := t.Span
+		next, ok := p.mustPeek()
+		if !ok {
+			return ParseFailed, false
+		}
+		if next.Kind == token.Fun {
+			return p.ParseUnsafeFun(true)
+		}
+		inner, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		call, isCall := p.Node(inner).Kind.(Call)
+		if !isCall {
+			p.diagnostic(span, "unsafe can only be applied to function calls")
+			return ParseFailed, false
+		}
+		call.Unsafe = true
+		p.Node(inner).Kind = call
+		return inner, true
 	default:
 		p.diagnostic(t.Span, "unexpected token: expected start of an expression, got %s", t.Kind)
 		return ParseFailed, false
@@ -1750,7 +1781,7 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) {
 	span := t.Span.Combine(p.span())
 	name := fmt.Sprintf("__fun_lit_%d", p.nextFunLitID)
 	p.nextFunLitID++
-	funNode := p.NewFun(Name{name, span}, nil, params, returnType, body, span)
+	funNode := p.NewFun(Name{name, span}, nil, params, returnType, body, false, span)
 	ident := p.NewIdent(name, nil, span)
 	return p.NewBlock([]NodeID{funNode, ident}, span), true
 }

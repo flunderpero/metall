@@ -1,4 +1,25 @@
 ================================================================================
+Unsafe function and call
+================================================================================
+
+unsafe fun danger() Int { 42 }
+fun main() void { unsafe danger() }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block (integer_literal)))
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (identifier)))))
+
+================================================================================
 Simple function
 ================================================================================
 

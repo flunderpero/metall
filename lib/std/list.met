@@ -8,14 +8,13 @@ struct List<T> {
 
     -- private fields 
     mut data []mut T 
-    default T
     @a Arena
 }
 
-fun List.new<T>(default T, @a Arena) &mut List<T> {
+fun List.new<T>(@a Arena) &mut List<T> {
     -- todo: We should be able to use unitialized memory even if a T is not allowed.
-    let data = @a.slice_mut<T>(32, default)
-    @a.new_mut(List(0, data, default, @a))
+    let data = unsafe @a.slice_uninit_mut<T>(32)
+    @a.new_mut(List(0, data, @a))
 }
 
 --- Add an element to the list.
@@ -24,7 +23,7 @@ fun List.new<T>(default T, @a Arena) &mut List<T> {
     All references to elements point to stale data afterwards. ---
 fun List.push<T>(l &mut List<T>, v T) void {
     if l.len == l.data.len {
-        let new_data = l.@a.slice_mut(l.len * 2, l.default)
+        let new_data = unsafe l.@a.slice_uninit_mut<T>(l.len * 2)
         for i in 0..l.len {
             new_data[i] = l.data[i]
         }

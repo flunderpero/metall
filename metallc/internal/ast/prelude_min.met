@@ -14,8 +14,8 @@ fun Arena.new<T>(self Arena, value T) &T { value }
 fun Arena.new_mut<T>(self Arena, value T) &mut T { value }
 fun Arena.slice<T>(self Arena, len Int, default T) []T { default }
 fun Arena.slice_mut<T>(self Arena, len Int, default T) []mut T { default }
-fun Arena.slice_uninit<T>(self Arena, len Int) []T { len }
-fun Arena.slice_uninit_mut<T>(self Arena, len Int) []mut T { len }
+unsafe fun Arena.slice_uninit<T>(self Arena, len Int) []T { len }
+unsafe fun Arena.slice_uninit_mut<T>(self Arena, len Int) []mut T { len }
 
 --- A placeholder type for the builtin `Bool` type. ---
 struct Bool_ {}
