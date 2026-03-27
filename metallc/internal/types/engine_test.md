@@ -8716,3 +8716,204 @@ union01  = Result<void> = void | struct01
 fun01    = fun() union01
 fun02    = fun() void
 ```
+
+## Module Constants
+
+**Module-level let with all primitive types**
+
+```metall module
+let a = 42
+let b = "hello"
+let c = true
+let d = 'x'
+fun main() void {}
+```
+
+```types
+Module: test
+  Var: void
+    Int: Int
+  Var: void
+    String: Str
+  Var: void
+    Bool: Bool
+  Var: void
+    RuneLiteral: Rune
+  Fun: fun01
+    SimpleType: void
+    Block: void
+---
+fun01 = fun() void
+```
+
+**Module-level let with struct, array, and function usage**
+
+```metall module
+struct Point { x Int y Int }
+let origin = Point(0, 0)
+let primes = [2, 3, 5]
+fun get_x() Int { origin.x }
+fun first() Int { primes[0] }
+fun main() void {}
+```
+
+```types
+Module: test
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+    StructField: ?
+      SimpleType: ?
+  Var: void
+    TypeConstruction: struct01
+      Ident: struct01
+      Int: Int
+      Int: Int
+  Var: void
+    ArrayLiteral: [3]Int
+      Int: Int
+      Int: Int
+      Int: Int
+  Fun: fun01
+    SimpleType: Int
+    Block: Int
+      FieldAccess: Int
+        Ident: struct01
+  Fun: fun01
+    SimpleType: Int
+    Block: Int
+      Index: Int
+        Ident: [3]Int
+        Int: Int
+  Fun: fun02
+    SimpleType: void
+    Block: void
+---
+struct01 = Point { x Int, y Int }
+fun01    = fun() Int
+fun02    = fun() void
+```
+
+**Module-level let referencing earlier let**
+
+```metall module
+let x = 42
+let y = x
+fun main() void {}
+```
+
+```types
+Module: test
+  Var: void
+    Int: Int
+  Var: void
+    Ident: Int
+  Fun: fun01
+    SimpleType: void
+    Block: void
+---
+fun01 = fun() void
+```
+
+**Module-level let with reference to another constant**
+
+```metall module
+let x = 42
+let y = &x
+fun main() void {}
+```
+
+```types
+Module: test
+  Var: void
+    Int: Int
+  Var: void
+    Ref: &Int
+      Ident: Int
+  Fun: fun01
+    SimpleType: void
+    Block: void
+---
+fun01 = fun() void
+```
+
+**Module-level let ordering: no forward references**
+
+```metall module
+let y = x
+let x = 42
+fun main() void {}
+```
+
+```error
+test.met:1:9: symbol not defined: x
+    let y = x
+            ^
+    let x = 42
+```
+
+**Module-level let duplicate name**
+
+```metall module
+let x = 1
+let x = 2
+fun main() void {}
+```
+
+```error
+test.met:2:5: symbol already defined: x
+    let x = 1
+    let x = 2
+        ^
+    fun main() void {}
+```
+
+**Module-level let with struct with mut field is rejected**
+
+```metall module
+struct Foo { mut one Int }
+let x = Foo(42)
+fun main() void {}
+```
+
+```error
+test.met:2:9: module-level constants cannot contain mutable fields or references
+    struct Foo { mut one Int }
+    let x = Foo(42)
+            ^^^^^^^
+    fun main() void {}
+```
+
+**Module-level let with type coercion is allowed**
+
+```metall module
+let x = U8(32)
+fun main() void {}
+```
+
+```types
+Module: test
+  Var: void
+    TypeConstruction: U8
+      Ident: U8
+      Int: U8
+  Fun: fun01
+    SimpleType: void
+    Block: void
+---
+fun01 = fun() void
+```
+
+**Module-level let with function call is rejected**
+
+```metall module
+let x = 'a'.to_u32()
+fun main() void {}
+```
+
+```error
+test.met:1:9: function calls are not allowed in module-level constants
+    let x = 'a'.to_u32()
+            ^^^^^^^^^^^^
+    fun main() void {}
+```

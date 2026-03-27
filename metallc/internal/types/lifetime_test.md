@@ -2255,3 +2255,44 @@ lib/lib.met:4:5: reference escaping its allocation scope (via block result)
         ^^^^^^
     }
 ```
+
+## Module Constants
+
+**Module-level constants have static lifetime and can be referenced from functions**
+
+```metall module
+struct Foo { one Int }
+let x = 42
+let y = Foo(1)
+let z = &x
+
+fun take_ref(a &Int) Int { a.* }
+fun take_struct_ref(a &Foo) Int { a.one }
+
+fun main() void {
+    let a = &x
+    let b = &y
+    _ = take_ref(a)
+    _ = take_struct_ref(b)
+    _ = take_ref(z)
+}
+```
+
+```error
+```
+
+**Module-level constant ref does not escape (returned from function is fine)**
+
+```metall module
+let x = 42
+
+fun get_ref() &Int { &x }
+
+fun main() void {
+    let r = get_ref()
+    _ = r.*
+}
+```
+
+```error
+```

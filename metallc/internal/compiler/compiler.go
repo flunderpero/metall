@@ -139,7 +139,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	module := base.Cast[ast.Module](engine.AST().Node(fileID).Kind)
 	ir, err := gen.GenIR(
-		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(),
+		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(), engine.Consts(),
 		gen.IROpts{
 			TargetDataLayout:    targetDataLayout,
 			TargetTriple:        targetTriple,

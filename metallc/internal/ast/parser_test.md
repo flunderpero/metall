@@ -2605,3 +2605,49 @@ test.met:1:9: unexpected token: expected <identifier>, got (
     fun Foo.() void {}
             ^
 ```
+
+## Module Constants
+
+**Module-level let bindings**
+
+```metall module
+struct Foo { one Int two Str }
+let a = 42
+let b = Foo(1, "hello")
+let c = [1, 2, 3]
+fun main() void {}
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls[0]=Struct(name="Foo")
+    fields[0]=StructField(name="one",mut=false)
+      type=SimpleType(name="Int")
+    fields[1]=StructField(name="two",mut=false)
+      type=SimpleType(name="Str")
+  decls[1]=Var(name="a",mut=false)
+    expr=Int(value=42)
+  decls[2]=Var(name="b",mut=false)
+    expr=TypeConstruction()
+      target=Ident(name="Foo")
+      args[0]=Int(value=1)
+      args[1]=String(value="hello")
+  decls[3]=Var(name="c",mut=false)
+    expr=ArrayLiteral(len=3)
+      first=Int(value=1)
+  decls[4]=Fun(name="main")
+    returnType=SimpleType(name="void")
+    block=Block()
+```
+
+**Module-level mut binding is rejected**
+
+```metall module
+mut x = 123
+```
+
+```error
+test.met:1:1: unexpected token: <mut>
+    mut x = 123
+    ^^^
+```

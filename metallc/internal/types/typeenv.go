@@ -89,6 +89,7 @@ type TypeEnv struct {
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
 	funDeclRef         map[ast.NodeID]ast.NodeID // calleeNodeID → function declaration NodeID
+	pathBindings       map[ast.NodeID]*Binding
 	methodCallReceiver map[ast.NodeID]ast.NodeID
 	callDefaults       map[ast.NodeID][]ast.NodeID // callNodeID → default arg NodeIDs to append
 	unionWraps         map[ast.NodeID]TypeID       // nodeID → union TypeID (auto-wrap variant → union)
@@ -114,6 +115,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		funDeclRef:         map[ast.NodeID]ast.NodeID{},
+		pathBindings:       map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]TypeID{},
@@ -130,6 +132,7 @@ func (e *TypeEnv) NewChildEnv() *TypeEnv {
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
 		funDeclRef:         map[ast.NodeID]ast.NodeID{},
+		pathBindings:       map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]TypeID{},
@@ -185,6 +188,17 @@ func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
 		return e.parent.NamedFunRef(id)
 	}
 	return "", false
+}
+
+func (e *TypeEnv) PathBinding(id ast.NodeID) (*Binding, bool) {
+	b, ok := e.pathBindings[id]
+	if ok {
+		return b, true
+	}
+	if e.parent != nil {
+		return e.parent.PathBinding(id)
+	}
+	return nil, false
 }
 
 func (e *TypeEnv) MethodCallReceiver(callID ast.NodeID) (ast.NodeID, bool) {
@@ -321,6 +335,25 @@ func (e *TypeEnv) FunDeclNode(id ast.NodeID) (ast.NodeID, bool) {
 
 func (e *TypeEnv) recordUnionWrap(nodeID ast.NodeID, unionTypeID TypeID) {
 	e.unionWraps[nodeID] = unionTypeID
+}
+
+func (e *TypeEnv) containsMutablePart(typeID TypeID) bool {
+	typ := e.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case RefType:
+		return kind.Mut || e.containsMutablePart(kind.Type)
+	case StructType:
+		for _, field := range kind.Fields {
+			if field.Mut || e.containsMutablePart(field.Type) {
+				return true
+			}
+		}
+	case ArrayType:
+		return e.containsMutablePart(kind.Elem)
+	case SliceType:
+		return kind.Mut || e.containsMutablePart(kind.Elem)
+	}
+	return false
 }
 
 func (e *TypeEnv) typeNameAndTypeArgsString(name string, typeArgs []TypeID) string {

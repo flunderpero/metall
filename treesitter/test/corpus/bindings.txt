@@ -1,4 +1,28 @@
 ================================================================================
+Module-level let bindings
+================================================================================
+
+struct Foo { x Int }
+let a = 42
+let b = Foo(1)
+let c = [1, 2, 3]
+fun main() void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    name: (type_identifier)
+    (struct_field name: (identifier) type: (simple_type (type_identifier))))
+  (let_binding name: (identifier) value: (integer_literal))
+  (let_binding name: (identifier) value: (type_construction type: (type_identifier) arguments: (argument_list (integer_literal))))
+  (let_binding name: (identifier) value: (array_literal (integer_literal) (integer_literal) (integer_literal)))
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
 Let and mut bindings
 ================================================================================
 

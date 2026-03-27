@@ -177,8 +177,9 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		ast.ArrayType,
 		ast.SliceType,
 		ast.FunType,
-		ast.Path,
 		ast.Range:
+	case ast.Path:
+		g.genPath(id)
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -709,6 +710,9 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	}
 	if len(astFun.Params) > 0 {
 		g.write(paramAllocas.String())
+	}
+	if isMain {
+		g.write("call void @__const_init()")
 	}
 	// Record where to insert entry-block allocas that are collected during
 	// body code generation.
@@ -1531,6 +1535,29 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 	g.write(sb.String())
 }
 
+func (g *IRFunGen) genPath(id ast.NodeID) {
+	// Named function reference.
+	if name, ok := g.env.NamedFunRef(id); ok {
+		g.setCode(id, "@%s", irName(name))
+		return
+	}
+	// Cross-module constant: look up via binding to find the correct global name.
+	if b, ok := g.env.PathBinding(id); ok {
+		if symbol, ok := g.symbols[b.ID]; ok {
+			pathType := g.typeOfNode(id)
+			if g.isAggregateType(pathType.ID) {
+				g.setCode(id, symbol.Reg)
+				return
+			}
+			ptrreg := g.reg()
+			g.write("%s = load %s, ptr %s", ptrreg, symbol.Type, symbol.Reg)
+			g.setCode(id, ptrreg)
+			return
+		}
+	}
+	// Path used as type reference (no codegen needed).
+}
+
 func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	// Named function reference — emit @name directly (no load needed).
 	if name, ok := g.env.NamedFunRef(id); ok {
@@ -1965,12 +1992,58 @@ type IROpts struct {
 	ArenaPageHeaderSize int
 }
 
+func (g *IRGen) genModuleConsts(consts []types.ConstWork) {
+	// Declare globals for each constant.
+	if len(consts) == 0 {
+		g.write("define internal void @__const_init() { ret void }")
+		g.write("")
+		return
+	}
+	for _, c := range consts {
+		irTyp := irType(c.Env, c.TypeID)
+		globalName := irName(c.Name)
+		g.write("@%s = internal global %s zeroinitializer", globalName, irTyp)
+	}
+	// Generate init function that evaluates expressions and stores into globals.
+	f := g.newFunGen(consts[0].Env)
+	f.write("define internal void @__const_init() {")
+	f.indent++
+	entryAllocaInsertPos := f.sb.Len()
+	for _, c := range consts {
+		varNode := base.Cast[ast.Var](f.ast.Node(c.NodeID).Kind)
+		irTyp := irType(c.Env, c.TypeID)
+		globalName := irName(c.Name)
+		globalRef := fmt.Sprintf("@%s", globalName)
+		f.Gen(varNode.Expr)
+		exprReg := f.lookupCode(varNode.Expr)
+		f.storeValue(exprReg, globalRef, c.TypeID)
+		b, ok := c.Env.Lookup(c.NodeID, varNode.Name.Name)
+		if !ok {
+			panic(base.Errorf("constant binding not found: %s", varNode.Name.Name))
+		}
+		g.symbols[b.ID] = Symbol{Name: varNode.Name.Name, Reg: globalRef, Type: irTyp}
+	}
+	if f.entryAllocas.Len() > 0 {
+		ir := f.sb.String()
+		f.sb.Reset()
+		f.sb.WriteString(ir[:entryAllocaInsertPos])
+		f.sb.WriteString(f.entryAllocas.String())
+		f.sb.WriteString(ir[entryAllocaInsertPos:])
+	}
+	f.write("ret void")
+	f.indent--
+	f.write("}")
+	f.write("")
+	g.sb.WriteString(f.sb.String())
+}
+
 func GenIR(
 	a *ast.AST,
 	module ast.Module,
 	funs []types.FunWork,
 	structs []types.TypeWork,
 	unions []types.TypeWork,
+	consts []types.ConstWork,
 	opts IROpts,
 ) (string, error) {
 	g := NewIRGen(a, module, opts)
@@ -1997,6 +2070,8 @@ func GenIR(
 	for _, u := range unions {
 		g.genUnion(u.Env, u)
 	}
+	// Emit module-level constants as globals + init function.
+	g.genModuleConsts(consts)
 	// Emit all functions — each gets a fresh IRFunGen.
 	for i := range funs {
 		f := g.newFunGen(funs[i].Env)
@@ -2006,11 +2081,11 @@ func GenIR(
 	// Emit string constants.
 	g.write("; Global constants.")
 	g.write("")
-	consts := make([]string, len(g.strConsts))
+	strConsts := make([]string, len(g.strConsts))
 	for value, id := range g.strConsts {
-		consts[id] = value
+		strConsts[id] = value
 	}
-	for id, value := range consts {
+	for id, value := range strConsts {
 		n := len(value)
 		g.write(`@str.%d.data = private constant [%d x i8] c"%s"`, id, n, value)
 		g.write(`@str.%d = private constant %%Str { {ptr, i64} { ptr @str.%d.data, i64 %d } }`, id, id, n)

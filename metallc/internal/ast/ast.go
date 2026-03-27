@@ -655,6 +655,24 @@ func (a *AST) Iter(f func(NodeID) bool) {
 	}
 }
 
+// FindNode recursively searches the subtree rooted at `root` for a node whose
+// Kind matches type T. Returns the first matching NodeID, or 0 and false.
+func FindNode[T Kind](a *AST, root NodeID) (NodeID, bool) {
+	if _, ok := a.Node(root).Kind.(T); ok {
+		return root, true
+	}
+	var found NodeID
+	a.Walk(root, func(child NodeID) {
+		if found != 0 {
+			return
+		}
+		if id, ok := FindNode[T](a, child); ok {
+			found = id
+		}
+	})
+	return found, found != 0
+}
+
 func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	node := a.Node(id)
 	switch kind := node.Kind.(type) {

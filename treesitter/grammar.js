@@ -38,7 +38,7 @@ module.exports = grammar({
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
     _declaration: ($) =>
-      choice($.function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration),
+      choice($.function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding),
 
     // >>> Imports
 

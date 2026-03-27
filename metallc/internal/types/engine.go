@@ -23,6 +23,13 @@ type TypeWork struct {
 	Env    *TypeEnv
 }
 
+type ConstWork struct {
+	NodeID ast.NodeID
+	TypeID TypeID
+	Name   string
+	Env    *TypeEnv
+}
+
 type MacroExpander func(macroSource string, funName string, args []macros.MacroArg) (expandedSource string, err error)
 
 type Engine struct {
@@ -108,6 +115,10 @@ func (e *Engine) Structs() []TypeWork {
 		}
 	}
 	return result
+}
+
+func (e *Engine) Consts() []ConstWork {
+	return e.consts
 }
 
 func (e *Engine) Unions() []TypeWork {
@@ -1230,14 +1241,43 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 		return InvalidTypeID, TypeFailed
 	}
 	e.forwardDeclareTypes(newDeclIDs)
+	// Process module-level constants before functions so function bodies can reference them.
+	depFailed := false
+	for _, declNodeID := range module.Decls {
+		varNode, isVar := e.ast.Node(declNodeID).Kind.(ast.Var)
+		if !isVar {
+			continue
+		}
+		_, status := e.Query(declNodeID)
+		if status.Failed() {
+			depFailed = true
+			continue
+		}
+		if callNodeID, ok := ast.FindNode[ast.Call](e.ast, varNode.Expr); ok {
+			e.diag(e.ast.Node(callNodeID).Span, "function calls are not allowed in module-level constants")
+			depFailed = true
+			continue
+		}
+		typeID := e.env.TypeOfNode(varNode.Expr).ID
+		if e.env.containsMutablePart(typeID) {
+			exprSpan := e.ast.Node(varNode.Expr).Span
+			e.diag(exprSpan, "module-level constants cannot contain mutable fields or references")
+			depFailed = true
+			continue
+		}
+		name := e.namespacedName(declNodeID, varNode.Name.Name)
+		e.registerConst(declNodeID, name, typeID)
+	}
 	e.forwardDeclareFuns(module.Decls)
 	for _, declNodeID := range module.Decls {
 		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok && fun.Name.Name == "main" {
 			e.registerFun(declNodeID)
 		}
 	}
-	depFailed := false
 	for _, declNodeID := range module.Decls {
+		if _, ok := e.ast.Node(declNodeID).Kind.(ast.Var); ok {
+			continue // Already processed above.
+		}
 		_, status := e.Query(declNodeID)
 		if status.Failed() {
 			depFailed = true
@@ -1717,6 +1757,10 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
 	}
+	// Store the binding for codegen (needed for cross-module constant references).
+	if _, isVar := e.ast.Node(binding.Decl).Kind.(ast.Var); isVar {
+		e.env.pathBindings[nodeID] = binding
+	}
 	return e.resolveBinding(nodeID, binding, path.TypeArgs)
 }
 
@@ -1751,7 +1795,13 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 // in an outer scope.
 func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Binding) bool {
 	switch e.ast.Node(binding.Decl).Kind.(type) {
-	case ast.Var, ast.FunParam, ast.AllocatorVar:
+	case ast.Var:
+		// Module-level constants can be referenced from any function.
+		bindingScope := e.scopeGraph.NodeScope(binding.Decl)
+		if _, ok := e.ast.Node(bindingScope.Node).Kind.(ast.Module); ok {
+			return false
+		}
+	case ast.FunParam, ast.AllocatorVar:
 	default:
 		return false
 	}

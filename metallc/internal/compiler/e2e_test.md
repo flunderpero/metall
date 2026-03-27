@@ -3927,3 +3927,73 @@ fun main() void {
 ```output
 true
 ```
+
+## Module Constants
+
+**module-level let with all allowed types**
+
+```metall
+struct Point { x Int y Int }
+
+let a = 42
+let b = "hello"
+let c = true
+let d = 'A'
+let e = Point(1, 2)
+let f = [10, 20, 30]
+let g = &a
+let h = a + 1
+let i = U8(32)
+
+fun get_point_x() Int { e.x }
+
+fun main() void {
+    DebugIntern.print_int(a)
+    DebugIntern.print_str(b)
+    DebugIntern.print_bool(c)
+    DebugIntern.print_uint(d.to_u32().to_u64())
+    DebugIntern.print_int(e.x)
+    DebugIntern.print_int(e.y)
+    DebugIntern.print_int(f[0])
+    DebugIntern.print_int(f[1])
+    DebugIntern.print_int(f[2])
+    DebugIntern.print_int(g.*)
+    DebugIntern.print_int(h)
+    DebugIntern.print_int(get_point_x())
+    DebugIntern.print_uint(i.to_u64())
+}
+```
+
+```output
+42
+hello
+true
+65
+1
+2
+10
+20
+30
+42
+43
+1
+32
+```
+
+**module-level let imported from another module**
+
+```metall
+use local::e2e
+
+let local_answer = e2e::the_answer + 1
+
+fun main() void {
+    DebugIntern.print_int(e2e::the_answer)
+    DebugIntern.print_int(local_answer)
+}
+```
+
+```output
+42
+43
+```

@@ -1,3 +1,5 @@
+let the_answer = 42
+
 fun say_hello() void {
     DebugIntern.print_str("hello")
 }

@@ -15,6 +15,7 @@ type EngineCore struct {
 	structs     map[string]TypeWork
 	unions      map[string]TypeWork
 	shapes      map[string]TypeWork
+	consts      []ConstWork
 }
 
 func NewEngineCore(a *ast.AST, g *ast.ScopeGraph) *EngineCore {
@@ -84,6 +85,10 @@ func (c *EngineCore) registerUnion(unionType UnionType, nodeID ast.NodeID, typeI
 	if _, ok := c.unions[unionType.Name]; !ok {
 		c.unions[unionType.Name] = TypeWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
 	}
+}
+
+func (c *EngineCore) registerConst(nodeID ast.NodeID, name string, typeID TypeID) {
+	c.consts = append(c.consts, ConstWork{NodeID: nodeID, TypeID: typeID, Name: name, Env: c.env})
 }
 
 func (c *EngineCore) namespacedName(nodeID ast.NodeID, name string) string {
