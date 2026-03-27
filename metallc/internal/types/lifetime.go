@@ -163,7 +163,7 @@ type LifetimeCheck struct {
 	nextTaintID TaintID
 	scopes      map[ast.ScopeID]*ScopeState
 	flows       map[ast.NodeID]Flow
-	funEffects  map[TypeID]*FunEffects
+	funEffects  map[ast.NodeID]*FunEffects
 	taintOrigin map[TaintID]ast.NodeID // Which &x created this taint (for diagnostics).
 	status      map[ast.NodeID]analysisStatus
 }
@@ -178,7 +178,7 @@ func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv) *LifetimeC
 		nextTaintID: 1,
 		scopes:      map[ast.ScopeID]*ScopeState{},
 		flows:       map[ast.NodeID]Flow{},
-		funEffects:  map[TypeID]*FunEffects{},
+		funEffects:  map[ast.NodeID]*FunEffects{},
 		taintOrigin: map[TaintID]ast.NodeID{},
 		status:      map[ast.NodeID]analysisStatus{},
 	}
@@ -455,18 +455,19 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 	if origin, ok := a.env.GenericOrigin(effectsTypeID); ok {
 		effectsTypeID = origin
 	}
-	effects, ok := a.funEffects[effectsTypeID]
-	if !ok {
-		declID := a.env.DeclNode(calleeType.ID)
-		if declID != 0 {
-			if a.status[declID] == statusInProgress {
-				a.debug(1, nodeID, "analyzeCall: cycle detected, pessimistic fallback")
-				a.applyPessimisticEffects(nodeID, call)
-				return
-			}
-			a.Check(declID)
-			effects, ok = a.funEffects[effectsTypeID]
+	declID, _ := a.env.FunDeclNode(call.Callee)
+	if declID == 0 {
+		declID = a.env.DeclNode(effectsTypeID)
+	}
+	effects, ok := a.funEffects[declID]
+	if !ok && declID != 0 {
+		if a.status[declID] == statusInProgress {
+			a.debug(1, nodeID, "analyzeCall: cycle detected, pessimistic fallback")
+			a.applyPessimisticEffects(nodeID, call)
+			return
 		}
+		a.Check(declID)
+		effects, ok = a.funEffects[declID]
 	}
 	if !ok {
 		a.applyPessimisticEffects(nodeID, call)
@@ -1008,10 +1009,9 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		}
 	}
 
-	funTypeID := a.env.TypeOfNode(nodeID).ID
-	a.funEffects[funTypeID] = effects
-	a.debug(1, nodeID, "analyzeFun: effects for %s (typeID=%d): taints=%v aliases=%v sideEffects=%v",
-		fun.Name.Name, funTypeID, effects.ReturnTaints, effects.ReturnAliases, effects.SideEffects)
+	a.funEffects[nodeID] = effects
+	a.debug(1, nodeID, "analyzeFun: effects for %s (nodeID=%d): taints=%v aliases=%v sideEffects=%v",
+		fun.Name.Name, nodeID, effects.ReturnTaints, effects.ReturnAliases, effects.SideEffects)
 }
 
 func (a *LifetimeCheck) flow(nodeID ast.NodeID) Flow {

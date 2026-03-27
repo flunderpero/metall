@@ -2220,3 +2220,38 @@ test.met:7:9: reference escaping its allocation scope (via block result)
 
 ```error
 ```
+
+## Cross-Module Lifetime Tests
+
+**setup lib module**
+
+```metall
+```
+
+```module.lib
+fun safe(a &Int) &Int { a }
+fun leaky(a &Int) &Int {
+    mut local = 42
+    &local
+}
+```
+
+**functions with same signature in external module get independent effects**
+
+```metall module
+use lib
+
+fun main() void {
+    mut x = 42
+    _ = lib::safe(&x)
+    _ = lib::leaky(&x)
+}
+```
+
+```error
+lib/lib.met:4:5: reference escaping its allocation scope (via block result)
+        mut local = 42
+        &local
+        ^^^^^^
+    }
+```

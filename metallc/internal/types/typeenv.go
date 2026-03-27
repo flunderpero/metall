@@ -88,6 +88,7 @@ type TypeEnv struct {
 	bindings           map[ast.BindingID]*Binding
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
+	funDeclRef         map[ast.NodeID]ast.NodeID // calleeNodeID → function declaration NodeID
 	methodCallReceiver map[ast.NodeID]ast.NodeID
 	callDefaults       map[ast.NodeID][]ast.NodeID // callNodeID → default arg NodeIDs to append
 	unionWraps         map[ast.NodeID]TypeID       // nodeID → union TypeID (auto-wrap variant → union)
@@ -112,6 +113,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		bindings:           map[ast.BindingID]*Binding{},
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
+		funDeclRef:         map[ast.NodeID]ast.NodeID{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]TypeID{},
@@ -127,6 +129,7 @@ func (e *TypeEnv) NewChildEnv() *TypeEnv {
 		bindings:           map[ast.BindingID]*Binding{},
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
+		funDeclRef:         map[ast.NodeID]ast.NodeID{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]TypeID{},
@@ -305,6 +308,17 @@ func (e *TypeEnv) UnionWrap(nodeID ast.NodeID) (TypeID, bool) {
 	return 0, false
 }
 
+func (e *TypeEnv) FunDeclNode(id ast.NodeID) (ast.NodeID, bool) {
+	decl, ok := e.funDeclRef[id]
+	if ok {
+		return decl, true
+	}
+	if e.parent != nil {
+		return e.parent.FunDeclNode(id)
+	}
+	return 0, false
+}
+
 func (e *TypeEnv) recordUnionWrap(nodeID ast.NodeID, unionTypeID TypeID) {
 	e.unionWraps[nodeID] = unionTypeID
 }
@@ -434,6 +448,7 @@ func (e *TypeEnv) copyNamedFunRef(dst ast.NodeID, src ast.NodeID) {
 		panic(base.Errorf("named fun ref not found for %s", src))
 	}
 	e.namedFunRef[dst] = name
+	e.funDeclRef[dst] = src
 }
 
 func (e *TypeEnv) isNamedFun(nodeID ast.NodeID) bool {
