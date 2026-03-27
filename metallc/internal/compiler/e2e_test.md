@@ -2026,6 +2026,208 @@ fun main() void {
 1
 ```
 
+**wrapping arithmetic**
+
+```metall
+fun main() void {
+    -- Int (i64, signed)
+    let max = 9223372036854775807
+    DebugIntern.print_int(max +% 1)
+    DebugIntern.print_int(0 -% 1)
+    DebugIntern.print_int(max *% 2)
+    -- I8 (signed)
+    DebugIntern.print_int((I8(127) +% I8(1)).to_int())
+    DebugIntern.print_int((I8(-128) -% I8(1)).to_int())
+    DebugIntern.print_int((I8(127) *% I8(2)).to_int())
+    -- I16 (signed)
+    DebugIntern.print_int((I16(32767) +% I16(1)).to_int())
+    DebugIntern.print_int((I16(-32768) -% I16(1)).to_int())
+    DebugIntern.print_int((I16(32767) *% I16(2)).to_int())
+    -- I32 (signed)
+    DebugIntern.print_int((I32(2147483647) +% I32(1)).to_int())
+    DebugIntern.print_int((I32(-2147483648) -% I32(1)).to_int())
+    DebugIntern.print_int((I32(2147483647) *% I32(2)).to_int())
+    -- U8 (unsigned)
+    DebugIntern.print_int((U8(255) +% U8(1)).to_int())
+    DebugIntern.print_int((U8(0) -% U8(1)).to_int())
+    DebugIntern.print_int((U8(255) *% U8(2)).to_int())
+    -- U16 (unsigned)
+    DebugIntern.print_int((U16(65535) +% U16(1)).to_int())
+    DebugIntern.print_int((U16(0) -% U16(1)).to_int())
+    DebugIntern.print_int((U16(65535) *% U16(2)).to_int())
+    -- U32 (unsigned)
+    DebugIntern.print_int((U32(4294967295) +% U32(1)).to_int())
+    DebugIntern.print_int((U32(0) -% U32(1)).to_int())
+    DebugIntern.print_int((U32(4294967295) *% U32(2)).to_int())
+    -- U64 (unsigned)
+    DebugIntern.print_uint(U64(18446744073709551615) +% U64(1))
+    DebugIntern.print_uint(U64(0) -% U64(1))
+    DebugIntern.print_uint(U64(18446744073709551615) *% U64(2))
+}
+```
+
+```output
+-9223372036854775808
+-1
+-2
+-128
+127
+-2
+-32768
+32767
+-2
+-2147483648
+2147483647
+-2
+0
+255
+254
+0
+65535
+65534
+0
+4294967295
+4294967294
+0
+18446744073709551615
+18446744073709551614
+```
+
+**add overflow panics**
+
+```metall
+fun main() void {
+    let max = 9223372036854775807
+    _ = max + 1
+}
+```
+
+```panic
+test.met:3:9: integer overflow
+```
+
+**sub overflow panics**
+
+```metall
+fun main() void {
+    let min = -9223372036854775808
+    _ = min - 1
+}
+```
+
+```panic
+test.met:3:9: integer overflow
+```
+
+**mul overflow panics**
+
+```metall
+fun main() void {
+    let max = 9223372036854775807
+    _ = max * 2
+}
+```
+
+```panic
+test.met:3:9: integer overflow
+```
+
+**I8 overflow panics**
+
+```metall
+fun main() void {
+    _ = I8(127) + I8(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
+**I16 overflow panics**
+
+```metall
+fun main() void {
+    _ = I16(32767) + I16(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
+**I32 overflow panics**
+
+```metall
+fun main() void {
+    _ = I32(2147483647) + I32(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
+**U8 overflow panics**
+
+```metall
+fun main() void {
+    _ = U8(255) + U8(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
+**U8 underflow panics**
+
+```metall
+fun main() void {
+    _ = U8(0) - U8(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
+**U16 overflow panics**
+
+```metall
+fun main() void {
+    _ = U16(65535) + U16(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
+**U32 overflow panics**
+
+```metall
+fun main() void {
+    _ = U32(4294967295) + U32(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
+**U64 overflow panics**
+
+```metall
+fun main() void {
+    _ = U64(18446744073709551615) + U64(1)
+}
+```
+
+```panic
+test.met:2:9: integer overflow
+```
+
 **bool operators**
 
 ```metall
@@ -3662,7 +3864,7 @@ fun main() void {
 ```
 
 ```panic
-test.met:2:9: illegal rune
+test.met:2:9: integer overflow
 ```
 
 **rune arithmetic into surrogate**

@@ -52,6 +52,7 @@ const (
 	Lte
 	Match
 	Minus
+	MinusPercent
 	Mut
 	Neq
 	Not
@@ -60,6 +61,7 @@ const (
 	Percent
 	Pipe
 	Plus
+	PlusPercent
 	Question
 	RBracket
 	RCurly
@@ -70,6 +72,7 @@ const (
 	LtLt
 	Slash
 	Star
+	StarPercent
 	String
 	Struct
 	Tilde
@@ -127,6 +130,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Lte:                   "<=",
 	Match:                 "<match>",
 	Minus:                 "-",
+	MinusPercent:          "-%",
 	Mut:                   "<mut>",
 	Neq:                   "!=",
 	Not:                   "<not>",
@@ -135,6 +139,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Percent:               "%",
 	Pipe:                  "|",
 	Plus:                  "+",
+	PlusPercent:           "+%",
 	Question:              "?",
 	RBracket:              "]",
 	RCurly:                "}",
@@ -145,6 +150,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	LtLt:                  "<<",
 	Slash:                 "/",
 	Star:                  "*",
+	StarPercent:           "*%",
 	String:                "<string>",
 	Tilde:                 "~",
 	Struct:                "<struct>",
@@ -166,14 +172,12 @@ var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
 	'{': LCurly,
 	'(': LParen,
 	'%': Percent,
+	'/': Slash,
 	'|': Pipe,
-	'+': Plus,
 	'?': Question,
 	']': RBracket,
 	'}': RCurly,
 	')': RParen,
-	'/': Slash,
-	'*': Star,
 	'~': Tilde,
 }
 
@@ -446,7 +450,20 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			return Token{Kind: GtGt, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		return Token{Kind: Gt, Value: "", Span: span}
+	case c == '+':
+		if idx < len(source.Content) && source.Content[idx] == '%' {
+			return Token{Kind: PlusPercent, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Plus, Value: "", Span: span}
+	case c == '*':
+		if idx < len(source.Content) && source.Content[idx] == '%' {
+			return Token{Kind: StarPercent, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Star, Value: "", Span: span}
 	case c == '-':
+		if idx < len(source.Content) && source.Content[idx] == '%' {
+			return Token{Kind: MinusPercent, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
 		if idx < len(source.Content) && unicode.IsDigit(source.Content[idx]) {
 			value := []rune{c, source.Content[idx]}
 			idx += 1

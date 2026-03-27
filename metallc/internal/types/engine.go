@@ -397,7 +397,8 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:
 	case ast.BinaryOpOr, ast.BinaryOpAnd:
 		valid = lhsTypeID == e.boolTyp
 		expected = "Bool"
-	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod:
+	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod,
+		ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul:
 		valid = e.env.isIntType(lhsTypeID)
 		expected = "an integer"
 	case ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:

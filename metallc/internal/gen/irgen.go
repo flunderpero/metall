@@ -1222,6 +1222,19 @@ func (g *IRFunGen) emitSafeIntOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string)
 	g.write("%s = %s %s %s, %s", reg, op, irTyp, lhs, rhs)
 }
 
+// emitCheckedArithmeticOp emits a call to a checked add/sub/mul builtin
+// that panics on overflow.
+func (g *IRFunGen) emitCheckedArithmeticOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string, signed bool) {
+	prefix := "s"
+	if !signed {
+		prefix = "u"
+	}
+	span := g.ast.Node(id).Span
+	locReg := g.addStrConst(span.String())
+	fn := fmt.Sprintf("@__checked_%s%s_%s", prefix, op, irTyp)
+	g.write("%s = call %s %s(%s %s, %s %s, ptr %s)", reg, irTyp, fn, irTyp, lhs, irTyp, rhs, locReg)
+}
+
 func (g *IRFunGen) runeCheckIfNeeded(id ast.NodeID, reg string) {
 	if intTyp, ok := g.typeOfNode(id).Kind.(types.IntType); ok && intTyp.Name == "Rune" {
 		span := g.ast.Node(id).Span
@@ -1336,23 +1349,31 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 	lhs := g.lookupCode(binary.LHS)
 	rhs := g.lookupCode(binary.RHS)
 	irTyp := g.irTypeOfNode(binary.LHS)
+	intTyp, isInt := g.typeOfNode(binary.LHS).Kind.(types.IntType)
+	signed := isInt && intTyp.Signed
 	reg := g.reg()
 	switch binary.Op { //nolint:exhaustive
 	case ast.BinaryOpAdd:
-		g.write("%s = add %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
+		g.emitCheckedArithmeticOp(id, reg, irTyp, "add", lhs, rhs, signed)
 	case ast.BinaryOpSub:
-		g.write("%s = sub %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
+		g.emitCheckedArithmeticOp(id, reg, irTyp, "sub", lhs, rhs, signed)
 	case ast.BinaryOpMul:
-		g.write("%s = mul %s %s, %s", reg, g.irTypeOfNode(binary.LHS), lhs, rhs)
+		g.emitCheckedArithmeticOp(id, reg, irTyp, "mul", lhs, rhs, signed)
+	case ast.BinaryOpWrapAdd:
+		g.write("%s = add %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpWrapSub:
+		g.write("%s = sub %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpWrapMul:
+		g.write("%s = mul %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpDiv:
 		divOp := "sdiv"
-		if intTyp, ok := g.typeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
+		if !signed {
 			divOp = "udiv"
 		}
 		g.emitSafeIntOp(id, reg, irTyp, divOp, lhs, rhs)
 	case ast.BinaryOpMod:
 		remOp := "srem"
-		if intTyp, ok := g.typeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
+		if !signed {
 			remOp = "urem"
 		}
 		g.emitSafeIntOp(id, reg, irTyp, remOp, lhs, rhs)
@@ -1361,8 +1382,6 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 	case ast.BinaryOpNeq:
 		g.write("%s = icmp ne %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
-		intTyp := base.Cast[types.IntType](g.typeOfNode(binary.LHS).Kind)
-		signed := intTyp.Signed
 		cmpOp := map[ast.BinaryOp]string{
 			ast.BinaryOpLt:  "slt",
 			ast.BinaryOpLte: "sle",
@@ -1383,7 +1402,7 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 		g.write("%s = shl %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpShr:
 		shrOp := "ashr"
-		if intTyp, ok := g.typeOfNode(binary.LHS).Kind.(types.IntType); ok && !intTyp.Signed {
+		if !signed {
 			shrOp = "lshr"
 		}
 		g.write("%s = %s %s %s, %s", reg, shrOp, irTyp, lhs, rhs)
@@ -1392,6 +1411,7 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 	}
 	switch binary.Op { //nolint:exhaustive
 	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpDiv, ast.BinaryOpMul, ast.BinaryOpMod,
+		ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul,
 		ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
 		g.runeCheckIfNeeded(binary.LHS, reg)
 	}
@@ -2094,6 +2114,11 @@ func GenIR(
 	for _, bits := range []int{8, 16, 32, 64} {
 		irType := fmt.Sprintf("i%d", bits)
 		g.write(builtinFill(irType))
+		for _, prefix := range []string{"s", "u"} {
+			for _, op := range []string{"add", "sub", "mul"} {
+				g.write(builtinCheckedArithmetic(prefix, op, irType))
+			}
+		}
 	}
 	g.write(builtinFill("i1"))
 	g.write("; >>> Arena runtime")
@@ -2155,4 +2180,24 @@ exit:
     ret void
 }
 `, irType, valType)
+}
+
+func builtinCheckedArithmetic(prefix, op, irType string) string {
+	return fmt.Sprintf(
+		`define internal %[3]s @__checked_%[1]s%[2]s_%[3]s(%[3]s %%a, %[3]s %%b, ptr %%loc) alwaysinline {
+    %%r = call {%[3]s, i1} @llvm.%[1]s%[2]s.with.overflow.%[3]s(%[3]s %%a, %[3]s %%b)
+    %%val = extractvalue {%[3]s, i1} %%r, 0
+    %%ov = extractvalue {%[3]s, i1} %%r, 1
+    br i1 %%ov, label %%panic, label %%ok
+panic:
+    call void @panic(ptr @str_integer_overflow, ptr %%loc)
+    unreachable
+ok:
+    ret %[3]s %%val
+}
+`,
+		prefix,
+		op,
+		irType,
+	)
 }

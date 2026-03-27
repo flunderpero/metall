@@ -35,7 +35,7 @@ define internal void @__print_str(ptr byval(%Str) %s) alwaysinline {
     ret void
 }
 
-define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn alwaysinline {
+define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn alwaysinline cold {
     call void (ptr) @__print_str(ptr %loc)
     call void (i8) @putchar(i8 58)
     call void (i8) @putchar(i8 32)
@@ -418,6 +418,8 @@ define internal i64 @"LibCIntern.write"(i32 %fd, ptr byval({ptr, i64}) %data) {
 @str_division_by_zero = private constant %Str { { ptr, i64 } { ptr @str_division_by_zero.data, i64 16 } }
 @str_illegal_rune.data = private constant [12 x i8] c"illegal rune"
 @str_illegal_rune = private constant %Str { { ptr, i64 } { ptr @str_illegal_rune.data, i64 12 } }
+@str_integer_overflow.data = private constant [16 x i8] c"integer overflow"
+@str_integer_overflow = private constant %Str { { ptr, i64 } { ptr @str_integer_overflow.data, i64 16 } }
 @str_index_out_of_bounds.data = private constant [19 x i8] c"index out of bounds"
 @str_index_out_of_bounds = private constant %Str { { ptr, i64 } { ptr @str_index_out_of_bounds.data, i64 19 } }
 @str_slice_out_of_bounds.data = private constant [19 x i8] c"slice out of bounds"

@@ -1264,6 +1264,42 @@ Binary(op=%)
   rhs=Int(value=2)
 ```
 
+**int +%**
+
+```metall
+1 +% 2
+```
+
+```ast
+Binary(op=+%)
+  lhs=Int(value=1)
+  rhs=Int(value=2)
+```
+
+**int -%**
+
+```metall
+1 -% 2
+```
+
+```ast
+Binary(op=-%)
+  lhs=Int(value=1)
+  rhs=Int(value=2)
+```
+
+**int *%**
+
+```metall
+1 *% 2
+```
+
+```ast
+Binary(op=*%)
+  lhs=Int(value=1)
+  rhs=Int(value=2)
+```
+
 **int <**
 
 ```metall

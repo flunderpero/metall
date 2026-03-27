@@ -244,6 +244,10 @@ const (
 	BinaryOpMod BinaryOp = "%"
 	BinaryOpMul BinaryOp = "*"
 
+	BinaryOpWrapAdd BinaryOp = "+%"
+	BinaryOpWrapSub BinaryOp = "-%"
+	BinaryOpWrapMul BinaryOp = "*%"
+
 	BinaryOpEq  BinaryOp = "=="
 	BinaryOpNeq BinaryOp = "!="
 	BinaryOpLt  BinaryOp = "<"

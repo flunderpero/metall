@@ -376,6 +376,9 @@ fun main() void {
         try assert.err(U64.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
         try assert.err(U64.from_ascii_str("a".as_bytes()), "parse error: not a valid digit")
         try assert.err(U64.from_ascii_str("/".as_bytes()), "parse error: not a valid digit")
+
+        try assert.eq(Result(U64(18446744073709551615)), U64.from_ascii_str("018446744073709551615".as_bytes()))
+        try assert.err(U64.from_ascii_str("20496382304121724019".as_bytes()), "parse error: number out of range")
     })
     from_ascii_str_suite.test("Int.from_ascii_str (base 16)", fun(assert &assert_::Assert) !void {
         try assert.eq(Result(Int(0)), Int.from_ascii_str("0".as_bytes(), 16))
