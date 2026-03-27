@@ -6520,6 +6520,72 @@ test.met:9:5: type Foo does not satisfy shape Iter: method next has signature fu
     }
 ```
 
+**Ref type satisfies shape**
+
+```metall
+{
+    shape S { fun S.eq(a S, b S) Bool }
+    struct Foo { x Int }
+    fun Foo.eq(a &Foo, b &Foo) Bool { a.x == b.x }
+    fun check<T S>(a T, b T) Bool { a.eq(b) }
+    let f = Foo(1)
+    _ = check(&f, &f)
+}
+```
+
+```error
+```
+
+**Mut ref type satisfies shape**
+
+```metall
+{
+    shape S { fun S.eq(a S, b S) Bool }
+    struct Foo { x Int }
+    fun Foo.eq(a &mut Foo, b &mut Foo) Bool { a.x == b.x }
+    fun check<T S>(a T, b T) Bool { a.eq(b) }
+    mut f = Foo(1)
+    _ = check(&mut f, &mut f)
+}
+```
+
+```error
+```
+
+**Mut ref to generic struct satisfies shape**
+
+```metall
+{
+    shape S { fun S.eq(a S, b S) Bool }
+    struct Box<T> { value T }
+    fun Box.eq<T S>(a &mut Box<T>, b &mut Box<T>) Bool { a.value.eq(b.value) }
+    fun Int.eq(a Int, b Int) Bool { a == b }
+    fun check<T S>(a T, b T) Bool { a.eq(b) }
+    mut x = Box<Int>(1)
+    mut y = Box<Int>(2)
+    _ = check(&mut x, &mut y)
+}
+```
+
+```error
+```
+
+**Mut ref type satisfies shape expecting immutable ref**
+
+```metall
+{
+    shape S { fun S.eq(a S, b S) Bool }
+    struct Foo { x Int }
+    fun Foo.eq(a &Foo, b &Foo) Bool { a.x == b.x }
+    fun check<T S>(a T, b T) Bool { a.eq(b) }
+    mut f = Foo(1)
+    _ = check(&mut f, &mut f)
+}
+```
+
+```error
+```
+
 ## Default Type Args
 
 **Default type arg on struct**

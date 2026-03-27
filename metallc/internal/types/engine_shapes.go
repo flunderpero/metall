@@ -44,16 +44,23 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 ) bool {
 	shapeType := base.Cast[ShapeType](e.env.Type(shapeTypeID).Kind)
 	concreteTyp := e.env.Type(concreteTypeID)
-	if tpt, ok := concreteTyp.Kind.(TypeParamType); ok && tpt.Shape != nil && *tpt.Shape == shapeTypeID {
+	// Unwrap RefType for method lookup, because methods live on the underlying type.
+	lookupTypeID := concreteTypeID
+	lookupTyp := concreteTyp
+	if refTyp, ok := concreteTyp.Kind.(RefType); ok {
+		lookupTypeID = refTyp.Type
+		lookupTyp = e.env.Type(lookupTypeID)
+	}
+	if tpt, ok := lookupTyp.Kind.(TypeParamType); ok && tpt.Shape != nil && *tpt.Shape == shapeTypeID {
 		return true
 	}
 	concreteDisplay := e.env.TypeDisplay(concreteTypeID)
-	if _, ok := e.env.methodFQN(concreteTyp, ""); !ok {
+	if _, ok := e.env.methodFQN(lookupTyp, ""); !ok {
 		e.diag(span, "type %s cannot satisfy shape %s", concreteDisplay, shapeType.DeclName)
 		return false
 	}
 	if len(shapeType.Fields) > 0 {
-		structType, isStruct := concreteTyp.Kind.(StructType)
+		structType, isStruct := lookupTyp.Kind.(StructType)
 		if !isStruct {
 			e.diag(span, "type %s does not satisfy shape %s: not a struct", concreteDisplay, shapeType.DeclName)
 			return false
@@ -95,7 +102,7 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 	for _, funDeclNodeID := range shapeNode.Funs {
 		funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
 		_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
-		binding, ok := e.lookupMethodBinding(scopeNodeID, concreteTypeID, methodName)
+		binding, ok := e.lookupMethodBinding(scopeNodeID, lookupTypeID, methodName)
 		if !ok {
 			e.diag(span, "type %s does not satisfy shape %s: missing method %s",
 				concreteDisplay, shapeType.DeclName, methodName)
@@ -123,7 +130,7 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 		if status.Failed() {
 			return false
 		}
-		if !expectedFunType.Equal(concreteFunType) {
+		if !e.shapeMethodMatches(expectedFunType, concreteFunType) {
 			e.diag(span,
 				"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
 				concreteDisplay,
@@ -153,6 +160,23 @@ func (e *Engine) LookupShapeMethodBinding(
 	return binding, ok
 }
 
+// shapeMethodMatches checks if a concrete method signature satisfies a shape's
+// expected signature, allowing &mut T → &T coercion on parameters.
+func (e *Engine) shapeMethodMatches(expected, concrete FunType) bool {
+	if expected.Return != concrete.Return || expected.Macro != concrete.Macro {
+		return false
+	}
+	if len(expected.Params) != len(concrete.Params) {
+		return false
+	}
+	for i, ep := range expected.Params {
+		if !e.env.isAssignableTo(ep, concrete.Params[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 func (e *Engine) FunTypeDisplay(funType FunType) string {
 	typeID := e.env.newType(funType, 0, base.Span{}, TypeOK)
 	return e.env.TypeDisplay(typeID)
@@ -165,6 +189,9 @@ func (e *Engine) MethodSignature(
 	span base.Span,
 ) (FunType, TypeStatus) {
 	receiverType := e.env.Type(ctx.ReceiverTypeID)
+	if refTyp, ok := receiverType.Kind.(RefType); ok {
+		receiverType = e.env.Type(refTyp.Type)
+	}
 	if funDecl, ok := e.ast.Node(binding.Decl).Kind.(ast.FunDecl); ok {
 		shapeDecl, _ := e.NormalizeGenericDecl(binding.Decl, ctx.DeclTypeID, binding.Name)
 		shapeType := base.Cast[ShapeType](e.env.Type(ctx.OwnerTypeID).Kind)
