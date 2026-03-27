@@ -57,6 +57,7 @@ type CompileOpts struct {
 	PrintTypesDebug     bool
 	PrintBindingsDebug  bool
 	DebugTypeCheck      bool
+	DebugLifetime       bool
 }
 
 func (o CompileOpts) WithDefaults() CompileOpts {
@@ -129,6 +130,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		fmt.Fprintln(os.Stderr, engine.Env().DebugBindings(fileID))
 	}
 	lifetime := types.NewLifetimeAnalyzer(engine.AST(), engine.ScopeGraph(), engine.Env())
+	if opts.DebugLifetime {
+		lifetime.Debug = base.NewStdoutDebug("lifetime")
+	}
 	lifetime.Check(fileID)
 	timingListener.OnLifetimeCheck(lifetime, lifetime.Diagnostics)
 	if listener != nil && !listener.OnLifetimeCheck(lifetime, lifetime.Diagnostics) {

@@ -74,6 +74,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
 	flags.BoolVar(&opts.PrintTypesDebug, "print-types-debug", false, "print type debug info to stderr")
 	flags.BoolVar(&opts.PrintBindingsDebug, "print-bindings-debug", false, "print binding debug info to stderr")
 	flags.BoolVar(&opts.DebugTypeCheck, "debug-typecheck", false, "enable verbose type checker debug output")
+	flags.BoolVar(&opts.DebugLifetime, "print-lifetime-debug", false, "print lifetime analysis debug info")
 	flags.BoolVar(&opts.DebugArenaAllocator, "arena-debug", false, "print arena allocations to stderr")
 	flags.IntVar(&opts.ArenaStackBufSize, "arena-stack", 0, "arena inline stack buffer size")
 	flags.IntVar(&opts.ArenaPageMinSize, "arena-min", 0, "arena min overflow page size")
