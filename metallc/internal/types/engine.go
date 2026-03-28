@@ -1428,7 +1428,7 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 				decl.node.ID,
 				decl.cachedType.Type.ID,
 			)
-			e.checkFunBody(funKind, decl.cachedType.Type.ID, funType)
+			e.checkFunBody(decl.node.ID, funKind, decl.cachedType.Type.ID, funType)
 		}
 	}
 }
@@ -1577,11 +1577,18 @@ func (e *Engine) checkUnionCompleteType(unionNode ast.Union, unionType UnionType
 	return TypeOK, unionType
 }
 
-func (e *Engine) checkFunBody(funNode ast.Fun, funTypeID TypeID, funType FunType) {
+func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID TypeID, funType FunType) {
 	debugDedent := e.debug.Print(0, "checkFunBody %s (type=%s)", funNode.Name.Name, funTypeID).Indent()
 	defer debugDedent()
 	e.funStack = append(e.funStack, funTypeID)
 	defer func() { e.funStack = e.funStack[:len(e.funStack)-1] }()
+	// Bind captures. Each capture references a binding in the outer scope
+	// (looked up via the Fun node, which lives in the outer scope) and creates
+	// a new binding inside the closure scope.
+	for _, capNodeID := range funNode.Captures {
+		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
+		e.bindCapture(funNodeID, capNodeID, capture)
+	}
 	for i, paramNodeID := range funNode.Params {
 		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
 		paramTypeID := funType.Params[i]
@@ -1778,6 +1785,31 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 
 // Check whether the binding a variable, allocator, or function parameter declared
 // in an outer scope.
+func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Capture) {
+	// Look up the captured name from the outer scope via the Fun node (which
+	// lives in the enclosing scope, before the function's own scope).
+	outerBinding, ok := e.lookup(funNodeID, capture.Name.Name)
+	if !ok {
+		e.diag(capture.Name.Span, "capture: symbol not defined: %s", capture.Name.Name)
+		return
+	}
+	outerTypeID := outerBinding.TypeID
+	var captureTypeID TypeID
+	switch capture.Mode {
+	case ast.CaptureByValue:
+		captureTypeID = outerTypeID
+	case ast.CaptureByRef:
+		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, false, capture.Name.Span)
+	case ast.CaptureByMutRef:
+		if !outerBinding.Mut {
+			e.diag(capture.Name.Span, "cannot take mutable reference to immutable value")
+			return
+		}
+		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, true, capture.Name.Span)
+	}
+	e.bind(capNodeID, capture.Name.Name, false, captureTypeID, capture.Name.Span)
+}
+
 func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Binding) bool {
 	switch e.ast.Node(binding.Decl).Kind.(type) {
 	case ast.Var:
@@ -1793,8 +1825,19 @@ func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Bind
 	scope := e.scopeGraph.NodeScope(nodeID)
 	bindingScope := e.scopeGraph.NodeScope(binding.Decl)
 	for scope != nil && scope.ID != bindingScope.ID {
-		if _, ok := e.ast.Node(scope.Node).Kind.(ast.Fun); ok {
-			return true
+		if fun, ok := e.ast.Node(scope.Node).Kind.(ast.Fun); ok {
+			// Allow crossing a function boundary if the variable is explicitly captured.
+			captured := false
+			for _, capNodeID := range fun.Captures {
+				capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
+				if capture.Name.Name == binding.Name {
+					captured = true
+					break
+				}
+			}
+			if !captured {
+				return true
+			}
 		}
 		scope = scope.Parent
 	}

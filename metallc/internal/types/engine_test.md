@@ -672,6 +672,80 @@ fun01    = fun(Int) Int
 struct01 = Foo { x Int }
 ```
 
+## Closures
+
+**Closure captures variable by value**
+
+```metall
+{ let x = 1 _ = fun[x]() Int { x } }
+```
+
+```error
+```
+
+**Closure captures variable by reference**
+
+```metall
+{ let x = 1 _ = fun[&x]() &Int { x } }
+```
+
+```error
+```
+
+**Closure captures variable by mutable reference**
+
+```metall
+{ mut x = 1 _ = fun[&mut x]() &mut Int { x } }
+```
+
+```error
+```
+
+**Closure without captures is still allowed**
+
+```metall
+{ _ = fun[](x Int) Int { x } }
+```
+
+```error
+```
+
+**Closure capture used in arithmetic**
+
+```metall
+{ let n = 1 _ = fun[n](x Int) Int { n + x } }
+```
+
+```error
+```
+
+**Closure cannot capture mutable ref to immutable binding**
+
+```metall
+{ let x = 1 _ = fun[&mut x]() void { } }
+```
+
+```error
+test.met:1:26: cannot take mutable reference to immutable value
+    { let x = 1 _ = fun[&mut x]() void { } }
+                             ^
+```
+
+**Closure capture of undefined variable**
+
+```metall
+{ _ = fun[y]() Int { y } }
+```
+
+```error
+test.met:1:11: capture: symbol not defined: y
+    { _ = fun[y]() Int { y } }
+              ^
+test.met:1:22: symbol not defined: y
+    { _ = fun[y]() Int { y } }
+                         ^
+```
+
 ## Structs
 
 **Struct declaration**

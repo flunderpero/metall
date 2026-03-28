@@ -145,11 +145,27 @@ type FunDecl struct {
 
 func (FunDecl) isKind() {}
 
+type CaptureMode int
+
+const (
+	CaptureByValue CaptureMode = iota
+	CaptureByRef
+	CaptureByMutRef
+)
+
+type Capture struct {
+	Name Name
+	Mode CaptureMode
+}
+
+func (Capture) isKind() {}
+
 type Fun struct {
 	FunDecl
-	Block  NodeID
-	Extern bool
-	Unsafe bool
+	Block    NodeID
+	Captures []NodeID // Closure captures: fun[a, &b, &mut c](...)
+	Extern   bool
+	Unsafe   bool
 }
 
 func (Fun) isKind() {}
@@ -541,13 +557,18 @@ func (a *AST) NewFun(
 ) NodeID {
 	return a.node(
 		Fun{
-			FunDecl: FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType},
-			Extern:  false,
-			Unsafe:  unsafe,
-			Block:   block,
+			FunDecl:  FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType},
+			Captures: nil,
+			Extern:   false,
+			Unsafe:   unsafe,
+			Block:    block,
 		},
 		span,
 	)
+}
+
+func (a *AST) NewCapture(name Name, mode CaptureMode, span base.Span) NodeID {
+	return a.node(Capture{Name: name, Mode: mode}, span)
 }
 
 func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, span base.Span) NodeID {
@@ -755,6 +776,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		f(kind.ReturnType)
 	case Fun:
+		for i := range len(kind.Captures) {
+			f(kind.Captures[i])
+		}
 		for i := range len(kind.TypeParams) {
 			f(kind.TypeParams[i])
 		}
@@ -868,6 +892,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case RefType:
 		f(kind.Type)
 	case TryPattern:
+	case Capture:
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -1073,6 +1098,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	case Fun:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if !children {
+			if len(kind.Captures) > 0 {
+				addAttr("captures", nodeIDList(kind.Captures))
+			}
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
 			}
@@ -1080,12 +1108,25 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addAttr("returnType", nodeIDKind(kind.ReturnType))
 			addAttr("block", nodeIDKind(kind.Block))
 		} else {
+			if len(kind.Captures) > 0 {
+				addChild("captures", kind.Captures...)
+			}
 			if len(kind.TypeParams) > 0 {
 				addChild("typeParams", kind.TypeParams...)
 			}
 			addChild("params", kind.Params...)
 			addChild("returnType", kind.ReturnType)
 			addChild("block", kind.Block)
+		}
+	case Capture:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		switch kind.Mode {
+		case CaptureByValue:
+			// default, no attribute needed
+		case CaptureByRef:
+			addAttr("mode", "ref")
+		case CaptureByMutRef:
+			addAttr("mode", "mut_ref")
 		}
 	case FunParam:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))

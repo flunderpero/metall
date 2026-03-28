@@ -390,6 +390,41 @@ Var(name="f",mut=false)
     exprs[1]=Ident(name="__fun_lit_0")
 ```
 
+**Closure with value capture**
+
+```metall
+fun[x](a Int) Int { x }
+```
+
+```ast
+Block()
+  exprs[0]=Fun(name="__fun_lit_0")
+    captures=Capture(name="x")
+    params=FunParam(name="a")
+      type=SimpleType(name="Int")
+    returnType=SimpleType(name="Int")
+    block=Block()
+      exprs=Ident(name="x")
+  exprs[1]=Ident(name="__fun_lit_0")
+```
+
+**Closure with ref and mut ref captures**
+
+```metall
+fun[a, &b, &mut c]() void {}
+```
+
+```ast
+Block()
+  exprs[0]=Fun(name="__fun_lit_0")
+    captures[0]=Capture(name="a")
+    captures[1]=Capture(name="b",mode=ref)
+    captures[2]=Capture(name="c",mode=mut_ref)
+    returnType=SimpleType(name="void")
+    block=Block()
+  exprs[1]=Ident(name="__fun_lit_0")
+```
+
 **Fun with default param**
 
 ```metall

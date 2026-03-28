@@ -257,6 +257,9 @@ module.exports = grammar({
         $.reference,
         $.dereference,
 
+        // Function literal / closure.
+        $.function_literal,
+
         // Control flow.
         $.if_expression,
         $.when_expression,
@@ -345,9 +348,12 @@ module.exports = grammar({
         prec.left(PREC.SHIFT, seq($._expression, ">>", $._expression)),
         prec.left(PREC.ADD, seq($._expression, "+", $._expression)),
         prec.left(PREC.ADD, seq($._expression, "-", $._expression)),
+        prec.left(PREC.ADD, seq($._expression, "+%", $._expression)),
+        prec.left(PREC.ADD, seq($._expression, "-%", $._expression)),
         prec.left(PREC.MUL, seq($._expression, "*", $._expression)),
         prec.left(PREC.MUL, seq($._expression, "/", $._expression)),
         prec.left(PREC.MUL, seq($._expression, "%", $._expression)),
+        prec.left(PREC.MUL, seq($._expression, "*%", $._expression)),
       ),
 
     unary_expression: ($) =>
@@ -493,6 +499,29 @@ module.exports = grammar({
     break_expression: (_) => "break",
 
     continue_expression: (_) => "continue",
+
+    // >>> Function literal / Closure
+
+    function_literal: ($) =>
+      seq(
+        "fun",
+        optional(field("captures", $.capture_list)),
+        "(", field("parameters", optional($.parameter_list)), ")",
+        field("return_type", $._type),
+        field("body", $.block),
+      ),
+
+    capture_list: ($) => seq(
+      token.immediate("["),
+      optional(seq($.capture, repeat(seq(",", $.capture)))),
+      "]",
+    ),
+
+    capture: ($) => choice(
+      field("name", $.identifier),                            // by value
+      seq("&", field("name", $.identifier)),                  // by ref
+      seq("&", "mut", field("name", $.identifier)),           // by mut ref
+    ),
 
     // >>> Array literal
 

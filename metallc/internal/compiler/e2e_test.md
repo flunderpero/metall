@@ -3700,6 +3700,58 @@ fun main() void {
 100
 ```
 
+**closures**
+
+```metall
+fun apply(f fun(Int) Int, x Int) Int { f(x) }
+
+fun main() void {
+    -- capture by value
+    let x = 10
+    DebugIntern.print_int(fun[x](a Int) Int { x + a }(5))
+    -- multiple captures
+    let a = 10
+    let b = 20
+    DebugIntern.print_int(fun[a, b]() Int { a + b }())
+    -- capture by value is a snapshot
+    mut y = 1
+    let snap = fun[y]() Int { y }
+    y = 99
+    DebugIntern.print_int(snap())
+    -- capture by ref
+    let z = 42
+    DebugIntern.print_int(fun[&z]() Int { z.* }())
+    -- capture by mut ref
+    mut w = 0
+    let inc = fun[&mut w]() void { w.* = w.* + 1 }
+    inc()
+    inc()
+    DebugIntern.print_int(w)
+    -- capture existing ref by value
+    let r = &z
+    DebugIntern.print_int(fun[r]() Int { r.* }())
+    -- capture existing mut ref by value
+    mut m = 10
+    let mr = &mut m
+    fun[mr]() void { mr.* = mr.* + 1 }()
+    DebugIntern.print_int(m)
+    -- passed to higher-order function
+    let offset = 100
+    DebugIntern.print_int(apply(fun[offset](n Int) Int { offset + n }, 23))
+}
+```
+
+```output
+15
+30
+1
+42
+2
+42
+11
+123
+```
+
 ## Type Sugar
 
 **Option and Result sugar**

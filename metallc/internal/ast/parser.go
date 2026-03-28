@@ -667,7 +667,8 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	case token.Fun:
 		var fun NodeID
 		var ok bool
-		if next, peekOK := p.mayPeek1(); peekOK && next.Kind == token.LParen {
+		if next, peekOK := p.mayPeek1(); peekOK &&
+			(next.Kind == token.LParen || next.Kind == token.LBracket || next.Kind == token.LBracketImmediate) {
 			fun, ok = p.parseFunLiteral()
 		} else {
 			fun, ok = p.ParseFun()
@@ -1773,6 +1774,39 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	// Parse optional capture list: fun[a, &b, &mut c](params) ...
+	var captures []NodeID
+	if peek, peekOK := p.mayPeek(); peekOK && (peek.Kind == token.LBracket || peek.Kind == token.LBracketImmediate) {
+		p.next()
+		for {
+			if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.RBracket {
+				p.next()
+				break
+			}
+			if len(captures) > 0 {
+				if _, ok := p.expect(token.Comma); !ok {
+					return ParseFailed, false
+				}
+			}
+			capSpan := p.span()
+			mode := CaptureByValue
+			if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.Amp {
+				p.next()
+				capSpan = peek.Span
+				if peek2, peekOK2 := p.mayPeek(); peekOK2 && peek2.Kind == token.Mut {
+					p.next()
+					mode = CaptureByMutRef
+				} else {
+					mode = CaptureByRef
+				}
+			}
+			ident, ok := p.expect(token.Ident)
+			if !ok {
+				return ParseFailed, false
+			}
+			captures = append(captures, p.NewCapture(Name{ident.Value, ident.Span}, mode, capSpan.Combine(ident.Span)))
+		}
+	}
 	params, ok := p.ParseFunParams()
 	if !ok {
 		return ParseFailed, false
@@ -1788,9 +1822,15 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) {
 	span := t.Span.Combine(p.span())
 	name := fmt.Sprintf("__fun_lit_%d", p.nextFunLitID)
 	p.nextFunLitID++
-	funNode := p.NewFun(Name{name, span}, nil, params, returnType, body, false, span)
+	funID := p.NewFun(Name{name, span}, nil, params, returnType, body, false, span)
+	if len(captures) > 0 {
+		node := p.Node(funID)
+		fun, _ := node.Kind.(Fun)
+		fun.Captures = captures
+		node.Kind = fun
+	}
 	ident := p.NewIdent(name, nil, span)
-	return p.NewBlock([]NodeID{funNode, ident}, span), true
+	return p.NewBlock([]NodeID{funID, ident}, span), true
 }
 
 func (p *Parser) parseFunReturnType() (NodeID, bool) {

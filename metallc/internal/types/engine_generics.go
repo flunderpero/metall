@@ -1141,7 +1141,7 @@ func (e *Engine) MaterializeFun(
 		prevScope := e.instantiationScope
 		e.instantiationScope = &callSiteNodeID
 		funNode := base.Cast[ast.Fun](e.ast.Node(funNodeID).Kind)
-		e.checkFunBody(funNode, funTypeID, funTyp)
+		e.checkFunBody(funNodeID, funNode, funTypeID, funTyp)
 		e.instantiationScope = prevScope
 	}
 	return funTypeID, mangledName, TypeOK

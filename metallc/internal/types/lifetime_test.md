@@ -2321,3 +2321,63 @@ fun main() void {
 
 ```error
 ```
+
+**closure capture by ref used locally does not escape**
+
+```metall
+fun foo() Int {
+    let x = 42
+    let get = fun[&x]() Int { x.* }
+    get()
+}
+```
+
+```error
+```
+
+**closure capture by value does not escape**
+
+```metall
+fun foo() fun() Int {
+    let x = 42
+    fun[x]() Int { x }
+}
+```
+
+```error
+```
+
+**closure capture ref by value escapes when returned**
+
+```metall
+fun foo() fun() &Int {
+    let x = 42
+    let r = &x
+    fun[r]() &Int { r }
+}
+```
+
+```error
+test.met:3:13: reference escaping its allocation scope (via block result)
+        let x = 42
+        let r = &x
+                ^^
+        fun[r]() &Int { r }
+```
+
+**closure capture by ref escapes when returned**
+
+```metall
+fun foo() fun() &Int {
+    let x = 42
+    fun[&x]() &Int { x }
+}
+```
+
+```error
+test.met:3:5: reference escaping its allocation scope (via block result)
+        let x = 42
+        fun[&x]() &Int { x }
+        ^^^^^^^^^^^^^^^^^^^^
+    }
+```

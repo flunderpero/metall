@@ -1014,6 +1014,34 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	a.funEffects[nodeID] = effects
 	a.debug(1, nodeID, "analyzeFun: effects for %s (nodeID=%d): taints=%v aliases=%v sideEffects=%v",
 		fun.Name.Name, nodeID, effects.ReturnTaints, effects.ReturnAliases, effects.SideEffects)
+
+	// For closures with by-ref captures, the closure value itself carries
+	// the taints of the captured references. Register a VarTaint for the
+	// closure name in the enclosing scope so that the ident reference
+	// picks it up.
+	if len(fun.Captures) > 0 {
+		closureFlow := Flow{}
+		outerScope := a.scopeGraph.NodeScope(nodeID)
+		for _, capNodeID := range fun.Captures {
+			capture := base.Cast[ast.Capture](a.ast.Node(capNodeID).Kind)
+			if vt := a.lookupVar(nodeID, capture.Name.Name); vt != nil {
+				switch capture.Mode {
+				case ast.CaptureByRef, ast.CaptureByMutRef:
+					closureFlow = closureFlow.Merge(Flow{Taints: TaintSet{vt.StorageTaint}, PointsTo: nil})
+				case ast.CaptureByValue:
+					closureFlow = closureFlow.Merge(vt.Flow)
+				}
+			}
+		}
+		if len(closureFlow.Taints) > 0 {
+			ss := a.scopeByID(outerScope.ID)
+			ss.Vars[fun.Name.Name] = &VarTaint{
+				DiagNode:     nodeID,
+				StorageTaint: ss.ScopeTaint,
+				Flow:         closureFlow,
+			}
+		}
+	}
 }
 
 func (a *LifetimeCheck) flow(nodeID ast.NodeID) Flow {

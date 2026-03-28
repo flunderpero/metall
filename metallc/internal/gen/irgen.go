@@ -63,14 +63,15 @@ type LoopLabels struct {
 
 type IRGen struct {
 	CodeWriter
-	ast          *ast.AST
-	module       ast.Module
-	symbols      map[ast.BindingID]Symbol
-	regCounter   int
-	constCounter int
-	strConsts    map[string]string // dedup: value → global name
-	constGlobals strings.Builder   // global constant declarations (strings, const arrays)
-	opts         IROpts
+	ast            *ast.AST
+	module         ast.Module
+	symbols        map[ast.BindingID]Symbol
+	regCounter     int
+	constCounter   int
+	strConsts      map[string]string // dedup: value → global name
+	constGlobals   strings.Builder   // global constant declarations (strings, const arrays)
+	funValWrappers map[string]string // irName → wrapper name
+	opts           IROpts
 }
 
 type IRFunGen struct {
@@ -85,19 +86,21 @@ type IRFunGen struct {
 	astCode            map[ast.NodeID]string
 	entryAllocas       strings.Builder
 	constInit          bool // true when generating module-level constant init
+	wrapperBuf         strings.Builder
 }
 
 func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 	return &IRGen{
-		CodeWriter:   *NewCodeWriter(),
-		ast:          a,
-		module:       module,
-		symbols:      map[ast.BindingID]Symbol{},
-		regCounter:   1,
-		constCounter: 0,
-		strConsts:    map[string]string{},
-		constGlobals: strings.Builder{},
-		opts:         opts,
+		CodeWriter:     *NewCodeWriter(),
+		ast:            a,
+		module:         module,
+		symbols:        map[ast.BindingID]Symbol{},
+		regCounter:     1,
+		constCounter:   0,
+		strConsts:      map[string]string{},
+		constGlobals:   strings.Builder{},
+		funValWrappers: map[string]string{},
+		opts:           opts,
 	}
 }
 
@@ -170,6 +173,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	case ast.Struct,
 		ast.Union,
 		ast.Shape,
+		ast.Capture,
 		ast.FunParam,
 		ast.Fun,
 		ast.FunDecl,
@@ -665,14 +669,21 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	if isMain {
 		name = "main"
 	}
+	isClosure := len(astFun.Captures) > 0
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIRTyp := g.irType(fun.Return)
 	signatureIRTyp := retIRTyp
 	params := strings.Builder{}
+	if isClosure {
+		params.WriteString("ptr %__ctx")
+	}
 	if isMain {
 		signatureIRTyp = "i32"
 	} else if isRetAggregate {
 		signatureIRTyp = "void"
+		if params.Len() > 0 {
+			params.WriteString(", ")
+		}
 		fmt.Fprintf(&params, "ptr sret(%s) %%out_ptr", g.irType(fun.Return))
 	}
 	g.funRetLabel = g.label("ret", id)
@@ -729,6 +740,30 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	}
 	if len(astFun.Params) > 0 {
 		g.write(paramAllocas.String())
+	}
+	// Load captures from the capture context struct.
+	if isClosure {
+		ctxType := g.closureCtxType(astFun)
+		for i, capNodeID := range astFun.Captures {
+			capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
+			b, ok := g.env.Lookup(astFun.Block, capture.Name.Name)
+			if !ok {
+				panic(base.Errorf("capture %s not found", capture.Name.Name))
+			}
+			capIRTyp := g.irType(g.env.Type(b.TypeID).ID)
+			gepReg := g.reg()
+			g.write("%s = getelementptr %s, ptr %%__ctx, i32 0, i32 %d", gepReg, ctxType, i)
+			if g.isAggregateType(g.env.Type(b.TypeID).ID) {
+				g.symbols[b.ID] = Symbol{Name: capture.Name.Name, Reg: gepReg, Type: "ptr"}
+			} else {
+				valReg := g.reg()
+				g.write("%s = load %s, ptr %s", valReg, capIRTyp, gepReg)
+				allocReg := g.reg()
+				g.write("%s = alloca %s", allocReg, capIRTyp)
+				g.write("store %s %s, ptr %s", capIRTyp, valReg, allocReg)
+				g.symbols[b.ID] = Symbol{Name: capture.Name.Name, Reg: allocReg, Type: capIRTyp}
+			}
+		}
 	}
 	if isMain {
 		g.write("call void @__const_init()")
@@ -1523,6 +1558,10 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		g.setCode(id, locReg)
 		return
 	}
+	if _, isDirect := g.env.NamedFunRef(call.Callee); !isDirect {
+		g.genIndirectCall(id, call, fun, argNodes)
+		return
+	}
 	sb := strings.Builder{}
 	retType := g.env.Type(fun.Return)
 	isRetAggregate := g.isAggregateType(fun.Return)
@@ -1544,14 +1583,9 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 	} else {
 		sb.WriteString(g.irType(fun.Return))
 	}
-	// Resolve the callee. Direct calls use @name, indirect calls go through a loaded ptr.
-	if funName, ok := g.env.NamedFunRef(call.Callee); ok {
-		fmt.Fprintf(&sb, " @%s", irName(funName))
-	} else {
-		g.Gen(call.Callee)
-		fmt.Fprintf(&sb, " %s", g.lookupCode(call.Callee))
-	}
-	sb.WriteString(" (")
+	funName, _ := g.env.NamedFunRef(call.Callee)
+	fmt.Fprintf(&sb, " @%s", irName(funName))
+	sb.WriteString("(")
 	hasArg := false
 	if isRetAggregate {
 		fmt.Fprintf(&sb, "ptr sret(%s) %s", g.irType(fun.Return), resReg)
@@ -1574,10 +1608,65 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 	g.write(sb.String())
 }
 
+// genIndirectCall emits an indirect call through a fat pointer {fn, ctx}.
+// Always passes ctx as first arg — for non-capturing functions, fn points to
+// a wrapper that accepts and ignores ctx.
+func (g *IRFunGen) genIndirectCall(id ast.NodeID, call ast.Call, fun types.FunType, argNodes []ast.NodeID) {
+	g.Gen(call.Callee)
+	calleeReg := g.lookupCode(call.Callee)
+	fatReg := g.reg()
+	g.write("%s = load {ptr, ptr}, ptr %s", fatReg, calleeReg)
+	fnReg := g.reg()
+	g.write("%s = extractvalue {ptr, ptr} %s, 0", fnReg, fatReg)
+	ctxReg := g.reg()
+	g.write("%s = extractvalue {ptr, ptr} %s, 1", ctxReg, fatReg)
+
+	isRetAggregate := g.isAggregateType(fun.Return)
+	retIRTyp := g.irType(fun.Return)
+	retType := g.env.Type(fun.Return)
+	_, isVoid := retType.Kind.(types.VoidType)
+
+	var sb strings.Builder
+	callRetType := retIRTyp
+	if isRetAggregate || isVoid {
+		callRetType = "void"
+	}
+
+	var resReg string
+	switch {
+	case isVoid:
+		g.setCode(id, "void")
+	case isRetAggregate:
+		resReg = g.reg()
+		g.writeAlloca(resReg, retIRTyp)
+		g.setCode(id, resReg)
+	default:
+		resReg = g.reg()
+		sb.WriteString(resReg + " = ")
+		g.setCode(id, resReg)
+	}
+
+	fmt.Fprintf(&sb, "call %s %s(ptr %s", callRetType, fnReg, ctxReg)
+	if isRetAggregate {
+		fmt.Fprintf(&sb, ", ptr sret(%s) %s", retIRTyp, resReg)
+	}
+	for _, nodeID := range argNodes {
+		typeID := g.typeIDOfNode(nodeID)
+		reg := g.lookupCode(nodeID)
+		if g.isAggregateType(typeID) {
+			fmt.Fprintf(&sb, ", ptr byval(%s) %s", g.irType(typeID), reg)
+		} else {
+			fmt.Fprintf(&sb, ", %s %s", g.irType(typeID), reg)
+		}
+	}
+	sb.WriteString(")")
+	g.write(sb.String())
+}
+
 func (g *IRFunGen) genPath(id ast.NodeID) {
-	// Named function reference.
+	// Named function reference - emit fat pointer {wrapper, null}.
 	if name, ok := g.env.NamedFunRef(id); ok {
-		g.setCode(id, "@%s", irName(name))
+		g.emitFunValue(id, name)
 		return
 	}
 	// Cross-module constant: look up via binding to find the correct global name.
@@ -1598,9 +1687,16 @@ func (g *IRFunGen) genPath(id ast.NodeID) {
 }
 
 func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
-	// Named function reference — emit @name directly (no load needed).
+	// Named function reference — emit fat pointer.
 	if name, ok := g.env.NamedFunRef(id); ok {
-		g.setCode(id, "@%s", irName(name))
+		// Check if this is a closure with captures.
+		if declID, ok := g.env.FunDeclNode(id); ok {
+			if fun, ok := g.ast.Node(declID).Kind.(ast.Fun); ok && len(fun.Captures) > 0 {
+				g.emitClosureValue(id, name, fun)
+				return
+			}
+		}
+		g.emitFunValue(id, name)
 		return
 	}
 	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
@@ -1617,6 +1713,144 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 		return
 	}
 	g.setCode(id, ident.Name)
+}
+
+// emitFunValue emits a fat pointer {wrapper, null} for a non-capturing function
+// value. The wrapper accepts ptr %__ctx as first param (ignored) so that
+// indirect calls can uniformly pass ctx.
+func (g *IRFunGen) emitFunValue(id ast.NodeID, name string) {
+	wrapperName := g.genFunValWrapperIfNeeded(id, name)
+	reg := g.reg()
+	g.writeAlloca(reg, "{ptr, ptr}")
+	fnField := g.reg()
+	g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 0", fnField, reg)
+	g.write("store ptr @%s, ptr %s", wrapperName, fnField)
+	ctxField := g.reg()
+	g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 1", ctxField, reg)
+	g.write("store ptr null, ptr %s", ctxField)
+	g.setCode(id, reg)
+}
+
+// genFunValWrapperIfNeeded generates a wrapper for a non-capturing function so
+// it can be called indirectly with the uniform {fn, ctx} convention. The wrapper
+// accepts ptr %__ctx as first param (ignored) and forwards to the real function.
+func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string {
+	irN := irName(name)
+	if tn, ok := g.funValWrappers[irN]; ok {
+		return tn
+	}
+	wrapperName := "__fn_val_" + irN
+	g.funValWrappers[irN] = wrapperName
+
+	funType := base.Cast[types.FunType](g.typeOfNode(id).Kind)
+	isRetAggregate := g.isAggregateType(funType.Return)
+	retIRTyp := g.irType(funType.Return)
+
+	var sig, fwd strings.Builder
+	sig.WriteString("ptr %__ctx")
+	hasFwd := false
+	if isRetAggregate {
+		sig.WriteString(", ")
+		fmt.Fprintf(&sig, "ptr sret(%s) %%out_ptr", retIRTyp)
+		fmt.Fprintf(&fwd, "ptr sret(%s) %%out_ptr", retIRTyp)
+		hasFwd = true
+	}
+	for i, paramTypeID := range funType.Params {
+		sig.WriteString(", ")
+		if hasFwd {
+			fwd.WriteString(", ")
+		}
+		pname := fmt.Sprintf("%%p%d", i)
+		paramIRTyp := g.irType(paramTypeID)
+		if g.isAggregateType(paramTypeID) {
+			fmt.Fprintf(&sig, "ptr byval(%s) %s", paramIRTyp, pname)
+			fmt.Fprintf(&fwd, "ptr byval(%s) %s", paramIRTyp, pname)
+		} else {
+			fmt.Fprintf(&sig, "%s %s", paramIRTyp, pname)
+			fmt.Fprintf(&fwd, "%s %s", paramIRTyp, pname)
+		}
+		hasFwd = true
+	}
+
+	callRetType := retIRTyp
+	if isRetAggregate {
+		callRetType = "void"
+	}
+
+	var w strings.Builder
+	fmt.Fprintf(&w, "define internal %s @%s(%s) alwaysinline {\n", callRetType, wrapperName, sig.String())
+	if callRetType == "void" {
+		fmt.Fprintf(&w, "  call void @%s(%s)\n", irN, fwd.String())
+		w.WriteString("  ret void\n")
+	} else {
+		fmt.Fprintf(&w, "  %%r = call %s @%s(%s)\n", retIRTyp, irN, fwd.String())
+		fmt.Fprintf(&w, "  ret %s %%r\n", retIRTyp)
+	}
+	w.WriteString("}\n\n")
+	g.wrapperBuf.WriteString(w.String())
+	return wrapperName
+}
+
+// closureCtxType returns the LLVM struct type for a closure's capture context,
+// e.g. "{i64, ptr}" for two captures of those types.
+func (g *IRFunGen) closureCtxType(fun ast.Fun) string {
+	var sb strings.Builder
+	sb.WriteString("{")
+	for i, capNodeID := range fun.Captures {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
+		b, ok := g.env.Lookup(fun.Block, capture.Name.Name)
+		if !ok {
+			panic(base.Errorf("capture %s not found", capture.Name.Name))
+		}
+		sb.WriteString(g.irType(g.env.Type(b.TypeID).ID))
+	}
+	sb.WriteString("}")
+	return sb.String()
+}
+
+// emitClosureValue allocates the capture context, stores captures, and emits
+// a fat pointer {fn, ctx}.
+func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
+	ctxType := g.closureCtxType(fun)
+	ctxReg := g.reg()
+	g.writeAlloca(ctxReg, ctxType)
+
+	for i, capNodeID := range fun.Captures {
+		capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
+		b, ok := g.env.Lookup(id, capture.Name.Name)
+		if !ok {
+			panic(base.Errorf("capture %s not found in parent scope", capture.Name.Name))
+		}
+		sym, ok := g.symbols[b.ID]
+		if !ok {
+			panic(base.Errorf("capture %s has no symbol", capture.Name.Name))
+		}
+		gepReg := g.reg()
+		g.write("%s = getelementptr %s, ptr %s, i32 0, i32 %d", gepReg, ctxType, ctxReg, i)
+		switch capture.Mode {
+		case ast.CaptureByRef, ast.CaptureByMutRef:
+			// Store the address of the outer variable (sym.Reg is already a ptr).
+			g.write("store ptr %s, ptr %s", sym.Reg, gepReg)
+		case ast.CaptureByValue:
+			capIRTyp := g.irType(g.env.Type(b.TypeID).ID)
+			val := g.reg()
+			g.write("%s = load %s, ptr %s", val, capIRTyp, sym.Reg)
+			g.write("store %s %s, ptr %s", capIRTyp, val, gepReg)
+		}
+	}
+
+	reg := g.reg()
+	g.writeAlloca(reg, "{ptr, ptr}")
+	fnField := g.reg()
+	g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 0", fnField, reg)
+	g.write("store ptr @%s, ptr %s", irName(name), fnField)
+	ctxField := g.reg()
+	g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 1", ctxField, reg)
+	g.write("store ptr %s, ptr %s", ctxReg, ctxField)
+	g.setCode(id, reg)
 }
 
 func (g *IRFunGen) genInt(id ast.NodeID, int_ ast.Int) {
@@ -1800,6 +2034,8 @@ func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
 		return true
 	case types.ArrayType, types.SliceType:
 		return true
+	case types.FunType:
+		return true
 	default:
 		return false
 	}
@@ -1835,7 +2071,7 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 	case types.SliceType:
 		return "{ptr, i64}"
 	case types.FunType:
-		return "ptr"
+		return "{ptr, ptr}"
 	default:
 		panic(base.Errorf("unknown type kind: %T", typ.Kind))
 	}
@@ -1861,7 +2097,9 @@ func irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
 		return 1
 	case types.VoidType:
 		return 1
-	case types.RefType, types.AllocatorType, types.FunType:
+	case types.RefType, types.AllocatorType:
+		return 8
+	case types.FunType:
 		return 8
 	case types.StructType:
 		var maxAlign int64 = 1
@@ -1895,8 +2133,10 @@ func irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
 		return 1
 	case types.VoidType:
 		return 0
-	case types.RefType, types.AllocatorType, types.FunType:
+	case types.RefType, types.AllocatorType:
 		return 8
+	case types.FunType:
+		return 16
 	case types.StructType:
 		var offset int64
 		var maxAlign int64 = 1
@@ -2121,6 +2361,7 @@ func GenIR(
 		f := g.newFunGen(funs[i].Env)
 		f.genFun(funs[i])
 		g.sb.WriteString(f.sb.String())
+		g.sb.WriteString(f.wrapperBuf.String())
 	}
 	// Emit global constants (strings, const-init arrays).
 	g.write("; Global constants.")

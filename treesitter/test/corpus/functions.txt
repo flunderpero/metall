@@ -95,3 +95,57 @@ fun foo(@a Arena) void {}
       (parameter name: (allocator_identifier) type: (simple_type (type_identifier))))
     return_type: (simple_type)
     body: (block)))
+
+================================================================================
+Function literal
+================================================================================
+
+let f = fun(x Int) Int { x }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (function_literal
+      parameters: (parameter_list
+        (parameter name: (identifier) type: (simple_type (type_identifier))))
+      return_type: (simple_type (type_identifier))
+      body: (block (identifier)))))
+
+================================================================================
+Closure with value capture
+================================================================================
+
+let f = fun[x](a Int) Int { x }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (function_literal
+      captures: (capture_list (capture name: (identifier)))
+      parameters: (parameter_list
+        (parameter name: (identifier) type: (simple_type (type_identifier))))
+      return_type: (simple_type (type_identifier))
+      body: (block (identifier)))))
+
+================================================================================
+Closure with ref and mut ref captures
+================================================================================
+
+let f = fun[a, &b, &mut c]() void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (function_literal
+      captures: (capture_list
+        (capture name: (identifier))
+        (capture name: (identifier))
+        (capture name: (identifier)))
+      return_type: (simple_type)
+      body: (block))))
