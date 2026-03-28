@@ -57,8 +57,9 @@ type Symbol struct {
 }
 
 type LoopLabels struct {
-	continue_ Label
-	break_    Label
+	continue_      Label
+	break_         Label
+	arenaStackBase int // arenaRegStack depth at loop entry
 }
 
 type IRGen struct {
@@ -77,16 +78,16 @@ type IRGen struct {
 type IRFunGen struct {
 	CodeWriter
 	*IRGen
-	env                *types.TypeEnv
-	funRetLabel        Label
-	funRetReg          string
-	lastLabel          Label
-	blockAllocatorRegs []string
-	loopStack          []LoopLabels
-	astCode            map[ast.NodeID]string
-	entryAllocas       strings.Builder
-	constInit          bool // true when generating module-level constant init
-	wrapperBuf         strings.Builder
+	env           *types.TypeEnv
+	funRetLabel   Label
+	funRetReg     string
+	lastLabel     Label
+	arenaRegStack [][]string // stack of arena regs per block scope
+	loopStack     []LoopLabels
+	astCode       map[ast.NodeID]string
+	entryAllocas  strings.Builder
+	constInit     bool // true when generating module-level constant init
+	wrapperBuf    strings.Builder
 }
 
 func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
@@ -816,20 +817,41 @@ func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
 	if g.irType(retTyp) != "void" {
 		g.storeValue(exprReg, g.funRetReg, retTyp)
 	}
+	g.emitArenaDestroyCalls()
 	g.write("br label %%%s", g.funRetLabel)
 	g.setCode(id, exprReg)
 }
 
+// emitArenaDestroyCalls destroys all arenas from all enclosing block scopes
+// (innermost first). Called before return branches.
+func (g *IRFunGen) emitArenaDestroyCalls() {
+	g.emitArenaDestroyCallsFrom(0)
+}
+
+// emitArenaDestroyCallsFrom destroys arenas from the current scope down to
+// (but not including) the given stack base. Called before break/continue to
+// avoid double-freeing arenas owned by enclosing scopes.
+func (g *IRFunGen) emitArenaDestroyCallsFrom(base int) {
+	for i := len(g.arenaRegStack) - 1; i >= base; i-- {
+		for _, reg := range g.arenaRegStack[i] {
+			g.write("call void @arena_destroy (ptr %s)", reg)
+		}
+	}
+}
+
 func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
-	savedAllocatorRegs := g.blockAllocatorRegs
-	g.blockAllocatorRegs = nil
+	g.arenaRegStack = append(g.arenaRegStack, nil)
 	for _, expr := range block.Exprs {
 		g.Gen(expr)
 	}
-	for _, reg := range g.blockAllocatorRegs {
-		g.write("call void @arena_destroy (ptr %s)", reg)
+	// Destroy arenas unless the block ended with a return (which already
+	// destroyed all enclosing arenas before branching).
+	if !g.ast.BlockReturns(id) {
+		for _, reg := range g.arenaRegStack[len(g.arenaRegStack)-1] {
+			g.write("call void @arena_destroy (ptr %s)", reg)
+		}
 	}
-	g.blockAllocatorRegs = savedAllocatorRegs
+	g.arenaRegStack = g.arenaRegStack[:len(g.arenaRegStack)-1]
 	code := "void"
 	if len(block.Exprs) > 0 {
 		code = g.lookupCode(block.Exprs[len(block.Exprs)-1])
@@ -853,7 +875,7 @@ func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 		g.write("br i1 %s, label %%%s, label %%%s", cond, labelBody, labelEnd)
 		g.writeLabel(labelBody)
 	}
-	g.loopStack = append(g.loopStack, LoopLabels{labelStart, labelEnd})
+	g.loopStack = append(g.loopStack, LoopLabels{labelStart, labelEnd, len(g.arenaRegStack)})
 	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
 	g.Gen(forNode.Body)
 	g.write("br label %%%s", labelStart)
@@ -888,7 +910,7 @@ func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
 	g.write("%s = icmp slt i64 %s, %s", condReg, iReg, hiReg)
 	g.write("br i1 %s, label %%%s, label %%%s", condReg, labelBody, labelEnd)
 	g.writeLabel(labelBody)
-	g.loopStack = append(g.loopStack, LoopLabels{labelIncr, labelEnd})
+	g.loopStack = append(g.loopStack, LoopLabels{labelIncr, labelEnd, len(g.arenaRegStack)})
 	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
 	g.Gen(forNode.Body)
 	g.write("br label %%%s", labelIncr)
@@ -905,12 +927,14 @@ func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
 
 func (g *IRFunGen) genBreak(id ast.NodeID) {
 	loopLabel := g.loopStack[len(g.loopStack)-1]
+	g.emitArenaDestroyCallsFrom(loopLabel.arenaStackBase)
 	g.write("br label %%%s", loopLabel.break_)
 	g.setCode(id, "void")
 }
 
 func (g *IRFunGen) genContinue(id ast.NodeID) {
 	loopLabel := g.loopStack[len(g.loopStack)-1]
+	g.emitArenaDestroyCallsFrom(loopLabel.arenaStackBase)
 	g.write("br label %%%s", loopLabel.continue_)
 	g.setCode(id, "void")
 }
@@ -1956,7 +1980,8 @@ func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 	reg := g.reg()
 	g.writeAlloca(reg, "%struct.Arena")
 	g.write("call void @arena_create(ptr %s)", reg)
-	g.blockAllocatorRegs = append(g.blockAllocatorRegs, reg)
+	top := len(g.arenaRegStack) - 1
+	g.arenaRegStack[top] = append(g.arenaRegStack[top], reg)
 	g.setCode(id, reg)
 	g.setSymbol(id, alloc.Name.Name, reg, "ptr")
 }
