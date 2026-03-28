@@ -4235,3 +4235,27 @@ fun main() void {
 10
 ```
 
+**module-level let with subslice**
+
+```metall
+struct Wrapper { data []U8 }
+let delim = [U8(47)][..]
+let w = Wrapper([U8(1), 2, 3][1..])
+
+fun main() void {
+    DebugIntern.print_int(delim.len)
+    DebugIntern.print_int(delim[0].to_int())
+    DebugIntern.print_int(w.data.len)
+    DebugIntern.print_int(w.data[0].to_int())
+    DebugIntern.print_int(w.data[1].to_int())
+}
+```
+
+```output
+1
+47
+2
+2
+3
+```
+

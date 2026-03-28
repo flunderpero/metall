@@ -68,7 +68,8 @@ type IRGen struct {
 	symbols      map[ast.BindingID]Symbol
 	regCounter   int
 	constCounter int
-	strConsts    map[string]int
+	strConsts    map[string]string // dedup: value → global name
+	constGlobals strings.Builder   // global constant declarations (strings, const arrays)
 	opts         IROpts
 }
 
@@ -83,6 +84,7 @@ type IRFunGen struct {
 	loopStack          []LoopLabels
 	astCode            map[ast.NodeID]string
 	entryAllocas       strings.Builder
+	constInit          bool // true when generating module-level constant init
 }
 
 func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
@@ -93,7 +95,8 @@ func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 		symbols:      map[ast.BindingID]Symbol{},
 		regCounter:   1,
 		constCounter: 0,
-		strConsts:    map[string]int{},
+		strConsts:    map[string]string{},
+		constGlobals: strings.Builder{},
 		opts:         opts,
 	}
 }
@@ -250,6 +253,22 @@ func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 	}
 	arrTyp := base.Cast[types.ArrayType](g.typeOfNode(id).Kind)
 	arrIRType := g.irTypeOfNode(id)
+	if g.constInit {
+		// Module-level constants: emit array as a global so subslices
+		// pointing into it remain valid after the init function returns.
+		cid := g.constCounter
+		g.constCounter++
+		globalName := fmt.Sprintf("@__const_arr_%d", cid)
+		fmt.Fprintf(&g.constGlobals, "%s = internal global %s zeroinitializer\n", globalName, arrIRType)
+		g.setCode(id, globalName)
+		for i, elem := range lit.Elems {
+			ptrReg := g.reg()
+			g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", ptrReg, arrIRType, arrIRType, globalName, i)
+			elemReg := g.lookupCode(elem)
+			g.storeValue(elemReg, ptrReg, arrTyp.Elem)
+		}
+		return
+	}
 	reg := g.reg()
 	g.writeAlloca(reg, arrIRType)
 	g.setCode(id, reg)
@@ -1622,13 +1641,17 @@ func (g *IRFunGen) genString(id ast.NodeID, str ast.String) {
 }
 
 func (g *IRFunGen) addStrConst(s string) string {
-	cid, ok := g.strConsts[s]
-	if !ok {
-		cid = g.constCounter
-		g.constCounter++
-		g.strConsts[s] = cid
+	if name, ok := g.strConsts[s]; ok {
+		return name
 	}
-	return fmt.Sprintf("@str.%d", cid)
+	id := g.constCounter
+	g.constCounter++
+	name := fmt.Sprintf("@str.%d", id)
+	g.strConsts[s] = name
+	n := len(s)
+	fmt.Fprintf(&g.constGlobals, "%s.data = private constant [%d x i8] c\"%s\"\n", name, n, s)
+	fmt.Fprintf(&g.constGlobals, "%s = private constant %%Str { {ptr, i64} { ptr %s.data, i64 %d } }\n", name, name, n)
+	return name
 }
 
 func (g *IRFunGen) genRef(id ast.NodeID, ref ast.Ref) {
@@ -2026,6 +2049,7 @@ func (g *IRGen) genModuleConsts(consts []types.ConstWork) {
 	}
 	// Generate init function that evaluates expressions and stores into globals.
 	f := g.newFunGen(consts[0].Env)
+	f.constInit = true
 	f.write("define internal void @__const_init() {")
 	f.indent++
 	entryAllocaInsertPos := f.sb.Len()
@@ -2098,18 +2122,10 @@ func GenIR(
 		f.genFun(funs[i])
 		g.sb.WriteString(f.sb.String())
 	}
-	// Emit string constants.
+	// Emit global constants (strings, const-init arrays).
 	g.write("; Global constants.")
 	g.write("")
-	strConsts := make([]string, len(g.strConsts))
-	for value, id := range g.strConsts {
-		strConsts[id] = value
-	}
-	for id, value := range strConsts {
-		n := len(value)
-		g.write(`@str.%d.data = private constant [%d x i8] c"%s"`, id, n, value)
-		g.write(`@str.%d = private constant %%Str { {ptr, i64} { ptr @str.%d.data, i64 %d } }`, id, id, n)
-	}
+	g.sb.WriteString(g.constGlobals.String())
 	g.write(builtinsIR)
 	for _, bits := range []int{8, 16, 32, 64} {
 		irType := fmt.Sprintf("i%d", bits)
