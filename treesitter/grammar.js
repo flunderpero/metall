@@ -77,9 +77,9 @@ module.exports = grammar({
 
     integer_literal: (_) => /[0-9]+/,
 
-    string_literal: (_) => seq('"', /[^"]*/, '"'),
+    string_literal: (_) => seq('"', /([^"\\]|\\.)*/, '"'),
 
-    rune_literal: (_) => seq("'", /[^']/, "'"),
+    rune_literal: (_) => seq("'", /([^'\\]|\\.|\{[^}]*\})+/, "'"),
 
     boolean_literal: (_) => choice("true", "false"),
 
@@ -154,6 +154,7 @@ module.exports = grammar({
       seq(
         field("name", choice($.identifier, $.allocator_identifier)),
         field("type", $._type),
+        optional(seq("=", field("default", $._expression))),
       ),
 
     // >>> Struct declaration
