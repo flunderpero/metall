@@ -2074,10 +2074,19 @@ func (e *Engine) verifyMain(fun ast.Fun) {
 		span := firstNode.Span.Combine(lastNode.Span)
 		e.diag(span, "main function cannot take arguments")
 	}
-	retNode := e.ast.Node(fun.ReturnType)
-	if simpleType, ok := retNode.Kind.(ast.SimpleType); ok && simpleType.Name.Name != "void" {
-		e.diag(retNode.Span, "main function cannot return a value")
+	retTypeID, status := e.Query(fun.ReturnType)
+	if status.Failed() {
+		return
 	}
+	if retTypeID == e.voidTyp {
+		return
+	}
+	if union, ok := e.env.Type(retTypeID).Kind.(UnionType); ok {
+		if strings.HasPrefix(union.Name, "Result.") && union.Variants[0] == e.voidTyp {
+			return
+		}
+	}
+	e.diag(e.ast.Node(fun.ReturnType).Span, "main function must return void or !void")
 }
 
 func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {

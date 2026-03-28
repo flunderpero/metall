@@ -791,7 +791,13 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	g.writeLabel(g.funRetLabel)
 	switch {
 	case isMain:
-		g.write("ret i32 0")
+		if _, isUnion := g.env.Type(fun.Return).Kind.(types.UnionType); isUnion {
+			exitCode := g.reg()
+			g.write("%s = call i32 @__main_check_result(ptr %s)", exitCode, g.funRetReg)
+			g.write("ret i32 %s", exitCode)
+		} else {
+			g.write("ret i32 0")
+		}
 	case isRetAggregate:
 		resReg := g.reg()
 		g.write("%s = load %s, ptr %s", resReg, retIRTyp, g.funRetReg)

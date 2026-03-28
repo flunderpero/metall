@@ -7661,16 +7661,28 @@ test.met:1:3: cannot call non-function: Int
       ^^^
 ```
 
-**Main must return void (module)**
+**Main must return void or !void (module)**
 
 ```metall module
 fun main() Int { 123 }
 ```
 
 ```error
-test.met:1:12: main function cannot return a value
+test.met:1:12: main function must return void or !void
     fun main() Int { 123 }
                ^^^
+```
+
+**Main cannot return !Int (module)**
+
+```metall module
+fun main() !Int { 123 }
+```
+
+```error
+test.met:1:12: main function must return void or !void
+    fun main() !Int { 123 }
+               ^^^^
 ```
 
 **Main must not have params (module)**

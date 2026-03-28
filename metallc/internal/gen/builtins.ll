@@ -18,6 +18,27 @@ declare i64 @write(i32, ptr, i64)
 
 ; >>> Builtin functions.
 
+@__main_newline = private constant [1 x i8] c"\0A"
+
+; __main_check_result inspects a Result<void> = {i64, {%Str}} union.
+; If the tag (index 0) is non-zero, the result is an Err: print its msg to
+; stderr and return 1. Otherwise return 0.
+define internal i32 @__main_check_result(ptr %result) alwaysinline {
+    %tag_ptr = getelementptr {i64, %Str}, ptr %result, i32 0, i32 0
+    %tag = load i64, ptr %tag_ptr
+    %is_err = icmp ne i64 %tag, 0
+    br i1 %is_err, label %err, label %ok
+err:
+    %msg_ptr = getelementptr {i64, %Str}, ptr %result, i32 0, i32 1, i32 0, i32 0
+    %msg_data = load ptr, ptr %msg_ptr
+    %len_ptr = getelementptr {i64, %Str}, ptr %result, i32 0, i32 1, i32 0, i32 1
+    %msg_len = load i64, ptr %len_ptr
+    call i64 @write(i32 2, ptr %msg_data, i64 %msg_len)
+    call i64 @write(i32 2, ptr @__main_newline, i64 1)
+    ret i32 1
+ok:
+    ret i32 0
+}
 @__fmt_str_nl = private constant [6 x i8] c"%.*s\0A\00"
 @__fmt_str = private constant [5 x i8] c"%.*s\00"
 @__fmt_int_nl = private constant [6 x i8] c"%lld\0A\00"

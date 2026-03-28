@@ -4312,3 +4312,26 @@ fun main() void {
 3
 ```
 
+## Main returning !void
+
+**main returns !void success**
+
+```metall
+fun main() !void {}
+```
+
+```output
+```
+
+**main returns !void error**
+
+```metall
+fun main() !void {
+    Err("something went wrong")
+}
+```
+
+```panic
+something went wrong
+```
+
