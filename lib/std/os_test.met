@@ -1,21 +1,20 @@
 use std::test
-use assert_ = std::assert
 use std::os
 
 fun main() void {
     let @local = Arena()
-    let suite = test::suite("shell", @local)
-    suite.test("happy path", fun(assert &assert_::Assert) !void {
+    let suite = test::Suite.new("shell", @local)
+    suite.test("happy path", fun() !void {
         let @local = Arena()
         let res = try os::shell(["printf", "hello"][..], @local) 
-        try assert.eq(0, res.status)
-        try assert.eq("hello", res.output)
+        try test::eq(0, res.status)
+        try test::eq("hello", res.output)
     })
-    suite.test("not existing program", fun(assert &assert_::Assert) !void {
+    suite.test("not existing program", fun() !void {
         let @local = Arena()
         let res = try os::shell(["this_does_not_exist"][..], @local)
-        try assert.neq(0, res.status)
-        try assert.contains_str(res.output, "not found")
+        try test::neq(0, res.status)
+        try test::contains_str(res.output, "not found")
     })
     _ = suite.run()
 }

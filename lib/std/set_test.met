@@ -1,29 +1,28 @@
 use std::test
-use assert_ = std::assert
 use std::set
 
 fun main() void {
     let @local = Arena()
-    let suite = test::suite("Set", @local)
-    suite.test("happy path", fun(assert &assert_::Assert) !void {
+    let suite = test::Suite.new("Set", @local)
+    suite.test("happy path", fun() !void {
         let @local = Arena()
         let sut = set::Set.new<Int>(4, @local)
-        try assert.eq(0, sut.len())
+        try test::eq(0, sut.len())
 
         sut.add(1)
-        try assert.eq(1, sut.len())
-        try assert.eq(true, sut.has(1))
-        try assert.eq(false, sut.has(2))
+        try test::eq(1, sut.len())
+        try test::eq(true, sut.has(1))
+        try test::eq(false, sut.has(2))
 
         sut.add(2)
-        try assert.eq(2, sut.len())
-        try assert.eq(true, sut.has(1))
-        try assert.eq(true, sut.has(2))
+        try test::eq(2, sut.len())
+        try test::eq(true, sut.has(1))
+        try test::eq(true, sut.has(2))
 
-        try assert.eq(true, sut.del(1))
-        try assert.eq(1, sut.len())
-        try assert.eq(false, sut.has(1))
-        try assert.eq(true, sut.has(2))
+        try test::eq(true, sut.del(1))
+        try test::eq(1, sut.len())
+        try test::eq(false, sut.has(1))
+        try test::eq(true, sut.has(2))
     })
     _ = suite.run()
 }

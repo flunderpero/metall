@@ -1,11 +1,10 @@
 use std::test
-use assert_ = std::assert
 use std::fs
 
 fun main() void {
     let @local = Arena()
-    let suite = test::suite("File", @local)
-    suite.test("happy path", fun(assert &assert_::Assert) !void {
+    let suite = test::Suite.new("File", @local)
+    suite.test("happy path", fun() !void {
         let @local = Arena()
         let filename = "/tmp/io_test.met.file"
         let content = "this is a test"
@@ -21,12 +20,12 @@ fun main() void {
         let read_bytes = try sut.read(buf)
         let read_str = Str.from_utf8_lossy(read_bytes, @local)
         try sut.close()
-        try assert.eq(content, read_str)
+        try test::eq(content, read_str)
     })
-    suite.test("read non-existing file", fun(assert &assert_::Assert) !void {
+    suite.test("read non-existing file", fun() !void {
         let @local = Arena()
         match fs::File.open("does not exist i think.met", "r", @local) {
-            case Err e: try assert.contains_str(e.msg, "No such file")
+            case Err e: try test::contains_str(e.msg, "No such file")
             else: return Err("expected an error")
         }
     })

@@ -1,460 +1,458 @@
 use std::test
-use assert_ = std::assert
 
 fun main() void {
     let @local = Arena()
-    let checked_suite = test::suite("to_x_checked", @local)
-    checked_suite.test("U8.to_i8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I8(0)), U8(0).to_i8_checked())
-        try assert.eq(Result(I8(127)), U8(127).to_i8_checked())
-        try assert.err(U8(128).to_i8_checked(), "number out of range")
+    let checked_suite = test::Suite.new("to_x_checked", @local)
+    checked_suite.test("U8.to_i8_checked", fun() !void {
+        try test::eq(Result(I8(0)), U8(0).to_i8_checked())
+        try test::eq(Result(I8(127)), U8(127).to_i8_checked())
+        try test::err(U8(128).to_i8_checked(), "number out of range")
     })
-    checked_suite.test("U16.to_i16_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I16(0)), U16(0).to_i16_checked())
-        try assert.eq(Result(I16(32767)), U16(32767).to_i16_checked())
-        try assert.err(U16(32768).to_i16_checked(), "number out of range")
+    checked_suite.test("U16.to_i16_checked", fun() !void {
+        try test::eq(Result(I16(0)), U16(0).to_i16_checked())
+        try test::eq(Result(I16(32767)), U16(32767).to_i16_checked())
+        try test::err(U16(32768).to_i16_checked(), "number out of range")
     })
-    checked_suite.test("U32.to_i32_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I32(0)), U32(0).to_i32_checked())
-        try assert.eq(Result(I32(2147483647)), U32(2147483647).to_i32_checked())
-        try assert.err(U32(2147483648).to_i32_checked(), "number out of range")
+    checked_suite.test("U32.to_i32_checked", fun() !void {
+        try test::eq(Result(I32(0)), U32(0).to_i32_checked())
+        try test::eq(Result(I32(2147483647)), U32(2147483647).to_i32_checked())
+        try test::err(U32(2147483648).to_i32_checked(), "number out of range")
     })
-    checked_suite.test("U64.to_int_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(Int(0)), U64(0).to_int_checked())
-        try assert.eq(Result(Int(9223372036854775807)), U64(9223372036854775807).to_int_checked())
-        try assert.err(U64(9223372036854775808).to_int_checked(), "number out of range")
+    checked_suite.test("U64.to_int_checked", fun() !void {
+        try test::eq(Result(Int(0)), U64(0).to_int_checked())
+        try test::eq(Result(Int(9223372036854775807)), U64(9223372036854775807).to_int_checked())
+        try test::err(U64(9223372036854775808).to_int_checked(), "number out of range")
     })
-    checked_suite.test("I8.to_u8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U8(0)), I8(0).to_u8_checked())
-        try assert.eq(Result(U8(127)), I8(127).to_u8_checked())
-        try assert.err(I8(-1).to_u8_checked(), "number out of range")
+    checked_suite.test("I8.to_u8_checked", fun() !void {
+        try test::eq(Result(U8(0)), I8(0).to_u8_checked())
+        try test::eq(Result(U8(127)), I8(127).to_u8_checked())
+        try test::err(I8(-1).to_u8_checked(), "number out of range")
     })
-    checked_suite.test("I16.to_u16_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U16(0)), I16(0).to_u16_checked())
-        try assert.eq(Result(U16(32767)), I16(32767).to_u16_checked())
-        try assert.err(I16(-1).to_u16_checked(), "number out of range")
+    checked_suite.test("I16.to_u16_checked", fun() !void {
+        try test::eq(Result(U16(0)), I16(0).to_u16_checked())
+        try test::eq(Result(U16(32767)), I16(32767).to_u16_checked())
+        try test::err(I16(-1).to_u16_checked(), "number out of range")
     })
-    checked_suite.test("I32.to_u32_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U32(0)), I32(0).to_u32_checked())
-        try assert.eq(Result(U32(2147483647)), I32(2147483647).to_u32_checked())
-        try assert.err(I32(-1).to_u32_checked(), "number out of range")
+    checked_suite.test("I32.to_u32_checked", fun() !void {
+        try test::eq(Result(U32(0)), I32(0).to_u32_checked())
+        try test::eq(Result(U32(2147483647)), I32(2147483647).to_u32_checked())
+        try test::err(I32(-1).to_u32_checked(), "number out of range")
     })
-    checked_suite.test("Int.to_u64_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U64(0)), Int(0).to_u64_checked())
-        try assert.eq(Result(U64(9223372036854775807)), Int(9223372036854775807).to_u64_checked())
-        try assert.err(Int(-1).to_u64_checked(), "number out of range")
+    checked_suite.test("Int.to_u64_checked", fun() !void {
+        try test::eq(Result(U64(0)), Int(0).to_u64_checked())
+        try test::eq(Result(U64(9223372036854775807)), Int(9223372036854775807).to_u64_checked())
+        try test::err(Int(-1).to_u64_checked(), "number out of range")
     })
-    checked_suite.test("U64.to_u32_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U32(0)), U64(0).to_u32_checked())
-        try assert.eq(Result(U32(4294967295)), U64(4294967295).to_u32_checked())
-        try assert.err(U64(4294967296).to_u32_checked(), "number out of range")
+    checked_suite.test("U64.to_u32_checked", fun() !void {
+        try test::eq(Result(U32(0)), U64(0).to_u32_checked())
+        try test::eq(Result(U32(4294967295)), U64(4294967295).to_u32_checked())
+        try test::err(U64(4294967296).to_u32_checked(), "number out of range")
     })
-    checked_suite.test("U64.to_u16_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U16(0)), U64(0).to_u16_checked())
-        try assert.eq(Result(U16(65535)), U64(65535).to_u16_checked())
-        try assert.err(U64(65536).to_u16_checked(), "number out of range")
+    checked_suite.test("U64.to_u16_checked", fun() !void {
+        try test::eq(Result(U16(0)), U64(0).to_u16_checked())
+        try test::eq(Result(U16(65535)), U64(65535).to_u16_checked())
+        try test::err(U64(65536).to_u16_checked(), "number out of range")
     })
-    checked_suite.test("U64.to_u8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U8(0)), U64(0).to_u8_checked())
-        try assert.eq(Result(U8(255)), U64(255).to_u8_checked())
-        try assert.err(U64(256).to_u8_checked(), "number out of range")
+    checked_suite.test("U64.to_u8_checked", fun() !void {
+        try test::eq(Result(U8(0)), U64(0).to_u8_checked())
+        try test::eq(Result(U8(255)), U64(255).to_u8_checked())
+        try test::err(U64(256).to_u8_checked(), "number out of range")
     })
-    checked_suite.test("U32.to_u16_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U16(0)), U32(0).to_u16_checked())
-        try assert.eq(Result(U16(65535)), U32(65535).to_u16_checked())
-        try assert.err(U32(65536).to_u16_checked(), "number out of range")
+    checked_suite.test("U32.to_u16_checked", fun() !void {
+        try test::eq(Result(U16(0)), U32(0).to_u16_checked())
+        try test::eq(Result(U16(65535)), U32(65535).to_u16_checked())
+        try test::err(U32(65536).to_u16_checked(), "number out of range")
     })
-    checked_suite.test("U32.to_u8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U8(0)), U32(0).to_u8_checked())
-        try assert.eq(Result(U8(255)), U32(255).to_u8_checked())
-        try assert.err(U32(256).to_u8_checked(), "number out of range")
+    checked_suite.test("U32.to_u8_checked", fun() !void {
+        try test::eq(Result(U8(0)), U32(0).to_u8_checked())
+        try test::eq(Result(U8(255)), U32(255).to_u8_checked())
+        try test::err(U32(256).to_u8_checked(), "number out of range")
     })
-    checked_suite.test("U16.to_u8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U8(0)), U16(0).to_u8_checked())
-        try assert.eq(Result(U8(255)), U16(255).to_u8_checked())
-        try assert.err(U16(256).to_u8_checked(), "number out of range")
+    checked_suite.test("U16.to_u8_checked", fun() !void {
+        try test::eq(Result(U8(0)), U16(0).to_u8_checked())
+        try test::eq(Result(U8(255)), U16(255).to_u8_checked())
+        try test::err(U16(256).to_u8_checked(), "number out of range")
     })
-    checked_suite.test("Int.to_i32_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I32(-2147483648)), Int(-2147483648).to_i32_checked())
-        try assert.eq(Result(I32(2147483647)), Int(2147483647).to_i32_checked())
-        try assert.err(Int(2147483648).to_i32_checked(), "number out of range")
-        try assert.err(Int(-2147483649).to_i32_checked(), "number out of range")
+    checked_suite.test("Int.to_i32_checked", fun() !void {
+        try test::eq(Result(I32(-2147483648)), Int(-2147483648).to_i32_checked())
+        try test::eq(Result(I32(2147483647)), Int(2147483647).to_i32_checked())
+        try test::err(Int(2147483648).to_i32_checked(), "number out of range")
+        try test::err(Int(-2147483649).to_i32_checked(), "number out of range")
     })
-    checked_suite.test("Int.to_i16_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I16(-32768)), Int(-32768).to_i16_checked())
-        try assert.eq(Result(I16(32767)), Int(32767).to_i16_checked())
-        try assert.err(Int(32768).to_i16_checked(), "number out of range")
-        try assert.err(Int(-32769).to_i16_checked(), "number out of range")
+    checked_suite.test("Int.to_i16_checked", fun() !void {
+        try test::eq(Result(I16(-32768)), Int(-32768).to_i16_checked())
+        try test::eq(Result(I16(32767)), Int(32767).to_i16_checked())
+        try test::err(Int(32768).to_i16_checked(), "number out of range")
+        try test::err(Int(-32769).to_i16_checked(), "number out of range")
     })
-    checked_suite.test("Int.to_i8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I8(-128)), Int(-128).to_i8_checked())
-        try assert.eq(Result(I8(127)), Int(127).to_i8_checked())
-        try assert.err(Int(128).to_i8_checked(), "number out of range")
-        try assert.err(Int(-129).to_i8_checked(), "number out of range")
+    checked_suite.test("Int.to_i8_checked", fun() !void {
+        try test::eq(Result(I8(-128)), Int(-128).to_i8_checked())
+        try test::eq(Result(I8(127)), Int(127).to_i8_checked())
+        try test::err(Int(128).to_i8_checked(), "number out of range")
+        try test::err(Int(-129).to_i8_checked(), "number out of range")
     })
-    checked_suite.test("I32.to_i16_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I16(-32768)), I32(-32768).to_i16_checked())
-        try assert.eq(Result(I16(32767)), I32(32767).to_i16_checked())
-        try assert.err(I32(32768).to_i16_checked(), "number out of range")
-        try assert.err(I32(-32769).to_i16_checked(), "number out of range")
+    checked_suite.test("I32.to_i16_checked", fun() !void {
+        try test::eq(Result(I16(-32768)), I32(-32768).to_i16_checked())
+        try test::eq(Result(I16(32767)), I32(32767).to_i16_checked())
+        try test::err(I32(32768).to_i16_checked(), "number out of range")
+        try test::err(I32(-32769).to_i16_checked(), "number out of range")
     })
-    checked_suite.test("I32.to_i8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I8(-128)), I32(-128).to_i8_checked())
-        try assert.eq(Result(I8(127)), I32(127).to_i8_checked())
-        try assert.err(I32(128).to_i8_checked(), "number out of range")
-        try assert.err(I32(-129).to_i8_checked(), "number out of range")
+    checked_suite.test("I32.to_i8_checked", fun() !void {
+        try test::eq(Result(I8(-128)), I32(-128).to_i8_checked())
+        try test::eq(Result(I8(127)), I32(127).to_i8_checked())
+        try test::err(I32(128).to_i8_checked(), "number out of range")
+        try test::err(I32(-129).to_i8_checked(), "number out of range")
     })
-    checked_suite.test("I16.to_i8_checked", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I8(-128)), I16(-128).to_i8_checked())
-        try assert.eq(Result(I8(127)), I16(127).to_i8_checked())
-        try assert.err(I16(128).to_i8_checked(), "number out of range")
-        try assert.err(I16(-129).to_i8_checked(), "number out of range")
+    checked_suite.test("I16.to_i8_checked", fun() !void {
+        try test::eq(Result(I8(-128)), I16(-128).to_i8_checked())
+        try test::eq(Result(I8(127)), I16(127).to_i8_checked())
+        try test::err(I16(128).to_i8_checked(), "number out of range")
+        try test::err(I16(-129).to_i8_checked(), "number out of range")
     })
     _ = checked_suite.run()
 
-    let clamped_suite = test::suite("to_x_clamped", @local)
+    let clamped_suite = test::Suite.new("to_x_clamped", @local)
     --- Signed narrowing clamped ---
-    clamped_suite.test("I16.to_i8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I8(0), I16(0).to_i8_clamped())
-        try assert.eq(I8(127), I16(127).to_i8_clamped())
-        try assert.eq(I8(-128), I16(-128).to_i8_clamped())
-        try assert.eq(I8(127), I16(128).to_i8_clamped())
-        try assert.eq(I8(-128), I16(-129).to_i8_clamped())
-        try assert.eq(I8(127), I16(32767).to_i8_clamped())
-        try assert.eq(I8(-128), I16(-32768).to_i8_clamped())
+    clamped_suite.test("I16.to_i8_clamped", fun() !void {
+        try test::eq(I8(0), I16(0).to_i8_clamped())
+        try test::eq(I8(127), I16(127).to_i8_clamped())
+        try test::eq(I8(-128), I16(-128).to_i8_clamped())
+        try test::eq(I8(127), I16(128).to_i8_clamped())
+        try test::eq(I8(-128), I16(-129).to_i8_clamped())
+        try test::eq(I8(127), I16(32767).to_i8_clamped())
+        try test::eq(I8(-128), I16(-32768).to_i8_clamped())
     })
-    clamped_suite.test("I32.to_i8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I8(0), I32(0).to_i8_clamped())
-        try assert.eq(I8(127), I32(127).to_i8_clamped())
-        try assert.eq(I8(-128), I32(-128).to_i8_clamped())
-        try assert.eq(I8(127), I32(128).to_i8_clamped())
-        try assert.eq(I8(-128), I32(-129).to_i8_clamped())
+    clamped_suite.test("I32.to_i8_clamped", fun() !void {
+        try test::eq(I8(0), I32(0).to_i8_clamped())
+        try test::eq(I8(127), I32(127).to_i8_clamped())
+        try test::eq(I8(-128), I32(-128).to_i8_clamped())
+        try test::eq(I8(127), I32(128).to_i8_clamped())
+        try test::eq(I8(-128), I32(-129).to_i8_clamped())
     })
-    clamped_suite.test("Int.to_i8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I8(0), Int(0).to_i8_clamped())
-        try assert.eq(I8(127), Int(127).to_i8_clamped())
-        try assert.eq(I8(-128), Int(-128).to_i8_clamped())
-        try assert.eq(I8(127), Int(128).to_i8_clamped())
-        try assert.eq(I8(-128), Int(-129).to_i8_clamped())
+    clamped_suite.test("Int.to_i8_clamped", fun() !void {
+        try test::eq(I8(0), Int(0).to_i8_clamped())
+        try test::eq(I8(127), Int(127).to_i8_clamped())
+        try test::eq(I8(-128), Int(-128).to_i8_clamped())
+        try test::eq(I8(127), Int(128).to_i8_clamped())
+        try test::eq(I8(-128), Int(-129).to_i8_clamped())
     })
-    clamped_suite.test("I32.to_i16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I16(0), I32(0).to_i16_clamped())
-        try assert.eq(I16(32767), I32(32767).to_i16_clamped())
-        try assert.eq(I16(-32768), I32(-32768).to_i16_clamped())
-        try assert.eq(I16(32767), I32(32768).to_i16_clamped())
-        try assert.eq(I16(-32768), I32(-32769).to_i16_clamped())
+    clamped_suite.test("I32.to_i16_clamped", fun() !void {
+        try test::eq(I16(0), I32(0).to_i16_clamped())
+        try test::eq(I16(32767), I32(32767).to_i16_clamped())
+        try test::eq(I16(-32768), I32(-32768).to_i16_clamped())
+        try test::eq(I16(32767), I32(32768).to_i16_clamped())
+        try test::eq(I16(-32768), I32(-32769).to_i16_clamped())
     })
-    clamped_suite.test("Int.to_i16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I16(0), Int(0).to_i16_clamped())
-        try assert.eq(I16(32767), Int(32767).to_i16_clamped())
-        try assert.eq(I16(-32768), Int(-32768).to_i16_clamped())
-        try assert.eq(I16(32767), Int(32768).to_i16_clamped())
-        try assert.eq(I16(-32768), Int(-32769).to_i16_clamped())
+    clamped_suite.test("Int.to_i16_clamped", fun() !void {
+        try test::eq(I16(0), Int(0).to_i16_clamped())
+        try test::eq(I16(32767), Int(32767).to_i16_clamped())
+        try test::eq(I16(-32768), Int(-32768).to_i16_clamped())
+        try test::eq(I16(32767), Int(32768).to_i16_clamped())
+        try test::eq(I16(-32768), Int(-32769).to_i16_clamped())
     })
-    clamped_suite.test("Int.to_i32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I32(0), Int(0).to_i32_clamped())
-        try assert.eq(I32(2147483647), Int(2147483647).to_i32_clamped())
-        try assert.eq(I32(-2147483648), Int(-2147483648).to_i32_clamped())
-        try assert.eq(I32(2147483647), Int(2147483648).to_i32_clamped())
-        try assert.eq(I32(-2147483648), Int(-2147483649).to_i32_clamped())
+    clamped_suite.test("Int.to_i32_clamped", fun() !void {
+        try test::eq(I32(0), Int(0).to_i32_clamped())
+        try test::eq(I32(2147483647), Int(2147483647).to_i32_clamped())
+        try test::eq(I32(-2147483648), Int(-2147483648).to_i32_clamped())
+        try test::eq(I32(2147483647), Int(2147483648).to_i32_clamped())
+        try test::eq(I32(-2147483648), Int(-2147483649).to_i32_clamped())
     })
     --- Unsigned narrowing clamped ---
-    clamped_suite.test("U16.to_u8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U8(0), U16(0).to_u8_clamped())
-        try assert.eq(U8(255), U16(255).to_u8_clamped())
-        try assert.eq(U8(255), U16(256).to_u8_clamped())
-        try assert.eq(U8(255), U16(65535).to_u8_clamped())
+    clamped_suite.test("U16.to_u8_clamped", fun() !void {
+        try test::eq(U8(0), U16(0).to_u8_clamped())
+        try test::eq(U8(255), U16(255).to_u8_clamped())
+        try test::eq(U8(255), U16(256).to_u8_clamped())
+        try test::eq(U8(255), U16(65535).to_u8_clamped())
     })
-    clamped_suite.test("U32.to_u8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U8(0), U32(0).to_u8_clamped())
-        try assert.eq(U8(255), U32(255).to_u8_clamped())
-        try assert.eq(U8(255), U32(256).to_u8_clamped())
+    clamped_suite.test("U32.to_u8_clamped", fun() !void {
+        try test::eq(U8(0), U32(0).to_u8_clamped())
+        try test::eq(U8(255), U32(255).to_u8_clamped())
+        try test::eq(U8(255), U32(256).to_u8_clamped())
     })
-    clamped_suite.test("U64.to_u8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U8(0), U64(0).to_u8_clamped())
-        try assert.eq(U8(255), U64(255).to_u8_clamped())
-        try assert.eq(U8(255), U64(256).to_u8_clamped())
+    clamped_suite.test("U64.to_u8_clamped", fun() !void {
+        try test::eq(U8(0), U64(0).to_u8_clamped())
+        try test::eq(U8(255), U64(255).to_u8_clamped())
+        try test::eq(U8(255), U64(256).to_u8_clamped())
     })
-    clamped_suite.test("U32.to_u16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U16(0), U32(0).to_u16_clamped())
-        try assert.eq(U16(65535), U32(65535).to_u16_clamped())
-        try assert.eq(U16(65535), U32(65536).to_u16_clamped())
+    clamped_suite.test("U32.to_u16_clamped", fun() !void {
+        try test::eq(U16(0), U32(0).to_u16_clamped())
+        try test::eq(U16(65535), U32(65535).to_u16_clamped())
+        try test::eq(U16(65535), U32(65536).to_u16_clamped())
     })
-    clamped_suite.test("U64.to_u16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U16(0), U64(0).to_u16_clamped())
-        try assert.eq(U16(65535), U64(65535).to_u16_clamped())
-        try assert.eq(U16(65535), U64(65536).to_u16_clamped())
+    clamped_suite.test("U64.to_u16_clamped", fun() !void {
+        try test::eq(U16(0), U64(0).to_u16_clamped())
+        try test::eq(U16(65535), U64(65535).to_u16_clamped())
+        try test::eq(U16(65535), U64(65536).to_u16_clamped())
     })
-    clamped_suite.test("U64.to_u32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U32(0), U64(0).to_u32_clamped())
-        try assert.eq(U32(4294967295), U64(4294967295).to_u32_clamped())
-        try assert.eq(U32(4294967295), U64(4294967296).to_u32_clamped())
+    clamped_suite.test("U64.to_u32_clamped", fun() !void {
+        try test::eq(U32(0), U64(0).to_u32_clamped())
+        try test::eq(U32(4294967295), U64(4294967295).to_u32_clamped())
+        try test::eq(U32(4294967295), U64(4294967296).to_u32_clamped())
     })
     --- Unsigned to signed clamped ---
-    clamped_suite.test("U8.to_i8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I8(0), U8(0).to_i8_clamped())
-        try assert.eq(I8(127), U8(127).to_i8_clamped())
-        try assert.eq(I8(127), U8(128).to_i8_clamped())
-        try assert.eq(I8(127), U8(255).to_i8_clamped())
+    clamped_suite.test("U8.to_i8_clamped", fun() !void {
+        try test::eq(I8(0), U8(0).to_i8_clamped())
+        try test::eq(I8(127), U8(127).to_i8_clamped())
+        try test::eq(I8(127), U8(128).to_i8_clamped())
+        try test::eq(I8(127), U8(255).to_i8_clamped())
     })
-    clamped_suite.test("U16.to_i16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I16(0), U16(0).to_i16_clamped())
-        try assert.eq(I16(32767), U16(32767).to_i16_clamped())
-        try assert.eq(I16(32767), U16(32768).to_i16_clamped())
+    clamped_suite.test("U16.to_i16_clamped", fun() !void {
+        try test::eq(I16(0), U16(0).to_i16_clamped())
+        try test::eq(I16(32767), U16(32767).to_i16_clamped())
+        try test::eq(I16(32767), U16(32768).to_i16_clamped())
     })
-    clamped_suite.test("U16.to_i8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I8(0), U16(0).to_i8_clamped())
-        try assert.eq(I8(127), U16(127).to_i8_clamped())
-        try assert.eq(I8(127), U16(128).to_i8_clamped())
-        try assert.eq(I8(127), U16(65535).to_i8_clamped())
+    clamped_suite.test("U16.to_i8_clamped", fun() !void {
+        try test::eq(I8(0), U16(0).to_i8_clamped())
+        try test::eq(I8(127), U16(127).to_i8_clamped())
+        try test::eq(I8(127), U16(128).to_i8_clamped())
+        try test::eq(I8(127), U16(65535).to_i8_clamped())
     })
-    clamped_suite.test("U32.to_i32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I32(0), U32(0).to_i32_clamped())
-        try assert.eq(I32(2147483647), U32(2147483647).to_i32_clamped())
-        try assert.eq(I32(2147483647), U32(2147483648).to_i32_clamped())
+    clamped_suite.test("U32.to_i32_clamped", fun() !void {
+        try test::eq(I32(0), U32(0).to_i32_clamped())
+        try test::eq(I32(2147483647), U32(2147483647).to_i32_clamped())
+        try test::eq(I32(2147483647), U32(2147483648).to_i32_clamped())
     })
-    clamped_suite.test("U32.to_i16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I16(0), U32(0).to_i16_clamped())
-        try assert.eq(I16(32767), U32(32767).to_i16_clamped())
-        try assert.eq(I16(32767), U32(32768).to_i16_clamped())
+    clamped_suite.test("U32.to_i16_clamped", fun() !void {
+        try test::eq(I16(0), U32(0).to_i16_clamped())
+        try test::eq(I16(32767), U32(32767).to_i16_clamped())
+        try test::eq(I16(32767), U32(32768).to_i16_clamped())
     })
-    clamped_suite.test("U32.to_i8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I8(0), U32(0).to_i8_clamped())
-        try assert.eq(I8(127), U32(127).to_i8_clamped())
-        try assert.eq(I8(127), U32(128).to_i8_clamped())
+    clamped_suite.test("U32.to_i8_clamped", fun() !void {
+        try test::eq(I8(0), U32(0).to_i8_clamped())
+        try test::eq(I8(127), U32(127).to_i8_clamped())
+        try test::eq(I8(127), U32(128).to_i8_clamped())
     })
-    clamped_suite.test("U64.to_int_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(Int(0), U64(0).to_int_clamped())
-        try assert.eq(Int(9223372036854775807), U64(9223372036854775807).to_int_clamped())
-        try assert.eq(Int(9223372036854775807), U64(9223372036854775808).to_int_clamped())
-        try assert.eq(Int(9223372036854775807), U64(18446744073709551615).to_int_clamped())
+    clamped_suite.test("U64.to_int_clamped", fun() !void {
+        try test::eq(Int(0), U64(0).to_int_clamped())
+        try test::eq(Int(9223372036854775807), U64(9223372036854775807).to_int_clamped())
+        try test::eq(Int(9223372036854775807), U64(9223372036854775808).to_int_clamped())
+        try test::eq(Int(9223372036854775807), U64(18446744073709551615).to_int_clamped())
     })
-    clamped_suite.test("U64.to_i32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(I32(0), U64(0).to_i32_clamped())
-        try assert.eq(I32(2147483647), U64(2147483647).to_i32_clamped())
-        try assert.eq(I32(2147483647), U64(2147483648).to_i32_clamped())
+    clamped_suite.test("U64.to_i32_clamped", fun() !void {
+        try test::eq(I32(0), U64(0).to_i32_clamped())
+        try test::eq(I32(2147483647), U64(2147483647).to_i32_clamped())
+        try test::eq(I32(2147483647), U64(2147483648).to_i32_clamped())
     })
     --- Signed to unsigned clamped ---
-    clamped_suite.test("I8.to_u8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U8(0), I8(0).to_u8_clamped())
-        try assert.eq(U8(127), I8(127).to_u8_clamped())
-        try assert.eq(U8(0), I8(-1).to_u8_clamped())
-        try assert.eq(U8(0), I8(-128).to_u8_clamped())
+    clamped_suite.test("I8.to_u8_clamped", fun() !void {
+        try test::eq(U8(0), I8(0).to_u8_clamped())
+        try test::eq(U8(127), I8(127).to_u8_clamped())
+        try test::eq(U8(0), I8(-1).to_u8_clamped())
+        try test::eq(U8(0), I8(-128).to_u8_clamped())
     })
-    clamped_suite.test("I8.to_u16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U16(0), I8(0).to_u16_clamped())
-        try assert.eq(U16(127), I8(127).to_u16_clamped())
-        try assert.eq(U16(0), I8(-1).to_u16_clamped())
+    clamped_suite.test("I8.to_u16_clamped", fun() !void {
+        try test::eq(U16(0), I8(0).to_u16_clamped())
+        try test::eq(U16(127), I8(127).to_u16_clamped())
+        try test::eq(U16(0), I8(-1).to_u16_clamped())
     })
-    clamped_suite.test("I8.to_u32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U32(0), I8(0).to_u32_clamped())
-        try assert.eq(U32(127), I8(127).to_u32_clamped())
-        try assert.eq(U32(0), I8(-1).to_u32_clamped())
+    clamped_suite.test("I8.to_u32_clamped", fun() !void {
+        try test::eq(U32(0), I8(0).to_u32_clamped())
+        try test::eq(U32(127), I8(127).to_u32_clamped())
+        try test::eq(U32(0), I8(-1).to_u32_clamped())
     })
-    clamped_suite.test("I8.to_u64_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U64(0), I8(0).to_u64_clamped())
-        try assert.eq(U64(127), I8(127).to_u64_clamped())
-        try assert.eq(U64(0), I8(-1).to_u64_clamped())
+    clamped_suite.test("I8.to_u64_clamped", fun() !void {
+        try test::eq(U64(0), I8(0).to_u64_clamped())
+        try test::eq(U64(127), I8(127).to_u64_clamped())
+        try test::eq(U64(0), I8(-1).to_u64_clamped())
     })
-    clamped_suite.test("I16.to_u8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U8(0), I16(0).to_u8_clamped())
-        try assert.eq(U8(255), I16(255).to_u8_clamped())
-        try assert.eq(U8(255), I16(256).to_u8_clamped())
-        try assert.eq(U8(0), I16(-1).to_u8_clamped())
+    clamped_suite.test("I16.to_u8_clamped", fun() !void {
+        try test::eq(U8(0), I16(0).to_u8_clamped())
+        try test::eq(U8(255), I16(255).to_u8_clamped())
+        try test::eq(U8(255), I16(256).to_u8_clamped())
+        try test::eq(U8(0), I16(-1).to_u8_clamped())
     })
-    clamped_suite.test("I16.to_u16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U16(0), I16(0).to_u16_clamped())
-        try assert.eq(U16(32767), I16(32767).to_u16_clamped())
-        try assert.eq(U16(0), I16(-1).to_u16_clamped())
+    clamped_suite.test("I16.to_u16_clamped", fun() !void {
+        try test::eq(U16(0), I16(0).to_u16_clamped())
+        try test::eq(U16(32767), I16(32767).to_u16_clamped())
+        try test::eq(U16(0), I16(-1).to_u16_clamped())
     })
-    clamped_suite.test("I16.to_u32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U32(0), I16(0).to_u32_clamped())
-        try assert.eq(U32(32767), I16(32767).to_u32_clamped())
-        try assert.eq(U32(0), I16(-1).to_u32_clamped())
+    clamped_suite.test("I16.to_u32_clamped", fun() !void {
+        try test::eq(U32(0), I16(0).to_u32_clamped())
+        try test::eq(U32(32767), I16(32767).to_u32_clamped())
+        try test::eq(U32(0), I16(-1).to_u32_clamped())
     })
-    clamped_suite.test("I16.to_u64_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U64(0), I16(0).to_u64_clamped())
-        try assert.eq(U64(32767), I16(32767).to_u64_clamped())
-        try assert.eq(U64(0), I16(-1).to_u64_clamped())
+    clamped_suite.test("I16.to_u64_clamped", fun() !void {
+        try test::eq(U64(0), I16(0).to_u64_clamped())
+        try test::eq(U64(32767), I16(32767).to_u64_clamped())
+        try test::eq(U64(0), I16(-1).to_u64_clamped())
     })
-    clamped_suite.test("I32.to_u8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U8(0), I32(0).to_u8_clamped())
-        try assert.eq(U8(255), I32(255).to_u8_clamped())
-        try assert.eq(U8(255), I32(256).to_u8_clamped())
-        try assert.eq(U8(0), I32(-1).to_u8_clamped())
+    clamped_suite.test("I32.to_u8_clamped", fun() !void {
+        try test::eq(U8(0), I32(0).to_u8_clamped())
+        try test::eq(U8(255), I32(255).to_u8_clamped())
+        try test::eq(U8(255), I32(256).to_u8_clamped())
+        try test::eq(U8(0), I32(-1).to_u8_clamped())
     })
-    clamped_suite.test("I32.to_u16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U16(0), I32(0).to_u16_clamped())
-        try assert.eq(U16(65535), I32(65535).to_u16_clamped())
-        try assert.eq(U16(65535), I32(65536).to_u16_clamped())
-        try assert.eq(U16(0), I32(-1).to_u16_clamped())
+    clamped_suite.test("I32.to_u16_clamped", fun() !void {
+        try test::eq(U16(0), I32(0).to_u16_clamped())
+        try test::eq(U16(65535), I32(65535).to_u16_clamped())
+        try test::eq(U16(65535), I32(65536).to_u16_clamped())
+        try test::eq(U16(0), I32(-1).to_u16_clamped())
     })
-    clamped_suite.test("I32.to_u32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U32(0), I32(0).to_u32_clamped())
-        try assert.eq(U32(2147483647), I32(2147483647).to_u32_clamped())
-        try assert.eq(U32(0), I32(-1).to_u32_clamped())
+    clamped_suite.test("I32.to_u32_clamped", fun() !void {
+        try test::eq(U32(0), I32(0).to_u32_clamped())
+        try test::eq(U32(2147483647), I32(2147483647).to_u32_clamped())
+        try test::eq(U32(0), I32(-1).to_u32_clamped())
     })
-    clamped_suite.test("I32.to_u64_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U64(0), I32(0).to_u64_clamped())
-        try assert.eq(U64(2147483647), I32(2147483647).to_u64_clamped())
-        try assert.eq(U64(0), I32(-1).to_u64_clamped())
+    clamped_suite.test("I32.to_u64_clamped", fun() !void {
+        try test::eq(U64(0), I32(0).to_u64_clamped())
+        try test::eq(U64(2147483647), I32(2147483647).to_u64_clamped())
+        try test::eq(U64(0), I32(-1).to_u64_clamped())
     })
-    clamped_suite.test("Int.to_u8_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U8(0), Int(0).to_u8_clamped())
-        try assert.eq(U8(255), Int(255).to_u8_clamped())
-        try assert.eq(U8(255), Int(256).to_u8_clamped())
-        try assert.eq(U8(0), Int(-1).to_u8_clamped())
+    clamped_suite.test("Int.to_u8_clamped", fun() !void {
+        try test::eq(U8(0), Int(0).to_u8_clamped())
+        try test::eq(U8(255), Int(255).to_u8_clamped())
+        try test::eq(U8(255), Int(256).to_u8_clamped())
+        try test::eq(U8(0), Int(-1).to_u8_clamped())
     })
-    clamped_suite.test("Int.to_u16_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U16(0), Int(0).to_u16_clamped())
-        try assert.eq(U16(65535), Int(65535).to_u16_clamped())
-        try assert.eq(U16(65535), Int(65536).to_u16_clamped())
-        try assert.eq(U16(0), Int(-1).to_u16_clamped())
+    clamped_suite.test("Int.to_u16_clamped", fun() !void {
+        try test::eq(U16(0), Int(0).to_u16_clamped())
+        try test::eq(U16(65535), Int(65535).to_u16_clamped())
+        try test::eq(U16(65535), Int(65536).to_u16_clamped())
+        try test::eq(U16(0), Int(-1).to_u16_clamped())
     })
-    clamped_suite.test("Int.to_u32_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U32(0), Int(0).to_u32_clamped())
-        try assert.eq(U32(4294967295), Int(4294967295).to_u32_clamped())
-        try assert.eq(U32(4294967295), Int(4294967296).to_u32_clamped())
-        try assert.eq(U32(0), Int(-1).to_u32_clamped())
+    clamped_suite.test("Int.to_u32_clamped", fun() !void {
+        try test::eq(U32(0), Int(0).to_u32_clamped())
+        try test::eq(U32(4294967295), Int(4294967295).to_u32_clamped())
+        try test::eq(U32(4294967295), Int(4294967296).to_u32_clamped())
+        try test::eq(U32(0), Int(-1).to_u32_clamped())
     })
-    clamped_suite.test("Int.to_u64_clamped", fun(assert &assert_::Assert) !void {
-        try assert.eq(U64(0), Int(0).to_u64_clamped())
-        try assert.eq(U64(9223372036854775807), Int(9223372036854775807).to_u64_clamped())
-        try assert.eq(U64(0), Int(-1).to_u64_clamped())
+    clamped_suite.test("Int.to_u64_clamped", fun() !void {
+        try test::eq(U64(0), Int(0).to_u64_clamped())
+        try test::eq(U64(9223372036854775807), Int(9223372036854775807).to_u64_clamped())
+        try test::eq(U64(0), Int(-1).to_u64_clamped())
     })
     _ = clamped_suite.run()
 
-    let from_ascii_str_suite = test::suite("from_ascii_str", @local)
-    from_ascii_str_suite.test("I8.from_ascii_str", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I8(127)), I8.from_ascii_str("127".as_bytes()))
-        try assert.eq(Result(I8(-128)), I8.from_ascii_str("-128".as_bytes()))
-        try assert.err(I8.from_ascii_str("128".as_bytes()), "parse error: number out of range")
-        try assert.err(I8.from_ascii_str("-129".as_bytes()), "parse error: number out of range")
+    let from_ascii_str_suite = test::Suite.new("from_ascii_str", @local)
+    from_ascii_str_suite.test("I8.from_ascii_str", fun() !void {
+        try test::eq(Result(I8(127)), I8.from_ascii_str("127".as_bytes()))
+        try test::eq(Result(I8(-128)), I8.from_ascii_str("-128".as_bytes()))
+        try test::err(I8.from_ascii_str("128".as_bytes()), "parse error: number out of range")
+        try test::err(I8.from_ascii_str("-129".as_bytes()), "parse error: number out of range")
     })
-    from_ascii_str_suite.test("I16.from_ascii_str", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I16(32767)), I16.from_ascii_str("32767".as_bytes()))
-        try assert.eq(Result(I16(-32768)), I16.from_ascii_str("-32768".as_bytes()))
-        try assert.err(I16.from_ascii_str("32768".as_bytes()), "parse error: number out of range")
-        try assert.err(I16.from_ascii_str("-32769".as_bytes()), "parse error: number out of range")
+    from_ascii_str_suite.test("I16.from_ascii_str", fun() !void {
+        try test::eq(Result(I16(32767)), I16.from_ascii_str("32767".as_bytes()))
+        try test::eq(Result(I16(-32768)), I16.from_ascii_str("-32768".as_bytes()))
+        try test::err(I16.from_ascii_str("32768".as_bytes()), "parse error: number out of range")
+        try test::err(I16.from_ascii_str("-32769".as_bytes()), "parse error: number out of range")
     })
-    from_ascii_str_suite.test("I32.from_ascii_str", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(I32(2147483647)), I32.from_ascii_str("2147483647".as_bytes()))
-        try assert.eq(Result(I32(-2147483648)), I32.from_ascii_str("-2147483648".as_bytes()))
-        try assert.err(I32.from_ascii_str("2147483648".as_bytes()), "parse error: number out of range")
-        try assert.err(I32.from_ascii_str("-2147483649".as_bytes()), "parse error: number out of range")
+    from_ascii_str_suite.test("I32.from_ascii_str", fun() !void {
+        try test::eq(Result(I32(2147483647)), I32.from_ascii_str("2147483647".as_bytes()))
+        try test::eq(Result(I32(-2147483648)), I32.from_ascii_str("-2147483648".as_bytes()))
+        try test::err(I32.from_ascii_str("2147483648".as_bytes()), "parse error: number out of range")
+        try test::err(I32.from_ascii_str("-2147483649".as_bytes()), "parse error: number out of range")
     })
-    from_ascii_str_suite.test("Int.from_ascii_str (base 10)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(Int(9223372036854775807)), Int.from_ascii_str("9223372036854775807".as_bytes()))
-        try assert.eq(Result(Int(-9223372036854775808)), Int.from_ascii_str("-9223372036854775808".as_bytes()))
-        try assert.err(Int.from_ascii_str("9223372036854775808".as_bytes()), "parse error: number out of range")
-        try assert.err(Int.from_ascii_str("-9223372036854775809".as_bytes()), "parse error: number out of range")
-        try assert.err(Int.from_ascii_str("a".as_bytes()), "parse error: not a valid digit")
-        try assert.err(Int.from_ascii_str("/".as_bytes()), "parse error: not a valid digit")
+    from_ascii_str_suite.test("U8.from_ascii_str", fun() !void {
+        try test::eq(Result(U8(0)), U8.from_ascii_str("0".as_bytes()))
+        try test::eq(Result(U8(255)), U8.from_ascii_str("255".as_bytes()))
+        try test::err(U8.from_ascii_str("256".as_bytes()), "parse error: number out of range")
+        try test::err(U8.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("U8.from_ascii_str", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U8(0)), U8.from_ascii_str("0".as_bytes()))
-        try assert.eq(Result(U8(255)), U8.from_ascii_str("255".as_bytes()))
-        try assert.err(U8.from_ascii_str("256".as_bytes()), "parse error: number out of range")
-        try assert.err(U8.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
+    from_ascii_str_suite.test("U16.from_ascii_str", fun() !void {
+        try test::eq(Result(U16(0)), U16.from_ascii_str("0".as_bytes()))
+        try test::eq(Result(U16(65535)), U16.from_ascii_str("65535".as_bytes()))
+        try test::err(U16.from_ascii_str("65536".as_bytes()), "parse error: number out of range")
+        try test::err(U16.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("U16.from_ascii_str", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U16(0)), U16.from_ascii_str("0".as_bytes()))
-        try assert.eq(Result(U16(65535)), U16.from_ascii_str("65535".as_bytes()))
-        try assert.err(U16.from_ascii_str("65536".as_bytes()), "parse error: number out of range")
-        try assert.err(U16.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
+    from_ascii_str_suite.test("U32.from_ascii_str", fun() !void {
+        try test::eq(Result(U32(0)), U32.from_ascii_str("0".as_bytes()))
+        try test::eq(Result(U32(4294967295)), U32.from_ascii_str("4294967295".as_bytes()))
+        try test::err(U32.from_ascii_str("4294967296".as_bytes()), "parse error: number out of range")
+        try test::err(U32.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("U32.from_ascii_str", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U32(0)), U32.from_ascii_str("0".as_bytes()))
-        try assert.eq(Result(U32(4294967295)), U32.from_ascii_str("4294967295".as_bytes()))
-        try assert.err(U32.from_ascii_str("4294967296".as_bytes()), "parse error: number out of range")
-        try assert.err(U32.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
+    from_ascii_str_suite.test("Int.from_ascii_str (base 16)", fun() !void {
+        try test::eq(Result(Int(0)), Int.from_ascii_str("0".as_bytes(), 16))
+        try test::eq(Result(Int(255)), Int.from_ascii_str("ff".as_bytes(), 16))
+        try test::eq(Result(Int(255)), Int.from_ascii_str("FF".as_bytes(), 16))
+        try test::eq(Result(Int(305419896)), Int.from_ascii_str("12345678".as_bytes(), 16))
+        try test::eq(Result(Int(2882400009)), Int.from_ascii_str("abcdef09".as_bytes(), 16))
+        try test::eq(Result(Int(9223372036854775807)), Int.from_ascii_str("7fffffffffffffff".as_bytes(), 16))
+        try test::eq(Result(Int(-9223372036854775808)), Int.from_ascii_str("-8000000000000000".as_bytes(), 16))
+        try test::err(Int.from_ascii_str("8000000000000000".as_bytes(), 16), "parse error: number out of range")
+        try test::err(Int.from_ascii_str("-8000000000000001".as_bytes(), 16), "parse error: number out of range")
+        try test::err(Int.from_ascii_str("g".as_bytes(), 16), "parse error: not a valid digit")
+        try test::err(Int.from_ascii_str("G".as_bytes(), 16), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("U64.from_ascii_str (base 10)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes()))
-        try assert.eq(Result(U64(18446744073709551615)), U64.from_ascii_str("18446744073709551615".as_bytes()))
-        try assert.err(U64.from_ascii_str("18446744073709551616".as_bytes()), "parse error: number out of range")
-        try assert.err(U64.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
-        try assert.err(U64.from_ascii_str("a".as_bytes()), "parse error: not a valid digit")
-        try assert.err(U64.from_ascii_str("/".as_bytes()), "parse error: not a valid digit")
-
-        try assert.eq(Result(U64(18446744073709551615)), U64.from_ascii_str("018446744073709551615".as_bytes()))
-        try assert.err(U64.from_ascii_str("20496382304121724019".as_bytes()), "parse error: number out of range")
+    from_ascii_str_suite.test("Int.from_ascii_str (base 10)", fun() !void {
+        try test::eq(Result(Int(9223372036854775807)), Int.from_ascii_str("9223372036854775807".as_bytes()))
+        try test::eq(Result(Int(-9223372036854775808)), Int.from_ascii_str("-9223372036854775808".as_bytes()))
+        try test::err(Int.from_ascii_str("9223372036854775808".as_bytes()), "parse error: number out of range")
+        try test::err(Int.from_ascii_str("-9223372036854775809".as_bytes()), "parse error: number out of range")
+        try test::err(Int.from_ascii_str("a".as_bytes()), "parse error: not a valid digit")
+        try test::err(Int.from_ascii_str("/".as_bytes()), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("Int.from_ascii_str (base 16)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(Int(0)), Int.from_ascii_str("0".as_bytes(), 16))
-        try assert.eq(Result(Int(255)), Int.from_ascii_str("ff".as_bytes(), 16))
-        try assert.eq(Result(Int(255)), Int.from_ascii_str("FF".as_bytes(), 16))
-        try assert.eq(Result(Int(305419896)), Int.from_ascii_str("12345678".as_bytes(), 16))
-        try assert.eq(Result(Int(2882400009)), Int.from_ascii_str("abcdef09".as_bytes(), 16))
-        try assert.eq(Result(Int(9223372036854775807)), Int.from_ascii_str("7fffffffffffffff".as_bytes(), 16))
-        try assert.eq(Result(Int(-9223372036854775808)), Int.from_ascii_str("-8000000000000000".as_bytes(), 16))
-        try assert.err(Int.from_ascii_str("8000000000000000".as_bytes(), 16), "parse error: number out of range")
-        try assert.err(Int.from_ascii_str("-8000000000000001".as_bytes(), 16), "parse error: number out of range")
-        try assert.err(Int.from_ascii_str("g".as_bytes(), 16), "parse error: not a valid digit")
-        try assert.err(Int.from_ascii_str("G".as_bytes(), 16), "parse error: not a valid digit")
+    from_ascii_str_suite.test("Int.from_ascii_str (base 8)", fun() !void {
+        try test::eq(Result(Int(0)), Int.from_ascii_str("0".as_bytes(), 8))
+        try test::eq(Result(Int(8)), Int.from_ascii_str("10".as_bytes(), 8))
+        try test::eq(Result(Int(342391)), Int.from_ascii_str("1234567".as_bytes(), 8))
+        try test::eq(Result(Int(9223372036854775807)), Int.from_ascii_str("777777777777777777777".as_bytes(), 8))
+        try test::eq(Result(Int(-9223372036854775808)), Int.from_ascii_str("-1000000000000000000000".as_bytes(), 8))
+        try test::err(Int.from_ascii_str("1000000000000000000000".as_bytes(), 8), "parse error: number out of range")
+        try test::err(Int.from_ascii_str("-1000000000000000000001".as_bytes(), 8), "parse error: number out of range")
+        try test::err(Int.from_ascii_str("8".as_bytes(), 8), "parse error: not a valid digit")
+        try test::err(Int.from_ascii_str("9".as_bytes(), 8), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("Int.from_ascii_str (base 8)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(Int(0)), Int.from_ascii_str("0".as_bytes(), 8))
-        try assert.eq(Result(Int(8)), Int.from_ascii_str("10".as_bytes(), 8))
-        try assert.eq(Result(Int(342391)), Int.from_ascii_str("1234567".as_bytes(), 8))
-        try assert.eq(Result(Int(9223372036854775807)), Int.from_ascii_str("777777777777777777777".as_bytes(), 8))
-        try assert.eq(Result(Int(-9223372036854775808)), Int.from_ascii_str("-1000000000000000000000".as_bytes(), 8))
-        try assert.err(Int.from_ascii_str("1000000000000000000000".as_bytes(), 8), "parse error: number out of range")
-        try assert.err(Int.from_ascii_str("-1000000000000000000001".as_bytes(), 8), "parse error: number out of range")
-        try assert.err(Int.from_ascii_str("8".as_bytes(), 8), "parse error: not a valid digit")
-        try assert.err(Int.from_ascii_str("9".as_bytes(), 8), "parse error: not a valid digit")
-    })
-    from_ascii_str_suite.test("Int.from_ascii_str (base 2)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(Int(0)), Int.from_ascii_str("0".as_bytes(), 2))
-        try assert.eq(Result(Int(5)), Int.from_ascii_str("101".as_bytes(), 2))
-        try assert.eq(Result(Int(170)), Int.from_ascii_str("10101010".as_bytes(), 2))
-        try assert.eq(
+    from_ascii_str_suite.test("Int.from_ascii_str (base 2)", fun() !void {
+        try test::eq(Result(Int(0)), Int.from_ascii_str("0".as_bytes(), 2))
+        try test::eq(Result(Int(5)), Int.from_ascii_str("101".as_bytes(), 2))
+        try test::eq(Result(Int(170)), Int.from_ascii_str("10101010".as_bytes(), 2))
+        try test::eq(
             Result(Int(9223372036854775807)),
             Int.from_ascii_str("111111111111111111111111111111111111111111111111111111111111111".as_bytes(), 2))
-        try assert.eq(
+        try test::eq(
             Result(Int(-9223372036854775808)),
             Int.from_ascii_str("-1000000000000000000000000000000000000000000000000000000000000000".as_bytes(), 2))
-        try assert.err(
+        try test::err(
             Int.from_ascii_str("1000000000000000000000000000000000000000000000000000000000000000".as_bytes(), 2),
             "parse error: number out of range")
-        try assert.err(
+        try test::err(
             Int.from_ascii_str("-1000000000000000000000000000000000000000000000000000000000000001".as_bytes(), 2),
             "parse error: number out of range")
-        try assert.err(Int.from_ascii_str("2".as_bytes(), 2), "parse error: not a valid digit")
-        try assert.err(Int.from_ascii_str("3".as_bytes(), 2), "parse error: not a valid digit")
+        try test::err(Int.from_ascii_str("2".as_bytes(), 2), "parse error: not a valid digit")
+        try test::err(Int.from_ascii_str("3".as_bytes(), 2), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("U64.from_ascii_str (base 16)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes(), 16))
-        try assert.eq(Result(U64(255)), U64.from_ascii_str("ff".as_bytes(), 16))
-        try assert.eq(Result(U64(255)), U64.from_ascii_str("FF".as_bytes(), 16))
-        try assert.eq(Result(U64(305419896)), U64.from_ascii_str("12345678".as_bytes(), 16))
-        try assert.eq(Result(U64(2882400009)), U64.from_ascii_str("abcdef09".as_bytes(), 16))
-        try assert.eq(Result(U64(18446744073709551615)), U64.from_ascii_str("ffffffffffffffff".as_bytes(), 16))
-        try assert.err(U64.from_ascii_str("10000000000000000".as_bytes(), 16), "parse error: number out of range")
-        try assert.err(U64.from_ascii_str("g".as_bytes(), 16), "parse error: not a valid digit")
-        try assert.err(U64.from_ascii_str("G".as_bytes(), 16), "parse error: not a valid digit")
+    from_ascii_str_suite.test("U64.from_ascii_str (base 16)", fun() !void {
+        try test::eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes(), 16))
+        try test::eq(Result(U64(255)), U64.from_ascii_str("ff".as_bytes(), 16))
+        try test::eq(Result(U64(255)), U64.from_ascii_str("FF".as_bytes(), 16))
+        try test::eq(Result(U64(305419896)), U64.from_ascii_str("12345678".as_bytes(), 16))
+        try test::eq(Result(U64(2882400009)), U64.from_ascii_str("abcdef09".as_bytes(), 16))
+        try test::eq(Result(U64(18446744073709551615)), U64.from_ascii_str("ffffffffffffffff".as_bytes(), 16))
+        try test::err(U64.from_ascii_str("10000000000000000".as_bytes(), 16), "parse error: number out of range")
+        try test::err(U64.from_ascii_str("g".as_bytes(), 16), "parse error: not a valid digit")
+        try test::err(U64.from_ascii_str("G".as_bytes(), 16), "parse error: not a valid digit")
     })
-    from_ascii_str_suite.test("U64.from_ascii_str (base 8)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes(), 8))
-        try assert.eq(Result(U64(8)), U64.from_ascii_str("10".as_bytes(), 8))
-        try assert.eq(Result(U64(342391)), U64.from_ascii_str("1234567".as_bytes(), 8))
-        try assert.eq(Result(U64(18446744073709551615)), U64.from_ascii_str("1777777777777777777777".as_bytes(), 8))
-        try assert.err(U64.from_ascii_str("2000000000000000000000".as_bytes(), 8), "parse error: number out of range")
-        try assert.err(U64.from_ascii_str("8".as_bytes(), 8), "parse error: not a valid digit")
-        try assert.err(U64.from_ascii_str("9".as_bytes(), 8), "parse error: not a valid digit")
+    from_ascii_str_suite.test("U64.from_ascii_str (base 10)", fun() !void {
+        try test::eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes()))
+        try test::eq(Result(U64(18446744073709551615)), U64.from_ascii_str("18446744073709551615".as_bytes()))
+        try test::err(U64.from_ascii_str("18446744073709551616".as_bytes()), "parse error: number out of range")
+        try test::err(U64.from_ascii_str("-1".as_bytes()), "parse error: not a valid digit")
+        try test::err(U64.from_ascii_str("a".as_bytes()), "parse error: not a valid digit")
+        try test::err(U64.from_ascii_str("/".as_bytes()), "parse error: not a valid digit")
+        try test::eq(Result(U64(18446744073709551615)), U64.from_ascii_str("018446744073709551615".as_bytes()))
+        try test::err(U64.from_ascii_str("20496382304121724019".as_bytes()), "parse error: number out of range")
     })
-    from_ascii_str_suite.test("U64.from_ascii_str (base 2)", fun(assert &assert_::Assert) !void {
-        try assert.eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes(), 2))
-        try assert.eq(Result(U64(5)), U64.from_ascii_str("101".as_bytes(), 2))
-        try assert.eq(Result(U64(170)), U64.from_ascii_str("10101010".as_bytes(), 2))
-        try assert.eq(
+    from_ascii_str_suite.test("U64.from_ascii_str (base 8)", fun() !void {
+        try test::eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes(), 8))
+        try test::eq(Result(U64(8)), U64.from_ascii_str("10".as_bytes(), 8))
+        try test::eq(Result(U64(342391)), U64.from_ascii_str("1234567".as_bytes(), 8))
+        try test::eq(Result(U64(18446744073709551615)), U64.from_ascii_str("1777777777777777777777".as_bytes(), 8))
+        try test::err(U64.from_ascii_str("2000000000000000000000".as_bytes(), 8), "parse error: number out of range")
+        try test::err(U64.from_ascii_str("8".as_bytes(), 8), "parse error: not a valid digit")
+        try test::err(U64.from_ascii_str("9".as_bytes(), 8), "parse error: not a valid digit")
+    })
+    from_ascii_str_suite.test("U64.from_ascii_str (base 2)", fun() !void {
+        try test::eq(Result(U64(0)), U64.from_ascii_str("0".as_bytes(), 2))
+        try test::eq(Result(U64(5)), U64.from_ascii_str("101".as_bytes(), 2))
+        try test::eq(Result(U64(170)), U64.from_ascii_str("10101010".as_bytes(), 2))
+        try test::eq(
             Result(U64(18446744073709551615)),
             U64.from_ascii_str("1111111111111111111111111111111111111111111111111111111111111111".as_bytes(), 2))
-        try assert.err(
+        try test::err(
             U64.from_ascii_str("10000000000000000000000000000000000000000000000000000000000000000".as_bytes(), 2),
             "parse error: number out of range")
-        try assert.err(U64.from_ascii_str("2".as_bytes(), 2), "parse error: not a valid digit")
-        try assert.err(U64.from_ascii_str("3".as_bytes(), 2), "parse error: not a valid digit")
+        try test::err(U64.from_ascii_str("2".as_bytes(), 2), "parse error: not a valid digit")
+        try test::err(U64.from_ascii_str("3".as_bytes(), 2), "parse error: not a valid digit")
     })
     _ = from_ascii_str_suite.run()
 }

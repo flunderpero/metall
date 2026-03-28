@@ -1,12 +1,11 @@
 use std::test
 use std::list
-use assert_ = std::assert
 
 fun main() void {
     let @local = Arena()
 
-    let suite = test::suite("StrBuilder", @local)
-    suite.test("u64", fun(assert &assert_::Assert) !void {
+    let suite = test::Suite.new("StrBuilder", @local)
+    suite.test("u64", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         sut.u64(13370)
@@ -20,9 +19,9 @@ fun main() void {
         sut.u64(13370, 16)
         sut.str(" ")
         sut.u64(13370, 16, true)
-        try assert.eq("13370 11010000111010 32072 13370 343a 343A", sut.to_str())
+        try test::eq("13370 11010000111010 32072 13370 343a 343A", sut.to_str())
     })
-    suite.test("int", fun(assert &assert_::Assert) !void {
+    suite.test("int", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         sut.int(13370)
@@ -38,31 +37,31 @@ fun main() void {
         sut.int(13370, 16)
         sut.str(" ")
         sut.int(13370, 16, true)
-        try assert.eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.to_str())
+        try test::eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.to_str())
     })
-    suite.test("slice", fun(assert &assert_::Assert) !void {
+    suite.test("slice", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         let s = ["hello", "there", "again"][..]
 
         sut.slice(s, " ")
-        try assert.eq("hello there again", sut.to_str())
+        try test::eq("hello there again", sut.to_str())
 
         sut.reset()
         sut.slice(s, ", ", 13)
-        try assert.eq("hello, the...", sut.to_str())
+        try test::eq("hello, the...", sut.to_str())
 
         sut.reset()
         sut.slice(s, ", ", 3)
-        try assert.eq("...", sut.to_str())
+        try test::eq("...", sut.to_str())
 
         -- Make sure we don't truncate the output in the middle of a rune.
         let u = ["hi", "😀😀", "ha"][..]
         sut.reset()
         sut.slice(u, " ", 13)
-        try assert.eq("hi 😀...", sut.to_str())
+        try test::eq("hi 😀...", sut.to_str())
     })
-    suite.test("join", fun(assert &assert_::Assert) !void {
+    suite.test("join", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         let l = list::List.new<Int>(@local)
@@ -71,7 +70,7 @@ fun main() void {
         l.push(3)
         mut it = l.iter()
         sut.join(&mut it, ", ")
-        try assert.eq("1, 2, 3", sut.to_str())
+        try test::eq("1, 2, 3", sut.to_str())
     })
     _ = suite.run()
 }
