@@ -112,3 +112,32 @@ fun main() void {
 ```output
 ok
 ```
+
+**defer and arena cleanup with try early return**
+
+```metall
+fun fallible(fail Bool) !Int {
+    if fail { return Err("fail") }
+    Result(42)
+}
+
+fun test(fail Bool) !void {
+    let @a = Arena()
+    let x = @a.new<Int>(try fallible(fail))
+    defer { DebugIntern.print_int(x.*) }
+    DebugIntern.print_str("ok")
+    Result(void)
+}
+
+fun main() void {
+    _ = test(false)
+    _ = test(true)
+    DebugIntern.print_str("done")
+}
+```
+
+```output
+ok
+42
+done
+```

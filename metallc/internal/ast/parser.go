@@ -731,6 +731,13 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	case token.Continue:
 		p.next()
 		expr = p.NewContinue(t.Span)
+	case token.Defer:
+		p.next()
+		block, ok := p.ParseBlock()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = p.NewDefer(block, t.Span.Combine(p.span()))
 	case token.Void:
 		p.next()
 		expr = p.NewIdent("void", nil, t.Span)

@@ -20,6 +20,7 @@ func TestLexer(t *testing.T) {
 		src  string
 		want []want
 	}{
+		{"defer keyword", "defer", []want{{Defer, "", "1:1-1:5"}}},
 		{"parens", "()", []want{{LParen, "", "1:1"}, {RParen, "", "1:2"}}},
 		{"curly", "{}", []want{{LCurly, "", "1:1"}, {RCurly, "", "1:2"}}},
 		{"brackets", "[]", []want{{LBracket, "", "1:1"}, {RBracket, "", "1:2"}}},

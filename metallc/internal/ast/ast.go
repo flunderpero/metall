@@ -353,6 +353,12 @@ type Continue struct{}
 
 func (Continue) isKind() {}
 
+type Defer struct {
+	Block NodeID
+}
+
+func (Defer) isKind() {}
+
 func (Block) isKind() {}
 
 type Match struct {
@@ -491,6 +497,10 @@ func (a *AST) NewBreak(span base.Span) NodeID {
 
 func (a *AST) NewContinue(span base.Span) NodeID {
 	return a.node(Continue{}, span)
+}
+
+func (a *AST) NewDefer(block NodeID, span base.Span) NodeID {
+	return a.node(Defer{Block: block}, span)
 }
 
 func (a *AST) NewReturn(expr NodeID, span base.Span) NodeID {
@@ -870,6 +880,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Expr)
 	case Break:
 	case Continue:
+	case Defer:
+		f(kind.Block)
 	case Ident:
 		for i := range len(kind.TypeArgs) {
 			f(kind.TypeArgs[i])
@@ -1053,6 +1065,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addChild("expr", kind.Expr)
 		}
 	case Break, Continue:
+	case Defer:
+		if !children {
+			addAttr("block", nodeIDKind(kind.Block))
+		} else {
+			addChild("block", kind.Block)
+		}
 	case Import:
 		if kind.Alias != nil {
 			addAttr("alias", fmt.Sprintf("%q", kind.Alias.Name))

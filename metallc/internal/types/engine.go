@@ -172,6 +172,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkBreak(node.Span)
 	case ast.Continue:
 		typeID, status = e.checkContinue(node.Span)
+	case ast.Defer:
+		typeID, status = e.checkDefer(nodeKind, node.Span)
 	case ast.Fun, ast.Struct, ast.Shape, ast.Union:
 		cachedType, ok := e.env.cachedNodeType(nodeID)
 		if !ok {
@@ -497,6 +499,18 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 func (e *Engine) checkContinue(span base.Span) (TypeID, TypeStatus) {
 	if len(e.loopStack) == 0 {
 		e.diag(span, "continue statement outside of loop")
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidTyp, TypeOK
+}
+
+func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatus) {
+	blockTypeID, status := e.Query(defer_.Block)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if blockTypeID != e.voidTyp {
+		e.diag(span, "defer block must have void result type")
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK

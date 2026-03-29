@@ -2381,3 +2381,49 @@ test.met:3:5: reference escaping its allocation scope (via block result)
         ^^^^^^^^^^^^^^^^^^^^
     }
 ```
+
+**defer block reading local ref does not escape**
+
+```metall
+fun foo() void {
+    let x = 42
+    let r = &x
+    defer { _ = r.* }
+}
+```
+
+```error
+```
+
+**defer block assigning to outer mut ref does not escape**
+
+```metall
+fun foo(out &mut Int) void {
+    let x = 42
+    defer { out.* = x }
+}
+```
+
+```error
+```
+
+**defer block cannot store local ref in outer variable**
+
+```metall
+{
+    let y = 0
+    mut r = &y
+    {
+        let x = 42
+        defer { r = &x }
+    }
+}
+```
+
+```error
+test.met:6:21: reference escaping its allocation scope (via mutation of outer variable)
+            let x = 42
+            defer { r = &x }
+                        ^^
+        }
+```

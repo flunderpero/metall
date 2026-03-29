@@ -23,6 +23,7 @@ const (
 	Comma
 	Comment
 	Continue
+	Defer
 	Dot
 	DotDot
 	Else
@@ -101,6 +102,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Comma:                 ",",
 	Comment:               "<comment>",
 	Continue:              "<continue>",
+	Defer:                 "<defer>",
 	Dot:                   ".",
 	DotDot:                "..",
 	Else:                  "<else>",
@@ -196,6 +198,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"break":    Break,
 	"case":     Case,
 	"continue": Continue,
+	"defer":    Defer,
 	"else":     Else,
 	"false":    False,
 	"for":      For,

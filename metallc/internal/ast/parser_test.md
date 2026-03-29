@@ -2603,6 +2603,18 @@ Match(arms=1,arm[0].pattern=n2:SimpleType,else.binding=y)
     exprs=Ident(name="y")
 ```
 
+**Defer block**
+
+```metall
+defer { 1 }
+```
+
+```ast
+Defer()
+  block=Block()
+    exprs=Int(value=1)
+```
+
 ## Error Recovery
 
 **Unexpected token**

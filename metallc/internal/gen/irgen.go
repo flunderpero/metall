@@ -82,7 +82,8 @@ type IRFunGen struct {
 	funRetLabel   Label
 	funRetReg     string
 	lastLabel     Label
-	arenaRegStack [][]string // stack of arena regs per block scope
+	arenaRegStack [][]string     // stack of arena regs per block scope
+	deferStack    [][]ast.NodeID // stack of defer block IDs per block scope
 	loopStack     []LoopLabels
 	astCode       map[ast.NodeID]string
 	entryAllocas  strings.Builder
@@ -141,6 +142,9 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genBreak(id)
 	case ast.Continue:
 		g.genContinue(id)
+	case ast.Defer:
+		// Defer blocks are collected during genBlock and emitted at exit points.
+		g.setCode(id, "void")
 	case ast.Return:
 		g.genReturn(id, kind)
 	case ast.TypeConstruction:
@@ -823,41 +827,56 @@ func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
 	if g.irType(retTyp) != "void" {
 		g.storeValue(exprReg, g.funRetReg, retTyp)
 	}
-	g.emitArenaDestroyCalls()
+	g.emitAllBlockCleanups(0)
 	g.write("br label %%%s", g.funRetLabel)
 	g.setCode(id, exprReg)
 }
 
-// emitArenaDestroyCalls destroys all arenas from all enclosing block scopes
-// (innermost first). Called before return branches.
-func (g *IRFunGen) emitArenaDestroyCalls() {
-	g.emitArenaDestroyCallsFrom(0)
+// emitBlockCleanup emits defer blocks (reverse order) and arena destroys for
+// a single stack level.
+func (g *IRFunGen) emitBlockCleanup(arenaLevel, deferLevel int) {
+	defers := g.deferStack[deferLevel]
+	for i := len(defers) - 1; i >= 0; i-- {
+		// Use a fresh astCode so that re-emitting the same defer block at
+		// multiple exit points (normal exit + break/continue) doesn't conflict.
+		saved := g.astCode
+		g.astCode = map[ast.NodeID]string{}
+		g.Gen(defers[i])
+		g.astCode = saved
+	}
+	for _, reg := range g.arenaRegStack[arenaLevel] {
+		g.write("call void @arena_destroy (ptr %s)", reg)
+	}
 }
 
-// emitArenaDestroyCallsFrom destroys arenas from the current scope down to
-// (but not including) the given stack base. Called before break/continue to
-// avoid double-freeing arenas owned by enclosing scopes.
-func (g *IRFunGen) emitArenaDestroyCallsFrom(base int) {
+// emitAllBlockCleanups emits defers and arena destroys for all enclosing block
+// scopes down to (and including) the given base level. Innermost first.
+// Called before return/break/continue branches.
+func (g *IRFunGen) emitAllBlockCleanups(base int) {
 	for i := len(g.arenaRegStack) - 1; i >= base; i-- {
-		for _, reg := range g.arenaRegStack[i] {
-			g.write("call void @arena_destroy (ptr %s)", reg)
-		}
+		g.emitBlockCleanup(i, i)
 	}
 }
 
 func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
 	g.arenaRegStack = append(g.arenaRegStack, nil)
+	g.deferStack = append(g.deferStack, nil)
 	for _, expr := range block.Exprs {
-		g.Gen(expr)
-	}
-	// Destroy arenas unless the block ended with a return (which already
-	// destroyed all enclosing arenas before branching).
-	if !g.ast.BlockReturns(id) {
-		for _, reg := range g.arenaRegStack[len(g.arenaRegStack)-1] {
-			g.write("call void @arena_destroy (ptr %s)", reg)
+		if d, ok := g.ast.Node(expr).Kind.(ast.Defer); ok {
+			top := len(g.deferStack) - 1
+			g.deferStack[top] = append(g.deferStack[top], d.Block)
+			g.setCode(expr, "void")
+		} else {
+			g.Gen(expr)
 		}
 	}
+	// Emit defers and arena destroys unless the block unconditionally branched
+	// away (return/break/continue), which already emitted cleanup.
+	if !g.ast.BlockBreaksControlFlow(id, false) {
+		g.emitBlockCleanup(len(g.arenaRegStack)-1, len(g.deferStack)-1)
+	}
 	g.arenaRegStack = g.arenaRegStack[:len(g.arenaRegStack)-1]
+	g.deferStack = g.deferStack[:len(g.deferStack)-1]
 	code := "void"
 	if len(block.Exprs) > 0 {
 		code = g.lookupCode(block.Exprs[len(block.Exprs)-1])
@@ -933,14 +952,14 @@ func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
 
 func (g *IRFunGen) genBreak(id ast.NodeID) {
 	loopLabel := g.loopStack[len(g.loopStack)-1]
-	g.emitArenaDestroyCallsFrom(loopLabel.arenaStackBase)
+	g.emitAllBlockCleanups(loopLabel.arenaStackBase)
 	g.write("br label %%%s", loopLabel.break_)
 	g.setCode(id, "void")
 }
 
 func (g *IRFunGen) genContinue(id ast.NodeID) {
 	loopLabel := g.loopStack[len(g.loopStack)-1]
-	g.emitArenaDestroyCallsFrom(loopLabel.arenaStackBase)
+	g.emitAllBlockCleanups(loopLabel.arenaStackBase)
 	g.write("br label %%%s", loopLabel.continue_)
 	g.setCode(id, "void")
 }

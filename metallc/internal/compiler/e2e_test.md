@@ -3753,6 +3753,166 @@ fun main() void {
 123
 ```
 
+## Defer
+
+**defer basic**
+
+```metall
+fun main() void {
+    DebugIntern.print_int(1)
+    defer { DebugIntern.print_int(3) }
+    DebugIntern.print_int(2)
+}
+```
+
+```output
+1
+2
+3
+```
+
+**defer reverse order**
+
+```metall
+fun main() void {
+    defer { DebugIntern.print_int(3) }
+    defer { DebugIntern.print_int(2) }
+    defer { DebugIntern.print_int(1) }
+}
+```
+
+```output
+1
+2
+3
+```
+
+**defer runs before return**
+
+```metall
+fun foo() Int {
+    defer { DebugIntern.print_int(1) }
+    return 42
+}
+
+fun main() void {
+    DebugIntern.print_int(foo())
+}
+```
+
+```output
+1
+42
+```
+
+**defer in inner block with return**
+
+```metall
+fun foo() Int {
+    defer { DebugIntern.print_int(1) }
+    if true {
+        defer { DebugIntern.print_int(2) }
+        return 42
+    }
+    0
+}
+
+fun main() void {
+    DebugIntern.print_int(foo())
+}
+```
+
+```output
+2
+1
+42
+```
+
+**defer in loop with break**
+
+```metall
+fun main() void {
+    for i in 0..3 {
+        defer { DebugIntern.print_int(i * 10) }
+        if i == 1 {
+            break
+        }
+        DebugIntern.print_int(i)
+    }
+}
+```
+
+```output
+0
+0
+10
+```
+
+**defer in loop with continue**
+
+```metall
+fun main() void {
+    for i in 0..3 {
+        defer { DebugIntern.print_int(i * 10) }
+        if i == 1 {
+            continue
+        }
+        DebugIntern.print_int(i)
+    }
+}
+```
+
+```output
+0
+0
+10
+2
+20
+```
+
+**defer reads arena-allocated data before arena is destroyed**
+
+```metall
+fun foo() void {
+    let @a = Arena()
+    let x = @a.new<Int>(42)
+    defer { DebugIntern.print_int(x.*) }
+    DebugIntern.print_int(1)
+}
+
+fun main() void {
+    foo()
+}
+```
+
+```output
+1
+42
+```
+
+**defer allocates with surrounding arena**
+
+```metall
+fun foo() void {
+    let @a = Arena()
+    defer {
+        let x = @a.new<Int>(99)
+        DebugIntern.print_int(x.*)
+    }
+    let y = @a.new<Int>(1)
+    DebugIntern.print_int(y.*)
+}
+
+fun main() void {
+    foo()
+}
+```
+
+```output
+1
+99
+```
+
 ## Type Sugar
 
 **Option and Result sugar**

@@ -746,6 +746,32 @@ test.met:1:22: symbol not defined: y
                          ^
 ```
 
+## Defer
+
+**Defer block is void**
+
+```metall
+{ defer { } }
+```
+
+```types
+Block: void
+  Defer: void
+    Block: void
+```
+
+**Defer block with non-void result**
+
+```metall
+{ defer { 1 } }
+```
+
+```error
+test.met:1:3: defer block must have void result type
+    { defer { 1 } }
+      ^^^^^^^^^^^
+```
+
 ## Structs
 
 **Struct declaration**
