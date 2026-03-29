@@ -195,17 +195,10 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
-	if unionTypeID, ok := g.env.UnionWrap(id); ok {
-		breaksFlow := false
-		switch node.Kind.(type) {
-		case ast.Return, ast.Break, ast.Continue:
-			breaksFlow = true
-		case ast.Block:
-			breaksFlow = g.ast.BlockBreaksControlFlow(id, false)
-		}
-		if !breaksFlow {
-			g.genUnionAutoWrap(id, unionTypeID)
-		}
+	if g.breaksControlFlow(id) {
+		g.write("unreachable")
+	} else if unionTypeID, ok := g.env.UnionWrap(id); ok {
+		g.genUnionAutoWrap(id, unionTypeID)
 	}
 }
 
@@ -739,7 +732,6 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	g.write("define%s %s @%s(%s) %s{", internal, signatureIRTyp, name, params.String(), attrs)
 	g.indent++
 	// We use a return alloca to store values for early returns (i.e. `return <expr>`).
-	bodyHasReturn := g.ast.BlockReturns(astFun.Block)
 	if retIRTyp != "void" {
 		g.write("%s = alloca %s", g.funRetReg, retIRTyp)
 	}
@@ -786,10 +778,10 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	}
 	// Write the result of the block into the ret reg.
 	lastCode := g.lookupCode(astFun.Block)
-	if retIRTyp != "void" && !bodyHasReturn {
-		g.storeValue(lastCode, g.funRetReg, fun.Return)
-	}
-	if !bodyHasReturn {
+	if !g.breaksControlFlow(astFun.Block) {
+		if retIRTyp != "void" {
+			g.storeValue(lastCode, g.funRetReg, fun.Return)
+		}
 		g.write("br label %%%s", g.funRetLabel)
 	}
 	g.writeLabel(g.funRetLabel)
@@ -871,8 +863,8 @@ func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
 		}
 	}
 	// Emit defers and arena destroys unless the block unconditionally branched
-	// away (return/break/continue), which already emitted cleanup.
-	if !g.ast.BlockBreaksControlFlow(id, false) {
+	// away (return/break/continue/never), which already emitted cleanup or doesn't need it.
+	if !g.breaksControlFlow(id) {
 		g.emitBlockCleanup(len(g.arenaRegStack)-1, len(g.deferStack)-1)
 	}
 	g.arenaRegStack = g.arenaRegStack[:len(g.arenaRegStack)-1]
@@ -977,13 +969,13 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 	g.writeLabel(thenLabel)
 	g.Gen(ifNode.Then)
 	phiThenLabel := g.lastLabel
-	if !g.ast.BlockBreaksControlFlow(ifNode.Then, false) {
+	if !g.breaksControlFlow(ifNode.Then) {
 		g.write("br label %%%s", contLabel)
 	}
 	if ifNode.Else != nil {
 		g.writeLabel(elseLabel)
 		g.Gen(*ifNode.Else)
-		if !g.ast.BlockBreaksControlFlow(*ifNode.Else, false) {
+		if !g.breaksControlFlow(*ifNode.Else) {
 			g.write("br label %%%s", contLabel)
 		}
 	}
@@ -1040,7 +1032,7 @@ func (g *IRFunGen) genWhen(id ast.NodeID, when ast.When) { //nolint:funlen
 		g.writeLabel(caseLabels[i])
 		g.Gen(case_.Body)
 		caseLabels[i] = g.lastLabel
-		if !g.ast.BlockBreaksControlFlow(case_.Body, false) {
+		if !g.breaksControlFlow(case_.Body) {
 			g.write("br label %%%s", contLabel)
 		}
 		if i+1 < len(when.Cases) {
@@ -1050,7 +1042,7 @@ func (g *IRFunGen) genWhen(id ast.NodeID, when ast.When) { //nolint:funlen
 	phiLabels := make([]Label, 0, len(when.Cases)+1)
 	phiNodes := make([]ast.NodeID, 0, len(when.Cases)+1)
 	for i, case_ := range when.Cases {
-		if g.ast.BlockBreaksControlFlow(case_.Body, false) {
+		if g.breaksControlFlow(case_.Body) {
 			continue
 		}
 		phiLabels = append(phiLabels, caseLabels[i])
@@ -1060,7 +1052,7 @@ func (g *IRFunGen) genWhen(id ast.NodeID, when ast.When) { //nolint:funlen
 		g.writeLabel(elseLabel)
 		g.Gen(*when.Else)
 		phiElseLabel := g.lastLabel
-		if !g.ast.BlockBreaksControlFlow(*when.Else, false) {
+		if !g.breaksControlFlow(*when.Else) {
 			g.write("br label %%%s", contLabel)
 			phiLabels = append(phiLabels, phiElseLabel)
 			phiNodes = append(phiNodes, *when.Else)
@@ -1208,7 +1200,7 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 			g.writeLabel(bodyLabel)
 		}
 		g.Gen(arm.Body)
-		if !g.ast.BlockBreaksControlFlow(arm.Body, false) {
+		if !g.breaksControlFlow(arm.Body) {
 			g.write("br label %%%s", contLabel)
 			phiEntries = append(phiEntries, phiEntry{g.lookupCode(arm.Body), g.lastLabel})
 		}
@@ -1220,7 +1212,7 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 			g.genMatchElseBinding(match, elseBody, payloadPtr)
 		}
 		g.Gen(match.Else.Body)
-		if !g.ast.BlockBreaksControlFlow(match.Else.Body, false) {
+		if !g.breaksControlFlow(match.Else.Body) {
 			g.write("br label %%%s", contLabel)
 			phiEntries = append(phiEntries, phiEntry{g.lookupCode(match.Else.Body), g.lastLabel})
 		}
@@ -2091,6 +2083,11 @@ func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
 	}
 }
 
+func (g *IRFunGen) breaksControlFlow(nodeID ast.NodeID) bool {
+	_, ok := g.typeOfNode(nodeID).Kind.(types.NeverType)
+	return ok
+}
+
 func irName(name string) string {
 	return strings.ReplaceAll(name, "::", "$")
 }
@@ -2102,7 +2099,7 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 		return fmt.Sprintf("i%d", kind.Bits)
 	case types.BoolType:
 		return "i1"
-	case types.VoidType:
+	case types.VoidType, types.NeverType:
 		return "void"
 	case types.StructType:
 		if kind.Name == "Str" {

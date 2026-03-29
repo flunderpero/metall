@@ -161,7 +161,7 @@ _ = void
 ```
 
 ```error
-test.met:1:5: cannot discard void expression
+test.met:1:5: cannot discard expression of type void
     _ = void
         ^^^^
 ```
@@ -368,8 +368,8 @@ fun foo() Int { return 1 }
 ```types
 Fun: fun01
   SimpleType: Int
-  Block: void
-    Return: void
+  Block: never
+    Return: never
       Int: Int
 ---
 fun01 = fun() Int
@@ -384,8 +384,8 @@ fun foo() void { return void }
 ```types
 Fun: fun01
   SimpleType: void
-  Block: void
-    Return: void
+  Block: never
+    Return: never
       Ident: void
 ---
 fun01 = fun() void
@@ -400,8 +400,8 @@ fun foo() Int { return 123 }
 ```types
 Fun: fun01
   SimpleType: Int
-  Block: void
-    Return: void
+  Block: never
+    Return: never
       Int: Int
 ---
 fun01 = fun() Int
@@ -767,7 +767,7 @@ Block: void
 ```
 
 ```error
-test.met:1:3: defer block must have void result type
+test.met:1:3: defer block must not yield a value, got Int
     { defer { 1 } }
       ^^^^^^^^^^^
 ```
@@ -1478,8 +1478,8 @@ Block: fun01
     SimpleType: ?
   Fun: fun01
     SimpleType: union01
-    Block: void
-      Return: void
+    Block: never
+      Return: never
         Int: Int
   Fun: fun01
     SimpleType: union01
@@ -1821,8 +1821,8 @@ Fun: fun01
   Block: Int
     If: void
       Bool: Bool
-      Block: void
-        Return: void
+      Block: never
+        Return: never
           Int: Int
       Block: Str
         String: Str
@@ -1845,8 +1845,8 @@ Fun: fun01
       Block: void
         If: void
           Bool: Bool
-          Block: void
-            Break: void
+          Block: never
+            Break: never
           Block: Str
             String: Str
 ---
@@ -1867,8 +1867,8 @@ Fun: fun01
       Block: void
         If: void
           Bool: Bool
-          Block: void
-            Continue: void
+          Block: never
+            Continue: never
           Block: Str
             String: Str
 ---
@@ -1884,14 +1884,14 @@ fun foo() Int { if true { return 1 } else { return 2 } }
 ```types
 Fun: fun01
   SimpleType: Int
-  Block: void
-    If: void
+  Block: never
+    If: never
       Bool: Bool
-      Block: void
-        Return: void
+      Block: never
+        Return: never
           Int: Int
-      Block: void
-        Return: void
+      Block: never
+        Return: never
           Int: Int
 ---
 fun01 = fun() Int
@@ -1906,20 +1906,20 @@ fun foo() Int { if true { if false { return 1 } else { return 2 } } else { retur
 ```types
 Fun: fun01
   SimpleType: Int
-  Block: void
-    If: void
+  Block: never
+    If: never
       Bool: Bool
-      Block: void
-        If: void
+      Block: never
+        If: never
           Bool: Bool
-          Block: void
-            Return: void
+          Block: never
+            Return: never
               Int: Int
-          Block: void
-            Return: void
+          Block: never
+            Return: never
               Int: Int
-      Block: void
-        Return: void
+      Block: never
+        Return: never
           Int: Int
 ---
 fun01 = fun() Int
@@ -1939,16 +1939,16 @@ Fun: fun01
   Block: Int
     If: void
       Bool: Bool
-      Block: void
-        If: void
+      Block: never
+        If: never
           Binary: Bool
             Ident: Int
             Int: Int
-          Block: void
-            Return: void
+          Block: never
+            Return: never
               Int: Int
-          Block: void
-            Return: void
+          Block: never
+            Return: never
               Int: Int
       Block: Str
         String: Str
@@ -3994,8 +3994,8 @@ Block: void
         Binary: Bool
           Ident: Int
           Int: Int
-        Block: void
-          Break: void
+        Block: never
+          Break: never
 ```
 
 **For in range binding is Int**
@@ -4726,8 +4726,8 @@ Block: Int
     Block: T
       If: void
         Ident: Bool
-        Block: void
-          Return: void
+        Block: never
+          Return: never
             FieldAccess: T
               Ident: struct02
       Ident: T
@@ -6394,8 +6394,8 @@ Block: Int
             Ident: struct01
           FieldAccess: Int
             Ident: struct01
-        Block: void
-          Return: void
+        Block: never
+          Return: never
             TypeConstruction: struct02
               Ident: struct02
       TypeConstruction: union01
@@ -8834,8 +8834,8 @@ Module: test
         TryPattern: void
         Block: void
           Ident: void
-        Block: union01
-          Return: void
+        Block: never
+          Return: never
             Ident: struct01
   Fun: fun02
     SimpleType: void
@@ -9132,3 +9132,35 @@ fun03   = fun(Int) Int
 fun04   = fun([]Int) Int
 ```
 
+## Panic
+
+**panic results in type: never**
+```metall
+panic("boom")
+```
+
+```types
+Call: never
+  Ident: fun01
+  String: Str
+---
+fun01 = fun(Str) never
+```
+
+**code after panic is unreachable**
+
+```metall
+{
+    mut x = 12
+    panic("boom")
+    x = x + 1
+}
+```
+
+```error
+test.met:4:5: unreachable code
+        panic("boom")
+        x = x + 1
+        ^^^^^^^^^
+    }
+```

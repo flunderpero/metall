@@ -241,6 +241,8 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 		return "Bool"
 	case VoidType:
 		return "void"
+	case NeverType:
+		return "never"
 	case RefType:
 		if kind.Mut {
 			return fmt.Sprintf("&mut %s", e.TypeDisplay(kind.Type))
@@ -501,18 +503,6 @@ func (e *TypeEnv) setMethodCallReceiver(callID ast.NodeID, targetID ast.NodeID) 
 
 func (e *TypeEnv) setCallDefaults(callID ast.NodeID, defaults []ast.NodeID) {
 	e.callDefaults[callID] = defaults
-}
-
-func (e *TypeEnv) isAssignableTo(got TypeID, expected TypeID) bool {
-	if got == expected {
-		return true
-	}
-	// A &mut T is assignable to &T (coerce by masking off the mutable flag).
-	if got&mutableRefFlag != 0 && got&^mutableRefFlag == expected {
-		return true
-	}
-	// A []mut T is assignable to []T (coerce by masking off the mutable slice flag).
-	return got&mutableSliceFlag != 0 && got&^mutableSliceFlag == expected
 }
 
 func (e *TypeEnv) isIntType(typeID TypeID) bool {

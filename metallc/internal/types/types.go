@@ -46,6 +46,10 @@ type VoidType struct{}
 
 func (VoidType) isTypeKind() {}
 
+type NeverType struct{}
+
+func (NeverType) isTypeKind() {}
+
 type RefType struct {
 	Type TypeID
 	Mut  bool

@@ -194,7 +194,7 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 	if _, ok := p.expect(token.RParen); !ok {
 		return ParseFailed, false
 	}
-	returnTyp, ok := p.parseFunReturnType()
+	returnTyp, ok := p.ParseType()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -738,9 +738,6 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = p.NewDefer(block, t.Span.Combine(p.span()))
-	case token.Void:
-		p.next()
-		expr = p.NewIdent("void", nil, t.Span)
 	case token.Return:
 		return_, ok := p.ParseReturn()
 		if !ok {
@@ -1098,8 +1095,75 @@ func (p *Parser) ParseArrayOrSliceType() (NodeID, bool) {
 	return p.NewArrayType(typ, *len_, span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseType() (NodeID, bool) {
-	return p.parseBaseType()
+func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
+	t, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	switch t.Kind { //nolint:exhaustive
+	case token.Ident:
+		if t.Value == "void" || t.Value == "never" {
+			p.next()
+			return p.NewSimpleType(Name{t.Value, span}, nil, span), true
+		}
+		if next, ok := p.mayPeek1(); ok && next.Kind == token.ColonColon {
+			path, ok := p.ParsePath()
+			if !ok {
+				return ParseFailed, false
+			}
+			pathNode := base.Cast[Path](p.AST.Node(path).Kind)
+			last := pathNode.Segments[len(pathNode.Segments)-1]
+			firstRune, _ := utf8.DecodeRuneInString(last)
+			if firstRune == utf8.RuneError || !unicode.IsUpper(firstRune) {
+				p.diagnostic(p.span(), "expected a type identifier, got %s", last)
+				return ParseFailed, false
+			}
+			return path, true
+		}
+		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
+		return ParseFailed, false
+	case token.TypeIdent:
+		p.next()
+		typeArgs, ok := p.parseTypeArgs()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewSimpleType(Name{t.Value, span}, typeArgs, span.Combine(p.span())), true
+	case token.LBracket, token.LBracketImmediate:
+		return p.ParseArrayOrSliceType()
+	case token.Amp:
+		p.next()
+		mut := false
+		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
+			mut = true
+			p.next()
+		}
+		inner, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewRefType(inner, mut, span.Combine(p.span())), true
+	case token.Fun:
+		return p.ParseFunType()
+	case token.Question:
+		p.next()
+		inner, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewSimpleType(Name{"Option", span}, []NodeID{inner}, span.Combine(p.span())), true
+	case token.Excl:
+		p.next()
+		inner, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewSimpleType(Name{"Result", span}, []NodeID{inner}, span.Combine(p.span())), true
+	default:
+		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
+		return ParseFailed, false
+	}
 }
 
 func (p *Parser) ParseFor() (NodeID, bool) {
@@ -1455,76 +1519,6 @@ func (p *Parser) parseTry() (NodeID, bool) {
 	return matchID, true
 }
 
-func (p *Parser) parseBaseType() (NodeID, bool) { //nolint:funlen
-	t, ok := p.mustPeek()
-	if !ok {
-		return ParseFailed, false
-	}
-	span := t.Span
-	switch t.Kind { //nolint:exhaustive
-	case token.Ident:
-		if next, ok := p.mayPeek1(); ok && next.Kind == token.ColonColon {
-			path, ok := p.ParsePath()
-			if !ok {
-				return ParseFailed, false
-			}
-			pathNode := base.Cast[Path](p.AST.Node(path).Kind)
-			last := pathNode.Segments[len(pathNode.Segments)-1]
-			firstRune, _ := utf8.DecodeRuneInString(last)
-			if firstRune == utf8.RuneError || !unicode.IsUpper(firstRune) {
-				p.diagnostic(p.span(), "expected a type identifier, got %s", last)
-				return ParseFailed, false
-			}
-			return path, true
-		}
-		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
-		return ParseFailed, false
-	case token.TypeIdent:
-		p.next()
-		typeArgs, ok := p.parseTypeArgs()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewSimpleType(Name{t.Value, span}, typeArgs, span.Combine(p.span())), true
-	case token.Void:
-		p.next()
-		return p.NewSimpleType(Name{"void", span}, nil, span), true
-	case token.LBracket, token.LBracketImmediate:
-		return p.ParseArrayOrSliceType()
-	case token.Amp:
-		p.next()
-		mut := false
-		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
-			mut = true
-			p.next()
-		}
-		inner, ok := p.ParseType()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewRefType(inner, mut, span.Combine(p.span())), true
-	case token.Fun:
-		return p.ParseFunType()
-	case token.Question:
-		p.next()
-		inner, ok := p.ParseType()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewSimpleType(Name{"Option", span}, []NodeID{inner}, span.Combine(p.span())), true
-	case token.Excl:
-		p.next()
-		inner, ok := p.ParseType()
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewSimpleType(Name{"Result", span}, []NodeID{inner}, span.Combine(p.span())), true
-	default:
-		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
-		return ParseFailed, false
-	}
-}
-
 func (p *Parser) parseMatchArms() ([]MatchArm, *MatchElse, bool) {
 	var arms []MatchArm
 	for {
@@ -1769,7 +1763,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	if !ok {
 		return FunDecl{}, base.Span{}, false
 	}
-	returnType, ok := p.parseFunReturnType()
+	returnType, ok := p.ParseType()
 	if !ok {
 		return FunDecl{}, base.Span{}, false
 	}
@@ -1818,7 +1812,7 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	returnType, ok := p.parseFunReturnType()
+	returnType, ok := p.ParseType()
 	if !ok {
 		return ParseFailed, false
 	}
@@ -1838,10 +1832,6 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) {
 	}
 	ident := p.NewIdent(name, nil, span)
 	return p.NewBlock([]NodeID{funID, ident}, span), true
-}
-
-func (p *Parser) parseFunReturnType() (NodeID, bool) {
-	return p.ParseType()
 }
 
 func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {

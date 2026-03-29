@@ -54,6 +54,9 @@ func updateMinimalPrelude(a *AST) {
 			if kind.Name.Name == "Void_" {
 				kind.Name.Name = "void"
 				node.Kind = kind
+			} else if kind.Name.Name == "Never_" {
+				kind.Name.Name = "never"
+				node.Kind = kind
 			} else if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
 				kind.Name.Name = s
 				node.Kind = kind

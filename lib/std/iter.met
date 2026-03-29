@@ -43,7 +43,6 @@ fun FilterIter.next<A, I Iter<A>>(it &mut FilterIter<A, I>) ?A {
         }
     }
     panic("unreachable")
-    None()
 }
 
 --- Filter out values that don't match the predicate. ---
@@ -65,7 +64,6 @@ fun all<A, I Iter<A>>(it &mut I, f fun(A) Bool) Bool {
         }
     }
     panic("unreachable")
-    false
 }
 
 --- Test if any element matches the given predicate.
@@ -82,7 +80,6 @@ fun any<A, I Iter<A>>(it &mut I, f fun(A) Bool) Bool {
         }
     }
     panic("unreachable")
-    false
 }
 
 struct ChainIter<A, I1 Iter<A>, I2 Iter<A>> {
@@ -131,7 +128,6 @@ fun fold<A, B, I Iter<A>>(it &mut I, initial B, f fun(B, A) B) B {
         }
     }
     panic("unreachable")
-    initial
 }
 
 struct PeekIter<A, I Iter<A>> {
@@ -200,8 +196,6 @@ fun TakeWhileIter.next<A, I PeekableIter<A>>(t &mut TakeWhileIter<A, I>) ?A {
             }
             return None()
     }
-    panic("unreachable")
-    None()
 }
 
 --- Take elements as long as the predicate returns `true`.

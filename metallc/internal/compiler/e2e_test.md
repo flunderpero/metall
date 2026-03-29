@@ -3665,7 +3665,6 @@ fun Iter.next(it &mut Iter) ?Pos {
         Pos((b0 & 7) << 18 | (b1 & 63) << 12 | (b2 & 63) << 6 | (b3 & 63), start)
     else:
         panic("bad")
-        None()
     }
 }
 
@@ -4186,6 +4185,190 @@ fun main() void {
 test.met:4:15: slice out of bounds
 ```
 
+### Panic (i.e. unreachable) in all places
+
+**panic in if then branch**
+
+```metall
+fun main() void {
+    if false { panic("boom") } else { DebugIntern.print_str("ok") }
+}
+```
+
+```output
+ok
+```
+
+**panic in if else branch**
+
+```metall
+fun main() void {
+    if true { DebugIntern.print_str("ok") } else { panic("boom") }
+}
+```
+
+```output
+ok
+```
+
+**panic in both if branches**
+
+```metall
+fun foo() Int {
+    if true { panic("boom") } else { panic("boom2") }
+}
+fun main() void {
+    _ = foo()
+}
+```
+
+```panic
+test.met:2:15: boom
+```
+
+**panic in match arm**
+
+```metall
+fun main() void {
+    union AB = Int | Bool
+    match AB(true) {
+        case Int: panic("boom")
+        case Bool: DebugIntern.print_str("ok")
+    }
+}
+```
+
+```output
+ok
+```
+
+**panic in all match arms**
+
+```metall
+fun main() void {
+    union AB = Int | Bool
+    match AB(1) {
+        case Int: panic("boom")
+        case Bool: panic("boom2")
+    }
+}
+```
+
+```panic
+test.met:4:19: boom
+```
+
+**panic in match else**
+
+```metall
+fun main() void {
+    union ABC = Int | Bool | Str
+    match ABC(1) {
+        case Int: DebugIntern.print_str("ok")
+        else: panic("boom")
+    }
+}
+```
+
+```output
+ok
+```
+
+**panic in when arm**
+
+```metall
+fun main() void {
+    when {
+        case false: panic("boom")
+        else: DebugIntern.print_str("ok")
+    }
+}
+```
+
+```output
+ok
+```
+
+**panic in when else**
+
+```metall
+fun main() void {
+    when {
+        case true: DebugIntern.print_str("ok")
+        else: panic("boom")
+    }
+}
+```
+
+```output
+ok
+```
+
+**panic in all when branches**
+
+```metall
+fun foo() Int {
+    when {
+        case false: panic("a")
+        case false: panic("b")
+        else: panic("c")
+    }
+}
+fun main() void {
+    _ = foo()
+}
+```
+
+```panic
+test.met:5:15: c
+```
+
+**panic in try else**
+
+```metall
+fun main() void {
+    fun fail() Result<Int> { Err("fail") }
+    let x = try fail() else { panic("boom") }
+    DebugIntern.print_int(x)
+}
+```
+
+```panic
+test.met:3:31: boom
+```
+
+**panic in loop body**
+
+```metall
+fun main() void {
+    mut i = 0
+    for {
+        if i == 3 { panic("done") }
+        i = i + 1
+    }
+}
+```
+
+```panic
+test.met:4:21: done
+```
+
+**panic as function return**
+
+```metall
+fun never_returns() Int {
+    panic("nope")
+}
+
+fun main() void {
+    _ = never_returns()
+}
+```
+
+```panic
+test.met:2:5: nope
+```
+
 ## Macros
 
 **simple macro**
@@ -4495,3 +4678,14 @@ fun main() !void {
 something went wrong
 ```
 
+**main returns !void error but panics**
+
+```metall
+fun main() !void {
+    panic("something went wrong")
+}
+```
+
+```panic
+test.met:2:5: something went wrong
+```

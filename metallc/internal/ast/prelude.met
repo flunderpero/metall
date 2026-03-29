@@ -167,7 +167,6 @@ fun Str.internal_rune_at(bytes []U8, index_out &mut Int) Rune {
         Rune((b0 & 7) << 18 | (b1 & 63) << 12 | (b2 & 63) << 6 | (b3 & 63))
     else:
         panic("invalid utf8")
-        Rune(0)
     }
     index_out.* = index
     rune

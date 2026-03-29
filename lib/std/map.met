@@ -74,7 +74,6 @@ fun Map.get<K Key, V>(m &Map<K, V>, key K) ?V {
         pos = (pos + 1) % capacity
     }
     panic("unreachable")
-    None()
 }
 
 fun Map.has<K Key, V>(m &Map<K, V>, key K) Bool {
@@ -95,7 +94,6 @@ fun Map.has<K Key, V>(m &Map<K, V>, key K) Bool {
         pos = (pos + 1) % capacity
     }
     panic("unreachable")
-    false
 }
 
 fun Map.del<K Key, V>(m &mut Map<K, V>, key K) Bool {
@@ -118,7 +116,6 @@ fun Map.del<K Key, V>(m &mut Map<K, V>, key K) Bool {
         pos = (pos + 1) % capacity
     }
     panic("unreachable")
-    false
 }
 
 fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
@@ -192,5 +189,4 @@ fun set_internal<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {
         pos = (pos + 1) % capacity
     }
     panic("unreachable")
-    return 0
 }

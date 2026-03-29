@@ -269,6 +269,9 @@ func (r *compTypeRenderer) render(typeID TypeID, span base.Span) (string, bool) 
 	if typeID == r.engine.voidTyp {
 		return "comp::VoidType()", true
 	}
+	if typeID == r.engine.neverTyp {
+		return "comp::NeverType()", true
+	}
 	typ := r.engine.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
 	case IntType:

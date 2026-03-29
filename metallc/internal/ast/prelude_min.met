@@ -7,6 +7,9 @@
 --- A placeholder type for the builtin `void` type. ---
 struct Void_ {}
 
+--- A placeholder type for the builtin `Never` type. ---
+struct Never_ {}
+
 --- A placeholder type for the builtin `Arena` type. ---
 struct Arena_ {}
 
@@ -155,4 +158,4 @@ fun LibCIntern.pclose(fd U64) I32 {}
 
 --- Print the message to stderr and abort the program immediately
     without unwinding the stack. ---
-fun panic_(s Str) void {}
+fun panic_(s Str) never {}

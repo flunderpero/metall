@@ -222,6 +222,8 @@ func (d *debugTypes) typeLabelForID(typeID TypeID) string { //nolint:funlen
 	switch kind := typ.Type.Kind.(type) {
 	case VoidType:
 		return "void"
+	case NeverType:
+		return "never"
 	case BoolType:
 		return "Bool"
 	case IntType:

@@ -117,15 +117,17 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 		if bodyStatus.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if !e.ast.BlockBreaksControlFlow(ab.body, false) {
-			bodies[i].typeID = bodyTypeID
-		}
+		bodies[i].typeID = bodyTypeID
 	}
 	if match.Try {
 		if match.Else == nil {
 			panic(base.Errorf("try must have an else branch"))
 		}
-		if !e.ast.BlockBreaksControlFlow(match.Else.Body, false) {
+		elseTyp, status := e.Query(match.Else.Body)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if elseTyp != e.neverTyp {
 			e.diag(e.ast.Node(match.Else.Body).Span, "try else block must break control flow")
 			return InvalidTypeID, TypeFailed
 		}
@@ -133,7 +135,7 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 
 	var resultTypeID TypeID
 	for _, ab := range bodies {
-		if ab.typeID == InvalidTypeID {
+		if ab.typeID == InvalidTypeID || ab.typeID == e.neverTyp {
 			continue
 		}
 		if resultTypeID == 0 {
@@ -145,7 +147,7 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 		}
 	}
 	if resultTypeID == 0 {
-		return e.voidTyp, TypeOK
+		return e.neverTyp, TypeOK
 	}
 	return resultTypeID, TypeOK
 }

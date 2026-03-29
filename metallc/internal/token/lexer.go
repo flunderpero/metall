@@ -84,7 +84,6 @@ const (
 	Union
 	Unknown
 	Use
-	Void
 	When
 	Whitespace
 )
@@ -163,7 +162,6 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Union:                 "<union>",
 	Unknown:               "<unknown>",
 	Use:                   "<use>",
-	Void:                  "<void>",
 	When:                  "<when>",
 	Whitespace:            "<whitespace>",
 }
@@ -219,7 +217,6 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"unsafe":   Unsafe,
 	"union":    Union,
 	"use":      Use,
-	"void":     Void,
 	"when":     When,
 }
 

@@ -122,7 +122,7 @@ fun foo() Int {
 ```types
 Fun: fun01
   SimpleType: Int
-  Block: void
+  Block: never
     Union: union01
       SimpleType: ?
       SimpleType: ?
@@ -130,15 +130,15 @@ Fun: fun01
       TypeConstruction: union01
         Ident: union01
         Int: Int
-    Match: void
+    Match: never
       Ident: union01
       SimpleType: Str
-      Block: void
-        Return: void
+      Block: never
+        Return: never
           Int: Int
       SimpleType: Int
-      Block: void
-        Return: void
+      Block: never
+        Return: never
           Int: Int
 ---
 fun01   = fun() Int
@@ -174,8 +174,8 @@ Fun: fun01
     Match: Int
       Ident: union01
       SimpleType: Str
-      Block: void
-        Return: void
+      Block: never
+        Return: never
           Int: Int
       SimpleType: Int
       Block: Int
@@ -614,7 +614,7 @@ fun foo() Int {
 ```
 
 ```error
-test.met:4:5: cannot assign void to a variable
+test.met:4:5: cannot assign expression of type 'never' to a variable
         let x = Foo(42)
         let y = match x {
         ^

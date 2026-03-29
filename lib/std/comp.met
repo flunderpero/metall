@@ -1,6 +1,7 @@
 struct BoolType {}
 struct StrType {}
 struct VoidType {}
+struct NeverType {}
 
 struct IntType {
     name Str
@@ -24,9 +25,8 @@ struct UnionType {
     variants []&Type
 }
 
-union Type = BoolType | StrType | VoidType | IntType | StructType | UnionType
+union Type = BoolType | StrType | VoidType | NeverType | IntType | StructType | UnionType
 
 fun type_of<T>() Type {
     panic("comp::type_of must only be used as a macro argument")
-    StrType()
 }

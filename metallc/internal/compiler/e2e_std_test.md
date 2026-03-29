@@ -37,6 +37,7 @@ fun type_name(name Str, info comp::Type, sb &mut StrBuilder, @a Arena) void {
         case comp::BoolType b: { sb.str("Bool") }
         case comp::StrType s: { sb.str("Str") }
         case comp::VoidType v: { sb.str("void") }
+        case comp::NeverType v: { sb.str("never") }
         case comp::IntType i: { sb.str(i.name) }
         case comp::StructType s: { sb.str("struct ") sb.str(s.name) }
         case comp::UnionType u: { sb.str("union ") sb.str(u.name) }
@@ -118,6 +119,7 @@ fun gen_fmt(info comp::Type, sb &mut StrBuilder, @a Arena) void {
         case comp::BoolType b: { }
         case comp::StrType s: { }
         case comp::VoidType v: { }
+        case comp::NeverType v: { }
         case comp::IntType i: { }
         case comp::UnionType u: { }
     }

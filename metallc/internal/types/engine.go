@@ -46,6 +46,7 @@ type Engine struct {
 	strTyp             TypeID
 	runeTyp            TypeID
 	arenaTyp           TypeID
+	neverTyp           TypeID
 	intTyp             TypeID
 }
 
@@ -304,8 +305,8 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if rhsTypeID == e.voidTyp {
-			e.diag(e.ast.Node(assign.RHS).Span, "cannot discard void expression")
+		if !e.isInstantiable(rhsTypeID) {
+			e.diag(e.ast.Node(assign.RHS).Span, "cannot discard expression of type %s", e.env.TypeDisplay(rhsTypeID))
 			return InvalidTypeID, TypeFailed
 		}
 		return e.voidTyp, TypeOK
@@ -318,7 +319,7 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if !e.env.isAssignableTo(rhsTypeID, lhsTypeID) {
+	if !e.isAssignableTo(rhsTypeID, lhsTypeID) {
 		span := e.ast.Node(assign.RHS).Span
 		e.diag(span, "type mismatch: expected %s, got %s",
 			e.env.TypeDisplay(lhsTypeID), e.env.TypeDisplay(rhsTypeID))
@@ -468,7 +469,7 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 			lastExprTypeID, status = e.queryWithHint(exprNodeID, typeHint)
 		} else {
 			lastExprTypeID, status = e.Query(exprNodeID)
-			if !status.Failed() && lastExprTypeID != e.voidTyp {
+			if !status.Failed() && e.isInstantiable(lastExprTypeID) {
 				switch e.ast.Node(exprNodeID).Kind.(type) {
 				case ast.Fun, ast.Struct, ast.Shape, ast.Union:
 					// Declarations are not expressions — skip the check.
@@ -485,8 +486,7 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 		if status.Failed() {
 			depFailed = true
 		}
-		switch e.ast.Node(exprNodeID).Kind.(type) {
-		case ast.Continue, ast.Break, ast.Return:
+		if lastExprTypeID == e.neverTyp {
 			wouldBeDeadCode = true
 		}
 	}
@@ -501,7 +501,7 @@ func (e *Engine) checkContinue(span base.Span) (TypeID, TypeStatus) {
 		e.diag(span, "continue statement outside of loop")
 		return InvalidTypeID, TypeFailed
 	}
-	return e.voidTyp, TypeOK
+	return e.neverTyp, TypeOK
 }
 
 func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatus) {
@@ -509,8 +509,8 @@ func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatu
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if blockTypeID != e.voidTyp {
-		e.diag(span, "defer block must have void result type")
+	if e.isInstantiable(blockTypeID) {
+		e.diag(span, "defer block must not yield a value, got %s", e.env.TypeDisplay(blockTypeID))
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK
@@ -521,7 +521,7 @@ func (e *Engine) checkBreak(span base.Span) (TypeID, TypeStatus) {
 		e.diag(span, "break statement outside of loop")
 		return InvalidTypeID, TypeFailed
 	}
-	return e.voidTyp, TypeOK
+	return e.neverTyp, TypeOK
 }
 
 func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) {
@@ -552,9 +552,9 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if bodyTypeID != e.voidTyp {
+	if e.isInstantiable(bodyTypeID) {
 		bodySpan := e.ast.Node(for_.Body).Span
-		e.diag(bodySpan, "for loop body must be void, got %s", e.env.TypeDisplay(bodyTypeID))
+		e.diag(bodySpan, "for loop body must not yield a value, got %s", e.env.TypeDisplay(bodyTypeID))
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK
@@ -604,8 +604,10 @@ func (e *Engine) checkIf(if_ ast.If, typeHint *TypeID) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if e.ast.BlockBreaksControlFlow(if_.Then, false) ||
-		e.ast.BlockBreaksControlFlow(*if_.Else, false) {
+	if elseType == e.neverTyp && thenType == e.neverTyp {
+		return e.neverTyp, TypeOK
+	}
+	if elseType == e.neverTyp || thenType == e.neverTyp {
 		return e.voidTyp, TypeOK
 	}
 	if thenType != elseType {
@@ -651,7 +653,7 @@ func (e *Engine) checkWhen(when ast.When, typeHint *TypeID) (TypeID, TypeStatus)
 		if status.Failed() {
 			return TypeDepFailed, false
 		}
-		if e.ast.BlockBreaksControlFlow(body, false) {
+		if bodyType == e.neverTyp {
 			return TypeOK, true
 		}
 		if resultType == nil {
@@ -675,7 +677,7 @@ func (e *Engine) checkWhen(when ast.When, typeHint *TypeID) (TypeID, TypeStatus)
 		}
 	}
 	if resultType == nil {
-		return e.voidTyp, TypeOK
+		return e.neverTyp, TypeOK
 	}
 	return *resultType, TypeOK
 }
@@ -723,7 +725,7 @@ func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, sp
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if !e.env.isAssignableTo(elemTyp2, elemTyp) {
+		if !e.isAssignableTo(elemTyp2, elemTyp) {
 			e.diag(
 				e.ast.Node(elemNodeID).Span,
 				"array literal element type mismatch: expected %s, got %s",
@@ -879,7 +881,7 @@ func (e *Engine) checkStructConstruction(
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if !e.env.isAssignableTo(argTypeID, struct_.Fields[i].Type) {
+		if !e.isAssignableTo(argTypeID, struct_.Fields[i].Type) {
 			e.diag(
 				argNode.Span,
 				"type mismatch at argument %d: expected %s, got %s",
@@ -906,7 +908,7 @@ func (e *Engine) checkUnionConstruction(
 		return InvalidTypeID, TypeDepFailed
 	}
 	for _, variantTypeID := range union.Variants {
-		if e.env.isAssignableTo(argTypeID, variantTypeID) {
+		if e.isAssignableTo(argTypeID, variantTypeID) {
 			return unionTypeID, TypeOK
 		}
 	}
@@ -1114,7 +1116,7 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if !e.env.isAssignableTo(argTypeID, paramTypeID) {
+		if !e.isAssignableTo(argTypeID, paramTypeID) {
 			argNode := e.ast.Node(argNodeID)
 			if i == 0 && isMethod {
 				e.diag(argNode.Span, "type mismatch at receiver: expected %s, got %s",
@@ -1533,6 +1535,9 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 	case "Arena":
 		typ.Type.Kind = AllocatorType{AllocatorArena}
 		e.arenaTyp = typ.Type.ID
+	case "never":
+		typ.Type.Kind = NeverType{}
+		e.neverTyp = typ.Type.ID
 	case "void":
 		typ.Type.Kind = VoidType{}
 		e.voidTyp = typ.Type.ID
@@ -1619,10 +1624,10 @@ func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID T
 	}
 	blockNode := e.ast.Node(funNode.Block)
 	block := base.Cast[ast.Block](blockNode.Kind)
-	if e.ast.BlockReturns(funNode.Block) {
+	if blockTypeID == e.neverTyp {
 		return
 	}
-	if !e.env.isAssignableTo(blockTypeID, funType.Return) {
+	if !e.isAssignableTo(blockTypeID, funType.Return) {
 		diagSpan := blockNode.Span
 		if len(block.Exprs) > 0 {
 			lastNode := e.ast.Node(block.Exprs[len(block.Exprs)-1])
@@ -1652,7 +1657,7 @@ func (e *Engine) checkFunParam(funParam ast.FunParam) (TypeID, TypeStatus) {
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
-		if !e.env.isAssignableTo(defaultTypeID, typeID) {
+		if !e.isAssignableTo(defaultTypeID, typeID) {
 			e.diag(e.ast.Node(*funParam.Default).Span,
 				"default value type mismatch: expected %s, got %s",
 				e.env.TypeDisplay(typeID), e.env.TypeDisplay(defaultTypeID))
@@ -1706,7 +1711,7 @@ func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeSt
 		)
 		return InvalidTypeID, TypeFailed
 	}
-	return e.voidTyp, TypeOK
+	return e.neverTyp, TypeOK
 }
 
 func (e *Engine) checkStructField(structField ast.StructField) (TypeID, TypeStatus) {
@@ -2061,13 +2066,13 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 			return InvalidTypeID, TypeDepFailed
 		}
 	}
-	if exprTypeID == e.voidTyp {
-		e.diag(span, "cannot assign void to a variable")
+	if !e.isInstantiable(exprTypeID) {
+		e.diag(span, "cannot assign expression of type '%s' to a variable", e.env.TypeDisplay(exprTypeID))
 		return InvalidTypeID, TypeFailed
 	}
 	bindTypeID := exprTypeID
 	if varNode.Type != nil {
-		if !e.env.isAssignableTo(exprTypeID, declTypeID) {
+		if !e.isAssignableTo(exprTypeID, declTypeID) {
 			exprSpan := e.ast.Node(varNode.Expr).Span
 			e.diag(exprSpan, "type mismatch: expected %s, got %s",
 				e.env.TypeDisplay(declTypeID), e.env.TypeDisplay(exprTypeID))
@@ -2233,15 +2238,34 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 }
 
 func (e *Engine) tryUnionAutoWrap(nodeID ast.NodeID, typeID TypeID, hintTypeID TypeID) TypeID {
+	if typeID == e.neverTyp {
+		return typeID
+	}
 	unionType, ok := e.env.Type(hintTypeID).Kind.(UnionType)
 	if !ok {
 		return typeID
 	}
 	for _, variantID := range unionType.Variants {
-		if e.env.isAssignableTo(typeID, variantID) {
+		if e.isAssignableTo(typeID, variantID) {
 			e.env.recordUnionWrap(nodeID, hintTypeID)
 			return hintTypeID
 		}
 	}
 	return typeID
+}
+
+func (e *Engine) isInstantiable(t TypeID) bool {
+	return t != e.voidTyp && t != e.neverTyp
+}
+
+func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
+	if got == expected || got == e.neverTyp {
+		return true
+	}
+	// A &mut T is assignable to &T (coerce by masking off the mutable flag).
+	if got&mutableRefFlag != 0 && got&^mutableRefFlag == expected {
+		return true
+	}
+	// A []mut T is assignable to []T (coerce by masking off the mutable slice flag).
+	return got&mutableSliceFlag != 0 && got&^mutableSliceFlag == expected
 }

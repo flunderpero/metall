@@ -1401,56 +1401,6 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	return strings.Join(lines, "\n")
 }
 
-func (a *AST) BlockReturns(blockID NodeID) bool {
-	return a.blockBreaksControlFlow(blockID, true)
-}
-
-func (a *AST) BlockBreaksControlFlow(blockID NodeID, checkReturnOnly bool) bool {
-	return a.blockBreaksControlFlow(blockID, checkReturnOnly)
-}
-
-func (a *AST) blockBreaksControlFlow(blockID NodeID, checkForReturnOnly bool) bool {
-	block := base.Cast[Block](a.Node(blockID).Kind)
-	if len(block.Exprs) == 0 {
-		return false
-	}
-	lastExpr := a.Node(block.Exprs[len(block.Exprs)-1])
-	switch lastExpr.Kind.(type) {
-	case Break, Continue:
-		return !checkForReturnOnly
-	case Return:
-		return true
-	default:
-		if ifNode, ok := lastExpr.Kind.(If); ok {
-			return ifNode.Else != nil && a.blockBreaksControlFlow(ifNode.Then, checkForReturnOnly) &&
-				a.blockBreaksControlFlow(*ifNode.Else, checkForReturnOnly)
-		}
-		if whenNode, ok := lastExpr.Kind.(When); ok {
-			if len(whenNode.Cases) == 0 || whenNode.Else == nil {
-				return false
-			}
-			for _, case_ := range whenNode.Cases {
-				if !a.blockBreaksControlFlow(case_.Body, checkForReturnOnly) {
-					return false
-				}
-			}
-			return a.blockBreaksControlFlow(*whenNode.Else, checkForReturnOnly)
-		}
-		if matchNode, ok := lastExpr.Kind.(Match); ok {
-			for _, arm := range matchNode.Arms {
-				if !a.blockBreaksControlFlow(arm.Body, checkForReturnOnly) {
-					return false
-				}
-			}
-			if matchNode.Else != nil && !a.blockBreaksControlFlow(matchNode.Else.Body, checkForReturnOnly) {
-				return false
-			}
-			return len(matchNode.Arms) > 0
-		}
-		return false
-	}
-}
-
 func (a *AST) node(kind Kind, span base.Span) NodeID {
 	id := a.nextID_
 	node := &Node{ID: id, Span: span, Kind: kind}

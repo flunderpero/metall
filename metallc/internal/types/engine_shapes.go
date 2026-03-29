@@ -170,7 +170,7 @@ func (e *Engine) shapeMethodMatches(expected, concrete FunType) bool {
 		return false
 	}
 	for i, ep := range expected.Params {
-		if !e.env.isAssignableTo(ep, concrete.Params[i]) {
+		if !e.isAssignableTo(ep, concrete.Params[i]) {
 			return false
 		}
 	}
