@@ -1433,7 +1433,7 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 			continue
 		}
 		funKind := base.Cast[ast.Fun](decl.node.Kind)
-		if !funKind.Extern {
+		if !funKind.Builtin && !funKind.Extern {
 			funType := base.Cast[FunType](decl.cachedType.Type.Kind)
 			e.debug.Print(
 				0,

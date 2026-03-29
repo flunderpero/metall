@@ -58,7 +58,7 @@ func (c *EngineCore) registerFun(nodeID ast.NodeID) {
 	if !ok {
 		return
 	}
-	if funNode.Extern {
+	if funNode.Builtin || funNode.Extern {
 		return
 	}
 	name, ok := c.env.NamedFunRef(nodeID)
@@ -73,7 +73,7 @@ func (c *EngineCore) registerFun(nodeID ast.NodeID) {
 
 func (c *EngineCore) registerStruct(structType StructType, nodeID ast.NodeID, typeID TypeID) {
 	structNode, ok := c.ast.Node(nodeID).Kind.(ast.Struct)
-	if !ok || structNode.Extern {
+	if !ok || structNode.Builtin {
 		return
 	}
 	if _, ok := c.structs[structType.Name]; !ok {

@@ -43,7 +43,7 @@ type genericDecl struct {
 	memberNodeIDs []ast.NodeID
 	paramNodeIDs  []ast.NodeID
 	returnNodeID  ast.NodeID
-	extern        bool
+	builtin       bool
 }
 
 type genericInstance struct {
@@ -509,7 +509,7 @@ func (e *Engine) normalizeGenericTypeDecl(originTypeID TypeID, nodeID ast.NodeID
 			memberNodeIDs: kind.Fields,
 			paramNodeIDs:  nil,
 			returnNodeID:  0,
-			extern:        false,
+			builtin:       false,
 		}, true
 	case ast.Union:
 		return genericDecl{
@@ -522,7 +522,7 @@ func (e *Engine) normalizeGenericTypeDecl(originTypeID TypeID, nodeID ast.NodeID
 			memberNodeIDs: kind.Variants,
 			paramNodeIDs:  nil,
 			returnNodeID:  0,
-			extern:        false,
+			builtin:       false,
 		}, true
 	case ast.Shape:
 		shapeType := base.Cast[ShapeType](e.env.Type(originTypeID).Kind)
@@ -536,7 +536,7 @@ func (e *Engine) normalizeGenericTypeDecl(originTypeID TypeID, nodeID ast.NodeID
 			memberNodeIDs: kind.Fields,
 			paramNodeIDs:  nil,
 			returnNodeID:  0,
-			extern:        false,
+			builtin:       false,
 		}, true
 	default:
 		return genericDecl{}, false
@@ -564,7 +564,7 @@ func (e *Engine) normalizeGenericCallableDecl(
 			memberNodeIDs: nil,
 			paramNodeIDs:  kind.Params,
 			returnNodeID:  kind.ReturnType,
-			extern:        kind.Extern,
+			builtin:       kind.Builtin,
 		}, true
 	case ast.FunDecl:
 		ownerTypeID, shapeNode, ok := e.shapeOwner(originTypeID)
@@ -581,7 +581,7 @@ func (e *Engine) normalizeGenericCallableDecl(
 			memberNodeIDs: nil,
 			paramNodeIDs:  kind.Params,
 			returnNodeID:  kind.ReturnType,
-			extern:        false,
+			builtin:       false,
 		}, true
 	default:
 		return genericDecl{}, false
@@ -1136,7 +1136,7 @@ func (e *Engine) MaterializeFun(
 	node := e.ast.Node(funNodeID)
 	funTypeID := e.env.newType(funTyp, node.ID, node.Span, TypeOK)
 	e.env.reg.genericOrigin[funTypeID] = genericTypeID
-	if !decl.extern {
+	if !decl.builtin {
 		e.funs[mangledName] = FunWork{NodeID: funNodeID, TypeID: funTypeID, Name: mangledName, Env: e.env}
 		prevScope := e.instantiationScope
 		e.instantiationScope = &callSiteNodeID

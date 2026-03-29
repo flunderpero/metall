@@ -61,7 +61,7 @@ func updateMinimalPrelude(a *AST) {
 			if slices.Contains([]string{"None", "Err"}, kind.Name.Name) {
 				return true
 			}
-			kind.Extern = true
+			kind.Builtin = true
 			node.Kind = kind
 		case Union:
 			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
@@ -72,7 +72,7 @@ func updateMinimalPrelude(a *AST) {
 			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
 				kind.Name.Name = s
 			}
-			kind.Extern = true
+			kind.Builtin = true
 			node.Kind = kind
 		case SimpleType:
 			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {

@@ -164,6 +164,7 @@ type Fun struct {
 	FunDecl
 	Block    NodeID
 	Captures []NodeID // Closure captures: fun[a, &b, &mut c](...)
+	Builtin  bool
 	Extern   bool
 	Unsafe   bool
 }
@@ -182,6 +183,7 @@ type Struct struct {
 	Name       Name
 	TypeParams []NodeID
 	Fields     []NodeID
+	Builtin    bool
 	Extern     bool
 }
 
@@ -569,6 +571,7 @@ func (a *AST) NewFun(
 		Fun{
 			FunDecl:  FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType},
 			Captures: nil,
+			Builtin:  false,
 			Extern:   false,
 			Unsafe:   unsafe,
 			Block:    block,
@@ -586,7 +589,7 @@ func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, span base
 }
 
 func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, span base.Span) NodeID {
-	return a.node(Struct{Name: name, TypeParams: typeParams, Fields: fields, Extern: false}, span)
+	return a.node(Struct{Name: name, TypeParams: typeParams, Fields: fields, Builtin: false, Extern: false}, span)
 }
 
 func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) NodeID {

@@ -936,7 +936,7 @@ func (a *LifetimeCheck) analyzeReturn(nodeID ast.NodeID, ret ast.Return) {
 //
 //nolint:funlen
 func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
-	if fun.Extern {
+	if fun.Builtin {
 		return
 	}
 	// Walk type params and return type (no special handling needed).
