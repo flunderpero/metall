@@ -129,9 +129,6 @@ struct Err_ { msg Str }
 --- A placeholder type for the builtin `Result` type. ---
 union Result_<T> = T | Err
 
---- A placeholder type for the builtin `CStr` type. ---
-struct CStr_ { data []U8 }
-
 --- Placeholder type for slice method namespace. ---
 struct Slice_<T> {}
 
@@ -142,19 +139,6 @@ fun DebugIntern.print_str(s Str) void {}
 fun DebugIntern.print_int(n Int) void {}
 fun DebugIntern.print_uint(n U64) void {}
 fun DebugIntern.print_bool(b Bool) void {}
-
---- A placeholder for all internal posix/libc external functions. ---
-struct LibCIntern_ {}
-fun LibCIntern.errno() I32 {}
-fun LibCIntern.reset_errno() void {}
-fun LibCIntern.fopen(filename CStr, mode CStr) U64 {}
-fun LibCIntern.strerror(errnum I32) Str {}
-fun LibCIntern.fwrite(fd U64, data []U8) Int {}
-fun LibCIntern.fread(fd U64, buf []U8) Int {}
-fun LibCIntern.fclose(fd U64) I32 {}
-fun LibCIntern.write(fd I32, data []U8) Int {}
-fun LibCIntern.popen(cmd CStr, mode CStr) U64 {}
-fun LibCIntern.pclose(fd U64) I32 {}
 
 --- Print the message to stderr and abort the program immediately
     without unwinding the stack. ---

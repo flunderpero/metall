@@ -4,16 +4,6 @@ declare i32 @putchar(i8)
 declare i32 @puts(ptr)
 declare i32 @printf(ptr, ...)
 declare i32 @fflush(ptr)
-declare ptr @fopen(ptr, ptr)
-declare i32 @fclose(ptr)
-declare ptr @popen(ptr, ptr)
-declare i32 @pclose(ptr)
-declare i64 @fwrite(ptr, i64, i64, ptr)
-declare i64 @fread(ptr, i64, i64, ptr)
-declare ptr @__error()
-declare ptr @strerror(i32)
-declare i64 @strlen(ptr)
-declare i32 @memcmp(ptr, ptr, i64)
 declare i64 @write(i32, ptr, i64)
 
 ; >>> Builtin functions.
@@ -347,93 +337,6 @@ define internal i64 @"Int.to_u64_wrapping"(i64 %v) alwaysinline {
 define internal i32 @"Rune.to_u32"(i32 %v) alwaysinline {
     ret i32 %v
 }
-
-; >>> IO.
-
-define internal i64 @LibCIntern.fopen(ptr byval(%CStr) %path, ptr byval(%CStr) %mode) {
-    %path_data_field = getelementptr %CStr, ptr %path, i32 0, i32 0, i32 0
-    %path_ptr = load ptr, ptr %path_data_field
-    %mode_data_field = getelementptr %CStr, ptr %mode, i32 0, i32 0, i32 0
-    %mode_ptr = load ptr, ptr %mode_data_field
-    %fp = call ptr @fopen(ptr %path_ptr, ptr %mode_ptr)
-    %fd = ptrtoint ptr %fp to i64
-    ret i64 %fd
-}
-
-define internal i64 @LibCIntern.fwrite(i64 %fd, ptr byval({ptr, i64}) %data) {
-    %data_ptr_field = getelementptr {ptr, i64}, ptr %data, i32 0, i32 0
-    %data_ptr = load ptr, ptr %data_ptr_field
-    %data_len_field = getelementptr {ptr, i64}, ptr %data, i32 0, i32 1
-    %data_len = load i64, ptr %data_len_field
-    %fp = inttoptr i64 %fd to ptr
-    %written = call i64 @fwrite(ptr %data_ptr, i64 1, i64 %data_len, ptr %fp)
-    ret i64 %written
-}
-
-define internal i64 @LibCIntern.fread(i64 %fd, ptr byval({ptr, i64}) %buf) {
-    %buf_ptr_field = getelementptr {ptr, i64}, ptr %buf, i32 0, i32 0
-    %buf_ptr = load ptr, ptr %buf_ptr_field
-    %buf_len_field = getelementptr {ptr, i64}, ptr %buf, i32 0, i32 1
-    %buf_len = load i64, ptr %buf_len_field
-    %fp = inttoptr i64 %fd to ptr
-    %read = call i64 @fread(ptr %buf_ptr, i64 1, i64 %buf_len, ptr %fp)
-    ret i64 %read
-}
-
-define internal i32 @LibCIntern.fclose(i64 %fd) {
-    %fp = inttoptr i64 %fd to ptr
-    %result = call i32 @fclose(ptr %fp)
-    ret i32 %result
-}
-
-define internal i64 @LibCIntern.popen(ptr byval(%CStr) %cmd, ptr byval(%CStr) %mode) {
-    %cmd_data_field = getelementptr %CStr, ptr %cmd, i32 0, i32 0, i32 0
-    %cmd_ptr = load ptr, ptr %cmd_data_field
-    %mode_data_field = getelementptr %CStr, ptr %mode, i32 0, i32 0, i32 0
-    %mode_ptr = load ptr, ptr %mode_data_field
-    %fp = call ptr @popen(ptr %cmd_ptr, ptr %mode_ptr)
-    %fd = ptrtoint ptr %fp to i64
-    ret i64 %fd
-}
-
-define internal i32 @LibCIntern.pclose(i64 %fd) {
-    %fp = inttoptr i64 %fd to ptr
-    %result = call i32 @pclose(ptr %fp)
-    ret i32 %result
-}
-
-define internal void @LibCIntern.strerror(ptr sret(%Str) %ret, i32 %errnum) {
-    %cstr = call ptr @strerror(i32 %errnum)
-    %len = call i64 @strlen(ptr %cstr)
-    %data_field = getelementptr %Str, ptr %ret, i32 0, i32 0, i32 0
-    store ptr %cstr, ptr %data_field
-    %len_field = getelementptr %Str, ptr %ret, i32 0, i32 0, i32 1
-    store i64 %len, ptr %len_field
-    ret void
-}
-
-define internal i32 @LibCIntern.errno() {
-    %errno_ptr = call ptr @__error()
-    %errno_val = load i32, ptr %errno_ptr
-    ret i32 %errno_val
-}
-
-define internal void @LibCIntern.reset_errno() {
-    %errno_ptr = call ptr @__error()
-    store i32 0, ptr %errno_ptr
-    ret void
-}
-
-define internal i64 @"LibCIntern.write"(i32 %fd, ptr byval({ptr, i64}) %data) {
-    %data_ptr_field = getelementptr {ptr, i64}, ptr %data, i32 0, i32 0
-    %data_ptr = load ptr, ptr %data_ptr_field
-    %data_len_field = getelementptr {ptr, i64}, ptr %data, i32 0, i32 1
-    %data_len = load i64, ptr %data_len_field
-    %written = call i64 @write(i32 %fd, ptr %data_ptr, i64 %data_len)
-    ret i64 %written
-}
-
-; >>> String constants.
 
 @str_division_by_zero.data = private constant [16 x i8] c"division by zero"
 @str_division_by_zero = private constant %Str { { ptr, i64 } { ptr @str_division_by_zero.data, i64 16 } }

@@ -1,0 +1,106 @@
+--- A raw pointer to a read-only place of the given type. 
+
+    The "read only" part is only recognized within Metall code, i.e.
+    there is no way to write to a `Ptr<T>`. But external functions
+    of course don't care about Metall's mutability rules.
+    
+    Thus, in `extern fun` declarations `Ptr<T>` just signals the *intent*
+    not to modify the data behing the pointer.
+---
+struct Ptr<T> {}
+
+fun Ptr.is_null<T>(p Ptr<T>) Bool {
+    panic("this is implemented by the runtime")
+}
+
+--- Derefence the raw pointer and read. ---
+unsafe fun Ptr.read<T>(p Ptr<T>) T { panic("this is implemented by the runtime") }
+
+--- Add the given offset as `sizeof<T> * offset` to the raw pointer. ---
+fun Ptr.offset<T>(p Ptr<T>, offset Int) Ptr<T> { panic("this is implemented by the runtime") }
+
+--- Interpret the raw pointer as a slice of the given length. 
+    
+    The slice has no lifetime associated with it - the compiler thinks it lives
+    forever. So you have to make sure that this is the case or be careful not
+    to let the slice escape.
+---
+unsafe fun Ptr.as_slice<T>(p Ptr<T>, len Int) []T { panic("this is implemented by the runtime") }
+
+--- A raw pointer to a mutable place of the given type. ---
+struct PtrMut<T> {}
+
+fun PtrMut.is_null<T>(p PtrMut<T>) Bool { panic("this is implemented by the runtime") }
+
+--- Interpret this mutable raw pointer as an immutable raw pointer.
+
+    This does not imply any guarantees that the underlying memory does
+    not get mutated. ---
+fun PtrMut.as_ptr<T>(p PtrMut<T>) Ptr<T> { panic("this is implemented by the runtime") }
+
+--- Derefence the raw pointer and write. ---
+unsafe fun PtrMut.write<T>(p PtrMut<T>, v T) void { panic("this is implemented by the runtime") }
+
+--- Derefence the raw pointer and read. ---
+unsafe fun PtrMut.read<T>(p PtrMut<T>) T { panic("this is implemented by the runtime") }
+
+--- Interpret the raw pointer as a mutable slice of the given length. 
+
+    The slice has no lifetime associated with it - the compiler thinks it lives
+    forever. So you have to make sure that this is the case or be careful not
+    to let the slice escape.
+---
+unsafe fun PtrMut.as_slice<T>(p PtrMut<T>, len Int) []mut T { panic("this is implemented by the runtime") }
+
+--- Add the given offset as `sizeof<T> * offset` to the raw pointer. ---
+fun PtrMut.offset<T>(p PtrMut<T>, offset Int) PtrMut<T> { panic("this is implemented by the runtime") }
+
+--- Convert the reference to a typed read-only raw pointer. 
+
+    This is just a stub, the actualy implementation is built-in.
+---
+fun ref_ptr<T>(r &T) Ptr<T> { panic("this is implemented by the runtime") }
+
+--- Convert the reference to a typed mutable raw pointer. 
+
+    This is just a stub, the actualy implementation is built-in.
+---
+fun ref_ptr_mut<T>(r &mut T) PtrMut<T> { panic("this is implemented by the runtime") }
+
+--- Return a read-only raw pointer to the start of the slice data. 
+
+    This is just a stub, the actualy implementation is built-in.
+---
+fun slice_ptr<T>(s []T) Ptr<T> { panic("this is implemented by the runtime") }
+
+--- Return a mutable raw pointer to the start of the slice data. 
+
+    This is just a stub, the actualy implementation is built-in.
+---
+fun slice_ptr_mut<T>(s []mut T) PtrMut<T> { panic("this is implemented by the runtime") }
+
+--- Return the size of the given type. 
+
+    This is just a stub, the actualy implementation is built-in.
+---
+fun sizeof<T>() Int { panic("this is implemented by the runtime") }
+
+--- Take the given byte array and convert it to a C-style 0-terminated string. ---
+fun cstr(b []U8, @a Arena) Ptr<U8> {
+    mut s = unsafe @a.slice_uninit_mut<U8>(b.len + 1)
+    for i in 0..b.len {
+        s[i] = b[i]
+    }
+    s[s.len - 1] = 0
+    slice_ptr<U8>(s)
+}
+
+--- Take the given mutable byte array and convert it to a mutable C-style 0-terminated string. ---
+fun cstr_mut(b []mut U8, @a Arena) PtrMut<U8> {
+    mut s = unsafe @a.slice_uninit_mut<U8>(b.len + 1)
+    for i in 0..b.len {
+        s[i] = b[i]
+    }
+    s[s.len - 1] = 0
+    slice_ptr_mut<U8>(s)
+}

@@ -25,6 +25,7 @@ func runE2ETest(t *testing.T, assert base.Assert, tc mdtest.TestCase) map[string
 	outputPath := "./.build/" + reg.ReplaceAllString(tc.Name, "_")
 	opts := CompileOpts{ //nolint:exhaustruct
 		ProjectRoot:      ".",
+		IncludePaths:     []string{"../../../lib"},
 		Output:           outputPath,
 		KeepIR:           true,
 		LLVMPasses:       "verify," + DefaultLLVMPasses,

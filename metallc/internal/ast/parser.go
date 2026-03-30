@@ -32,7 +32,6 @@ var ReservedWords = []string{ //nolint:gochecknoglobals
 	"Slice",
 	"Str",
 	"DebugIntern",
-	"LibCIntern",
 	"panic",
 }
 
@@ -110,6 +109,11 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			p.next()
 			if fun, ok := p.ParseUnsafeFun(true); ok {
 				decls = append(decls, fun)
+			}
+		case token.Extern:
+			p.next()
+			if decl, ok := p.ParseExternFun(); ok {
+				decls = append(decls, decl)
 			}
 		case token.Let:
 			if v, ok := p.ParseVar(); ok {
@@ -207,7 +211,16 @@ func (p *Parser) ParseFunDecl() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewFunDecl(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType,
-		startSpan.Combine(p.span())), true
+		false, false, startSpan.Combine(p.span())), true
+}
+
+func (p *Parser) ParseExternFun() (NodeID, bool) {
+	decl, startSpan, ok := p.parseFunDecl()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewFunDecl(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType,
+		true, true, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFun() (NodeID, bool) {
@@ -1767,7 +1780,10 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	if !ok {
 		return FunDecl{}, base.Span{}, false
 	}
-	return FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType}, t.Span, true
+	return FunDecl{
+		Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType,
+		Builtin: false, Extern: false, Unsafe: false,
+	}, t.Span, true
 }
 
 func (p *Parser) parseFunLiteral() (NodeID, bool) {

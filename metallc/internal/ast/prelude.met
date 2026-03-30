@@ -345,16 +345,6 @@ fun Str.as_bytes(s Str) []U8 {
     s.data
 }
 
---- Return a 0-terminated variant of the string. ---
-fun Str.to_cstr(s Str, @a Arena) CStr {
-    mut data = unsafe @a.slice_uninit_mut<U8>(s.data.len + 1)
-    for i in 0..s.data.len {
-        data[i] = s.data[i]
-    }
-    data[data.len - 1] = 0
-    CStr(data)
-}
-
 fun Str.hash(s Str) U64 {
     mut state = U64(0)
     for i in 0..s.data.len {
@@ -605,7 +595,20 @@ fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
     }
 }
 
-fun StrBuilder.to_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
+--- Return a *view* to the underlying slice.
+
+    The contents of the view can change when `StrBuilder.reset()` is called
+    to reuse the underlying slice. So be careful. ---
+fun StrBuilder.as_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
+
+--- Append '\0' to make it a valid C-style string and return a *view* to the underlying slice.
+
+    The contents of the view can change when `StrBuilder.reset()` is called
+    to reuse the underlying slice. So be careful. ---
+fun StrBuilder.as_cstr(sb &mut StrBuilder) []U8 {
+    sb.private_byte(0)
+    sb.out[0..sb.len]
+}
 
 fun StrBuilder.utf8_lossy(sb &mut StrBuilder, bytes []U8) void {
     let s = Str.from_utf8_lossy(bytes, sb.@a)

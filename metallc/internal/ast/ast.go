@@ -141,6 +141,9 @@ type FunDecl struct {
 	TypeParams []NodeID
 	Params     []NodeID
 	ReturnType NodeID
+	Builtin    bool
+	Extern     bool
+	Unsafe     bool
 }
 
 func (FunDecl) isKind() {}
@@ -164,9 +167,6 @@ type Fun struct {
 	FunDecl
 	Block    NodeID
 	Captures []NodeID // Closure captures: fun[a, &b, &mut c](...)
-	Builtin  bool
-	Extern   bool
-	Unsafe   bool
 }
 
 func (Fun) isKind() {}
@@ -559,9 +559,14 @@ func (a *AST) NewPath(segments []string, typeArgs []NodeID, span base.Span) Node
 }
 
 func (a *AST) NewFunDecl(
-	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, span base.Span,
+	name Name, typeParams []NodeID, params []NodeID, returnType NodeID,
+	extern bool, unsafe bool, span base.Span,
 ) NodeID {
-	return a.node(FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType}, span)
+	return a.node(
+		FunDecl{
+			Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType,
+			Builtin: false, Extern: extern, Unsafe: unsafe,
+		}, span)
 }
 
 func (a *AST) NewFun(
@@ -569,11 +574,16 @@ func (a *AST) NewFun(
 ) NodeID {
 	return a.node(
 		Fun{
-			FunDecl:  FunDecl{Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType},
+			FunDecl: FunDecl{
+				Name:       name,
+				TypeParams: typeParams,
+				Params:     params,
+				ReturnType: returnType,
+				Builtin:    false,
+				Extern:     false,
+				Unsafe:     unsafe,
+			},
 			Captures: nil,
-			Builtin:  false,
-			Extern:   false,
-			Unsafe:   unsafe,
 			Block:    block,
 		},
 		span,

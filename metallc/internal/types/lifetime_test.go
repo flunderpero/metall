@@ -1,7 +1,7 @@
 package types
 
 import (
-	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -87,10 +87,10 @@ func runLifetimeModuleTest(assert base.Assert, tc mdtest.TestCase, results map[s
 
 	readFile := func(path string) ([]byte, error) {
 		content, ok := files[path]
-		if !ok {
-			return nil, fmt.Errorf("file not found: %s", path)
+		if ok {
+			return []byte(content), nil
 		}
-		return []byte(content), nil
+		return os.ReadFile("../../../" + path)
 	}
 	moduleResolution, diags := modules.ResolveModules(a, "local", []string{"lib"}, readFile)
 	assert.Equal(0, len(diags), "module resolution failed:\n%s", diags)

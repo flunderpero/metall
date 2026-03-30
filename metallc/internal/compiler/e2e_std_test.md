@@ -205,7 +205,7 @@ fun main() void {
     let sb = StrBuilder.new(256, @a)
     let p = Point(10, 20)
     p.fmt(sb)
-    io::println(sb.to_str())
+    io::println(sb.as_str())
 }
 ```
 
@@ -228,7 +228,7 @@ fun main() void {
     let @a = Arena()
     let sb = StrBuilder.new(256, @a)
     Pair("hello", 42).fmt(sb)
-    io::println(sb.to_str())
+    io::println(sb.as_str())
 }
 ```
 

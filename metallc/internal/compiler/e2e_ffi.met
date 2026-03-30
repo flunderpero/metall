@@ -1,0 +1,1 @@
+extern fun abs(n I32) I32

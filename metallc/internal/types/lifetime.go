@@ -442,7 +442,7 @@ func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 //
 // If the function hasn't been analyzed yet, we analyze it on demand.
 // If we detect a cycle (mutual recursion), we apply pessimistic effects.
-func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
+func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint:funlen
 	a.ast.Walk(nodeID, a.Check)
 	if a.isArenaAllocCall(nodeID) {
 		a.analyzeArenaAllocCall(nodeID, call)
@@ -451,6 +451,12 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 	calleeType := a.env.TypeOfNode(call.Callee)
 	if _, ok := calleeType.Kind.(FunType); !ok {
 		return
+	}
+	if ref, ok := a.env.NamedFunRef(call.Callee); ok {
+		if effects := BuiltinFunEffects(BuiltinName(ref)); effects != nil {
+			a.applyBuiltinEffects(nodeID, call, *effects)
+			return
+		}
 	}
 
 	effectsTypeID := calleeType.ID
@@ -506,6 +512,23 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) {
 	}
 	a.flows[nodeID] = result
 	a.debug(1, nodeID, "analyzeCall: %s", result)
+}
+
+// applyBuiltinEffects applies pre-defined lifetime effects for a builtin function call.
+func (a *LifetimeCheck) applyBuiltinEffects(nodeID ast.NodeID, call ast.Call, effects FunEffects) {
+	args := make([]ast.NodeID, 0, len(call.Args)+1)
+	if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
+		args = append(args, receiver)
+	}
+	args = append(args, call.Args...)
+	result := Flow{}
+	for _, paramIdx := range effects.ReturnTaints {
+		result.Taints = result.Taints.Merge(a.flow(args[paramIdx]).Taints)
+	}
+	for _, paramIdx := range effects.ReturnAliases {
+		result.PointsTo = result.PointsTo.Merge(a.flow(args[paramIdx]).PointsTo)
+	}
+	a.flows[nodeID] = result
 }
 
 // applyPessimisticEffects: assume every arg flows into the return value and

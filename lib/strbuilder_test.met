@@ -19,7 +19,7 @@ fun main() void {
         sut.u64(13370, 16)
         sut.str(" ")
         sut.u64(13370, 16, true)
-        try test::eq("13370 11010000111010 32072 13370 343a 343A", sut.to_str())
+        try test::eq("13370 11010000111010 32072 13370 343a 343A", sut.as_str())
     })
     suite.test("int", fun() !void {
         let @local = Arena()
@@ -37,7 +37,7 @@ fun main() void {
         sut.int(13370, 16)
         sut.str(" ")
         sut.int(13370, 16, true)
-        try test::eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.to_str())
+        try test::eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.as_str())
     })
     suite.test("slice", fun() !void {
         let @local = Arena()
@@ -45,21 +45,21 @@ fun main() void {
         let s = ["hello", "there", "again"][..]
 
         sut.slice(s, " ")
-        try test::eq("hello there again", sut.to_str())
+        try test::eq("hello there again", sut.as_str())
 
         sut.reset()
         sut.slice(s, ", ", 13)
-        try test::eq("hello, the...", sut.to_str())
+        try test::eq("hello, the...", sut.as_str())
 
         sut.reset()
         sut.slice(s, ", ", 3)
-        try test::eq("...", sut.to_str())
+        try test::eq("...", sut.as_str())
 
         -- Make sure we don't truncate the output in the middle of a rune.
         let u = ["hi", "😀😀", "ha"][..]
         sut.reset()
         sut.slice(u, " ", 13)
-        try test::eq("hi 😀...", sut.to_str())
+        try test::eq("hi 😀...", sut.as_str())
     })
     suite.test("join", fun() !void {
         let @local = Arena()
@@ -70,7 +70,7 @@ fun main() void {
         l.push(3)
         mut it = l.iter()
         sut.join(&mut it, ", ")
-        try test::eq("1, 2, 3", sut.to_str())
+        try test::eq("1, 2, 3", sut.as_str())
     })
     _ = suite.run()
 }

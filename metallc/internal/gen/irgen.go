@@ -1559,7 +1559,113 @@ func (g *IRFunGen) arenaAllocMethod(call ast.Call) (string, ast.FieldAccess, boo
 	return "", ast.FieldAccess{}, false
 }
 
-func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nolint:funlen
+func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) bool { //nolint:funlen
+	ref, ok := g.env.NamedFunRef(call.Callee)
+	if !ok {
+		return false
+	}
+	name := types.BuiltinName(ref)
+	switch name {
+	case "ffi::sizeof":
+		kind := base.Cast[ast.Path](g.ast.Node(call.Callee).Kind)
+		argTypeID := g.typeIDOfNode(kind.TypeArgs[0])
+		size := irTypeSize(g.env, argTypeID)
+		g.setCode(id, "%d", size)
+		return true
+	case "ffi::Ptr.is_null", "ffi::PtrMut.is_null":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			return false
+		}
+		g.Gen(receiver)
+		ptrReg := g.lookupCode(receiver)
+		reg := g.reg()
+		g.write("%s = icmp eq ptr %s, null", reg, ptrReg)
+		g.setCode(id, reg)
+		return true
+	case "ffi::ref_ptr", "ffi::ref_ptr_mut":
+		g.Gen(call.Args[0])
+		g.setCode(id, g.lookupCode(call.Args[0]))
+		return true
+	case "ffi::PtrMut.as_ptr":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			return false
+		}
+		g.Gen(receiver)
+		g.setCode(id, g.lookupCode(receiver))
+		return true
+	case "ffi::slice_ptr", "ffi::slice_ptr_mut":
+		g.Gen(call.Args[0])
+		sliceReg := g.lookupCode(call.Args[0])
+		dataPtrReg := g.reg()
+		g.write("%s = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", dataPtrReg, sliceReg)
+		ptrReg := g.reg()
+		g.write("%s = load ptr, ptr %s", ptrReg, dataPtrReg)
+		g.setCode(id, ptrReg)
+		return true
+	case "ffi::Ptr.read", "ffi::PtrMut.read":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			return false
+		}
+		g.Gen(receiver)
+		ptrReg := g.lookupCode(receiver)
+		retTypeID := base.Cast[types.FunType](g.env.Type(g.typeIDOfNode(call.Callee)).Kind).Return
+		g.setCode(id, g.loadValue(ptrReg, retTypeID))
+		return true
+	case "ffi::Ptr.as_slice", "ffi::PtrMut.as_slice":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			return false
+		}
+		g.Gen(receiver)
+		ptrReg := g.lookupCode(receiver)
+		g.Gen(call.Args[0])
+		lenReg := g.lookupCode(call.Args[0])
+		// Build a slice {ptr, i64} on the stack.
+		sliceReg := g.reg()
+		g.writeAlloca(sliceReg, "{ptr, i64}")
+		ptrField := g.reg()
+		g.write("%s = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", ptrField, sliceReg)
+		g.write("store ptr %s, ptr %s", ptrReg, ptrField)
+		lenField := g.reg()
+		g.write("%s = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", lenField, sliceReg)
+		g.write("store i64 %s, ptr %s", lenReg, lenField)
+		g.setCode(id, sliceReg)
+		return true
+	case "ffi::Ptr.offset", "ffi::PtrMut.offset":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			return false
+		}
+		g.Gen(receiver)
+		ptrReg := g.lookupCode(receiver)
+		g.Gen(call.Args[0])
+		offsetReg := g.lookupCode(call.Args[0])
+		// GEP with the element type to get sizeof(T)-strided pointer arithmetic.
+		retTypeID := base.Cast[types.FunType](g.env.Type(g.typeIDOfNode(call.Callee)).Kind).Return
+		// Return type is Ptr<T>/PtrMut<T> — extract T's TypeArgs[0].
+		ptrStruct := base.Cast[types.StructType](g.env.Type(retTypeID).Kind)
+		elemIR := irType(g.env, ptrStruct.TypeArgs[0])
+		reg := g.reg()
+		g.write("%s = getelementptr %s, ptr %s, i64 %s", reg, elemIR, ptrReg, offsetReg)
+		g.setCode(id, reg)
+		return true
+	case "ffi::PtrMut.write":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			return false
+		}
+		g.Gen(receiver)
+		ptrReg := g.lookupCode(receiver)
+		g.Gen(call.Args[0])
+		valReg := g.lookupCode(call.Args[0])
+		valTypeID := g.typeIDOfNode(call.Args[0])
+		g.storeValue(valReg, ptrReg, valTypeID)
+		g.setCode(id, "void")
+		return true
+	}
 	if method, fa, ok := g.arenaAllocMethod(call); ok {
 		switch method {
 		case "Arena.new", "Arena.new_mut":
@@ -1567,6 +1673,26 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		default:
 			g.genArenaSlice(id, call, fa)
 		}
+		return true
+	}
+	if ref == "panic" {
+		g.Gen(call.Args[0])
+		arg1Reg := g.lookupCode(call.Args[0])
+		locReg := g.addStrConst(span.String())
+		g.write("call void @panic(ptr %s, ptr %s)", arg1Reg, locReg)
+		g.setCode(id, "void")
+		return true
+	}
+	if ref == "std::debug.location" {
+		locReg := g.addStrConst(span.String())
+		g.setCode(id, locReg)
+		return true
+	}
+	return false
+}
+
+func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nolint:funlen
+	if g.genBuiltinFun(id, call, span) {
 		return
 	}
 	calleeType := g.typeOfNode(call.Callee)
@@ -1586,18 +1712,6 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		if _, ok := g.astCode[nodeID]; !ok {
 			g.Gen(nodeID)
 		}
-	}
-	if funName, ok := g.env.NamedFunRef(call.Callee); ok && funName == "panic" {
-		arg1Reg := g.lookupCode((argNodes[0]))
-		locReg := g.addStrConst(span.String())
-		g.write("call void @panic(ptr %s, ptr %s)", arg1Reg, locReg)
-		g.setCode(id, "void")
-		return
-	}
-	if funName, ok := g.env.NamedFunRef(call.Callee); ok && funName == "std::debug.location" {
-		locReg := g.addStrConst(span.String())
-		g.setCode(id, locReg)
-		return
 	}
 	if _, isDirect := g.env.NamedFunRef(call.Callee); !isDirect {
 		g.genIndirectCall(id, call, fun, argNodes)
@@ -2071,8 +2185,10 @@ func (g *IRFunGen) irType(typeID types.TypeID) string {
 
 func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
 	typ := g.env.Type(typeID)
-	switch typ.Kind.(type) {
-	case types.StructType, types.UnionType:
+	switch kind := typ.Kind.(type) {
+	case types.StructType:
+		return !types.IsBuiltinPtrStruct(kind)
+	case types.UnionType:
 		return true
 	case types.ArrayType, types.SliceType:
 		return true
@@ -2107,6 +2223,9 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 		}
 		if kind.Name == "CStr" {
 			return "%CStr"
+		}
+		if types.IsBuiltinPtrStruct(kind) {
+			return "ptr"
 		}
 		return "%" + typeID.String()
 	case types.UnionType:
@@ -2149,6 +2268,9 @@ func irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
 	case types.FunType:
 		return 8
 	case types.StructType:
+		if types.IsBuiltinPtrStruct(kind) {
+			return 8
+		}
 		var maxAlign int64 = 1
 		for _, field := range kind.Fields {
 			if a := irTypeAlign(env, field.Type); a > maxAlign {
@@ -2185,6 +2307,9 @@ func irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
 	case types.FunType:
 		return 16
 	case types.StructType:
+		if types.IsBuiltinPtrStruct(kind) {
+			return 8
+		}
 		var offset int64
 		var maxAlign int64 = 1
 		for _, field := range kind.Fields {
@@ -2322,6 +2447,45 @@ type IROpts struct {
 	ArenaPageHeaderSize int
 }
 
+func (g *IRGen) genExternDecls(funs []types.FunWork) {
+	if len(funs) == 0 {
+		return
+	}
+	env := funs[0].Env
+	emitted := map[string]bool{
+		// These are already declared in `builtins.ll`:
+		"putchar": true,
+		"puts":    true,
+		"printf":  true,
+		"fflush":  true,
+		"write":   true,
+	}
+	g.ast.Iter(func(nodeID ast.NodeID) bool {
+		funDecl, ok := g.ast.Node(nodeID).Kind.(ast.FunDecl)
+		if !ok || !funDecl.Extern {
+			return true
+		}
+		name := funDecl.Name.Name
+		if emitted[name] {
+			return true
+		}
+		emitted[name] = true
+		funTypeID := env.TypeOfNode(nodeID).ID
+		funType := base.Cast[types.FunType](env.Type(funTypeID).Kind)
+		retIR := irType(env, funType.Return)
+		params := strings.Builder{}
+		for i, paramTypeID := range funType.Params {
+			if i > 0 {
+				params.WriteString(", ")
+			}
+			params.WriteString(irType(env, paramTypeID))
+		}
+		g.write("declare %s @%s(%s)", retIR, name, params.String())
+		return true
+	})
+	g.write("")
+}
+
 func (g *IRGen) genModuleConsts(consts []types.ConstWork) {
 	// Declare globals for each constant.
 	if len(consts) == 0 {
@@ -2401,6 +2565,8 @@ func GenIR(
 	for _, u := range unions {
 		g.genUnion(u.Env, u)
 	}
+	// Emit extern function declarations (FFI).
+	g.genExternDecls(funs)
 	// Emit module-level constants as globals + init function.
 	g.genModuleConsts(consts)
 	// Emit all functions — each gets a fresh IRFunGen.

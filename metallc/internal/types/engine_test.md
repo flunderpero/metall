@@ -9164,3 +9164,42 @@ test.met:4:5: unreachable code
         ^^^^^^^^^
     }
 ```
+
+## Extern Functions
+
+**Extern function requires unsafe to call**
+
+```metall module
+extern fun foo() Int
+fun main() void { _ = foo() }
+```
+
+```error
+test.met:2:23: calling unsafe function requires the unsafe keyword
+    extern fun foo() Int
+    fun main() void { _ = foo() }
+                          ^^^^^
+```
+
+**Extern function can be called with unsafe**
+
+```metall module
+extern fun foo() Int
+fun main() void { _ = unsafe foo() }
+```
+
+```types
+Module: test
+  FunDecl: fun01
+    SimpleType: Int
+  Fun: fun02
+    SimpleType: void
+    Block: void
+      Assign: void
+        Ident: ?
+        Call: Int
+          Ident: fun01
+---
+fun01 = fun() Int
+fun02 = fun() void
+```

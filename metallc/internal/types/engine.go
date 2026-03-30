@@ -1079,7 +1079,11 @@ func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
 }
 
 func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) { //nolint:funlen
+	diagCount := len(e.diagnostics)
 	if _, status, ok := e.InferFunCall(call, span); ok && status.Failed() {
+		if len(e.diagnostics) == diagCount {
+			e.diag(span, "could not infer type arguments for this call")
+		}
 		return InvalidTypeID, status
 	}
 	calleeTypeID, status := e.Query(call.Callee)
@@ -1134,8 +1138,11 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 	}
 	calleeIsUnsafe := false
 	if binding, ok := e.resolveCallBinding(call); ok {
-		if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok {
-			calleeIsUnsafe = funNode.Unsafe
+		switch kind := e.ast.Node(binding.Decl).Kind.(type) {
+		case ast.Fun:
+			calleeIsUnsafe = kind.Unsafe
+		case ast.FunDecl:
+			calleeIsUnsafe = kind.Unsafe
 		}
 	}
 	if calleeIsUnsafe && !call.Unsafe {
@@ -1229,7 +1236,11 @@ func (e *Engine) bindImports(nodeID ast.NodeID, module ast.Module) TypeStatus {
 	return TypeOK
 }
 
-func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkModule( //nolint:funlen
+	nodeID ast.NodeID,
+	module ast.Module,
+	span base.Span,
+) (TypeID, TypeStatus) {
 	if macros.IsMacroModule(module.Name) {
 		return e.checkMacroModule(nodeID, module, span)
 	}
@@ -1269,6 +1280,7 @@ func (e *Engine) checkModule(nodeID ast.NodeID, module ast.Module, span base.Spa
 		name := e.namespacedName(declNodeID, varNode.Name.Name)
 		e.registerConst(declNodeID, name, typeID)
 	}
+	MarkBuiltins(e.ast, module)
 	e.forwardDeclareFuns(module.Decls)
 	for _, declNodeID := range module.Decls {
 		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok && fun.Name.Name == "main" {
@@ -1414,13 +1426,20 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 	var decls []*forwardDecl
 	for _, nodeID := range nodeIDs {
 		node := e.ast.Node(nodeID)
-		if _, ok := node.Kind.(ast.Fun); ok {
+		switch node.Kind.(type) {
+		case ast.Fun, ast.FunDecl:
 			decls = append(decls, &forwardDecl{node, InvalidTypeID, TypeFailed, nil})
 		}
 	}
 	for _, decl := range decls {
-		nodeKind := base.Cast[ast.Fun](decl.node.Kind)
-		typeID, status := e.checkFunCreateAndBind(decl.node, nodeKind)
+		var funDecl ast.FunDecl
+		switch kind := decl.node.Kind.(type) {
+		case ast.Fun:
+			funDecl = kind.FunDecl
+		case ast.FunDecl:
+			funDecl = kind
+		}
+		typeID, status := e.checkFunCreateAndBind(decl.node, funDecl)
 		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
 		if typeID != InvalidTypeID {
 			cachedType, ok := e.env.cachedTypeInfo(typeID)
@@ -1434,8 +1453,8 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 		if decl.status.Failed() {
 			continue
 		}
-		funKind := base.Cast[ast.Fun](decl.node.Kind)
-		if !funKind.Builtin && !funKind.Extern {
+		funKind, isFun := decl.node.Kind.(ast.Fun)
+		if isFun && !funKind.Builtin && !funKind.Extern {
 			funType := base.Cast[FunType](decl.cachedType.Type.Kind)
 			e.debug.Print(
 				0,
@@ -1449,7 +1468,7 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 	}
 }
 
-func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, TypeStatus) {
+func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID, TypeStatus) {
 	if status := e.bindTypeParams(fun.TypeParams); status.Failed() {
 		return InvalidTypeID, status
 	}
@@ -1491,7 +1510,11 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.Fun) (TypeID, Typ
 	if !e.bind(node.ID, bindName, false, funTypeID, fun.Name.Span) {
 		return InvalidTypeID, TypeFailed
 	}
-	e.env.setNamedFunRef(node.ID, e.namespacedName(node.ID, fun.Name.Name))
+	if fun.Extern {
+		e.env.setNamedFunRef(node.ID, fun.Name.Name)
+	} else {
+		e.env.setNamedFunRef(node.ID, e.namespacedName(node.ID, fun.Name.Name))
+	}
 	return funTypeID, TypeOK
 }
 
@@ -1899,6 +1922,9 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 			}
 			e.env.copyNamedFunRef(nodeID, binding.Decl)
 			e.registerFun(binding.Decl)
+		}
+		if _, ok := e.ast.Node(binding.Decl).Kind.(ast.FunDecl); ok {
+			e.env.copyNamedFunRef(nodeID, binding.Decl)
 		}
 		if structType, ok := e.env.Type(binding.TypeID).Kind.(StructType); ok {
 			if structNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Struct); ok {

@@ -2615,6 +2615,22 @@ Defer()
     exprs=Int(value=1)
 ```
 
+## Extern Functions
+
+**Extern function declaration**
+
+```metall module
+extern fun foo(x Int) Int
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=FunDecl(name="foo")
+    params=FunParam(name="x")
+      type=SimpleType(name="Int")
+    returnType=SimpleType(name="Int")
+```
+
 ## Error Recovery
 
 **Unexpected token**

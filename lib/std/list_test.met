@@ -107,7 +107,7 @@ fun main() void {
 
         let sb = StrBuilder.new(32, @local)
         sb.fmt(sut)
-        try test::eq("[hello, there, again]", sb.to_str())
+        try test::eq("[hello, there, again]", sb.as_str())
     })
     _ = suite.run()
 }

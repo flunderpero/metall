@@ -42,7 +42,7 @@ fun Suite.run(s &mut Suite) SuiteResult {
             sb.str(") ")
             sb.tab()
             sb.str(test.name)
-            sb.to_str() 
+            sb.as_str() 
         }
         io::println(prefix)
         match test.f() {
@@ -89,7 +89,7 @@ fun contains_str(haystack Str, needle Str, msg Str = "") !void {
         sb.str("' to contain '")
         sb.str(needle)
         sb.str("'")
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -102,7 +102,7 @@ fun eq<T HasEqFmt>(want T, got T, msg Str = "") !void {
         sb.fmt<T>(want)
         sb.str(", got ")
         sb.fmt<T>(got)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -115,7 +115,7 @@ fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
         sb.fmt<T>(want)
         sb.str("not to equal ")
         sb.fmt<T>(got)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -128,7 +128,7 @@ fun gt_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" > ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -141,7 +141,7 @@ fun gte_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" >= ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -154,7 +154,7 @@ fun lt_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" < ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -167,7 +167,7 @@ fun lte_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" <= ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -180,7 +180,7 @@ fun gt_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" > ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -193,7 +193,7 @@ fun gte_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" >= ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -206,7 +206,7 @@ fun lt_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" < ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -219,7 +219,7 @@ fun lte_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" <= ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.to_str())
+        private_print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
@@ -234,7 +234,7 @@ fun err<T>(obj !T, err_msg_contains Str, msg Str = "") !void {
                 sb.str(err_msg_contains)
                 sb.str("', but got: ")
                 sb.str(e.msg)
-                private_print_assert_err_msg(msg, sb.to_str())
+                private_print_assert_err_msg(msg, sb.as_str())
                 return assertion_failed_err
             }
         else: 
@@ -257,5 +257,5 @@ fun private_print_assert_err_msg(user_provided Str, err Str) void {
     sb.str(err)
     sb.str(")")
     sb.str("\x1b[0m")
-    io::println(sb.to_str())
+    io::println(sb.as_str())
 }

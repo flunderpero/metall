@@ -1,12 +1,17 @@
-fun print<T HasFmt>(s T) void {
+use std::ffi
+
+extern fun write(fd I32, buf ffi::Ptr<U8>, len Int) Int
+
+fun print<T HasFmt>(obj T) void {
     -- todo: We should be able to have a shortcut if is is Str.
     let @a = Arena()
     let sb = StrBuilder.new(32, @a)
-    s.fmt(sb)
-    _ = LibCIntern.write(1, sb.to_str().as_bytes())
+    obj.fmt(sb)
+    let s = sb.as_str()
+    _ = unsafe write(1, ffi::slice_ptr(s.as_bytes()), s.bytes_len())
 }
 
 fun println<T HasFmt>(s T) void {
     print<T>(s)
-    _ = LibCIntern.write(1, [U8(10)][..])
+    _ = unsafe write(1, ffi::slice_ptr("\n".as_bytes()), 1)
 }

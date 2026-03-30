@@ -40,7 +40,7 @@ module.exports = grammar({
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
     _declaration: ($) =>
-      choice($.function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding),
+      choice($.function_declaration, $.extern_function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding),
 
     // >>> Imports
 
@@ -140,6 +140,16 @@ module.exports = grammar({
         "(", field("parameters", optional($.parameter_list)), ")",
         field("return_type", $._type),
         field("body", $.block),
+      ),
+
+    extern_function_declaration: ($) =>
+      seq(
+        "extern",
+        "fun",
+        field("name", $.function_name),
+        optional(field("type_parameters", $.type_parameters)),
+        "(", field("parameters", optional($.parameter_list)), ")",
+        field("return_type", $._type),
       ),
 
     function_name: ($) =>

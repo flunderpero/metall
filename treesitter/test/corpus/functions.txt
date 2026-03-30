@@ -1,4 +1,19 @@
 ================================================================================
+Extern function declaration
+================================================================================
+
+extern fun abs(n Int) Int
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (extern_function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type (type_identifier))))
+
+================================================================================
 Unsafe function and call
 ================================================================================
 

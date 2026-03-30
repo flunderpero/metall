@@ -1,6 +1,35 @@
+use std::ffi
+
 struct RunResult {
     status Int
     output Str
+}
+
+let popen_mode = [U8('r'), 0][..]
+
+extern fun __error() ffi::PtrMut<I32>
+extern fun strerror(e I32) ffi::Ptr<U8>
+extern fun strlen(s ffi::Ptr<U8>) Int
+extern fun popen(filename ffi::Ptr<U8>, mode ffi::Ptr<U8>) ffi::Ptr<void>
+extern fun fread(buf ffi::PtrMut<U8>, sizeof Int, len Int, file ffi::Ptr<void>) Int
+extern fun pclose(file ffi::Ptr<void>) I32
+
+fun reset_errno() void {
+    -- todo: This is MacOS specific.
+    let e = unsafe __error()
+    unsafe e.write(0)
+}
+
+fun errno() I32 {
+    let e = unsafe __error()
+    unsafe e.read()
+}
+
+fun errno_str() Str {
+    let e = errno()
+    let s = unsafe strerror(e)
+    let l = unsafe strlen(s)
+    try Str.from_utf8_checked(unsafe s.as_slice(l)) else e { panic(e.msg) }
 }
 
 --- Run a program in the system's shell to completion and capture its stdout/stderr. 
@@ -9,38 +38,38 @@ struct RunResult {
     program exits with a non-zero status code.
 ---
 fun shell(cmd []Str, @a Arena) !RunResult {
-    let sb = StrBuilder.new(256, @a)
+    let @local = Arena()
+    let sb = StrBuilder.new(256, @local)
     sb.slice(cmd, " ")
     sb.str(" 2>&1")
-    LibCIntern.reset_errno()
-    let f = LibCIntern.popen(sb.to_str().to_cstr(@a), "r".to_cstr(@a))
-    if f == 0 {
-        let errno = LibCIntern.errno()
-        let errstr = LibCIntern.strerror(errno)
-        return Err(errstr)
+    reset_errno()
+    let f = unsafe popen(
+        ffi::slice_ptr(sb.as_cstr()),
+        ffi::slice_ptr(popen_mode),
+    )
+    if f.is_null() {
+        return Err(errno_str())
     }
     let out = StrBuilder.new(4096, @a)
     let buf = unsafe @a.slice_uninit_mut<U8>(4096)
+    let buf_ptr = ffi::slice_ptr_mut(buf)
     for {
-        LibCIntern.reset_errno()
-        let bytes_read = LibCIntern.fread(f, buf)
+        reset_errno()
+        let bytes_read = unsafe fread(buf_ptr, 1, buf.len, f)
         if bytes_read <= 0 { 
-            let errno = LibCIntern.errno()
+            let errno = errno()
             if errno == 0 {
                 break
             }
-            let errstr = LibCIntern.strerror(errno)
-            return Err(errstr)
+            return Err(errno_str())
         }
         out.utf8_lossy(buf[0..bytes_read])
     }
-    LibCIntern.reset_errno()
-    let raw_status = LibCIntern.pclose(f)
+    reset_errno()
+    let raw_status = unsafe pclose(f)
     if raw_status < 0 {
-        let errno = LibCIntern.errno()
-        let errstr = LibCIntern.strerror(errno)
-        return Err(errstr)
+        return Err(errno_str())
     }
     let status = ((raw_status >> 8) & 255).to_int()  -- WEXITSTATUS(raw_status)
-    RunResult(status, out.to_str())
+    RunResult(status, out.as_str())
 }
