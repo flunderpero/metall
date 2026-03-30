@@ -14,6 +14,22 @@ extern fun abs(n Int) Int
     return_type: (simple_type (type_identifier))))
 
 ================================================================================
+Extern function with alias
+================================================================================
+
+extern my_chdir = fun chdir(path Int) Int
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (extern_function_declaration
+    alias: (identifier)
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (simple_type (type_identifier))))
+    return_type: (simple_type (type_identifier))))
+
+================================================================================
 Unsafe function and call
 ================================================================================
 

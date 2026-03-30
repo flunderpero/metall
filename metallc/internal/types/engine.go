@@ -1511,7 +1511,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		return InvalidTypeID, TypeFailed
 	}
 	if fun.Extern {
-		e.env.setNamedFunRef(node.ID, fun.Name.Name)
+		e.env.setNamedFunRef(node.ID, fun.ExternName)
 	} else {
 		e.env.setNamedFunRef(node.ID, e.namespacedName(node.ID, fun.Name.Name))
 	}

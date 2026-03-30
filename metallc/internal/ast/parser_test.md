@@ -2631,6 +2631,20 @@ Module(fileName="test.met",name="test",main=true)
     returnType=SimpleType(name="Int")
 ```
 
+**Extern function with alias**
+
+```metall module
+extern my_chdir = fun chdir(path Int) Int
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=FunDecl(name="my_chdir",externName="chdir")
+    params=FunParam(name="path")
+      type=SimpleType(name="Int")
+    returnType=SimpleType(name="Int")
+```
+
 ## Error Recovery
 
 **Unexpected token**

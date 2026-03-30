@@ -215,12 +215,31 @@ func (p *Parser) ParseFunDecl() (NodeID, bool) {
 }
 
 func (p *Parser) ParseExternFun() (NodeID, bool) {
+	next, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	// Alias form: extern metall_name = fun c_name(...)
+	if next.Kind == token.Ident {
+		p.next()
+		alias := Name{next.Value, next.Span}
+		if _, ok := p.expect(token.Eq); !ok {
+			return ParseFailed, false
+		}
+		decl, startSpan, ok := p.parseFunDecl()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewExternFunDecl(alias, decl.Name.Name, decl.TypeParams, decl.Params, decl.ReturnType,
+			startSpan.Combine(p.span())), true
+	}
+	// Simple form: extern fun c_name(...)
 	decl, startSpan, ok := p.parseFunDecl()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFunDecl(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType,
-		true, true, startSpan.Combine(p.span())), true
+	return p.NewExternFunDecl(decl.Name, decl.Name.Name, decl.TypeParams, decl.Params, decl.ReturnType,
+		startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFun() (NodeID, bool) {
@@ -1781,7 +1800,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 		return FunDecl{}, base.Span{}, false
 	}
 	return FunDecl{
-		Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType,
+		Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
 		Builtin: false, Extern: false, Unsafe: false,
 	}, t.Span, true
 }

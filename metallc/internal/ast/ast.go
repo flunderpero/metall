@@ -138,6 +138,7 @@ func (FunParam) isKind() {}
 
 type FunDecl struct {
 	Name       Name
+	ExternName string // C symbol name. Only set when Extern is true.
 	TypeParams []NodeID
 	Params     []NodeID
 	ReturnType NodeID
@@ -564,8 +565,18 @@ func (a *AST) NewFunDecl(
 ) NodeID {
 	return a.node(
 		FunDecl{
-			Name: name, TypeParams: typeParams, Params: params, ReturnType: returnType,
+			Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
 			Builtin: false, Extern: extern, Unsafe: unsafe,
+		}, span)
+}
+
+func (a *AST) NewExternFunDecl(
+	name Name, externName string, typeParams []NodeID, params []NodeID, returnType NodeID, span base.Span,
+) NodeID {
+	return a.node(
+		FunDecl{
+			Name: name, ExternName: externName, TypeParams: typeParams, Params: params, ReturnType: returnType,
+			Builtin: false, Extern: true, Unsafe: true,
 		}, span)
 }
 
@@ -576,6 +587,7 @@ func (a *AST) NewFun(
 		Fun{
 			FunDecl: FunDecl{
 				Name:       name,
+				ExternName: name.Name,
 				TypeParams: typeParams,
 				Params:     params,
 				ReturnType: returnType,
@@ -1113,6 +1125,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case FunDecl:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Extern && kind.ExternName != kind.Name.Name {
+			addAttr("externName", fmt.Sprintf("%q", kind.ExternName))
+		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))

@@ -143,13 +143,25 @@ module.exports = grammar({
       ),
 
     extern_function_declaration: ($) =>
-      seq(
-        "extern",
-        "fun",
-        field("name", $.function_name),
-        optional(field("type_parameters", $.type_parameters)),
-        "(", field("parameters", optional($.parameter_list)), ")",
-        field("return_type", $._type),
+      choice(
+        seq(
+          "extern",
+          "fun",
+          field("name", $.function_name),
+          optional(field("type_parameters", $.type_parameters)),
+          "(", field("parameters", optional($.parameter_list)), ")",
+          field("return_type", $._type),
+        ),
+        seq(
+          "extern",
+          field("alias", $.identifier),
+          "=",
+          "fun",
+          field("name", $.function_name),
+          optional(field("type_parameters", $.type_parameters)),
+          "(", field("parameters", optional($.parameter_list)), ")",
+          field("return_type", $._type),
+        ),
       ),
 
     function_name: ($) =>

@@ -2465,7 +2465,7 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 		if !ok || !funDecl.Extern {
 			return true
 		}
-		name := funDecl.Name.Name
+		name := funDecl.ExternName
 		if emitted[name] {
 			return true
 		}

@@ -4979,3 +4979,26 @@ fun main() void {
 true
 false
 ```
+
+**extern function alias**
+
+```metall
+extern my_abs = fun abs(n I32) I32
+
+-- We can use abs as a name because the extern `abs` is aliased to `my_abs`.
+fun abs(n I32) I32 {
+    unsafe my_abs(n)
+}
+
+fun main() void {
+    let x = unsafe my_abs(I32(-42))
+    DebugIntern.print_int(x.to_int())
+    let y = abs(-137)
+    DebugIntern.print_int(y.to_int())
+}
+```
+
+```output
+42
+137
+```
