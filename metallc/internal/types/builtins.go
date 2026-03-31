@@ -78,21 +78,21 @@ func BuiltinFunEffects(name string) *FunEffects {
 	case "ffi::ref_ptr", "ffi::ref_ptr_mut", "ffi::slice_ptr", "ffi::slice_ptr_mut":
 		// The argument's lifetime flows to the return value.
 		return &FunEffects{
-			ReturnTaints:  map[TaintID]int{0: 0},
+			ReturnTaints:  []int{0},
 			ReturnAliases: []int{0},
 			SideEffects:   nil,
 		}
 	case "ffi::Ptr.offset", "ffi::PtrMut.offset", "ffi::PtrMut.as_ptr":
 		// The receiver's lifetime flows to the return value (param 0 = receiver).
 		return &FunEffects{
-			ReturnTaints:  map[TaintID]int{0: 0},
+			ReturnTaints:  []int{0},
 			ReturnAliases: []int{0},
 			SideEffects:   nil,
 		}
 	case "ffi::Ptr.read", "ffi::PtrMut.read", "ffi::Ptr.as_slice", "ffi::PtrMut.as_slice":
 		// The receiver's taints flow to the return value.
 		return &FunEffects{
-			ReturnTaints:  map[TaintID]int{0: 0},
+			ReturnTaints:  []int{0},
 			ReturnAliases: []int{0},
 			SideEffects:   nil,
 		}

@@ -58,9 +58,12 @@ func runLifetimeExprTest(assert base.Assert, tc mdtest.TestCase, results map[str
 	e.Query(exprID)
 	assert.Equal(0, len(e.diagnostics), "type check failed:\n%s", e.diagnostics)
 
-	a := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env())
-	// a.Debug = base.NewStdoutDebug("lifetime")
+	a := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env(), e.Funs())
+	if slices.Contains(tc.Tags, "debug") {
+		a.Debug = base.NewStdoutDebug("lifetime")
+	}
 	a.Check(exprID)
+	a.VerifyShapeContracts()
 
 	results["error"] = a.Diagnostics.String()
 	return results
@@ -100,8 +103,9 @@ func runLifetimeModuleTest(assert base.Assert, tc mdtest.TestCase, results map[s
 	e.Query(moduleID)
 	assert.Equal(0, len(e.diagnostics), "type check failed:\n%s", e.diagnostics)
 
-	lifetime := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env())
+	lifetime := NewLifetimeAnalyzer(e.ast, e.scopeGraph, e.Env(), e.Funs())
 	lifetime.Check(moduleID)
+	lifetime.VerifyShapeContracts()
 
 	results["error"] = lifetime.Diagnostics.String()
 	return results

@@ -24,6 +24,7 @@ package types
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -135,15 +136,15 @@ func newScopeState(id ast.ScopeID, scopeTaint TaintID) *ScopeState {
 // and into each other (side effects through &mut params).
 //
 //	fun foo(a &Int) &Int { a }
-//	  --> ReturnTaints:   {taint(a) --> 0}  (param 0's taints flow to return)
-//	  --> ReturnAliases:  [0]              (return value may alias param 0)
+//	  --> ReturnTaints:  [0]              (param 0's taints flow to return)
+//	  --> ReturnAliases: [0]              (return value may alias param 0)
 //
 //	fun bar(a &mut Int, b &Int) void { *a = *b }
 //	  --> SideEffects: {0: [1]}            (param 1's taints flow into param 0)
 type FunEffects struct {
-	ReturnTaints  map[TaintID]int // taint --> param index: which param taints appear in return value
-	ReturnAliases []int           // param indices whose aliases appear in return value
-	SideEffects   map[int][]int   // target param --> source params: which params' taints flow into which
+	ReturnTaints  []int         // param indices whose taints appear in return value
+	ReturnAliases []int         // param indices whose aliases appear in return value
+	SideEffects   map[int][]int // target param --> source params: which params' taints flow into which
 }
 
 type analysisStatus int
@@ -155,33 +156,47 @@ const (
 )
 
 type LifetimeCheck struct {
-	Diagnostics base.Diagnostics
-	Debug       base.Debug
-	ast         *ast.AST
-	env         *TypeEnv
-	scopeGraph  *ast.ScopeGraph
-	nextTaintID TaintID
-	scopes      map[ast.ScopeID]*ScopeState
-	flows       map[ast.NodeID]Flow
-	funEffects  map[ast.NodeID]*FunEffects
-	taintOrigin map[TaintID]ast.NodeID // Which &x created this taint (for diagnostics).
-	status      map[ast.NodeID]analysisStatus
+	Diagnostics    base.Diagnostics
+	Debug          base.Debug
+	ast            *ast.AST
+	env            *TypeEnv
+	scopeGraph     *ast.ScopeGraph
+	nextTaintID    TaintID
+	scopes         map[ast.ScopeID]*ScopeState
+	flows          map[ast.NodeID]Flow
+	funEffects     map[ast.NodeID]*FunEffects
+	taintOrigin    map[TaintID]ast.NodeID // Which &x created this taint (for diagnostics).
+	status         map[ast.NodeID]analysisStatus
+	shapeContracts *shapeContractsCheck
 }
 
-func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv) *LifetimeCheck {
-	return &LifetimeCheck{
-		Diagnostics: nil,
-		Debug:       base.NilDebug{},
-		ast:         a,
-		scopeGraph:  g,
-		env:         env,
-		nextTaintID: 1,
-		scopes:      map[ast.ScopeID]*ScopeState{},
-		flows:       map[ast.NodeID]Flow{},
-		funEffects:  map[ast.NodeID]*FunEffects{},
-		taintOrigin: map[TaintID]ast.NodeID{},
-		status:      map[ast.NodeID]analysisStatus{},
+func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []FunWork) *LifetimeCheck {
+	funWorks := map[ast.NodeID][]FunWork{}
+	for _, fw := range funs {
+		funWorks[fw.NodeID] = append(funWorks[fw.NodeID], fw)
 	}
+	lc := &LifetimeCheck{
+		Diagnostics:    nil,
+		Debug:          base.NilDebug{},
+		ast:            a,
+		scopeGraph:     g,
+		env:            env,
+		nextTaintID:    1,
+		scopes:         map[ast.ScopeID]*ScopeState{},
+		flows:          map[ast.NodeID]Flow{},
+		funEffects:     map[ast.NodeID]*FunEffects{},
+		taintOrigin:    map[TaintID]ast.NodeID{},
+		status:         map[ast.NodeID]analysisStatus{},
+		shapeContracts: nil,
+	}
+	lc.shapeContracts = &shapeContractsCheck{LifetimeCheck: lc, funWorks: funWorks}
+	return lc
+}
+
+// VerifyShapeContracts checks that concrete implementations of shape methods
+// don't violate the shape's effect contract. Must be called after Check().
+func (a *LifetimeCheck) VerifyShapeContracts() {
+	a.shapeContracts.verify()
 }
 
 func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
@@ -467,15 +482,31 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 	if declID == 0 {
 		declID = a.env.DeclNode(effectsTypeID)
 	}
+	// If we still can't find the declaration, try looking up the binding
+	// by name (handles shape method calls like S.do).
+	if declID == 0 {
+		if ref, ok := a.env.NamedFunRef(call.Callee); ok {
+			if binding, ok := a.env.Lookup(call.Callee, ref); ok {
+				declID = binding.Decl
+			}
+		}
+	}
 	effects, ok := a.funEffects[declID]
 	if !ok && declID != 0 {
-		if a.status[declID] == statusInProgress {
-			a.debug(1, nodeID, "analyzeCall: cycle detected, pessimistic fallback")
-			a.applyPessimisticEffects(nodeID, call)
-			return
+		// Shape method declarations (FunDecl) have no body to analyze.
+		// Use the shape's expected effects contract instead.
+		if funDecl, isFunDecl := a.ast.Node(declID).Kind.(ast.FunDecl); isFunDecl {
+			effects = a.shapeContracts.expectedEffects(declID, funDecl, base.Cast[FunType](calleeType.Kind))
+			ok = true
+		} else {
+			if a.status[declID] == statusInProgress {
+				a.debug(1, nodeID, "analyzeCall: cycle detected, pessimistic fallback")
+				a.applyPessimisticEffects(nodeID, call)
+				return
+			}
+			a.Check(declID)
+			effects, ok = a.funEffects[declID]
 		}
-		a.Check(declID)
-		effects, ok = a.funEffects[declID]
 	}
 	if !ok {
 		a.applyPessimisticEffects(nodeID, call)
@@ -532,8 +563,8 @@ func (a *LifetimeCheck) applyBuiltinEffects(nodeID ast.NodeID, call ast.Call, ef
 }
 
 // applyPessimisticEffects: assume every arg flows into the return value and
-// into every &mut arg. Used when we can't determine the actual effects.
-// (like in recursive calls or shape methods).
+// into every &mut arg. Used when we can't determine the actual effects
+// (like in recursive calls).
 func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call) {
 	args := call.Args
 	if target, ok := a.env.MethodCallReceiver(nodeID); ok {
@@ -988,9 +1019,9 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	blockFlow := a.flow(fun.Block)
 
 	effects := &FunEffects{
-		ReturnTaints:  map[TaintID]int{},
-		ReturnAliases: []int{},
 		SideEffects:   map[int][]int{},
+		ReturnTaints:  nil,
+		ReturnAliases: nil,
 	}
 
 	// Which param taints appear in the return value?
@@ -998,7 +1029,9 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	// taint of a by-value param's stack slot) and must not escape.
 	for _, t := range blockFlow.Taints {
 		if idx, ok := paramTaintToIdx[t]; ok {
-			effects.ReturnTaints[t] = idx
+			if !slices.Contains(effects.ReturnTaints, idx) {
+				effects.ReturnTaints = append(effects.ReturnTaints, idx)
+			}
 		} else {
 			a.diagEscape(fun.Block, blockFlow.Taints,
 				a.scopeByID(paramScope.ID), "via block result")
@@ -1151,4 +1184,135 @@ func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, s
 
 func (a *LifetimeCheck) diag(span base.Span, msg string, msgArgs ...any) {
 	a.Diagnostics = append(a.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
+}
+
+// checkShapeEffectsCompatible verifies that a concrete function's effects don't
+// violate a shape's effect contract. The shape contract says params don't flow
+// into each other, so any side effect in the concrete function is a violation.
+func (a *LifetimeCheck) checkShapeEffectsCompatible(
+	concreteDeclID ast.NodeID, shapeName string, expected, concrete *FunEffects,
+) {
+	for targetIdx, srcIndices := range concrete.SideEffects {
+		if _, ok := expected.SideEffects[targetIdx]; ok {
+			continue
+		}
+		for _, srcIdx := range srcIndices {
+			funNode := a.ast.Node(concreteDeclID)
+			fun := base.Cast[ast.Fun](funNode.Kind)
+			targetName := base.Cast[ast.FunParam](a.ast.Node(fun.Params[targetIdx]).Kind).Name.Name
+			srcName := base.Cast[ast.FunParam](a.ast.Node(fun.Params[srcIdx]).Kind).Name.Name
+			a.diag(funNode.Span,
+				"method %s violates shape %s contract: parameter %s flows into parameter %s",
+				fun.Name.Name, shapeName, srcName, targetName,
+			)
+		}
+	}
+}
+
+// shapeContractsCheck verifies that shape method contracts are consistent
+// with their concrete implementations. The shape contract specifies that
+// parameters do not flow into each other (no side effects), but all
+// parameters may flow to the return value.
+type shapeContractsCheck struct {
+	*LifetimeCheck
+	funWorks map[ast.NodeID][]FunWork
+}
+
+// expectedEffects computes the FunEffects implied by a shape method declaration.
+func (s *shapeContractsCheck) expectedEffects(declID ast.NodeID, funDecl ast.FunDecl, calleeType FunType) *FunEffects {
+	effects := &FunEffects{
+		SideEffects:   map[int][]int{},
+		ReturnTaints:  nil,
+		ReturnAliases: nil,
+	}
+	// All parameters may flow to the return value (taints and aliases),
+	// but only if the return type can carry references.
+	// No parameters flow into each other (no side effects).
+	if s.typeContainsRefOrAlloc(calleeType.Return) {
+		for i := range funDecl.Params {
+			effects.ReturnTaints = append(effects.ReturnTaints, i)
+			effects.ReturnAliases = append(effects.ReturnAliases, i)
+		}
+	}
+	s.funEffects[declID] = effects
+	s.debug(
+		1,
+		declID,
+		"shapeContractsCheck.expectedEffects: taints=%v aliases=%v",
+		effects.ReturnTaints,
+		effects.ReturnAliases,
+	)
+	return effects
+}
+
+// verify checks that concrete implementations of shape methods don't violate
+// the shape's effect contract. Must be called after Check() so that all
+// FunEffects are computed.
+func (s *shapeContractsCheck) verify() {
+	for _, works := range s.funWorks {
+		for _, fw := range works {
+			s.verifyFunWork(fw)
+		}
+	}
+}
+
+func (s *shapeContractsCheck) verifyFunWork(fw FunWork) {
+	fun, ok := s.ast.Node(fw.NodeID).Kind.(ast.Fun)
+	if !ok {
+		return
+	}
+	s.ast.Walk(fun.Block, func(nodeID ast.NodeID) {
+		call, ok := s.ast.Node(nodeID).Kind.(ast.Call)
+		if !ok {
+			return
+		}
+		shapeDeclID := s.resolveShapeDeclID(call.Callee)
+		if shapeDeclID == 0 {
+			return
+		}
+		expected := s.funEffects[shapeDeclID]
+		if expected == nil {
+			return
+		}
+		concreteDeclID := s.resolveConcreteDeclID(fw.Env, call.Callee)
+		if concreteDeclID == 0 {
+			return
+		}
+		concrete := s.funEffects[concreteDeclID]
+		if concrete == nil {
+			return
+		}
+		shapeName := ""
+		if fd, ok := s.ast.Node(shapeDeclID).Kind.(ast.FunDecl); ok {
+			shapeName, _, _ = strings.Cut(fd.Name.Name, ".")
+		}
+		s.checkShapeEffectsCompatible(concreteDeclID, shapeName, expected, concrete)
+	})
+}
+
+func (s *shapeContractsCheck) resolveShapeDeclID(calleeNodeID ast.NodeID) ast.NodeID {
+	if ref, ok := s.env.NamedFunRef(calleeNodeID); ok {
+		if binding, ok := s.env.Lookup(calleeNodeID, ref); ok {
+			if _, isFunDecl := s.ast.Node(binding.Decl).Kind.(ast.FunDecl); isFunDecl {
+				return binding.Decl
+			}
+		}
+	}
+	return 0
+}
+
+func (s *shapeContractsCheck) resolveConcreteDeclID(env *TypeEnv, calleeNodeID ast.NodeID) ast.NodeID {
+	declID, ok := env.FunDeclNode(calleeNodeID)
+	if ok {
+		return declID
+	}
+	calleeType := env.TypeOfNode(calleeNodeID)
+	if calleeType == nil {
+		return 0
+	}
+	typeID := calleeType.ID
+	if origin, ok := env.GenericOrigin(typeID); ok {
+		typeID = origin
+	}
+	return env.DeclNode(typeID)
 }

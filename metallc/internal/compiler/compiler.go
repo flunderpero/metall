@@ -129,11 +129,12 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if opts.PrintBindingsDebug {
 		fmt.Fprintln(os.Stderr, engine.Env().DebugBindings(fileID))
 	}
-	lifetime := types.NewLifetimeAnalyzer(engine.AST(), engine.ScopeGraph(), engine.Env())
+	lifetime := types.NewLifetimeAnalyzer(engine.AST(), engine.ScopeGraph(), engine.Env(), engine.Funs())
 	if opts.DebugLifetime {
 		lifetime.Debug = base.NewStdoutDebug("lifetime")
 	}
 	lifetime.Check(fileID)
+	lifetime.VerifyShapeContracts()
 	timingListener.OnLifetimeCheck(lifetime, lifetime.Diagnostics)
 	if listener != nil && !listener.OnLifetimeCheck(lifetime, lifetime.Diagnostics) {
 		return ErrAbort
