@@ -2284,6 +2284,33 @@ Block: void
 struct01 = Foo { one &Int }
 ```
 
+**Nested slice mutability coercion**
+
+```metall
+{
+    let @a = Arena()
+    let buf = unsafe @a.slice_uninit_mut<Int>(8)
+    fun foo(x [][]Int) Int { 1 }
+    foo([buf][..])
+}
+```
+
+```error
+```
+
+**Nested ref mutability coercion**
+
+```metall
+{
+    fun foo(a []&Int) Int { 1 }
+    mut x = 123
+    foo([&mut x][..])
+}
+```
+
+```error
+```
+
 **Fun returns ref**
 
 ```metall

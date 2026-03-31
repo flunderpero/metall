@@ -2293,5 +2293,21 @@ func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
 		return true
 	}
 	// A []mut T is assignable to []T (coerce by masking off the mutable slice flag).
-	return got&mutableSliceFlag != 0 && got&^mutableSliceFlag == expected
+	if got&mutableSliceFlag != 0 && got&^mutableSliceFlag == expected {
+		return true
+	}
+	// Recursively check nested slices/refs (e.g. [][]mut T → [][]T).
+	gotTyp := e.env.Type(got)
+	expTyp := e.env.Type(expected)
+	switch gotKind := gotTyp.Kind.(type) {
+	case SliceType:
+		if expKind, ok := expTyp.Kind.(SliceType); ok && gotKind.Mut == expKind.Mut {
+			return e.isAssignableTo(gotKind.Elem, expKind.Elem)
+		}
+	case RefType:
+		if expKind, ok := expTyp.Kind.(RefType); ok && gotKind.Mut == expKind.Mut {
+			return e.isAssignableTo(gotKind.Type, expKind.Type)
+		}
+	}
+	return false
 }
