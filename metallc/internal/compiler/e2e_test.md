@@ -173,6 +173,25 @@ fun main() void {
 202
 ```
 
+**overload function parameters**
+
+```metall
+fun foo(x Int) Int {
+    let x = if x > 10 { x * 2 } else { x + 1}
+    x
+}
+
+fun main() void {
+    DebugIntern.print_int(foo(1))
+    DebugIntern.print_int(foo(20))
+}
+```
+
+```output
+2
+40
+```
+
 **return void in if**
 
 ```metall

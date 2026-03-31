@@ -1791,10 +1791,7 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
 	}
-	// Store the binding for codegen (needed for cross-module constant references).
-	if _, isVar := e.ast.Node(binding.Decl).Kind.(ast.Var); isVar {
-		e.env.pathBindings[nodeID] = binding
-	}
+	e.env.pathBindings[nodeID] = binding
 	return e.resolveBinding(nodeID, binding, path.TypeArgs)
 }
 
@@ -1822,6 +1819,7 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		e.diag(span, "cannot reference %q from outer scope", ident.Name)
 		return InvalidTypeID, TypeFailed
 	}
+	e.env.pathBindings[nodeID] = binding
 	return e.resolveBinding(nodeID, binding, ident.TypeArgs)
 }
 
@@ -1854,6 +1852,7 @@ func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Captur
 		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, true, capture.Name.Span)
 	}
 	e.bind(capNodeID, capture.Name.Name, false, captureTypeID, capture.Name.Span)
+	e.env.captureOrigins[capNodeID] = outerBinding
 }
 
 func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Binding) bool {

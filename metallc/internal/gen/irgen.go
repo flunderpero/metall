@@ -694,13 +694,13 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 			// Allocator param: passed as a raw ptr, no alloca wrapping.
 			params.WriteString("ptr ")
 			params.WriteString(preg)
-			g.setSymbol(paramNodeID, param.Name.Name, preg, "ptr")
+			g.setSymbol(ast.BindingID(paramNodeID), param.Name.Name, preg, "ptr")
 		} else if g.isAggregateType(paramTyp.ID) {
 			// Aggregate param: byval gives us a ptr to the callee's copy directly.
 			// symbol.Reg = preg (single indirection, no alloca ptr wrapper).
 			fmt.Fprintf(&params, "ptr byval(%s) ", paramIRTyp)
 			params.WriteString(preg)
-			g.setSymbol(paramNodeID, param.Name.Name, preg, "ptr")
+			g.setSymbol(ast.BindingID(paramNodeID), param.Name.Name, preg, "ptr")
 		} else {
 			params.WriteString(paramIRTyp)
 			params.WriteString(" ")
@@ -708,7 +708,7 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 			areg := g.reg()
 			fmt.Fprintf(&paramAllocas, "%s = alloca %s\n", areg, paramIRTyp)
 			fmt.Fprintf(&paramAllocas, "store %s %s, ptr %s\n", paramIRTyp, preg, areg)
-			g.setSymbol(paramNodeID, param.Name.Name, areg, paramIRTyp)
+			g.setSymbol(ast.BindingID(paramNodeID), param.Name.Name, areg, paramIRTyp)
 		}
 	}
 	attrs := ""
@@ -733,22 +733,20 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		ctxType := g.closureCtxType(astFun)
 		for i, capNodeID := range astFun.Captures {
 			capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
-			b, ok := g.env.Lookup(astFun.Block, capture.Name.Name)
-			if !ok {
-				panic(base.Errorf("capture %s not found", capture.Name.Name))
-			}
-			capIRTyp := g.irType(g.env.Type(b.TypeID).ID)
+			bindID := ast.BindingID(capNodeID)
+			capTypeID, _ := g.env.BindingType(bindID)
+			capIRTyp := g.irType(capTypeID)
 			gepReg := g.reg()
 			g.write("%s = getelementptr %s, ptr %%__ctx, i32 0, i32 %d", gepReg, ctxType, i)
-			if g.isAggregateType(g.env.Type(b.TypeID).ID) {
-				g.symbols[b.ID] = Symbol{Name: capture.Name.Name, Reg: gepReg, Type: "ptr"}
+			if g.isAggregateType(capTypeID) {
+				g.symbols[bindID] = Symbol{Name: capture.Name.Name, Reg: gepReg, Type: "ptr"}
 			} else {
 				valReg := g.reg()
 				g.write("%s = load %s, ptr %s", valReg, capIRTyp, gepReg)
 				allocReg := g.reg()
 				g.write("%s = alloca %s", allocReg, capIRTyp)
 				g.write("store %s %s, ptr %s", capIRTyp, valReg, allocReg)
-				g.symbols[b.ID] = Symbol{Name: capture.Name.Name, Reg: allocReg, Type: capIRTyp}
+				g.symbols[bindID] = Symbol{Name: capture.Name.Name, Reg: allocReg, Type: capIRTyp}
 			}
 		}
 	}
@@ -904,7 +902,7 @@ func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
 	counterReg := g.reg()
 	g.writeAlloca(counterReg, "i64")
 	g.write("store i64 %s, ptr %s", loReg, counterReg)
-	g.setSymbol(forNode.Body, forNode.Binding.Name, counterReg, "i64")
+	g.setSymbol(ast.BindingID(forNode.Body), forNode.Binding.Name, counterReg, "i64")
 	labelCond := g.label("for", id)
 	labelBody := g.label("body", id)
 	labelIncr := g.label("incr", id)
@@ -1199,7 +1197,7 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 		g.writeLabel(elseLabel)
 		elseBody := base.Cast[ast.Block](g.ast.Node(match.Else.Body).Kind)
 		if match.Else.Binding != nil && len(elseBody.Exprs) > 0 {
-			g.genMatchElseBinding(match, elseBody, payloadPtr)
+			g.genMatchElseBinding(match, payloadPtr)
 		}
 		g.Gen(match.Else.Body)
 		if !g.breaksControlFlow(match.Else.Body) {
@@ -1235,33 +1233,30 @@ func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
 	if arm.Binding == nil || len(body.Exprs) == 0 {
 		return
 	}
-	g.genMatchBinding(body.Exprs[0], arm.Binding.Name, g.typeIDOfNode(arm.Pattern), payloadPtr)
+	g.genMatchBinding(ast.BindingID(arm.Body), arm.Binding.Name, g.typeIDOfNode(arm.Pattern), payloadPtr)
 }
 
-func (g *IRFunGen) genMatchElseBinding(match ast.Match, elseBody ast.Block, payloadPtr string) {
-	bindNode := elseBody.Exprs[0]
-	binding, ok := g.env.Lookup(bindNode, match.Else.Binding.Name)
-	if !ok {
-		panic(base.Errorf("else binding %q not found", match.Else.Binding.Name))
-	}
-	if binding.TypeID == g.typeIDOfNode(match.Expr) {
-		g.setSymbol(bindNode, match.Else.Binding.Name, g.lookupCode(match.Expr), "ptr")
+func (g *IRFunGen) genMatchElseBinding(match ast.Match, payloadPtr string) {
+	bindID := ast.BindingID(match.Else.Body)
+	bindTypeID, _ := g.env.BindingType(bindID)
+	if bindTypeID == g.typeIDOfNode(match.Expr) {
+		g.setSymbol(bindID, match.Else.Binding.Name, g.lookupCode(match.Expr), "ptr")
 		return
 	}
-	g.genMatchBinding(bindNode, match.Else.Binding.Name, binding.TypeID, payloadPtr)
+	g.genMatchBinding(bindID, match.Else.Binding.Name, bindTypeID, payloadPtr)
 }
 
-func (g *IRFunGen) genMatchBinding(bindNode ast.NodeID, name string, typeID types.TypeID, ptr string) {
+func (g *IRFunGen) genMatchBinding(bindID ast.BindingID, name string, typeID types.TypeID, ptr string) {
 	valReg := g.loadValue(ptr, typeID)
 	irTyp := g.irType(typeID)
 	if irTyp == "void" || g.isAggregateType(typeID) {
-		g.setSymbol(bindNode, name, valReg, "ptr")
+		g.setSymbol(bindID, name, valReg, "ptr")
 		return
 	}
 	allocReg := g.reg()
 	g.writeAlloca(allocReg, irTyp)
 	g.write("store %s %s, ptr %s", irTyp, valReg, allocReg)
-	g.setSymbol(bindNode, name, allocReg, irTyp)
+	g.setSymbol(bindID, name, allocReg, irTyp)
 }
 
 func (g *IRGen) label(name string, id ast.NodeID) Label {
@@ -1844,7 +1839,7 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 		g.emitFunValue(id, name)
 		return
 	}
-	if symbol, ok := g.lookupSymbol(id, ident.Name); ok {
+	if symbol, ok := g.lookupSymbol(id); ok {
 		identType := g.typeOfNode(id)
 		if _, ok := identType.Kind.(types.AllocatorType); ok ||
 			g.isAggregateType(identType.ID) ||
@@ -1945,12 +1940,8 @@ func (g *IRFunGen) closureCtxType(fun ast.Fun) string {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
-		b, ok := g.env.Lookup(fun.Block, capture.Name.Name)
-		if !ok {
-			panic(base.Errorf("capture %s not found", capture.Name.Name))
-		}
-		sb.WriteString(g.irType(g.env.Type(b.TypeID).ID))
+		capTypeID, _ := g.env.BindingType(ast.BindingID(capNodeID))
+		sb.WriteString(g.irType(capTypeID))
 	}
 	sb.WriteString("}")
 	return sb.String()
@@ -1965,11 +1956,11 @@ func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
 
 	for i, capNodeID := range fun.Captures {
 		capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
-		b, ok := g.env.Lookup(id, capture.Name.Name)
+		outerBinding, ok := g.env.CaptureOrigin(capNodeID)
 		if !ok {
 			panic(base.Errorf("capture %s not found in parent scope", capture.Name.Name))
 		}
-		sym, ok := g.symbols[b.ID]
+		sym, ok := g.symbols[outerBinding.ID]
 		if !ok {
 			panic(base.Errorf("capture %s has no symbol", capture.Name.Name))
 		}
@@ -1980,7 +1971,7 @@ func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
 			// Store the address of the outer variable (sym.Reg is already a ptr).
 			g.write("store ptr %s, ptr %s", sym.Reg, gepReg)
 		case ast.CaptureByValue:
-			capIRTyp := g.irType(g.env.Type(b.TypeID).ID)
+			capIRTyp := g.irType(outerBinding.TypeID)
 			val := g.reg()
 			g.write("%s = load %s, ptr %s", val, capIRTyp, sym.Reg)
 			g.write("store %s %s, ptr %s", capIRTyp, val, gepReg)
@@ -2042,7 +2033,7 @@ func (g *IRFunGen) genPlaceAddr(nodeID ast.NodeID) string {
 	node := g.ast.Node(nodeID)
 	switch kind := node.Kind.(type) {
 	case ast.Ident:
-		if symbol, ok := g.lookupSymbol(nodeID, kind.Name); ok {
+		if symbol, ok := g.lookupSymbol(nodeID); ok {
 			return symbol.Reg
 		}
 		return kind.Name
@@ -2104,7 +2095,7 @@ func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 	top := len(g.arenaRegStack) - 1
 	g.arenaRegStack[top] = append(g.arenaRegStack[top], reg)
 	g.setCode(id, reg)
-	g.setSymbol(id, alloc.Name.Name, reg, "ptr")
+	g.setSymbol(ast.BindingID(id), alloc.Name.Name, reg, "ptr")
 }
 
 func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
@@ -2120,11 +2111,11 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 		switch exprNode.Kind.(type) {
 		case ast.TypeConstruction, ast.ArrayLiteral, ast.EmptySlice, ast.SubSlice, ast.Call:
 			g.setCode(id, exprReg)
-			g.setSymbol(id, v.Name.Name, exprReg, "ptr")
+			g.setSymbol(ast.BindingID(id), v.Name.Name, exprReg, "ptr")
 		default:
 			if isAutoWrapped {
 				g.setCode(id, exprReg)
-				g.setSymbol(id, v.Name.Name, exprReg, "ptr")
+				g.setSymbol(ast.BindingID(id), v.Name.Name, exprReg, "ptr")
 			} else {
 				irTyp := g.irType(exprTypeID)
 				reg := g.reg()
@@ -2133,7 +2124,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 				g.write("%s = load %s, ptr %s", tmp, irTyp, exprReg)
 				g.write("store %s %s, ptr %s", irTyp, tmp, reg)
 				g.setCode(id, reg)
-				g.setSymbol(id, v.Name.Name, reg, "ptr")
+				g.setSymbol(ast.BindingID(id), v.Name.Name, reg, "ptr")
 			}
 		}
 		return
@@ -2143,7 +2134,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 	g.writeAlloca(reg, typ)
 	g.write("store %s %s, ptr %s", typ, exprReg, reg)
 	g.setCode(id, reg)
-	g.setSymbol(id, v.Name.Name, reg, typ)
+	g.setSymbol(ast.BindingID(id), v.Name.Name, reg, typ)
 }
 
 func (g *IRGen) reg() string {
@@ -2368,16 +2359,12 @@ func (g *IRFunGen) lookupCode(astID ast.NodeID) string {
 	return code
 }
 
-func (g *IRFunGen) setSymbol(nodeID ast.NodeID, name string, reg string, typ string) {
-	b, ok := g.env.Lookup(nodeID, name)
-	if !ok {
-		panic(base.Errorf("symbol %s not found in node %s", name, nodeID))
-	}
-	g.symbols[b.ID] = Symbol{Name: name, Reg: reg, Type: typ}
+func (g *IRFunGen) setSymbol(id ast.BindingID, name string, reg string, typ string) {
+	g.symbols[id] = Symbol{Name: name, Reg: reg, Type: typ}
 }
 
-func (g *IRFunGen) lookupSymbol(nodeID ast.NodeID, name string) (Symbol, bool) {
-	b, ok := g.env.Lookup(nodeID, name)
+func (g *IRFunGen) lookupSymbol(nodeID ast.NodeID) (Symbol, bool) {
+	b, ok := g.env.PathBinding(nodeID)
 	if !ok {
 		return Symbol{}, false
 	}

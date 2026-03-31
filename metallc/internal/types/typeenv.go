@@ -94,7 +94,8 @@ type TypeEnv struct {
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
 	funDeclRef         map[ast.NodeID]ast.NodeID // calleeNodeID → function declaration NodeID
-	pathBindings       map[ast.NodeID]*Binding
+	pathBindings       map[ast.NodeID]*Binding   // nodeID → resolved binding (for idents/paths)
+	captureOrigins     map[ast.NodeID]*Binding   // capNodeID → outer-scope binding the capture refers to
 	methodCallReceiver map[ast.NodeID]ast.NodeID
 	callDefaults       map[ast.NodeID][]ast.NodeID // callNodeID → default arg NodeIDs to append
 	unionWraps         map[ast.NodeID]unionWrap
@@ -121,6 +122,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		namedFunRef:        map[ast.NodeID]string{},
 		funDeclRef:         map[ast.NodeID]ast.NodeID{},
 		pathBindings:       map[ast.NodeID]*Binding{},
+		captureOrigins:     map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
@@ -138,6 +140,7 @@ func (e *TypeEnv) NewChildEnv() *TypeEnv {
 		namedFunRef:        map[ast.NodeID]string{},
 		funDeclRef:         map[ast.NodeID]ast.NodeID{},
 		pathBindings:       map[ast.NodeID]*Binding{},
+		captureOrigins:     map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
@@ -204,6 +207,28 @@ func (e *TypeEnv) PathBinding(id ast.NodeID) (*Binding, bool) {
 		return e.parent.PathBinding(id)
 	}
 	return nil, false
+}
+
+func (e *TypeEnv) CaptureOrigin(capNodeID ast.NodeID) (*Binding, bool) {
+	b, ok := e.captureOrigins[capNodeID]
+	if ok {
+		return b, true
+	}
+	if e.parent != nil {
+		return e.parent.CaptureOrigin(capNodeID)
+	}
+	return nil, false
+}
+
+func (e *TypeEnv) BindingType(id ast.BindingID) (TypeID, bool) {
+	b, ok := e.bindings[id]
+	if ok {
+		return b.TypeID, true
+	}
+	if e.parent != nil {
+		return e.parent.BindingType(id)
+	}
+	return InvalidTypeID, false
 }
 
 func (e *TypeEnv) MethodCallReceiver(callID ast.NodeID) (ast.NodeID, bool) {
