@@ -3752,6 +3752,25 @@ fun main() void {
 123
 ```
 
+**closure captures allocator**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let make_slice = fun[@a]() []Int { @a.slice<Int>(3, 42) }
+    let items = make_slice()
+    DebugIntern.print_int(items[0])
+    DebugIntern.print_int(items[1])
+    DebugIntern.print_int(items[2])
+}
+```
+
+```output
+42
+42
+42
+```
+
 ## Defer
 
 **defer basic**

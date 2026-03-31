@@ -2263,6 +2263,36 @@ test.met:3:5: reference escaping its allocation scope (via block result)
     }
 ```
 
+**closure captures allocator by value used locally**
+
+```metall
+fun foo() void {
+    let @a = Arena()
+    let alloc = fun[@a]() []Int { @a.slice<Int>(3, 0) }
+    _ = alloc()
+}
+```
+
+```error
+```
+
+**closure capturing allocator escapes allocator scope**
+
+```metall
+fun foo() fun() []Int {
+    let @a = Arena()
+    fun[@a]() []Int { @a.slice<Int>(3, 0) }
+}
+```
+
+```error
+test.met:3:5: reference escaping its allocation scope (via block result)
+        let @a = Arena()
+        fun[@a]() []Int { @a.slice<Int>(3, 0) }
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
 **defer block reading local ref does not escape**
 
 ```metall

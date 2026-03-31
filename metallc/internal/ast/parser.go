@@ -1805,7 +1805,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	}, t.Span, true
 }
 
-func (p *Parser) parseFunLiteral() (NodeID, bool) {
+func (p *Parser) parseFunLiteral() (NodeID, bool) { //nolint:funlen
 	t, ok := p.expect(token.Fun)
 	if !ok {
 		return ParseFailed, false
@@ -1836,11 +1836,18 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) {
 					mode = CaptureByRef
 				}
 			}
-			ident, ok := p.expect(token.Ident)
-			if !ok {
-				return ParseFailed, false
+			var name Name
+			if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.AllocatorIdent {
+				p.next()
+				name = Name{peek.Value, peek.Span}
+			} else {
+				ident, ok := p.expect(token.Ident)
+				if !ok {
+					return ParseFailed, false
+				}
+				name = Name{ident.Value, ident.Span}
 			}
-			captures = append(captures, p.NewCapture(Name{ident.Value, ident.Span}, mode, capSpan.Combine(ident.Span)))
+			captures = append(captures, p.NewCapture(name, mode, capSpan.Combine(name.Span)))
 		}
 	}
 	params, ok := p.ParseFunParams()

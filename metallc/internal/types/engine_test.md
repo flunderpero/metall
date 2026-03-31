@@ -746,6 +746,52 @@ test.met:1:22: symbol not defined: y
                          ^
 ```
 
+**Closure captures allocator by value**
+
+```metall
+fun foo() void {
+    let @a = Arena()
+    _ = fun[@a]() []Int { @a.slice<Int>(1, 0) }
+}
+```
+
+```error
+```
+
+**Closure cannot capture allocator by reference**
+
+```metall
+fun foo() void {
+    let @a = Arena()
+    _ = fun[&@a]() void { }
+}
+```
+
+```error
+test.met:3:14: allocator captures must be by value, not by reference
+        let @a = Arena()
+        _ = fun[&@a]() void { }
+                 ^^
+    }
+```
+
+**Closure cannot capture allocator by mutable reference**
+
+```metall
+fun foo() void {
+    let @a = Arena()
+    _ = fun[&mut @a]() void { }
+}
+```
+
+```error
+test.met:3:18: allocator captures must be by value, not by reference
+        let @a = Arena()
+        _ = fun[&mut @a]() void { }
+                     ^^
+    }
+```
+
 ## Defer
 
 **Defer block is void**

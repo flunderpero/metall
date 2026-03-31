@@ -1836,6 +1836,10 @@ func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Captur
 		return
 	}
 	outerTypeID := outerBinding.TypeID
+	if _, ok := e.env.Type(outerTypeID).Kind.(AllocatorType); ok && capture.Mode != ast.CaptureByValue {
+		e.diag(capture.Name.Span, "allocator captures must be by value, not by reference")
+		return
+	}
 	var captureTypeID TypeID
 	switch capture.Mode {
 	case ast.CaptureByValue:
