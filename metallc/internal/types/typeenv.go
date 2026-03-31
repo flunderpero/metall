@@ -80,6 +80,11 @@ type TypeRegistry struct {
 	nextID         TypeID
 }
 
+type unionWrap struct {
+	UnionTypeID  TypeID
+	VariantIndex int
+}
+
 type TypeEnv struct {
 	parent             *TypeEnv
 	ast                *ast.AST
@@ -92,7 +97,7 @@ type TypeEnv struct {
 	pathBindings       map[ast.NodeID]*Binding
 	methodCallReceiver map[ast.NodeID]ast.NodeID
 	callDefaults       map[ast.NodeID][]ast.NodeID // callNodeID → default arg NodeIDs to append
-	unionWraps         map[ast.NodeID]TypeID       // nodeID → union TypeID (auto-wrap variant → union)
+	unionWraps         map[ast.NodeID]unionWrap
 }
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
@@ -118,7 +123,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		pathBindings:       map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
-		unionWraps:         map[ast.NodeID]TypeID{},
+		unionWraps:         map[ast.NodeID]unionWrap{},
 	}
 }
 
@@ -135,7 +140,7 @@ func (e *TypeEnv) NewChildEnv() *TypeEnv {
 		pathBindings:       map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
-		unionWraps:         map[ast.NodeID]TypeID{},
+		unionWraps:         map[ast.NodeID]unionWrap{},
 	}
 }
 
@@ -313,15 +318,15 @@ func (e *TypeEnv) IterTypes(f func(*Type, TypeStatus) bool) {
 	}
 }
 
-func (e *TypeEnv) UnionWrap(nodeID ast.NodeID) (TypeID, bool) {
-	id, ok := e.unionWraps[nodeID]
+func (e *TypeEnv) UnionWrap(nodeID ast.NodeID) (TypeID, int, bool) {
+	w, ok := e.unionWraps[nodeID]
 	if ok {
-		return id, true
+		return w.UnionTypeID, w.VariantIndex, true
 	}
 	if e.parent != nil {
 		return e.parent.UnionWrap(nodeID)
 	}
-	return 0, false
+	return 0, 0, false
 }
 
 func (e *TypeEnv) FunDeclNode(id ast.NodeID) (ast.NodeID, bool) {
@@ -335,8 +340,8 @@ func (e *TypeEnv) FunDeclNode(id ast.NodeID) (ast.NodeID, bool) {
 	return 0, false
 }
 
-func (e *TypeEnv) recordUnionWrap(nodeID ast.NodeID, unionTypeID TypeID) {
-	e.unionWraps[nodeID] = unionTypeID
+func (e *TypeEnv) recordUnionWrap(nodeID ast.NodeID, unionTypeID TypeID, variantIndex int) {
+	e.unionWraps[nodeID] = unionWrap{unionTypeID, variantIndex}
 }
 
 func (e *TypeEnv) containsMutablePart(typeID TypeID) bool {

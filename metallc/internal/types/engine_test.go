@@ -36,6 +36,9 @@ func runEngineTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 
 	preludeAST, _ := ast.PreludeAST(true)
 	e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{}, nil)
+	if slices.Contains(tc.Tags, "debug") {
+		e.SetDebug(base.NewStdoutDebug("types"))
+	}
 	e.Query(nodeID)
 
 	_, wantTypes := tc.Want["types"]

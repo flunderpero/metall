@@ -197,8 +197,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 	}
 	if g.breaksControlFlow(id) {
 		g.write("unreachable")
-	} else if unionTypeID, ok := g.env.UnionWrap(id); ok {
-		g.genUnionAutoWrap(id, unionTypeID)
+	} else if unionTypeID, variantTag, ok := g.env.UnionWrap(id); ok {
+		g.genUnionAutoWrap(id, unionTypeID, variantTag)
 	}
 }
 
@@ -454,20 +454,10 @@ func (g *IRFunGen) genUnionConstruction(
 	g.setCode(id, reg)
 }
 
-func (g *IRFunGen) genUnionAutoWrap(id ast.NodeID, unionTypeID types.TypeID) {
+func (g *IRFunGen) genUnionAutoWrap(id ast.NodeID, unionTypeID types.TypeID, tag int) {
 	variantReg := g.lookupCode(id)
-	variantTypeID := g.env.TypeOfNode(id).ID // Intentionally raw: need the pre-wrap variant type.
 	unionType := base.Cast[types.UnionType](g.env.Type(unionTypeID).Kind)
-	tag := -1
-	for i, vID := range unionType.Variants {
-		if variantTypeID == vID {
-			tag = i
-			break
-		}
-	}
-	if tag < 0 {
-		panic(base.Errorf("union auto-wrap: variant %s not found in union %s", variantTypeID, unionTypeID))
-	}
+	variantTypeID := unionType.Variants[tag]
 	unionIRType := g.irType(unionTypeID)
 	reg := g.reg()
 	g.writeAlloca(reg, unionIRType)
@@ -2124,7 +2114,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 	if g.isAggregateType(exprTypeID) {
 		exprNode := g.ast.Node(v.Expr)
 		isAutoWrapped := false
-		if _, ok := g.env.UnionWrap(v.Expr); ok {
+		if _, _, ok := g.env.UnionWrap(v.Expr); ok {
 			isAutoWrapped = true
 		}
 		switch exprNode.Kind.(type) {
@@ -2163,7 +2153,7 @@ func (g *IRGen) reg() string {
 }
 
 func (g *IRFunGen) typeOfNode(nodeID ast.NodeID) *types.Type {
-	if wrapTypeID, ok := g.env.UnionWrap(nodeID); ok {
+	if wrapTypeID, _, ok := g.env.UnionWrap(nodeID); ok {
 		if _, generated := g.astCode[nodeID]; generated {
 			return g.env.Type(wrapTypeID)
 		}

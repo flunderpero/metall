@@ -6597,6 +6597,28 @@ fun03    = fun(&mut T) union02
 fun04    = fun(&mut struct02) union01
 ```
 
+**Generic shape satisfied when type arg is a ref**
+
+```metall module
+shape RC<T> {
+    fun RC.read<T>(r &RC, buf []T) ![]T
+}
+
+struct Buf<T> {}
+
+fun Buf.read<T>(b &Buf<T>, buf []T) ![]T { buf }
+
+fun use_rc<T, R RC<T>>(r R) !Int { 1 }
+
+fun main() !void {
+    let b = Buf<Int>()
+    _ = try use_rc(&b)
+}
+```
+
+```error
+```
+
 **Generic shape not satisfied**
 
 ```metall

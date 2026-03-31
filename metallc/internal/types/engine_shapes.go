@@ -44,6 +44,8 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 ) bool {
 	shapeType := base.Cast[ShapeType](e.env.Type(shapeTypeID).Kind)
 	concreteTyp := e.env.Type(concreteTypeID)
+	e.debug.Print(0, "SatisfiesShape concrete=%s shape=%s",
+		e.env.TypeDisplay(concreteTypeID), e.env.TypeDisplay(shapeTypeID))
 	// Unwrap RefType for method lookup, because methods live on the underlying type.
 	lookupTypeID := concreteTypeID
 	lookupTyp := concreteTyp
@@ -114,7 +116,7 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 		}
 		expectedFunType, status := e.MethodSignature(
 			shapeFunBinding,
-			e.ShapeMethodContext(shapeTypeID, concreteTypeID),
+			e.ShapeMethodContext(shapeTypeID, lookupTypeID),
 			scopeNodeID,
 			span,
 		)
@@ -130,6 +132,8 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 		if status.Failed() {
 			return false
 		}
+		e.debug.Print(0, "SatisfiesShape method=%s expected=%s concrete=%s",
+			methodName, e.FunTypeDisplay(expectedFunType), e.FunTypeDisplay(concreteFunType))
 		if !e.shapeMethodMatches(expectedFunType, concreteFunType) {
 			e.diag(span,
 				"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
@@ -161,7 +165,7 @@ func (e *Engine) LookupShapeMethodBinding(
 }
 
 // shapeMethodMatches checks if a concrete method signature satisfies a shape's
-// expected signature, allowing &mut T → &T coercion on parameters.
+// expected signature, allowing &mut T → &T and ref coercion on parameters.
 func (e *Engine) shapeMethodMatches(expected, concrete FunType) bool {
 	if expected.Return != concrete.Return || expected.Macro != concrete.Macro {
 		return false
@@ -170,9 +174,18 @@ func (e *Engine) shapeMethodMatches(expected, concrete FunType) bool {
 		return false
 	}
 	for i, ep := range expected.Params {
-		if !e.isAssignableTo(ep, concrete.Params[i]) {
-			return false
+		cp := concrete.Params[i]
+		if e.isAssignableTo(ep, cp) {
+			continue
 		}
+		// Allow ref coercion: the concrete method may wrap the parameter
+		// in a ref (e.g. shape says `S`, concrete takes `&Foo`).
+		if refTyp, ok := e.env.Type(cp).Kind.(RefType); ok {
+			if e.isAssignableTo(ep, refTyp.Type) {
+				continue
+			}
+		}
+		return false
 	}
 	return true
 }

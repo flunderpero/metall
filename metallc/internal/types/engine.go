@@ -2271,9 +2271,9 @@ func (e *Engine) tryUnionAutoWrap(nodeID ast.NodeID, typeID TypeID, hintTypeID T
 	if !ok {
 		return typeID
 	}
-	for _, variantID := range unionType.Variants {
+	for i, variantID := range unionType.Variants {
 		if e.isAssignableTo(typeID, variantID) {
-			e.env.recordUnionWrap(nodeID, hintTypeID)
+			e.env.recordUnionWrap(nodeID, hintTypeID, i)
 			return hintTypeID
 		}
 	}
