@@ -14,6 +14,25 @@ fun main() void {
         try test::err(Rune.from_u32_checked(123456789), "rune out of range")
         try test::err(Rune.from_u32_checked(55296), "rune in invalid surrogate range") -- 0xD800
     })
+    suite.test("to_bytes", fun() !void {
+        let @local = Arena()
+        {
+            let rune = 'A'.to_bytes()
+            try test::eq("A", Str.from_utf8_lossy((&rune).as_slice(), @local))
+        }
+        {
+            let rune = 'ä'.to_bytes()
+            try test::eq("ä", Str.from_utf8_lossy((&rune).as_slice(), @local))
+        }
+        {
+            let rune = '€'.to_bytes()
+            try test::eq("€", Str.from_utf8_lossy((&rune).as_slice(), @local))
+        }
+        {
+            let rune = '😀'.to_bytes()
+            try test::eq("😀", Str.from_utf8_lossy((&rune).as_slice(), @local))
+        }
+    })
     suite.test("is_ascii_whitespace", fun() !void {
         try test::eq(true, ' '.is_ascii_whitespace())
         try test::eq(true, '\n'.is_ascii_whitespace())

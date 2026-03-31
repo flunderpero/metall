@@ -130,7 +130,7 @@ fun main() void {
         m.set(2, "b")
         m.set(3, "c")
         mut sut = m.iter()
-        let l = list::List.new<map::MapEntry<Int, Str>>(@local)
+        let l = list::List.new<map::MapEntry<Int, Str>>(32, @local)
         iter::collect(&mut sut, l)
         l.sort_in_place(fun (a map::MapEntry<Int, Str>, b map::MapEntry<Int, Str>) Int {
             if a.key == b.key { return 0 }

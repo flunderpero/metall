@@ -1,0 +1,141 @@
+use std::test
+use std::glob
+use std::os
+use std::io
+use std::fs
+
+let paths = [
+    "README.md",
+    ".env",
+    "extra/trailing-space ",
+    "extra/ leading-space",
+    "extra/middle space",
+    "extra/with-tab\t",
+    "extra/#",
+    "extra/#hash",
+    "extra/!",
+    "extra/!important.txt",
+    "extra/*",
+    "extra/star*.txt",
+    "extra/?",
+    "extra/question?.txt",
+    "extra/^.txt",
+    "extra/\\.txt",
+    "extra/[",
+    "extra/bracket[.txt",
+    "extra/bracket].txt",
+    "extra/über.txt",
+    "extra/emoji😀.txt",
+    "extra/backslash\\",
+    "extra/with-dash-in-name.txt",
+    "extra/.env",
+    "extra/123.txt",
+    "lib/README.md",
+    "lib/path.go",
+    "lib/path_test.go",
+    "lib/extra/README.md",
+    "lib/extra/lib/README.md",
+    "lib/extra/lib/more/lib/extra/README.md",
+    "library/README.md",
+    "library/info.go",
+    "cli/extra"
+]
+
+shape Sut {
+    fun Sut.yes(s Sut, pattern Str, paths []Str) !void 
+    fun Sut.non(s Sut, pattern Str, paths []Str) !void 
+}
+
+struct GitSut {
+    dir fs::Path
+}
+
+fun GitSut.new() !GitSut {
+    let @local = Arena()
+    let dir = { 
+        let mktemp = try os::shell_output(["mktemp", "-d"][..], @local) 
+        fs::Path.from_str(mktemp.trim())
+    }
+    try os::chdir(dir)
+    try os::shell_checked(["git", "init"][..], @local)
+	-- Tell Git to treat paths as case-sensitive..
+    try os::shell_checked(["git", "config", "core.ignorecase", "false"][..], @local)
+	-- Tell Git to print unicode characters as-is.
+	try os::shell_checked(["git", "config", "core.quotepath", "false"][..], @local)
+    for i in 0..paths.len {
+        let full_path = dir.join(fs::Path.from_str(paths[i]), @local)
+    }
+    GitSut(dir)
+}
+
+fun GitSut.close() void {
+    
+}
+
+-- func createTestPaths(tb testing.TB, dir string) {
+-- 	tb.Helper()
+-- 	assert := NewAssert(tb)
+-- 	for _, path := range paths {
+-- 		fullPath := filepath.Join(dir, path)
+-- 		if strings.HasSuffix(path, "/") {
+-- 			assert.NoError(os.MkdirAll(fullPath, 0o700), "Failed to create directory %s", fullPath)
+-- 		} else {
+-- 			dirPath := filepath.Dir(fullPath)
+-- 			assert.NoError(os.MkdirAll(dirPath, 0o700), "Failed to create directory %s", dirPath)
+-- 			assert.NoError(os.WriteFile(fullPath, []byte("test content"), 0o600), "Failed to create file %s", fullPath)
+-- 		}
+-- 	}
+-- }
+--
+
+
+fun GitSut.yes(g &GitSut, pattern Str, paths[]Str) !void {
+
+}
+
+fun GitSut.non(g &GitSut, pattern Str, paths[]Str) !void {
+
+}
+---
+func (g *gitGlobTester) check(pattern string, paths ...string) []string {
+	assert := NewAssert(g.tb)
+	err := os.WriteFile(filepath.Join(g.dir, ".gitignore"), []byte(pattern), 0o600)
+	assert.NoError(err, "Failed to write .gitignore")
+
+	matches := []string{}
+	for _, path := range paths {
+		cmd := exec.Command("git", "check-ignore", path)
+		cmd.Dir = g.dir
+		err = cmd.Run()
+		switch cmd.ProcessState.ExitCode() {
+		case 0:
+			matches = append(matches, path)
+		case 1:
+		default:
+			g.tb.Fatalf(
+				"git check-ignore failed: expected no error, got exit status %d: %v",
+				cmd.ProcessState.ExitCode(),
+				err,
+			)
+		}
+	}
+	return matches
+}
+---
+
+fun test_happy_path<S Sut>(sut S) !void {
+}
+
+fun main() void {
+    let @local = Arena()
+    let suite = test::Suite.new("match", @local)
+    suite.test("pattern", fun() !void {
+        let @local = Arena()
+        try test::eq("abc", Str.from_utf8_lossy(glob::Pattern.new("abc ").text, @local))
+    })
+    let git_sut = try GitSut.new() else e { io::println("failed to create git_sut") return void }
+    suite.test("happy_path", fun[&git_sut]() !void {
+        try test_happy_path(git_sut)
+    })
+    _ = suite.run()
+}

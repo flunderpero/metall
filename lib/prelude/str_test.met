@@ -29,6 +29,27 @@ fun main() void {
         try test::eq(U64(686710930086579414), "hello".hash())
         try test::eq(U64(0), "".hash())
     })
+    suite.test("starts_with", fun() !void {
+        try test::ok("abc".starts_with("abc"))
+        try test::ok("abc".starts_with("ab"))
+        try test::ok("abc".starts_with("a"))
+        try test::ok("abc".starts_with(""))
+        try test::not_ok("abc".starts_with("abcd"))
+        try test::not_ok("abc".starts_with("abf"))
+    })
+    suite.test("ends_with", fun() !void {
+        try test::ok("abc".ends_with("abc"))
+        try test::ok("abc".ends_with("bc"))
+        try test::ok("abc".ends_with("c"))
+        try test::ok("abc".ends_with(""))
+        try test::ok("abc".ends_with(""))
+        try test::not_ok("abc".ends_with("0abc"))
+        try test::not_ok("abc".ends_with("abf"))
+    })
+    suite.test("trim", fun() !void {
+        try test::eq("abc", " \n \r \t abc \r \n \t ".trim())
+        try test::eq("\n abc \r", " \n abc \r".trim([' '][..]))
+    })
     suite.test("iter", fun() !void {
         -- This is a test string with 1, 2, 3, and 4 byte utf8 sequences.
         let s = "AÄ€😀"

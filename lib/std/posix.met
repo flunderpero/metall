@@ -1,0 +1,24 @@
+use std::ffi
+
+extern fun __error() ffi::PtrMut<I32>
+extern fun strerror(e I32) ffi::Ptr<U8>
+extern fun strlen(s ffi::Ptr<U8>) Int
+
+fun reset_errno() void {
+    -- todo: This is MacOS specific.
+    let e = unsafe __error()
+    unsafe e.write(0)
+}
+
+fun errno() I32 {
+    let e = unsafe __error()
+    unsafe e.read()
+}
+
+fun errno_str() Str {
+    let e = errno()
+    let s = unsafe strerror(e)
+    let l = unsafe strlen(s)
+    try Str.from_utf8_checked(unsafe s.as_slice(l)) else e { panic(e.msg) }
+}
+

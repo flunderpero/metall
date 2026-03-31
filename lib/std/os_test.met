@@ -1,20 +1,51 @@
 use std::test
+use std::fs
 use std::os
 
 fun main() void {
     let @local = Arena()
-    let suite = test::Suite.new("shell", @local)
-    suite.test("happy path", fun() !void {
+    let shell_suite = test::Suite.new("shell", @local)
+    shell_suite.test("happy path", fun() !void {
         let @local = Arena()
-        let res = try os::shell(["printf", "hello"][..], @local) 
+        let res = try os::shell(["printf", "hello"][..], @local)
         try test::eq(0, res.status)
         try test::eq("hello", res.output)
     })
-    suite.test("not existing program", fun() !void {
+    shell_suite.test("not existing program", fun() !void {
         let @local = Arena()
         let res = try os::shell(["this_does_not_exist"][..], @local)
         try test::neq(0, res.status)
         try test::contains_str(res.output, "not found")
     })
-    _ = suite.run()
+    shell_suite.test("shell_output", fun() !void {
+        let @local = Arena()
+        {
+            let res = try os::shell_output(["printf", "hello"][..], @local)
+            try test::eq("hello", res)
+        }
+        {
+            let res = os::shell_output(["this_does_not_exist"][..], @local)
+            try test::err(res, "non-zero exit code")
+        }
+    })
+    shell_suite.test("shell_checked", fun() !void {
+        let @local = Arena()
+        {
+            try os::shell_checked(["printf", "hello"][..], @local)
+        }
+        {
+            let res = os::shell_checked(["this_does_not_exist"][..], @local)
+            try test::err(res, "non-zero exit code")
+        }
+    })
+    _ = shell_suite.run()
+    let chdir_suite = test::Suite.new("chdir", @local)
+    chdir_suite.test("happy path", fun() !void {
+        let @local = Arena()
+        let mktemp = try os::shell(["mktemp", "-d"][..], @local)
+        try test::eq(0, mktemp.status)
+        let tempdir = mktemp.output.trim()
+        try os::chdir(fs::Path.from_str(tempdir))
+    })
+    _ = chdir_suite.run()
 }

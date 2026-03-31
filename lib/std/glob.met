@@ -1,0 +1,33 @@
+struct Pattern {
+    text []U8
+}
+
+--- Take the given pattern and trim trailing spaces to have nice normalized pattern. ---
+fun Pattern.new(pattern Str) Pattern {
+    let text = pattern.as_bytes()
+    mut pend = text.len
+    mut i = pend - 1
+    for i >= 0 {
+        if text[i] != ' ' {
+            break
+        }
+        if i == 0 {
+            pend = 0
+            break
+        }
+        if text[i - 1] == '\\' {
+            pend = i
+            continue
+        }
+        pend = i
+        i = i - 1
+    }
+    Pattern(text[0..pend])
+}
+
+--- Match Git-style glob pattern according to
+    https://git-scm.com/docs/gitignore#_pattern_format
+    and https://github.com/git/git/blob/master/wildmatch.c ---
+fun Pattern.match_(p Pattern, text Str, isDir Bool) Bool {
+    false
+}

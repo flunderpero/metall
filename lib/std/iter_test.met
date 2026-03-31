@@ -41,7 +41,7 @@ fun main() void {
     suite.test("chain", fun() !void {
         let @local = Arena()
         mut it1 = "aa".iter()
-        let l = list::List.new<Rune>(@local)
+        let l = list::List.new<Rune>(32, @local)
         l.push('b')
         l.push('b')
         mut it2 = l.iter()
@@ -54,7 +54,7 @@ fun main() void {
     })
     suite.test("fold", fun() !void {
         let @local = Arena()
-        let l = list::List.new<U8>(@local)
+        let l = list::List.new<U8>(32, @local)
         l.push(1)
         l.push(2)
         l.push(3)
@@ -101,7 +101,7 @@ fun main() void {
 
         -- list.iter() is already peekable
         let @local = Arena()
-        mut l = list::List.new<Int>(@local)
+        mut l = list::List.new<Int>(32, @local)
         l.push(1)
         l.push(2)
         l.push(3)
@@ -115,7 +115,7 @@ fun main() void {
     suite.test("collect", fun() !void {
         let @local = Arena()
         mut it = "hello".iter()
-        mut l = list::List.new<Rune>(@local)
+        mut l = list::List.new<Rune>(32, @local)
         iter::collect(&mut it, l)
         try test::eq(5, l.len)
     })

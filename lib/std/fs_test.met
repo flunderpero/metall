@@ -3,31 +3,59 @@ use std::fs
 
 fun main() void {
     let @local = Arena()
-    let suite = test::Suite.new("File", @local)
-    suite.test("happy path", fun() !void {
+
+    let path_suite = test::Suite.new("Path", @local)
+    path_suite.test("join", fun() !void {
         let @local = Arena()
-        let filename = "/tmp/io_test.met.file"
+        try test::eq(
+            fs::Path.from_str("dir/file.txt"),
+            fs::Path.from_str("dir").join(fs::Path.from_str("file.txt"), @local))
+        try test::eq(
+            fs::Path.from_str("dir/file.txt"),
+            fs::Path.from_str("dir/").join(fs::Path.from_str("file.txt"), @local), "first already ends with /")
+        try test::eq(
+            fs::Path.from_str("dir/file.txt"),
+            fs::Path.from_str("dir").join(fs::Path.from_str("/file.txt"), @local), "second already starts with /")
+        try test::eq(
+            fs::Path.from_str("dir/file.txt"),
+            fs::Path.from_str("dir/").join(fs::Path.from_str("/file.txt"), @local), "both have /")
+    })
+    _ = path_suite.run()
+
+    let file_suite = test::Suite.new("File", @local)
+    file_suite.test("happy path", fun() !void {
+        let @local = Arena()
+        let path = fs::Path.from_str("/tmp/io_test.met.file")
         let content = "this is a test"
 
         -- write file
-        mut sut = try fs::File.open(filename, "w", @local)
+        mut sut = try fs::File.open(path, "w", @local)
         _ = try sut.write(content.as_bytes())
         try sut.close()
 
         -- read it again
-        sut = try fs::File.open(filename, "r", @local)
+        sut = try fs::File.open(path, "r", @local)
         let buf = unsafe @local.slice_uninit_mut<U8>(1024)
         let read_bytes = try sut.read(buf)
         let read_str = Str.from_utf8_lossy(read_bytes, @local)
         try sut.close()
         try test::eq(content, read_str)
     })
-    suite.test("read non-existing file", fun() !void {
+    file_suite.test("read non-existing file", fun() !void {
         let @local = Arena()
-        match fs::File.open("does not exist i think.met", "r", @local) {
+        match fs::File.open(fs::Path.from_str("does not exist i think.met"), "r", @local) {
             case Err e: try test::contains_str(e.msg, "No such file")
             else: return Err("expected an error")
         }
     })
-    _ = suite.run()
+    file_suite.test("read_file and write_file", fun() !void {
+        let @local = Arena()
+        let content = "hello".as_bytes()
+        let path = fs::Path.from_str("/tmp/io_test.met.file")
+
+        try fs::write_file(path, content)
+        let read = try fs::read_file(path, @local)
+        try test::eq(content, read)
+    })
+    _ = file_suite.run()
 }

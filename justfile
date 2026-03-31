@@ -33,7 +33,7 @@ test-stdlib:
     set -uo pipefail
 
     failed=0
-    for file in lib/*_test.met lib/*/*_test.met; do
+    for file in lib/*/*_test.met; do
         echo ">>> $file"
         if go run ./metallc/... run "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
             failed=1

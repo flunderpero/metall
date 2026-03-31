@@ -38,6 +38,43 @@ fun Rune.from_u32_checked(n U32) !Rune {
     Rune(n)
 }
 
+--- The utf8 representation of a rune. ---
+struct RuneUTF8 {
+    bytes [4]U8
+    len Int
+}
+
+fun RuneUTF8.as_slice(r &RuneUTF8) []U8 {
+    r.bytes[0..r.len]
+}
+
+fun Rune.to_bytes(r Rune) RuneUTF8 {
+    -- todo: we should be able to return a slice to a locally allocated array?
+    --       fun Rune.to_utf8(r Rune) []U8 { let bytes = [4][...] return bytes[0..2]}
+    mut bytes = [U8(0), 0, 0, 0]
+    let u = r.to_u32()
+    when {
+    case u < U32(1) << 7:
+        bytes[0] = u.to_u8_wrapping()
+        RuneUTF8(bytes, 1)
+    case u < U32(1) << 11:
+        bytes[0] = (U32(192) | (u >> 6)).to_u8_wrapping()
+        bytes[1] = (U32(128) | (u & 63)).to_u8_wrapping()
+        RuneUTF8(bytes, 2)
+    case u < U32(1) << 16:
+        bytes[0] = (U32(224) | (u >> 12)).to_u8_wrapping()
+        bytes[1] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
+        bytes[2] = (U32(128) | (u & 63)).to_u8_wrapping()
+        RuneUTF8(bytes, 3)
+    else:
+        bytes[0] = (U32(240) | (u >> 18)).to_u8_wrapping()
+        bytes[1] = (U32(128) | ((u >> 12) & 63)).to_u8_wrapping()
+        bytes[2] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
+        bytes[3] = (U32(128) | (u & 63)).to_u8_wrapping()
+        RuneUTF8(bytes, 4)
+    }
+}
+
 -- todo: This currently only supports ASCII runes.
 fun Rune.is_whitespace(r Rune) Bool {
     r.is_ascii_whitespace()
@@ -292,15 +329,11 @@ fun Str.eq(s Str, other Str) Bool {
 }
 
 fun Str.starts_with(s Str, other Str) Bool {
-    if s.data.len < other.data.len {
-        return false
-    }
-    for i in 0..other.data.len {
-        if s.data[i] != other.data[i] {
-            return false
-        }
-    }
-    return true
+    s.data.starts_with(other.data)
+}
+
+fun Str.ends_with(s Str, other Str) Bool {
+    s.data.ends_with(other.data)
 }
 
 fun Str.contains(s Str, other Str) Bool {
@@ -336,6 +369,62 @@ fun Str.concat(s Str, other Str, @a Arena) Str {
     }
     for j in 0..other.data.len {
         data[s.data.len + j] = other.data[j]
+    }
+    Str(data)
+}
+
+fun Str.trim(s Str, runes []Rune = [' ', '\t', '\n', '\r'][..]) Str {
+    s.trim_left(runes).trim_right(runes)
+}
+
+fun Str.trim_left(s Str, runes []Rune = [' ', '\t', '\n', '\r'][..]) Str {
+    -- First, convert the runes to byte slices.
+    -- We can afford this precomputation, because everything will
+    -- fit into the first page of the arena allocator which lives on the stack.
+    let @local = Arena()
+    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
+    for i in 0..runes.len {
+        rbs[i] = runes[i].to_bytes()
+    }
+    mut data = s.data
+    for data.len > 0 {
+        mut matched_any = false
+        for j in 0..rbs.len {
+            let rb = rbs[j]
+            if data.len >= rb.len and data[0..rb.len].eq(rb.bytes[0..rb.len]) {
+                matched_any = true
+                data = data[rb.len..]
+            }
+        }
+        if not matched_any {
+            break
+        }
+    }
+    Str(data)
+}
+
+fun Str.trim_right(s Str, runes [] Rune = [' ', '\t', '\n', '\r'][..]) Str {
+    -- First, convert the runes to byte slices.
+    -- We can afford this precomputation, because everything will
+    -- fit into the first page of the arena allocator which lives on the stack.
+    let @local = Arena()
+    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
+    for i in 0..runes.len {
+        rbs[i] = runes[i].to_bytes()
+    }
+    mut data = s.data
+    for data.len > 0 {
+        mut matched_any = false
+        for j in 0..rbs.len {
+            let rb = rbs[j]
+            if data.len >= rb.len and data[data.len - rb.len..].eq(rb.bytes[0..rb.len]) {
+                matched_any = true
+                data = data[0..data.len - rb.len]
+            }
+        }
+        if not matched_any {
+            break
+        }
     }
     Str(data)
 }
@@ -450,7 +539,7 @@ fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false)
         x = x / base
     }
     if v < 0 {
-        result[i] = '-'.to_u32().to_u8_wrapping()
+        result[i] = '-'
         i = i - 1
     }
     sb.private_slice(result[(i+1)..20])
@@ -493,34 +582,8 @@ fun StrBuilder.bool(sb &mut StrBuilder, b Bool) void {
 }
 
 fun StrBuilder.rune(sb &mut StrBuilder, r Rune) void {
-    let u = r.to_u32()
-    if u < U32(1) << 7 {
-        sb.ensure_capacity(1)
-        sb.out[sb.len] = u.to_u8_wrapping()
-        sb.len = sb.len + 1
-        return void
-    }
-    if u < U32(1) << 11 {
-        sb.ensure_capacity(2)
-        sb.out[sb.len] = (U32(192) | (u >> 6)).to_u8_wrapping()
-        sb.out[sb.len + 1] = (U32(128) | (u & 63)).to_u8_wrapping()
-        sb.len = sb.len + 2
-        return void
-    }
-    if u < U32(1) << 16 {
-        sb.ensure_capacity(3)
-        sb.out[sb.len]     = (U32(224) | (u >> 12)).to_u8_wrapping()
-        sb.out[sb.len + 1] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
-        sb.out[sb.len + 2] = (U32(128) | (u & 63)).to_u8_wrapping()
-        sb.len = sb.len + 3
-        return void
-    }
-    sb.ensure_capacity(4)
-    sb.out[sb.len]     = (U32(240) | (u >> 18)).to_u8_wrapping()
-    sb.out[sb.len + 1] = (U32(128) | ((u >> 12) & 63)).to_u8_wrapping()
-    sb.out[sb.len + 2] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
-    sb.out[sb.len + 3] = (U32(128) | (u & 63)).to_u8_wrapping()
-    sb.len = sb.len + 4
+    let bytes = r.to_bytes()
+    sb.private_slice((&bytes).as_slice())
 }
 
 fun StrBuilder.fmt<T HasFmt>(sb &mut StrBuilder, t T) void { t.fmt(sb) }
@@ -588,9 +651,7 @@ fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep Str)
 fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
     if sb.out.len - sb.len < capacity {
         let new_out = unsafe sb.@a.slice_uninit_mut<U8>((sb.len + capacity) * 2)
-        for i in 0..sb.len {
-            new_out[i] = sb.out[i]
-        }
+        _ = new_out.set(sb.out)
         sb.out = new_out
     }
 }
@@ -604,7 +665,8 @@ fun StrBuilder.as_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
 --- Append '\0' to make it a valid C-style string and return a *view* to the underlying slice.
 
     The contents of the view can change when `StrBuilder.reset()` is called
-    to reuse the underlying slice. So be careful. ---
+    to reuse the underlying slice. This can be potentially dangerous if
+    you overwrite the trailing 0-byte after `StrBuilder.reset()`. ---
 fun StrBuilder.as_cstr(sb &mut StrBuilder) []U8 {
     sb.private_byte(0)
     sb.out[0..sb.len]
@@ -617,9 +679,7 @@ fun StrBuilder.utf8_lossy(sb &mut StrBuilder, bytes []U8) void {
 
 fun StrBuilder.private_slice(sb &mut StrBuilder, bytes []U8) void {
     sb.ensure_capacity(bytes.len)
-    for i in 0..bytes.len {
-        sb.out[sb.len + i] = bytes[i]
-    }
+    _ = sb.out[sb.len..].set(bytes)
     sb.len = sb.len + bytes.len
 }
 
@@ -627,6 +687,65 @@ fun StrBuilder.private_byte(sb &mut StrBuilder, b U8) void {
     sb.ensure_capacity(1)
     sb.out[sb.len] = b
     sb.len = sb.len + 1
+}
+
+fun Slice.copy<T>(s []T, @a Arena) []mut T {
+    let c = unsafe @a.slice_uninit_mut<T>(s.len)
+    _ = c.set(s)
+    c
+}
+
+--- Copy the `src` elements to `dest` up to `dest.len`. 
+
+    Return the number of elements written. ---
+fun Slice.set<T>(dst []mut T, src []T) Int {
+    mut i = 0
+    for i < dst.len and i < src.len {
+        dst[i] = src[i]
+        i = i + 1
+    }
+    i
+}
+
+fun Slice.starts_with<T HasEq>(s []T, other []T) Bool {
+    if s.len < other.len {
+        return false
+    }
+    for i in 0..other.len {
+        if not s[i].eq(other[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+fun Slice.ends_with<T HasEq>(s []T, other []T) Bool {
+    if s.len < other.len {
+        return false
+    }
+    let base = s.len - other.len
+    for i in 0..other.len {
+        if not s[i + base].eq(other[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+fun Slice.concat<T>(first []T, others [][]T, @a Arena) []mut T {
+    mut len = first.len
+    for i in 0..others.len {
+        len = len + others[i].len
+    }
+    mut new = unsafe @a.slice_uninit_mut<T>(len)
+    _ = new.set(first)
+    mut out = first.len
+    for i in 0..others.len {
+        let s = others[i]
+        _ = new[out..].set(s)
+        out = out + s.len
+    }
+    new
 }
 
 fun Slice.fmt<T HasFmt>(s []T, sb &mut StrBuilder) void {
@@ -645,6 +764,31 @@ fun Slice.eq<T HasEq>(s []T, other []T) Bool {
         }
     }
     return true
+}
+
+struct SliceIter<T> {
+    data []T
+    mut pos Int
+}
+
+fun SliceIter.next<T>(it &mut SliceIter<T>) ?T {
+    if it.pos == it.data.len {
+        return None()
+    }
+    let e = it.data[it.pos]
+    it.pos = it.pos + 1
+    e
+}
+
+fun SliceIter.peek<T>(it &mut SliceIter<T>) ?T {
+    if it.pos == it.data.len {
+        return None()
+    }
+    it.data[it.pos]
+}
+
+fun Slice.iter<T>(s []T) SliceIter<T> {
+    SliceIter(s, 0)
 }
 
 --- None represents the absence of something. ---

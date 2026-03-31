@@ -1,10 +1,53 @@
 use std::ffi
-use std::os
+use std::posix
+use std::io
 
 extern fun fopen(filename ffi::Ptr<U8>, mode ffi::Ptr<U8>) ffi::PtrMut<void>
 extern fun fclose(file ffi::PtrMut<void>) I32
 extern fun fread(buf ffi::PtrMut<U8>, sizeof Int, len Int, file ffi::PtrMut<void>) Int
 extern fun fwrite(buf ffi::Ptr<U8>, sizeof Int, len Int, file ffi::PtrMut<void>) Int
+
+--- The default path delimiter `/`. ---
+let path_delim = [U8(47)][..]
+
+struct Path {
+    -- todo: should be private
+    raw []U8
+}
+
+fun Path.from_str(s Str) Path {
+    Path(s.as_bytes())
+}
+
+--- Join two paths.
+
+    This is a strictly lexicographic join and not a Posix path join
+    where `"parent".join("/absolute/path")` would yield `"/absolute/path"`. ---
+fun Path.join(parent Path, child Path, @a Arena) Path {
+    let p =
+        if parent.raw.ends_with(path_delim) {
+            parent.raw[0..parent.raw.len-path_delim.len]
+        } else {
+            parent.raw
+        }
+    let c =
+        if child.raw.starts_with(path_delim) {
+            child.raw[path_delim.len..]
+        } else {
+            child.raw
+        }
+    Path(p.concat([path_delim, c][..], @a))
+}
+
+fun Path.eq(p Path, other Path) Bool {
+    p.raw.eq(other.raw)
+}
+
+fun Path.fmt(p Path, sb &mut StrBuilder) void {
+    -- todo: We should escape non-utf8 characters.
+    let @local = Arena()
+    sb.str(Str.from_utf8_lossy(p.raw, @local))
+}
 
 struct File {
     -- todo: must be private
@@ -12,15 +55,40 @@ struct File {
     mut closed Bool
 }
 
-fun File.open(filename Str, mode Str, @a Arena) !&mut File {
+--- Open a file.
+
+    mode:
+       r      Open text file for reading.  The stream is positioned at
+              the beginning of the file.
+
+       r+     Open for reading and writing.  The stream is positioned at
+              the beginning of the file.
+
+       w      Truncate file to zero length or create text file for
+              writing.  The stream is positioned at the beginning of the
+              file.
+
+       w+     Open for reading and writing.  The file is created if it
+              does not exist, otherwise it is truncated.  The stream is
+              positioned at the beginning of the file.
+
+       a      Open for appending (writing at end of file).  The file is
+              created if it does not exist.  The stream is positioned at
+              the end of the file.
+
+       a+     Open for reading and appending (writing at end of file).
+              The file is created if it does not exist.  Output is always
+              appended to the end of the file.
+              The read position is undefined. ---
+fun File.open(path Path, mode Str, @a Arena) !&mut File {
     let @local = Arena()
     if not (mode.eq("r") or mode.eq("w") or mode.eq("a") or mode.eq("r+") or mode.eq("w+") or mode.eq("a+")) {
         return Err("invalid open mode")
     }
-    os::reset_errno()
-    let file_ptr = unsafe fopen(ffi::cstr(filename.as_bytes(), @local), ffi::cstr(mode.as_bytes(), @local))
+    posix::reset_errno()
+    let file_ptr = unsafe fopen(ffi::cstr(path.raw, @local), ffi::cstr(mode.as_bytes(), @local))
     if file_ptr.is_null() {
-        return Err(os::errno_str())
+        return Err(posix::errno_str())
     }
     let file = @a.new_mut(File(file_ptr, false))
     file
@@ -30,29 +98,29 @@ fun File.write(f &mut File, data []U8) !Int {
     if f.closed {
         return Err("file is closed")
     }
-    os::reset_errno()
+    posix::reset_errno()
     let bytes_written = unsafe fwrite(ffi::slice_ptr(data), 1, data.len, f.file_ptr)
     if bytes_written != data.len {
-        return Err(os::errno_str())
+        return Err(posix::errno_str())
     }
     bytes_written
 }
 
---- Read into `buf` and return a slice of `buf` with the data read. 
+--- Read into `buf` and return a slice of `buf` with the data read.
 
     `buf` can be uninitialized. ---
 fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
     if f.closed {
         return Err("file is closed")
     }
-    os::reset_errno()
+    posix::reset_errno()
     let bytes_read = unsafe fread(ffi::slice_ptr_mut(buf), 1, buf.len, f.file_ptr)
     if bytes_read < buf.len {
-        let errno = os::errno()
+        let errno = posix::errno()
         if errno == 0 {
             return buf[0..bytes_read]
         }
-        return Err(os::errno_str())
+        return Err(posix::errno_str())
     }
     buf[0..bytes_read]
 }
@@ -62,10 +130,30 @@ fun File.close(f &mut File) !void {
         -- is already closed
         return void
     }
-    os::reset_errno()
+    posix::reset_errno()
     let res = unsafe fclose(f.file_ptr)
     f.closed = true
     if res != 0 {
-        return Err(os::errno_str())
+        return Err(posix::errno_str())
     }
+}
+
+--- Overwrite the file with the given data. ---
+fun write_file(path Path, data []U8) !void {
+    let @local = Arena()
+    let f = try File.open(path, "w", @local)
+    defer { _ = f.close() }
+    let written = try f.write(data)
+    if written != data.len {
+        return Err("not all bytes were written")
+    }
+}
+
+--- Read the entire file. ---
+fun read_file(path Path, @a Arena) ![]mut U8 {
+    let @local = Arena()
+    -- The file is closed by `io::read_all`.
+    let f = try File.open(path, "r", @local)
+    -- todo: Add optimized path by stat-ing the file size before.
+    io::read_all(f, -1, @a)
 }

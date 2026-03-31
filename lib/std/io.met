@@ -1,4 +1,80 @@
 use std::ffi
+use std::list
+
+shape Reader<T> {
+    --- Read up to `buf.len` items into the give `buf` and returns a slice
+        into `buf` with the data. ---
+    fun Reader.read<T>(r &mut Reader, buf []mut T) ![]mut T
+}
+
+shape Writer<T> {
+    --- Write the given data and return the number of elements written. ---
+    fun Writer.write<T>(w &mut Writer, data []T) !Int
+}
+
+shape Closer<T> {
+    fun Closer.close<T>(r &mut Closer) !void
+}
+
+shape ReaderCloser<T> {
+    --- See `Reader<T>`. ---
+    fun ReaderCloser.read<T>(r &mut ReaderCloser, buf []mut T) ![]mut T
+    --- See `Closer<T>`. ---
+    fun ReaderCloser.close<T>(r &mut ReaderCloser) !void
+}
+
+struct Buffer<T> {
+    data &mut list::List<T>
+    mut read_pos Int
+}
+
+fun Buffer.new<T>(initial_capacity Int, @a Arena) &mut Buffer<T> {
+    let data = list::List.new<T>(initial_capacity, @a)
+    @a.new_mut(Buffer(data, 0))
+}
+
+--- Implementation of `io::Writer`. ---
+fun Buffer.write<T>(b &mut Buffer<T>, data []T) !Int {
+    b.data.push_all(data)
+    data.len
+}
+
+--- Implementation of `io::Reader`. ---
+fun Buffer.read<T>(b &mut Buffer<T>, buf []mut T) ![] mut T {
+    let n = buf.set(b.data.as_slice()[b.read_pos..])
+    b.read_pos = b.read_pos + n
+    buf[0..n]
+}
+
+--- Implementation of `io::Closer`. ---
+fun Buffer.close<T>(b &mut Buffer<T>) !void {
+    b.data.reset()
+    b.read_pos = 0
+}
+
+--- Read all data and always close the given `ReaderCloser`. ---
+fun read_all<T, RC ReaderCloser<T>>(r &mut RC, cap_ Int, @a Arena) ![] mut T {
+    defer { _ = r.close() }
+
+    -- todo: Use Int.max
+    let cap = if cap_ < 0 { 100000000000 } else { cap_ }
+    let @local = Arena()
+    let buf = unsafe @local.slice_uninit_mut<T>(4096)
+    mut res []mut T = []
+
+    for {
+        let to_read = if res.len + buf.len > cap { cap - res.len } else { buf.len }
+        if to_read == 0 {
+            break
+        }
+        let read = try r.read(buf[0..to_read])
+        if read.len == 0 {
+            break 
+        }
+        res = res.concat([read][..], @local)
+    }
+    res.copy(@a)
+}
 
 extern fun write(fd I32, buf ffi::Ptr<U8>, len Int) Int
 
