@@ -1283,8 +1283,10 @@ func (e *Engine) checkModule( //nolint:funlen
 	MarkBuiltins(e.ast, module)
 	e.forwardDeclareFuns(module.Decls)
 	for _, declNodeID := range module.Decls {
-		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok && fun.Name.Name == "main" {
-			e.registerFun(declNodeID)
+		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok {
+			if fun.Name.Name == "main" || module.Name == "runtime::arena" {
+				e.registerFun(declNodeID)
+			}
 		}
 	}
 	for _, declNodeID := range module.Decls {

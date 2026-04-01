@@ -5,6 +5,7 @@ declare i32 @puts(ptr)
 declare i32 @printf(ptr, ...)
 declare i32 @fflush(ptr)
 declare i64 @write(i32, ptr, i64)
+declare i32 @dprintf(i32, ptr, ...)
 
 ; >>> Builtin functions.
 
@@ -54,6 +55,12 @@ define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn a
     call i32 @fflush(ptr null)
     call void @llvm.trap()
     unreachable
+}
+
+; Parameters: fmt (ptr), arena_ptr (i64), arg1 (i64), arg2 (i64)
+define internal i32 @arena_debug_print(ptr %fmt, i64 %arena_ptr, i64 %arg1, i64 %arg2) alwaysinline {
+    %r = call i32 (i32, ptr, ...) @dprintf(i32 2, ptr %fmt, i64 %arena_ptr, i64 %arg1, i64 %arg2)
+    ret i32 %r
 }
 
 define internal void @DebugIntern.print_str(ptr byval(%Str) %s) {

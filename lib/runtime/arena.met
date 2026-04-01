@@ -1,0 +1,144 @@
+--- # The arena allocator. 
+
+    ## Strategy
+
+    The first page is always allocated on the stack, subsequent pages are created
+    with `malloc()`. The address of the previous page is stored at the beginning 
+    of each page. `arena_destroy()` will walk this linked list to free all pages.
+
+    If a requested allocation (`arena_alloc()`) fits in the current page, only
+    the pointer into the current page is "bumped". If the requested size overflows
+    the current page, a new one is created. The size of newly created pages double
+    until `max_page_size` is reached. Subsequent pages all have this size.
+    
+    If a requested allocation (`arena_alloc()`) does not fit into a page, a page
+    with the exact size is created just for that allocation.
+
+    ## Implementation notes
+
+    For simplicity's sake, we always align all allocations to `sizeof<Ptr>()` which
+    is 8 bytes on all supported platforms.
+
+    This module must not import other modules and has to comply with the minimal
+    prelude.
+
+    The compiler compiles this module implicitly and the code generator emits
+    calls to the functions in this module.
+---
+use std::ffi
+
+struct ArenaAllocator {
+    mut first_page ffi::PtrMut<U8>
+    mut page_start ffi::PtrMut<U8>
+    mut page_end ffi::PtrMut<U8>
+    mut bump ffi::PtrMut<U8>
+
+    mut max_page_size Int
+    mut next_page_size Int
+    mut debug_enabled Bool
+}
+
+extern fun malloc(size Int) ffi::PtrMut<U8>
+extern fun free(p ffi::PtrMut<U8>) void
+extern fun arena_debug_print(msg ffi::Ptr<U8>, i1 U64, i2 Int, i3 Int) I32
+
+let debug_create = "arena [%016llx] create\n\0"
+let debug_alloc = "arena [%016llx] alloc size=%llu\n\0"
+let debug_alloc_page = "arena [%016llx] alloc_page size=%llu prev_free=%llu\n\0"
+let debug_destroy = "arena [%016llx] destroy pages=%llu\n\0"
+
+fun arena_create(
+    a &mut ArenaAllocator,
+    first_page ffi::PtrMut<U8>,
+    first_page_size Int,
+
+    min_page_size Int,
+    max_page_size Int,
+    debug_enabled Bool
+) void {
+    if first_page_size < ffi::sizeof<ffi::Ptr<U8>>() {
+        panic("first_page is too small")
+    }
+    a.next_page_size = min_page_size
+    a.max_page_size = max_page_size
+    a.debug_enabled = debug_enabled
+    a.first_page = first_page
+    a.page_start = ffi::PtrMut.null<U8>()
+    init_page(a, first_page, first_page_size)
+    if a.debug_enabled {
+        debug(a, debug_create, 0, 0)
+    }
+}
+
+fun init_page(a &mut ArenaAllocator, start_ptr ffi::PtrMut<U8>, size Int) void {
+    -- Write the pointer to the previous page at the start of the new page.
+    let ptr = unsafe start_ptr.cast<ffi::PtrMut<U8>>()
+    unsafe ptr.write(a.page_start)
+    a.page_start = start_ptr
+    a.page_end = start_ptr.offset(size)
+    a.bump = start_ptr.offset(ffi::sizeof<ffi::Ptr<U8>>())
+}
+
+fun arena_alloc(a &mut ArenaAllocator, requested_size Int) ffi::PtrMut<U8> {
+    -- Align the size to pointer size (8 bytes).
+    let size = (requested_size + 7) & (~7)
+    if a.debug_enabled {
+        debug(a, debug_alloc, size, 0)
+    }
+    let end = a.bump.offset(size)
+    if end.as_u64() <= a.page_end.as_u64() {
+        -- Fits into current page.
+        let result = a.bump
+        a.bump = end
+        return result
+    }
+    -- We need to create a new page.
+    let page_size = 
+        if size <= a.next_page_size - ffi::sizeof<ffi::Ptr<U8>>() { 
+            -- The object would fit into a regular page, so allocate a regular page.
+            let page_size = a.next_page_size
+            -- Increase the page size up to `a.max_page_size` to minimize future allocations.
+            a.next_page_size = a.next_page_size * 2
+            if a.next_page_size > a.max_page_size {
+                a.next_page_size = a.max_page_size
+            }
+            page_size
+        } else {
+            size + ffi::sizeof<ffi::Ptr<U8>>()
+        }
+    if a.debug_enabled { 
+        let prev_free = a.page_end.as_u64() - a.bump.as_u64()
+        debug(a, debug_alloc_page, page_size, prev_free.to_int_wrapping())
+    }
+    let page_ptr = unsafe malloc(page_size) 
+    init_page(a, page_ptr, page_size)
+    let result = a.bump
+    a.bump = a.bump.offset(size)
+    result
+}
+
+--- Destroy the arena and free all pages.
+
+    Return the number of pages freed. ---
+fun arena_destroy(a &mut ArenaAllocator) Int {
+    mut freed = 0
+    mut page = a.page_start
+    for page.as_u64() != a.first_page.as_u64() {
+        let prev_page = {
+            let ptr = unsafe page.cast<ffi::PtrMut<U8>>()
+            unsafe ptr.read()
+        }
+        unsafe free(page)
+        freed = freed + 1
+        page = prev_page
+    }
+    if a.debug_enabled {
+        debug(a, debug_destroy, freed, 0)
+    }
+    freed
+}
+
+fun debug(a &mut ArenaAllocator, msg Str, i1 Int, i2 Int) void {
+    let arena_ptr = ffi::ref_ptr<ArenaAllocator>(a)
+    _ = unsafe arena_debug_print(ffi::slice_ptr(msg.data), arena_ptr.as_u64(), i1, i2)
+}

@@ -14,10 +14,16 @@ var ffiBuiltinFuns = map[string]bool{ //nolint:gochecknoglobals
 	"ref_ptr_mut":     true,
 	"slice_ptr":       true,
 	"slice_ptr_mut":   true,
+	"Ptr.as_u64":      true,
+	"Ptr.cast":        true,
 	"Ptr.is_null":     true,
+	"Ptr.null":        true,
 	"Ptr.read":        true,
 	"Ptr.offset":      true,
 	"Ptr.as_slice":    true,
+	"PtrMut.as_u64":   true,
+	"PtrMut.null":     true,
+	"PtrMut.cast":     true,
 	"PtrMut.is_null":  true,
 	"PtrMut.write":    true,
 	"PtrMut.read":     true,
@@ -82,7 +88,7 @@ func BuiltinFunEffects(name string) *FunEffects {
 			ReturnAliases: []int{0},
 			SideEffects:   nil,
 		}
-	case "ffi::Ptr.offset", "ffi::PtrMut.offset", "ffi::PtrMut.as_ptr":
+	case "ffi::Ptr.offset", "ffi::PtrMut.offset", "ffi::PtrMut.as_ptr", "ffi::Ptr.cast", "ffi::PtrMut.cast":
 		// The receiver's lifetime flows to the return value (param 0 = receiver).
 		return &FunEffects{
 			ReturnTaints:  []int{0},

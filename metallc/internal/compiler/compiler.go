@@ -52,7 +52,6 @@ type CompileOpts struct {
 	ArenaStackBufSize   int
 	ArenaPageMinSize    int
 	ArenaPageMaxSize    int
-	ArenaPageHeaderSize int
 	MinimalPrelude      bool
 	PrintTypesDebug     bool
 	PrintBindingsDebug  bool
@@ -69,9 +68,6 @@ func (o CompileOpts) WithDefaults() CompileOpts {
 	}
 	if o.ArenaPageMaxSize == 0 {
 		o.ArenaPageMaxSize = 65536
-	}
-	if o.ArenaPageHeaderSize == 0 {
-		o.ArenaPageHeaderSize = 24
 	}
 	return o
 }
@@ -97,11 +93,18 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	parser := ast.NewParser(tokens, ast.NewAST(1))
 	fileID, _ := parser.ParseModule()
 	var moduleResolution *modules.ModuleResolution
+	var runtimeModuleID ast.NodeID
 	parseDiagnostics := parser.Diagnostics
 	if len(parseDiagnostics) == 0 {
-		var moduleDiags base.Diagnostics
-		moduleResolution, moduleDiags = resolveModules(parser.AST, opts)
-		parseDiagnostics = append(parseDiagnostics, moduleDiags...)
+		var diags base.Diagnostics
+		runtimeModuleID, diags = addRuntimeModule(parser.AST, opts)
+		if len(diags) > 0 {
+			parseDiagnostics = append(parseDiagnostics, diags...)
+		} else {
+			var moduleDiags base.Diagnostics
+			moduleResolution, moduleDiags = resolveModules(parser.AST, opts)
+			parseDiagnostics = append(parseDiagnostics, moduleDiags...)
+		}
 	}
 	timingListener.OnParse(parser.AST, fileID, parseDiagnostics)
 	if listener != nil && !listener.OnParse(parser.AST, fileID, parseDiagnostics) {
@@ -116,6 +119,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		engine.SetDebug(base.NewStdoutDebug("types"))
 	}
 	engine.Query(fileID)
+	engine.Query(runtimeModuleID)
 	timingListener.OnTypeCheck(engine, engine.Diagnostics())
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
 		return ErrAbort
@@ -146,14 +150,13 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	ir, err := gen.GenIR(
 		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(), engine.Consts(),
 		gen.IROpts{
-			TargetDataLayout:    targetDataLayout,
-			TargetTriple:        targetTriple,
-			AddressSanitizer:    opts.AddressSanitizer,
-			ArenaDebug:          opts.DebugArenaAllocator,
-			ArenaStackBufSize:   opts.ArenaStackBufSize,
-			ArenaPageMinSize:    opts.ArenaPageMinSize,
-			ArenaPageMaxSize:    opts.ArenaPageMaxSize,
-			ArenaPageHeaderSize: opts.ArenaPageHeaderSize,
+			TargetDataLayout:  targetDataLayout,
+			TargetTriple:      targetTriple,
+			AddressSanitizer:  opts.AddressSanitizer,
+			ArenaDebug:        opts.DebugArenaAllocator,
+			ArenaStackBufSize: opts.ArenaStackBufSize,
+			ArenaPageMinSize:  opts.ArenaPageMinSize,
+			ArenaPageMaxSize:  opts.ArenaPageMaxSize,
 		},
 	)
 	if err != nil {
@@ -370,6 +373,25 @@ func queryTargetInfo(ctx context.Context, llvmHome string) (dataLayout, triple s
 		return "", "", base.Errorf("could not extract target info from clang output")
 	}
 	return dataLayout, triple, nil
+}
+
+func addRuntimeModule(a *ast.AST, opts CompileOpts) (ast.NodeID, base.Diagnostics) {
+	for _, includePath := range opts.IncludePaths {
+		path := filepath.Join(includePath, "runtime", "arena.met")
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		source := base.NewSource(path, "runtime::arena", false, []rune(string(content)))
+		tokens := token.Lex(source)
+		runtimeParser := ast.NewParser(tokens, a)
+		moduleID, _ := runtimeParser.ParseModule()
+		if len(runtimeParser.Diagnostics) > 0 {
+			return 0, runtimeParser.Diagnostics
+		}
+		return moduleID, nil
+	}
+	return 0, nil
 }
 
 func resolveModules(

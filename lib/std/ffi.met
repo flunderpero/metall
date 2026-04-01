@@ -13,11 +13,27 @@ fun Ptr.is_null<T>(p Ptr<T>) Bool {
     panic("this is implemented by the runtime")
 }
 
+fun Ptr.as_u64<T>(p Ptr<T>) U64 {
+    panic("this is implemented by the runtime")
+}
+
+unsafe fun Ptr.cast<T, U>(p Ptr<T>) Ptr<U> {
+    panic("this is implemented by the runtime")
+}
+
+fun Ptr.null<T>() Ptr<T> {
+    panic("this is implemented by the runtime")
+}
+
 --- Derefence the raw pointer and read. ---
-unsafe fun Ptr.read<T>(p Ptr<T>) T { panic("this is implemented by the runtime") }
+unsafe fun Ptr.read<T>(p Ptr<T>) T {
+    panic("this is implemented by the runtime")
+}
 
 --- Add the given offset as `sizeof<T> * offset` to the raw pointer. ---
-fun Ptr.offset<T>(p Ptr<T>, offset Int) Ptr<T> { panic("this is implemented by the runtime") }
+fun Ptr.offset<T>(p Ptr<T>, offset Int) Ptr<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Interpret the raw pointer as a slice of the given length. 
     
@@ -25,24 +41,46 @@ fun Ptr.offset<T>(p Ptr<T>, offset Int) Ptr<T> { panic("this is implemented by t
     forever. So you have to make sure that this is the case or be careful not
     to let the slice escape.
 ---
-unsafe fun Ptr.as_slice<T>(p Ptr<T>, len Int) []T { panic("this is implemented by the runtime") }
+unsafe fun Ptr.as_slice<T>(p Ptr<T>, len Int) []T {
+    panic("this is implemented by the runtime")
+}
 
 --- A raw pointer to a mutable place of the given type. ---
 struct PtrMut<T> {}
 
-fun PtrMut.is_null<T>(p PtrMut<T>) Bool { panic("this is implemented by the runtime") }
+fun PtrMut.is_null<T>(p PtrMut<T>) Bool {
+    panic("this is implemented by the runtime")
+}
+
+fun PtrMut.as_u64<T>(p PtrMut<T>) U64 {
+    panic("this is implemented by the runtime")
+}
+
+unsafe fun PtrMut.cast<T, U>(p PtrMut<T>) PtrMut<U> {
+    panic("this is implemented by the runtime")
+}
+
+fun PtrMut.null<T>() PtrMut<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Interpret this mutable raw pointer as an immutable raw pointer.
 
     This does not imply any guarantees that the underlying memory does
     not get mutated. ---
-fun PtrMut.as_ptr<T>(p PtrMut<T>) Ptr<T> { panic("this is implemented by the runtime") }
+fun PtrMut.as_ptr<T>(p PtrMut<T>) Ptr<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Derefence the raw pointer and write. ---
-unsafe fun PtrMut.write<T>(p PtrMut<T>, v T) void { panic("this is implemented by the runtime") }
+unsafe fun PtrMut.write<T>(p PtrMut<T>, v T) void {
+    panic("this is implemented by the runtime")
+}
 
 --- Derefence the raw pointer and read. ---
-unsafe fun PtrMut.read<T>(p PtrMut<T>) T { panic("this is implemented by the runtime") }
+unsafe fun PtrMut.read<T>(p PtrMut<T>) T {
+    panic("this is implemented by the runtime")
+}
 
 --- Interpret the raw pointer as a mutable slice of the given length. 
 
@@ -50,40 +88,54 @@ unsafe fun PtrMut.read<T>(p PtrMut<T>) T { panic("this is implemented by the run
     forever. So you have to make sure that this is the case or be careful not
     to let the slice escape.
 ---
-unsafe fun PtrMut.as_slice<T>(p PtrMut<T>, len Int) []mut T { panic("this is implemented by the runtime") }
+unsafe fun PtrMut.as_slice<T>(p PtrMut<T>, len Int) []mut T {
+    panic("this is implemented by the runtime")
+}
 
 --- Add the given offset as `sizeof<T> * offset` to the raw pointer. ---
-fun PtrMut.offset<T>(p PtrMut<T>, offset Int) PtrMut<T> { panic("this is implemented by the runtime") }
+fun PtrMut.offset<T>(p PtrMut<T>, offset Int) PtrMut<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Convert the reference to a typed read-only raw pointer. 
 
     This is just a stub, the actualy implementation is built-in.
 ---
-fun ref_ptr<T>(r &T) Ptr<T> { panic("this is implemented by the runtime") }
+fun ref_ptr<T>(r &T) Ptr<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Convert the reference to a typed mutable raw pointer. 
 
     This is just a stub, the actualy implementation is built-in.
 ---
-fun ref_ptr_mut<T>(r &mut T) PtrMut<T> { panic("this is implemented by the runtime") }
+fun ref_ptr_mut<T>(r &mut T) PtrMut<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Return a read-only raw pointer to the start of the slice data. 
 
     This is just a stub, the actualy implementation is built-in.
 ---
-fun slice_ptr<T>(s []T) Ptr<T> { panic("this is implemented by the runtime") }
+fun slice_ptr<T>(s []T) Ptr<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Return a mutable raw pointer to the start of the slice data. 
 
     This is just a stub, the actualy implementation is built-in.
 ---
-fun slice_ptr_mut<T>(s []mut T) PtrMut<T> { panic("this is implemented by the runtime") }
+fun slice_ptr_mut<T>(s []mut T) PtrMut<T> {
+    panic("this is implemented by the runtime")
+}
 
 --- Return the size of the given type. 
 
     This is just a stub, the actualy implementation is built-in.
 ---
-fun sizeof<T>() Int { panic("this is implemented by the runtime") }
+fun sizeof<T>() Int {
+    panic("this is implemented by the runtime")
+}
 
 --- Take the given byte array and convert it to a C-style 0-terminated string. ---
 fun cstr(b []U8, @a Arena) Ptr<U8> {

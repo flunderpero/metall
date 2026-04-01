@@ -87,7 +87,12 @@ fun print<T HasFmt>(obj T) void {
     _ = unsafe write(1, ffi::slice_ptr(s.as_bytes()), s.bytes_len())
 }
 
-fun println<T HasFmt>(s T) void {
-    print<T>(s)
-    _ = unsafe write(1, ffi::slice_ptr("\n".as_bytes()), 1)
+fun println<T HasFmt>(obj T) void {
+    -- todo: We should be able to have a shortcut if is is Str.
+    let @a = Arena()
+    let sb = StrBuilder.new(32, @a)
+    obj.fmt(sb)
+    sb.rune('\n')
+    let s = sb.as_str()
+    _ = unsafe write(1, ffi::slice_ptr(s.as_bytes()), s.bytes_len())
 }

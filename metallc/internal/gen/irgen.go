@@ -10,9 +10,6 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/types"
 )
 
-//go:embed arena.ll
-var arenaRuntimeIRTemplate string
-
 //go:embed builtins.ll
 var builtinsIR string
 
@@ -477,7 +474,7 @@ func (g *IRFunGen) genArenaNew(id ast.NodeID, call ast.Call, fa ast.FieldAccess)
 	valueTypeID := g.typeIDOfNode(valueArg)
 	reg := g.reg()
 	size := irTypeSize(g.env, valueTypeID)
-	g.write("%s = call ptr @arena_alloc(ptr %s, i64 %d)", reg, allocReg, size)
+	g.write("%s = call ptr @runtime$arena.arena_alloc(ptr %s, i64 %d)", reg, allocReg, size)
 	if lit, ok := g.ast.Node(valueArg).Kind.(ast.TypeConstruction); ok {
 		g.genStructConstructionFields(id, lit, reg)
 	} else {
@@ -498,7 +495,7 @@ func (g *IRFunGen) genArenaSlice(id ast.NodeID, call ast.Call, fa ast.FieldAcces
 	g.Gen(call.Args[0])
 	lenReg := g.lookupCode(call.Args[0])
 	g.write("%s_size = mul i64 %d, %s", reg, elemSize, lenReg)
-	g.write("%s_data = call ptr @arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
+	g.write("%s_data = call ptr @runtime$arena.arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
 	if len(call.Args) == 2 { // slice/slice_mut have a default value arg; slice_uninit variants don't
 		g.Gen(call.Args[1])
 		valReg := g.lookupCode(call.Args[1])
@@ -697,7 +694,6 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 			g.setSymbol(ast.BindingID(paramNodeID), param.Name.Name, preg, "ptr")
 		} else if g.isAggregateType(paramTyp.ID) {
 			// Aggregate param: byval gives us a ptr to the callee's copy directly.
-			// symbol.Reg = preg (single indirection, no alloca ptr wrapper).
 			fmt.Fprintf(&params, "ptr byval(%s) ", paramIRTyp)
 			params.WriteString(preg)
 			g.setSymbol(ast.BindingID(paramNodeID), param.Name.Name, preg, "ptr")
@@ -738,8 +734,14 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 			capIRTyp := g.irType(capTypeID)
 			gepReg := g.reg()
 			g.write("%s = getelementptr %s, ptr %%__ctx, i32 0, i32 %d", gepReg, ctxType, i)
+			capTyp := g.env.Type(capTypeID)
 			if g.isAggregateType(capTypeID) {
 				g.symbols[bindID] = Symbol{Name: capture.Name.Name, Reg: gepReg, Type: "ptr"}
+			} else if _, isAlloc := capTyp.Kind.(types.AllocatorType); isAlloc {
+				// Allocator captures: load the arena pointer and use it directly.
+				valReg := g.reg()
+				g.write("%s = load ptr, ptr %s", valReg, gepReg)
+				g.symbols[bindID] = Symbol{Name: capture.Name.Name, Reg: valReg, Type: "ptr"}
 			} else {
 				valReg := g.reg()
 				g.write("%s = load %s, ptr %s", valReg, capIRTyp, gepReg)
@@ -825,7 +827,7 @@ func (g *IRFunGen) emitBlockCleanup(arenaLevel, deferLevel int) {
 		g.astCode = saved
 	}
 	for _, reg := range g.arenaRegStack[arenaLevel] {
-		g.write("call void @arena_destroy (ptr %s)", reg)
+		g.write("call i64 @runtime$arena.arena_destroy(ptr %s)", reg)
 	}
 }
 
@@ -1557,16 +1559,38 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		size := irTypeSize(g.env, argTypeID)
 		g.setCode(id, "%d", size)
 		return true
+	case "ffi::Ptr.as_u64", "ffi::PtrMut.as_u64":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
+		}
+		g.Gen(receiver)
+		ptrReg := g.lookupCode(receiver)
+		reg := g.reg()
+		g.write("%s = ptrtoint ptr %s to i64", reg, ptrReg)
+		g.setCode(id, reg)
+		return true
 	case "ffi::Ptr.is_null", "ffi::PtrMut.is_null":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
-			return false
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
 		}
 		g.Gen(receiver)
 		ptrReg := g.lookupCode(receiver)
 		reg := g.reg()
 		g.write("%s = icmp eq ptr %s, null", reg, ptrReg)
 		g.setCode(id, reg)
+		return true
+	case "ffi::Ptr.null", "ffi::PtrMut.null":
+		g.setCode(id, "null")
+		return true
+	case "ffi::Ptr.cast", "ffi::PtrMut.cast":
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
+		}
+		g.Gen(receiver)
+		g.setCode(id, g.lookupCode(receiver))
 		return true
 	case "ffi::ref_ptr", "ffi::ref_ptr_mut":
 		g.Gen(call.Args[0])
@@ -1575,7 +1599,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	case "ffi::PtrMut.as_ptr":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
-			return false
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
 		}
 		g.Gen(receiver)
 		g.setCode(id, g.lookupCode(receiver))
@@ -1592,7 +1616,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	case "ffi::Ptr.read", "ffi::PtrMut.read":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
-			return false
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
 		}
 		g.Gen(receiver)
 		ptrReg := g.lookupCode(receiver)
@@ -1602,7 +1626,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	case "ffi::Ptr.as_slice", "ffi::PtrMut.as_slice":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
-			return false
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
 		}
 		g.Gen(receiver)
 		ptrReg := g.lookupCode(receiver)
@@ -1622,7 +1646,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	case "ffi::Ptr.offset", "ffi::PtrMut.offset":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
-			return false
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
 		}
 		g.Gen(receiver)
 		ptrReg := g.lookupCode(receiver)
@@ -1640,7 +1664,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	case "ffi::PtrMut.write":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
-			return false
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
 		}
 		g.Gen(receiver)
 		ptrReg := g.lookupCode(receiver)
@@ -1971,10 +1995,16 @@ func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
 			// Store the address of the outer variable (sym.Reg is already a ptr).
 			g.write("store ptr %s, ptr %s", sym.Reg, gepReg)
 		case ast.CaptureByValue:
-			capIRTyp := g.irType(outerBinding.TypeID)
-			val := g.reg()
-			g.write("%s = load %s, ptr %s", val, capIRTyp, sym.Reg)
-			g.write("store %s %s, ptr %s", capIRTyp, val, gepReg)
+			capTyp := g.env.Type(outerBinding.TypeID)
+			if _, isAlloc := capTyp.Kind.(types.AllocatorType); isAlloc {
+				// Allocator: sym.Reg IS the pointer, store it directly.
+				g.write("store ptr %s, ptr %s", sym.Reg, gepReg)
+			} else {
+				capIRTyp := g.irType(outerBinding.TypeID)
+				val := g.reg()
+				g.write("%s = load %s, ptr %s", val, capIRTyp, sym.Reg)
+				g.write("store %s %s, ptr %s", capIRTyp, val, gepReg)
+			}
 		}
 	}
 
@@ -2090,8 +2120,24 @@ func (g *IRFunGen) genDeref(id ast.NodeID, deref ast.Deref) {
 
 func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 	reg := g.reg()
-	g.writeAlloca(reg, "%struct.Arena")
-	g.write("call void @arena_create(ptr %s)", reg)
+	bufSize := g.opts.ArenaStackBufSize
+	// ArenaAllocator struct hard coded, see `lib/runtime/arena.met`
+	g.writeAlloca(reg, "{ptr, ptr, ptr, ptr, i64, i64, i1}") //nolint:dupword
+	buf := g.reg()
+	g.writeAlloca(buf, fmt.Sprintf("[%d x i8]", bufSize))
+	debug := 0
+	if g.opts.ArenaDebug {
+		debug = 1
+	}
+	g.write(
+		"call void @runtime$arena.arena_create(ptr %s, ptr %s, i64 %d, i64 %d, i64 %d, i1 %d)",
+		reg,
+		buf,
+		bufSize,
+		g.opts.ArenaPageMinSize,
+		g.opts.ArenaPageMaxSize,
+		debug,
+	)
 	top := len(g.arenaRegStack) - 1
 	g.arenaRegStack[top] = append(g.arenaRegStack[top], reg)
 	g.setCode(id, reg)
@@ -2414,14 +2460,13 @@ func (g *IRFunGen) writeAlloca(reg, irTyp string) {
 }
 
 type IROpts struct {
-	TargetDataLayout    string
-	TargetTriple        string
-	AddressSanitizer    bool
-	ArenaDebug          bool
-	ArenaStackBufSize   int
-	ArenaPageMinSize    int
-	ArenaPageMaxSize    int
-	ArenaPageHeaderSize int
+	TargetDataLayout  string
+	TargetTriple      string
+	AddressSanitizer  bool
+	ArenaDebug        bool
+	ArenaStackBufSize int
+	ArenaPageMinSize  int
+	ArenaPageMaxSize  int
 }
 
 func (g *IRGen) genExternDecls(funs []types.FunWork) {
@@ -2431,11 +2476,12 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 	env := funs[0].Env
 	emitted := map[string]bool{
 		// These are already declared in `builtins.ll`:
-		"putchar": true,
-		"puts":    true,
-		"printf":  true,
-		"fflush":  true,
-		"write":   true,
+		"putchar":           true,
+		"puts":              true,
+		"printf":            true,
+		"fflush":            true,
+		"write":             true,
+		"arena_debug_print": true,
 	}
 	g.ast.Iter(func(nodeID ast.NodeID) bool {
 		funDecl, ok := g.ast.Node(nodeID).Kind.(ast.FunDecl)
@@ -2529,10 +2575,6 @@ func GenIR(
 	// Emit the Str type definition (built-in struct, no AST node).
 	g.write("%Str = type { {ptr, i64} }")
 	g.write("%CStr = type { {ptr, i64} }")
-	// Emit arena type definitions.
-	g.write("%struct.PageHeader = type { ptr, ptr, ptr }") //nolint:dupword
-	g.write("%%struct.FirstPage = type { %%struct.PageHeader, [%d x i8] }", opts.ArenaStackBufSize)
-	g.write("%struct.Arena = type { i64, ptr, %struct.FirstPage }")
 	g.write("")
 	// Emit struct type definitions.
 	for _, s := range structs {
@@ -2568,40 +2610,7 @@ func GenIR(
 		}
 	}
 	g.write(builtinFill("i1"))
-	g.write("; >>> Arena runtime")
-	g.write(arenaRuntimeIR(opts))
 	return g.sb.String(), nil
-}
-
-func arenaRuntimeIR(opts IROpts) string {
-	onCreate, onAlloc, onPageAlloc, onDestroy := "", "", "", ""
-	declarations := ""
-	if opts.ArenaDebug {
-		declarations = `
-@arena.fmt.create = private unnamed_addr constant [20 x i8] c"arena [%p]: create\0A\00"
-@arena.fmt.alloc = private unnamed_addr constant [29 x i8] c"arena [%p]: alloc size=%llu\0A\00"
-@arena.fmt.page_alloc = private unnamed_addr constant [54 x i8] c"arena [%p]: page_alloc size=%llu free_prev_page=%llu\0A\00"
-@arena.fmt.destroy = private unnamed_addr constant [21 x i8] c"arena [%p]: destroy\0A\00"
-declare i32 @dprintf(i32, ptr, ...)`
-		onCreate = `call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.create, ptr %a)`
-		onAlloc = `call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.alloc, ptr %a, i64 %size)`
-		onPageAlloc = `%__dbg_end_i = ptrtoint ptr %end to i64
-  %__dbg_cur_i = ptrtoint ptr %cursor to i64
-  %__dbg_waste = sub i64 %__dbg_end_i, %__dbg_cur_i
-  call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.page_alloc, ptr %a, i64 %alloc_cap, i64 %__dbg_waste)`
-		onDestroy = `call i32 (i32, ptr, ...) @dprintf(i32 2, ptr @arena.fmt.destroy, ptr %a)`
-	}
-	r := strings.NewReplacer(
-		"${arena.stack_buf_size}", fmt.Sprintf("%d", opts.ArenaStackBufSize),
-		"${arena.page_min_size}", fmt.Sprintf("%d", opts.ArenaPageMinSize),
-		"${arena.page_max_size}", fmt.Sprintf("%d", opts.ArenaPageMaxSize),
-		"${arena.page_header_size}", fmt.Sprintf("%d", opts.ArenaPageHeaderSize),
-		"${arena.on_create}", onCreate,
-		"${arena.on_alloc}", onAlloc,
-		"${arena.on_page_alloc}", onPageAlloc,
-		"${arena.on_destroy}", onDestroy,
-	)
-	return declarations + "\n" + r.Replace(arenaRuntimeIRTemplate)
 }
 
 func builtinFill(irType string) string {

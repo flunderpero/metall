@@ -25,6 +25,7 @@ func runE2EUnoptimizedTest(t *testing.T, assert base.Assert, tc mdtest.TestCase)
 	outputPath := "./.build/unopt_" + reg.ReplaceAllString(tc.Name, "_")
 	opts := CompileOpts{ //nolint:exhaustruct
 		ProjectRoot:      ".",
+		IncludePaths:     []string{"../../../lib"},
 		Output:           outputPath,
 		KeepIR:           true,
 		LLVMPasses:       "verify",
