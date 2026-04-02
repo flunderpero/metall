@@ -64,6 +64,7 @@ const (
 	Pipe
 	Plus
 	PlusPercent
+	Pub
 	Question
 	RBracket
 	RCurly
@@ -143,6 +144,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Pipe:                  "|",
 	Plus:                  "+",
 	PlusPercent:           "+%",
+	Pub:                   "<pub>",
 	Question:              "?",
 	RBracket:              "]",
 	RCurly:                "}",
@@ -210,6 +212,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"let":      Let,
 	"match":    Match,
 	"mut":      Mut,
+	"pub":      Pub,
 	"not":      Not,
 	"or":       Or,
 	"return":   Return,

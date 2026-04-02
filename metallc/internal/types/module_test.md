@@ -6,26 +6,35 @@
 ```
 
 ```module.lib
-struct Point { x Int y Int }
-fun get_lib() Int { 42 }
-fun Point.sum(p Point) Int { p.x + p.y }
+pub struct Point { pub x Int pub y Int }
+pub struct Secret { hidden Int }
+pub fun get_lib() Int { 42 }
+pub fun Point.sum(p Point) Int { p.x + p.y }
+fun internal_helper() Int { 99 }
+pub let public_const = 42
+let private_const = 99
+```
+
+```module.lib_test
+use lib
+pub fun test_internal() Int { lib::internal_helper() }
 ```
 
 ```module.generic
-struct Pair<A, B> { first A second B }
-fun identity<T>(x T) T { x }
+pub struct Pair<A, B> { pub first A pub second B }
+pub fun identity<T>(x T) T { x }
 ```
 
 ```module.local
-fun get_hello() Str { "hello" }
+pub fun get_hello() Str { "hello" }
 ```
 
 ```module.shapes
-shape Showable {
-    fun Showable.show(self Showable) Int
+pub shape Showable {
+    pub fun Showable.show(self Showable) Int
 }
-fun show<T Showable>(x T) Int { x.show() }
-fun show_twice<T Showable>(x T) Int { show<T>(x) + show<T>(x) }
+pub fun show<T Showable>(x T) Int { x.show() }
+pub fun show_twice<T Showable>(x T) Int { show<T>(x) + show<T>(x) }
 ```
 
 ## OK
@@ -281,8 +290,8 @@ the calling module B. The shape check must find the method in B's scope.
 ```metall
 use shapes
 
-struct Widget { value Int }
-fun Widget.show(w Widget) Int { w.value }
+pub struct Widget { pub value Int }
+pub fun Widget.show(w Widget) Int { w.value }
 
 fun main() void {
     let w = Widget(42)
@@ -418,4 +427,71 @@ test.met:2:19: cannot access field on non-struct type: lib
     use lib
     fun main() void { lib.get_lib() }
                       ^^^
+```
+
+## Visibility
+
+**test module can access non-pub symbols in its subject module**
+
+```metall
+use lib_test
+fun main() void { _ = lib_test::test_internal() }
+```
+
+```error
+```
+
+**non-pub function not accessible from outside module**
+
+```metall
+use lib
+fun main() void { _ = lib::internal_helper() }
+```
+
+```error
+test.met:2:23: lib::internal_helper is not public
+    use lib
+    fun main() void { _ = lib::internal_helper() }
+                          ^^^^^^^^^^^^^^^^^^^^
+```
+
+**non-pub field not accessible from outside module**
+
+```metall
+use lib
+fun main() void {
+    let s = lib::Secret(1)
+}
+```
+
+```error
+test.met:3:13: cannot construct lib.Secret from outside its module: field hidden is not public
+    fun main() void {
+        let s = lib::Secret(1)
+                ^^^^^^^^^^^^^^
+    }
+```
+
+**pub let accessible from outside module**
+
+```metall
+use lib
+fun main() void { _ = lib::public_const }
+```
+
+```error
+```
+
+**non-pub let not accessible from outside module**
+
+```metall
+use lib
+fun main() void { _ = lib::private_const }
+```
+
+```error
+test.met:2:23: lib::private_const is not public
+    use lib
+    fun main() void { _ = lib::private_const }
+                          ^^^^^^^^^^^^^^^^^^
 ```

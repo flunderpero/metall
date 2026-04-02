@@ -174,6 +174,7 @@ func TestLexer(t *testing.T) {
 		{"else", "else", []want{{Else, "", "1:1-1:4"}}},
 		{"true", "true", []want{{True, "", "1:1-1:4"}}},
 		{"false", "false", []want{{False, "", "1:1-1:5"}}},
+		{"pub", `pub`, []want{{Pub, "", "1:1-1:3"}}},
 		{"mut", `mut`, []want{{Mut, "", "1:1-1:3"}}},
 		{"let", `let`, []want{{Let, "", "1:1-1:3"}}},
 		{"struct", `struct`, []want{{Struct, "", "1:1-1:6"}}},

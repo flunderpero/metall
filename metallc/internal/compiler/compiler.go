@@ -404,10 +404,17 @@ func resolveModules(
 	return res, nil
 }
 
-func ModuleNameFromPath(path string) string {
+func ModuleNameFromPath(path string, includePaths []string) string {
 	name := strings.TrimSuffix(path, filepath.Ext(path))
 	name = filepath.ToSlash(name)
-	return strings.ReplaceAll(name, "/", ".")
+	for _, inc := range includePaths {
+		inc = filepath.ToSlash(inc)
+		if stripped, ok := strings.CutPrefix(name, inc+"/"); ok {
+			name = stripped
+			break
+		}
+	}
+	return strings.ReplaceAll(name, "/", "::")
 }
 
 func newMacroExpander(ctx context.Context, opts CompileOpts) types.MacroExpander {

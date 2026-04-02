@@ -870,6 +870,14 @@ func (e *Engine) dispatchTypeConstruction(
 func (e *Engine) checkStructConstruction(
 	struct_ StructType, structTypeID TypeID, lit ast.TypeConstruction, span base.Span,
 ) (TypeID, TypeStatus) {
+	structDeclNode := e.env.DeclNode(structTypeID)
+	for _, field := range struct_.Fields {
+		if !e.isVisible(structDeclNode, field.Pub, lit.Target) {
+			e.diag(span, "cannot construct %s from outside its module: field %s is not public",
+				e.env.TypeDisplay(structTypeID), field.Name)
+			return InvalidTypeID, TypeFailed
+		}
+	}
 	if len(lit.Args) != len(struct_.Fields) {
 		e.diag(span, "argument count mismatch: expected %d, got %d", len(struct_.Fields), len(lit.Args))
 		return InvalidTypeID, TypeFailed
@@ -971,6 +979,11 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	if struct_, ok := targetTyp.Kind.(StructType); ok {
 		for _, field := range struct_.Fields {
 			if field.Name == fieldAccess.Field.Name {
+				if !e.isVisible(e.env.DeclNode(targetTyp.ID), field.Pub, nodeID) {
+					e.diag(fieldAccess.Field.Span, "field %s.%s is not public",
+						typeName, field.Name)
+					return InvalidTypeID, TypeFailed
+				}
 				return field.Type, TypeOK
 			}
 		}
@@ -1057,6 +1070,11 @@ func (e *Engine) resolveMethod( //nolint:funlen
 	if !ok {
 		return InvalidTypeID, TypeFailed, false
 	}
+	if !e.isVisible(binding.Decl, e.declIsPub(binding.Decl), nodeID) {
+		e.diag(fieldAccess.Field.Span, "method %s.%s is not public",
+			e.env.TypeDisplay(targetTyp.ID), methodName)
+		return InvalidTypeID, TypeFailed, true
+	}
 	return e.ResolveMethodBinding(nodeID, fieldAccess, targetTyp, binding)
 }
 
@@ -1076,6 +1094,50 @@ func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
 		return nil, false
 	}
 	return e.env.Lookup(typModule.Decls[0], name)
+}
+
+func (e *Engine) declIsPub(declNodeID ast.NodeID) bool {
+	switch kind := e.ast.Node(declNodeID).Kind.(type) {
+	case ast.Fun:
+		return kind.Pub
+	case ast.FunDecl:
+		return kind.Pub
+	case ast.Struct:
+		return kind.Pub
+	case ast.Shape:
+		return kind.Pub
+	case ast.Union:
+		return kind.Pub
+	case ast.Var:
+		return kind.Pub
+	}
+	return false
+}
+
+// isVisible checks whether something declared at declNodeID with the given pub
+// flag is visible from the access site `from`. Everything is visible within the
+// same module, from the prelude, or from a "_test" companion module. Across
+// other module boundaries only pub declarations are visible.
+func (e *Engine) isVisible(declNodeID ast.NodeID, pub bool, from ast.NodeID) bool {
+	if pub {
+		return true
+	}
+	if len(e.moduleResolution.Imports) == 0 {
+		return true
+	}
+	if declNodeID == 0 {
+		return true
+	}
+	fromModuleNode, fromModule := e.moduleOf(from)
+	declModuleNode, declModule := e.moduleOf(declNodeID)
+	if fromModuleNode.ID == declModuleNode.ID {
+		return true
+	}
+	// A test module (e.g. "std::map_test") can see everything in its subject ("std::map").
+	if subject, ok := strings.CutSuffix(fromModule.Name, "_test"); ok && subject == declModule.Name {
+		return true
+	}
+	return false
 }
 
 func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) { //nolint:funlen
@@ -1538,7 +1600,12 @@ func (e *Engine) resolveMethodBindName(
 
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
 	name := e.namespacedName(node.ID, structNode.Name.Name)
-	typeID := e.env.newType(StructType{name, []StructField{}, nil}, node.ID, node.Span, TypeInProgress)
+	typeID := e.env.newType(
+		StructType{Name: name, Fields: []StructField{}, TypeArgs: nil},
+		node.ID,
+		node.Span,
+		TypeInProgress,
+	)
 	if !e.bind(node.ID, structNode.Name.Name, false, typeID, structNode.Name.Span) {
 		return typeID, TypeFailed
 	}
@@ -1598,7 +1665,7 @@ func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType Struc
 			return TypeDepFailed, structType
 		}
 		fieldNode := base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind)
-		fields[i] = StructField{fieldNode.Name.Name, fieldTypeID, fieldNode.Mut}
+		fields[i] = StructField{Name: fieldNode.Name.Name, Type: fieldTypeID, Pub: fieldNode.Pub, Mut: fieldNode.Mut}
 	}
 	structType.Fields = fields
 	return TypeOK, structType
@@ -1614,6 +1681,18 @@ func (e *Engine) checkUnionCompleteType(unionNode ast.Union, unionType UnionType
 		variantTypeID, status := e.Query(variantNodeID)
 		if status.Failed() {
 			return TypeDepFailed, unionType
+		}
+		if unionNode.Pub {
+			variantDeclNode := e.env.DeclNode(variantTypeID)
+			if variantDeclNode != 0 {
+				_, isTypeParam := e.ast.Node(variantDeclNode).Kind.(ast.TypeParam)
+				if !isTypeParam && !e.declIsPub(variantDeclNode) {
+					e.diag(e.ast.Node(variantNodeID).Span,
+						"public union %s contains non-public variant type %s",
+						unionNode.Name.Name, e.env.TypeDisplay(variantTypeID))
+					return TypeFailed, unionType
+				}
+			}
 		}
 		variants[i] = variantTypeID
 	}
@@ -1791,6 +1870,10 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 	binding, ok := e.env.Lookup(mod.Decls[0], lookupName)
 	if !ok {
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
+		return InvalidTypeID, TypeFailed
+	}
+	if !e.isVisible(binding.Decl, e.declIsPub(binding.Decl), nodeID) {
+		e.diag(span, "%s::%s is not public", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
 	}
 	e.env.pathBindings[nodeID] = binding

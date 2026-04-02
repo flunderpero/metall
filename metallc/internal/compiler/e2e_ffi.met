@@ -1,1 +1,1 @@
-extern fun abs(n I32) I32
+pub extern fun abs(n I32) I32

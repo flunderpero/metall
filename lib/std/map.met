@@ -1,11 +1,11 @@
-shape Key {
-    fun Key.eq(k Key, other Key) Bool
-    fun Key.hash(k Key) U64
+pub shape Key {
+    pub fun Key.eq(k Key, other Key) Bool
+    pub fun Key.hash(k Key) U64
 }
 
-struct MapEntry<K Key, V> {
-    key K
-    value V
+pub struct MapEntry<K Key, V> {
+    pub key K
+    pub value V
 }
 
 union MapSlot<K Key, V> = MapEntry<K, V> | Bool
@@ -32,31 +32,31 @@ fun MapSlot.key<K Key, V>(s MapSlot<K, V>) ?K {
 }
 
 --- A general purpose hash-map ---
-struct Map<K Key, V> {
+pub struct Map<K Key, V> {
     mut data []mut MapSlot<K, V>
-    mut len Int
+    pub mut len Int
     @a Arena
 }
 
-fun Map.new<K Key, V>(capacity Int, @a Arena) &mut Map<K, V> {
+pub fun Map.new<K Key, V>(capacity Int, @a Arena) &mut Map<K, V> {
     if capacity <= 0 { panic("invalid capacity (<= 0)")}
     let data = @a.slice_mut<MapSlot<K, V>>(capacity, false)
     @a.new_mut(Map<K, V>(data, 0, @a))
 }
 
-fun Map.set<K Key, V>(m &mut Map<K, V>, key K, value V) void {
+pub fun Map.set<K Key, V>(m &mut Map<K, V>, key K, value V) void {
     let hash = key.hash()
     let desired_capacity = ((m.len * 3) / 2) + 1
     if desired_capacity > m.data.len {
         m.grow(m.data.len * 2)
     }
-    m.len = m.len + set_internal(m.data, key, value)
+    m.len = m.len + set(m.data, key, value)
 }
 
 --- Get the value associated with the key.
 
     Return `None` if the key is not found. --- 
-fun Map.get<K Key, V>(m &Map<K, V>, key K) ?V {
+pub fun Map.get<K Key, V>(m &Map<K, V>, key K) ?V {
     mut hash = key.hash()
     let capacity = m.data.len
     mut pos = (hash % capacity.to_u64_wrapping()).to_int_wrapping()
@@ -76,7 +76,7 @@ fun Map.get<K Key, V>(m &Map<K, V>, key K) ?V {
     panic("unreachable")
 }
 
-fun Map.has<K Key, V>(m &Map<K, V>, key K) Bool {
+pub fun Map.has<K Key, V>(m &Map<K, V>, key K) Bool {
     mut hash = key.hash()
     let capacity = m.data.len
     mut pos = (hash % capacity.to_u64_wrapping()).to_int_wrapping()
@@ -96,7 +96,7 @@ fun Map.has<K Key, V>(m &Map<K, V>, key K) Bool {
     panic("unreachable")
 }
 
-fun Map.del<K Key, V>(m &mut Map<K, V>, key K) Bool {
+pub fun Map.del<K Key, V>(m &mut Map<K, V>, key K) Bool {
     mut hash = key.hash()
     let capacity = m.data.len
     mut pos = (hash % capacity.to_u64_wrapping()).to_int_wrapping()
@@ -118,24 +118,24 @@ fun Map.del<K Key, V>(m &mut Map<K, V>, key K) Bool {
     panic("unreachable")
 }
 
-fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
+pub fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
     let new_data = m.@a.slice_mut<MapSlot<K, V>>(capacity, false)
     for i in 0..m.data.len {
         match m.data[i] {
         case Bool:
         else entry: 
-            _ = set_internal(new_data, entry.key, entry.value)
+            _ = set(new_data, entry.key, entry.value)
         }
     }
     m.data = new_data
 }
 
-struct MapIter<K Key, V> {
+pub struct MapIter<K Key, V> {
     data []MapSlot<K, V>
     mut pos Int
 }
 
-fun MapIter.next<K Key, V>(it &mut MapIter<K, V>) ?MapEntry<K, V> {
+pub fun MapIter.next<K Key, V>(it &mut MapIter<K, V>) ?MapEntry<K, V> {
     for i in it.pos..it.data.len {
         match it.data[i] {
             case Bool: 
@@ -158,11 +158,11 @@ fun MapIter.next<K Key, V>(it &mut MapIter<K, V>) ?MapEntry<K, V> {
 
     Having said all of this: Don't mutate a map while iterating
     over it. ---
-fun Map.iter<K Key, V>(m &Map<K, V>) MapIter<K, V> {
+pub fun Map.iter<K Key, V>(m &Map<K, V>) MapIter<K, V> {
     MapIter<K, V>(m.data, 0)
 }
 
-fun set_internal<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {
+fun set<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {
     mut hash = key.hash()
     mut first_deleted_at = -1
     let capacity = data.len

@@ -42,10 +42,14 @@ extern fun malloc(size Int) ffi::PtrMut<U8>
 extern fun free(p ffi::PtrMut<U8>) void
 extern fun arena_debug_print(msg ffi::Ptr<U8>, i1 U64, i2 Int, i3 Int) I32
 
-let debug_create = "arena [%016llx] create\n\0"
-let debug_alloc = "arena [%016llx] alloc size=%llu\n\0"
-let debug_alloc_page = "arena [%016llx] alloc_page size=%llu prev_free=%llu\n\0"
-let debug_destroy = "arena [%016llx] destroy pages=%llu\n\0"
+let debug_create = [
+    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'c', 'r', 'e', 'a', 't', 'e', '\n', 0][..]
+let debug_alloc = [
+    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'a', 'l', 'l', 'o', 'c', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+let debug_alloc_page = [
+    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'a', 'l', 'l', 'o', 'c', '_', 'p', 'a', 'g', 'e', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', ' ', 'p', 'r', 'e', 'v', '_', 'f', 'r', 'e', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+let debug_destroy = [
+    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'd', 'e', 's', 't', 'r', 'o', 'y', ' ', 'p', 'a', 'g', 'e', 's', '=', '%', 'l', 'l', 'u', '\n', 0][..]
 
 fun arena_create(
     a &mut ArenaAllocator,
@@ -138,7 +142,7 @@ fun arena_destroy(a &mut ArenaAllocator) Int {
     freed
 }
 
-fun debug(a &mut ArenaAllocator, msg Str, i1 Int, i2 Int) void {
+fun debug(a &mut ArenaAllocator, msg []U8, i1 Int, i2 Int) void {
     let arena_ptr = ffi::ref_ptr<ArenaAllocator>(a)
-    _ = unsafe arena_debug_print(ffi::slice_ptr(msg.data), arena_ptr.as_u64(), i1, i2)
+    _ = unsafe arena_debug_print(ffi::slice_ptr(msg), arena_ptr.as_u64(), i1, i2)
 }

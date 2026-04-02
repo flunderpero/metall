@@ -1,15 +1,15 @@
 --- A re-allocating array list. ---
-struct List<T> {
+pub struct List<T> {
     -- todo: This is bad API design. We use the .len field to determine the length as a public API.
     --       But .len is mutable!
-    mut len Int
+    pub mut len Int
 
     -- private fields 
     mut data []mut T 
     @a Arena
 }
 
-fun List.new<T>(initial_capacity Int, @a Arena) &mut List<T> {
+pub fun List.new<T>(initial_capacity Int, @a Arena) &mut List<T> {
     let data = unsafe @a.slice_uninit_mut<T>(initial_capacity)
     @a.new_mut(List(0, data, @a))
 }
@@ -18,7 +18,7 @@ fun List.new<T>(initial_capacity Int, @a Arena) &mut List<T> {
 
     This might allocate and copy the existing data. 
     All references to elements point to stale data afterwards. ---
-fun List.push<T>(l &mut List<T>, v T) void {
+pub fun List.push<T>(l &mut List<T>, v T) void {
     if l.len == l.data.len {
         let new_data = unsafe l.@a.slice_uninit_mut<T>(l.len * 2)
         _ = new_data.set(l.data)
@@ -33,14 +33,14 @@ fun List.push<T>(l &mut List<T>, v T) void {
 
     This might allocate and copy the existing data. 
     All references to elements point to stale data afterwards. ---
-fun List.push_all<T>(l &mut List<T>, v []T) void {
+pub fun List.push_all<T>(l &mut List<T>, v []T) void {
     l.ensure_capacity(v.len)
     _ = l.data[l.len..].set(v)
     l.len = l.len + v.len
 }
 
 --- Make sure the list has room for `cap` elements. ---
-fun List.ensure_capacity<T>(l &mut List<T>, cap Int) void {
+pub fun List.ensure_capacity<T>(l &mut List<T>, cap Int) void {
     if l.len + cap >= l.data.len {
         let new_data = unsafe l.@a.slice_uninit_mut<T>(l.len + cap)
         _ = new_data.set(l.data)
@@ -53,18 +53,18 @@ fun List.ensure_capacity<T>(l &mut List<T>, cap Int) void {
     The returned slice will not reflect items added to the list
     and it points to stale data once the backing slice gets re-allocated
     by `List.push()`. ---
-fun List.as_slice<T>(l &List<T>) []mut T {
+pub fun List.as_slice<T>(l &List<T>) []mut T {
     l.data[..l.len]
 }
 
-fun List.get<T>(l &List<T>, i Int) T {
+pub fun List.get<T>(l &List<T>, i Int) T {
     if i >= l.len or i < 0 {
         panic("index out of bounds")
     }
     return l.data[i]
 }
 
-fun List.set<T>(l &mut List<T>, i Int, v T) void {
+pub fun List.set<T>(l &mut List<T>, i Int, v T) void {
     if i >= l.len or i < 0 {
         panic("index out of bounds")
     }
@@ -72,22 +72,22 @@ fun List.set<T>(l &mut List<T>, i Int, v T) void {
 }
 
 --- Reset this list, i.e. set its length to 0. ---
-fun List.reset<T>(l &mut List<T>) void {
+pub fun List.reset<T>(l &mut List<T>) void {
     l.len = 0
 }
 
-fun List.eq<T HasEq>(l &List<T>, other &List<T>) Bool {
+pub fun List.eq<T HasEq>(l &List<T>, other &List<T>) Bool {
     l.as_slice().eq(other.as_slice())
 }
 
-fun List.fmt<T HasFmt>(l &List<T>, sb &mut StrBuilder) void {
+pub fun List.fmt<T HasFmt>(l &List<T>, sb &mut StrBuilder) void {
     sb.fmt(l.as_slice())
 }
 
 --- Sort the list in place. 
 
     todo: Use a proper `Ordering` enum once we support enums. ---
-fun List.sort_in_place<T>(l &mut List<T>, cmp fun(T, T) Int) void {
+pub fun List.sort_in_place<T>(l &mut List<T>, cmp fun(T, T) Int) void {
     quicksort(l.data[0..l.len], cmp) 
 }
 
@@ -129,6 +129,6 @@ fun quicksort<T>(s []mut T, cmp fun(T, T) Int) void {
 
     Having said all of this: Don't mutate a list while iterating
     over it. ---
-fun List.iter<T>(l &List<T>) SliceIter<T> { 
+pub fun List.iter<T>(l &List<T>) SliceIter<T> { 
     l.data[0..l.len].iter()
 }

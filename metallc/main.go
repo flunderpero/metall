@@ -104,7 +104,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
 		fmt.Fprintln(os.Stderr, "failed to read file:", err)
 		os.Exit(1)
 	}
-	moduleName := compiler.ModuleNameFromPath(fileName)
+	moduleName := compiler.ModuleNameFromPath(fileName, includes)
 	source := base.NewSource(fileName, moduleName, true, []rune(string(src)))
 	return opts, source
 }

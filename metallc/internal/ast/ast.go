@@ -142,6 +142,7 @@ type FunDecl struct {
 	TypeParams []NodeID
 	Params     []NodeID
 	ReturnType NodeID
+	Pub        bool
 	Builtin    bool
 	Extern     bool
 	Unsafe     bool
@@ -175,6 +176,7 @@ func (Fun) isKind() {}
 type StructField struct {
 	Name Name
 	Type NodeID
+	Pub  bool
 	Mut  bool
 }
 
@@ -184,6 +186,7 @@ type Struct struct {
 	Name       Name
 	TypeParams []NodeID
 	Fields     []NodeID
+	Pub        bool
 	Builtin    bool
 	Extern     bool
 }
@@ -203,6 +206,7 @@ type Shape struct {
 	TypeParams []NodeID
 	Fields     []NodeID // StructField nodes
 	Funs       []NodeID // FunDecl nodes
+	Pub        bool
 }
 
 func (Shape) isKind() {}
@@ -211,6 +215,7 @@ type Union struct {
 	Name       Name
 	TypeParams []NodeID
 	Variants   []NodeID // Type nodes (SimpleType, RefType, etc.)
+	Pub        bool
 }
 
 func (Union) isKind() {}
@@ -305,10 +310,13 @@ type Unary struct {
 
 func (Unary) isKind() {}
 
+// TODO: Consider giving module-level constants their own AST node instead of
+// reusing Var with a Pub flag.
 type Var struct {
 	Name Name
 	Type *NodeID
 	Expr NodeID
+	Pub  bool
 	Mut  bool
 }
 
@@ -561,27 +569,29 @@ func (a *AST) NewPath(segments []string, typeArgs []NodeID, span base.Span) Node
 
 func (a *AST) NewFunDecl(
 	name Name, typeParams []NodeID, params []NodeID, returnType NodeID,
-	extern bool, unsafe bool, span base.Span,
+	pub bool, extern bool, unsafe bool, span base.Span,
 ) NodeID {
 	return a.node(
 		FunDecl{
 			Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
-			Builtin: false, Extern: extern, Unsafe: unsafe,
+			Pub: pub, Builtin: false, Extern: extern, Unsafe: unsafe,
 		}, span)
 }
 
 func (a *AST) NewExternFunDecl(
-	name Name, externName string, typeParams []NodeID, params []NodeID, returnType NodeID, span base.Span,
+	name Name, externName string, typeParams []NodeID, params []NodeID, returnType NodeID,
+	pub bool, span base.Span,
 ) NodeID {
 	return a.node(
 		FunDecl{
 			Name: name, ExternName: externName, TypeParams: typeParams, Params: params, ReturnType: returnType,
-			Builtin: false, Extern: true, Unsafe: true,
+			Pub: pub, Builtin: false, Extern: true, Unsafe: true,
 		}, span)
 }
 
 func (a *AST) NewFun(
-	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID, unsafe bool, span base.Span,
+	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID,
+	pub bool, unsafe bool, span base.Span,
 ) NodeID {
 	return a.node(
 		Fun{
@@ -591,6 +601,7 @@ func (a *AST) NewFun(
 				TypeParams: typeParams,
 				Params:     params,
 				ReturnType: returnType,
+				Pub:        pub,
 				Builtin:    false,
 				Extern:     false,
 				Unsafe:     unsafe,
@@ -610,24 +621,28 @@ func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, span base
 	return a.node(FunParam{Name: name, Type: type_, Default: defaultVal}, span)
 }
 
-func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, span base.Span) NodeID {
-	return a.node(Struct{Name: name, TypeParams: typeParams, Fields: fields, Builtin: false, Extern: false}, span)
+func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, pub bool, span base.Span) NodeID {
+	return a.node(
+		Struct{Name: name, TypeParams: typeParams, Fields: fields, Pub: pub, Builtin: false, Extern: false}, span,
+	)
 }
 
-func (a *AST) NewStructField(name Name, type_ NodeID, mut bool, span base.Span) NodeID {
-	return a.node(StructField{Name: name, Type: type_, Mut: mut}, span)
+func (a *AST) NewStructField(name Name, type_ NodeID, pub bool, mut bool, span base.Span) NodeID {
+	return a.node(StructField{Name: name, Type: type_, Pub: pub, Mut: mut}, span)
 }
 
 func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, span base.Span) NodeID {
 	return a.node(TypeParam{Name: name, Constraint: constraint, Default: defaultType}, span)
 }
 
-func (a *AST) NewShape(name Name, typeParams []NodeID, fields []NodeID, funs []NodeID, span base.Span) NodeID {
-	return a.node(Shape{Name: name, TypeParams: typeParams, Fields: fields, Funs: funs}, span)
+func (a *AST) NewShape(
+	name Name, typeParams []NodeID, fields []NodeID, funs []NodeID, pub bool, span base.Span,
+) NodeID {
+	return a.node(Shape{Name: name, TypeParams: typeParams, Fields: fields, Funs: funs, Pub: pub}, span)
 }
 
-func (a *AST) NewUnion(name Name, typeParams []NodeID, variants []NodeID, span base.Span) NodeID {
-	return a.node(Union{Name: name, TypeParams: typeParams, Variants: variants}, span)
+func (a *AST) NewUnion(name Name, typeParams []NodeID, variants []NodeID, pub bool, span base.Span) NodeID {
+	return a.node(Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub}, span)
 }
 
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
@@ -698,8 +713,8 @@ func (a *AST) NewRefType(type_ NodeID, mut bool, span base.Span) NodeID {
 	return a.node(RefType{Type: type_, Mut: mut}, span)
 }
 
-func (a *AST) NewVar(name Name, type_ *NodeID, expr NodeID, mut bool, span base.Span) NodeID {
-	return a.node(Var{Name: name, Type: type_, Expr: expr, Mut: mut}, span)
+func (a *AST) NewVar(name Name, type_ *NodeID, expr NodeID, pub bool, mut bool, span base.Span) NodeID {
+	return a.node(Var{Name: name, Type: type_, Expr: expr, Pub: pub, Mut: mut}, span)
 }
 
 func (a *AST) Node(id NodeID) *Node {
@@ -1125,6 +1140,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case FunDecl:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
 		if kind.Extern && kind.ExternName != kind.Name.Name {
 			addAttr("externName", fmt.Sprintf("%q", kind.ExternName))
 		}
@@ -1143,6 +1161,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case Fun:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
 		if !children {
 			if len(kind.Captures) > 0 {
 				addAttr("captures", nodeIDList(kind.Captures))
@@ -1198,6 +1219,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case Struct:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
@@ -1211,6 +1235,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case Shape:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
@@ -1226,6 +1253,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case Union:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
@@ -1255,7 +1285,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case StructField:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
-		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
+		if kind.Mut {
+			addAttr("mut", "true")
+		}
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {
@@ -1304,7 +1339,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		addAttr("value", fmt.Sprintf("'%c'(%d)", rune(kind.Value), kind.Value))
 	case Var:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
-		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
+		if kind.Mut {
+			addAttr("mut", "true")
+		}
 		if kind.Type != nil {
 			if !children {
 				addAttr("type", nodeIDKind(*kind.Type))
@@ -1325,7 +1365,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addChild("type", kind.Elem)
 		}
 	case SliceType:
-		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if kind.Mut {
+			addAttr("mut", "true")
+		}
 		if !children {
 			addAttr("type", nodeIDKind(kind.Elem))
 		} else {
@@ -1385,14 +1427,18 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case TryPattern:
 	case Ref:
-		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if kind.Mut {
+			addAttr("mut", "true")
+		}
 		if !children {
 			addAttr("target", nodeIDKind(kind.Target))
 		} else {
 			addChild("target", kind.Target)
 		}
 	case RefType:
-		addAttr("mut", fmt.Sprintf("%t", kind.Mut))
+		if kind.Mut {
+			addAttr("mut", "true")
+		}
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {

@@ -1,13 +1,13 @@
-let the_answer = 42
+pub let the_answer = 42
 
-fun say_hello() void {
+pub fun say_hello() void {
     DebugIntern.print_str("hello")
 }
 
-struct Foo {
-    mut one Int
+pub struct Foo {
+    pub mut one Int
 }
 
-fun Foo.print(f Foo) void {
+pub fun Foo.print(f Foo) void {
     DebugIntern.print_int(f.one)
 }

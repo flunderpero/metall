@@ -8,26 +8,26 @@ struct Test {
     f fun() !void
 }
 
-struct Suite {
+pub struct Suite {
     name Str
     mut bail Bool
     tests &mut list::List<Test>
 }
 
-fun Suite.new(name Str, @a Arena) &mut Suite {
+pub fun Suite.new(name Str, @a Arena) &mut Suite {
     @a.new_mut<Suite>(Suite(name, false, list::List.new<Test>(32, @a)))
 }
 
-struct SuiteResult {
-    succeeded Int
-    failed Int
+pub struct SuiteResult {
+    pub succeeded Int
+    pub failed Int
 }
 
-fun Suite.test(s &mut Suite, name Str, f fun() !void) void {
+pub fun Suite.test(s &mut Suite, name Str, f fun() !void) void {
     s.tests.push(Test(name, f))
 }
 
-fun Suite.run(s &mut Suite) SuiteResult {
+pub fun Suite.run(s &mut Suite) SuiteResult {
     let @local = Arena()
     mut failed = 0
     for test_index in 0..s.tests.len {
@@ -62,25 +62,25 @@ fun Suite.run(s &mut Suite) SuiteResult {
 let assertion_failed_err = Err("assertion failed")
 
 shape HasEqFmt {
-    fun HasEqFmt.eq(e HasEqFmt, other HasEqFmt) Bool
-    fun HasEqFmt.fmt(e HasEqFmt, sb &mut StrBuilder) void
+    pub fun HasEqFmt.eq(e HasEqFmt, other HasEqFmt) Bool
+    pub fun HasEqFmt.fmt(e HasEqFmt, sb &mut StrBuilder) void
 }
 
-fun ok(b Bool, msg Str = "") !void { 
+pub fun ok(b Bool, msg Str = "") !void { 
     if not b { 
-        private_print_assert_err_msg(msg, "want: true, got: false")
+        print_assert_err_msg(msg, "want: true, got: false")
         return assertion_failed_err
     }
 }
 
-fun not_ok(b Bool, msg Str = "") !void { 
+pub fun not_ok(b Bool, msg Str = "") !void { 
     if b { 
-        private_print_assert_err_msg(msg, "want: false, got: true")
+        print_assert_err_msg(msg, "want: false, got: true")
         return assertion_failed_err
     }
 }
 
-fun contains_str(haystack Str, needle Str, msg Str = "") !void {
+pub fun contains_str(haystack Str, needle Str, msg Str = "") !void {
     if not haystack.contains(needle) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -89,12 +89,12 @@ fun contains_str(haystack Str, needle Str, msg Str = "") !void {
         sb.str("' to contain '")
         sb.str(needle)
         sb.str("'")
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun eq<T HasEqFmt>(want T, got T, msg Str = "") !void {
+pub fun eq<T HasEqFmt>(want T, got T, msg Str = "") !void {
     if not want.eq(got) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -102,12 +102,12 @@ fun eq<T HasEqFmt>(want T, got T, msg Str = "") !void {
         sb.fmt<T>(want)
         sb.str(", got ")
         sb.fmt<T>(got)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
+pub fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
     if want.eq(got) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -115,12 +115,12 @@ fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
         sb.fmt<T>(want)
         sb.str("not to equal ")
         sb.fmt<T>(got)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun gt_int(left Int, right Int, msg Str = "") !void {
+pub fun gt_int(left Int, right Int, msg Str = "") !void {
     if not left > right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -128,12 +128,12 @@ fun gt_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" > ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun gte_int(left Int, right Int, msg Str = "") !void {
+pub fun gte_int(left Int, right Int, msg Str = "") !void {
     if not left >= right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -141,12 +141,12 @@ fun gte_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" >= ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun lt_int(left Int, right Int, msg Str = "") !void {
+pub fun lt_int(left Int, right Int, msg Str = "") !void {
     if not left < right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -154,12 +154,12 @@ fun lt_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" < ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun lte_int(left Int, right Int, msg Str = "") !void {
+pub fun lte_int(left Int, right Int, msg Str = "") !void {
     if not left <= right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -167,12 +167,12 @@ fun lte_int(left Int, right Int, msg Str = "") !void {
         sb.int(left)
         sb.str(" <= ")
         sb.int(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun gt_u64(left U64, right U64, msg Str = "") !void {
+pub fun gt_u64(left U64, right U64, msg Str = "") !void {
     if not left > right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -180,12 +180,12 @@ fun gt_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" > ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun gte_u64(left U64, right U64, msg Str = "") !void {
+pub fun gte_u64(left U64, right U64, msg Str = "") !void {
     if not left >= right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -193,12 +193,12 @@ fun gte_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" >= ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun lt_u64(left U64, right U64, msg Str = "") !void {
+pub fun lt_u64(left U64, right U64, msg Str = "") !void {
     if not left < right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -206,12 +206,12 @@ fun lt_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" < ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun lte_u64(left U64, right U64, msg Str = "") !void {
+pub fun lte_u64(left U64, right U64, msg Str = "") !void {
     if not left <= right {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
@@ -219,12 +219,12 @@ fun lte_u64(left U64, right U64, msg Str = "") !void {
         sb.u64(left)
         sb.str(" <= ")
         sb.u64(right)
-        private_print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, sb.as_str())
         return assertion_failed_err
     }
 }
 
-fun err<T>(obj !T, err_msg_contains Str, msg Str = "") !void {
+pub fun err<T>(obj !T, err_msg_contains Str, msg Str = "") !void {
     match obj {
         case Err e: 
             if not e.msg.contains(err_msg_contains) {
@@ -234,16 +234,16 @@ fun err<T>(obj !T, err_msg_contains Str, msg Str = "") !void {
                 sb.str(err_msg_contains)
                 sb.str("', but got: ")
                 sb.str(e.msg)
-                private_print_assert_err_msg(msg, sb.as_str())
+                print_assert_err_msg(msg, sb.as_str())
                 return assertion_failed_err
             }
         else: 
-            private_print_assert_err_msg(msg, "want an error")
+            print_assert_err_msg(msg, "want an error")
             return assertion_failed_err
     }
 }
 
-fun private_print_assert_err_msg(user_provided Str, err Str) void {
+fun print_assert_err_msg(user_provided Str, err Str) void {
     let @local = Arena()
     io::print("\x1b[31m")
     if user_provided.is_empty() {

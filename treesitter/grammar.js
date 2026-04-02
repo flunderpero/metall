@@ -121,6 +121,7 @@ module.exports = grammar({
     simple_type: ($) => choice(
       seq($.type_identifier, optional($.type_arguments)),
       "void",
+      "never",
     ),
 
     array_type: ($) => seq("[", $.integer_literal, "]", $._type),
@@ -133,6 +134,7 @@ module.exports = grammar({
 
     function_declaration: ($) =>
       seq(
+        optional("pub"),
         optional("unsafe"),
         "fun",
         field("name", $.function_name),
@@ -183,6 +185,7 @@ module.exports = grammar({
 
     struct_declaration: ($) =>
       seq(
+        optional("pub"),
         "struct",
         field("name", $.type_identifier),
         optional(field("type_parameters", $.type_parameters)),
@@ -191,6 +194,7 @@ module.exports = grammar({
 
     struct_field: ($) =>
       seq(
+        optional("pub"),
         optional("mut"),
         field("name", choice($.identifier, $.allocator_identifier)),
         field("type", $._type),
@@ -200,6 +204,7 @@ module.exports = grammar({
 
     shape_declaration: ($) =>
       seq(
+        optional("pub"),
         "shape",
         field("name", $.type_identifier),
         "{",
@@ -210,6 +215,7 @@ module.exports = grammar({
 
     fun_signature: ($) =>
       seq(
+        optional("pub"),
         "fun",
         field("name", $.function_name),
         optional(field("type_parameters", $.type_parameters)),
@@ -221,6 +227,7 @@ module.exports = grammar({
 
     union_declaration: ($) =>
       seq(
+        optional("pub"),
         "union",
         field("name", $.type_identifier),
         optional(field("type_parameters", $.type_parameters)),
@@ -541,9 +548,9 @@ module.exports = grammar({
     ),
 
     capture: ($) => choice(
-      field("name", $.identifier),                            // by value
-      seq("&", field("name", $.identifier)),                  // by ref
-      seq("&", "mut", field("name", $.identifier)),           // by mut ref
+      field("name", choice($.identifier, $.allocator_identifier)),  // by value
+      seq("&", field("name", $.identifier)),                        // by ref
+      seq("&", "mut", field("name", $.identifier)),                 // by mut ref
     ),
 
     // >>> Array literal

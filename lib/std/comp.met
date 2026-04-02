@@ -1,32 +1,32 @@
-struct BoolType {}
-struct StrType {}
-struct VoidType {}
-struct NeverType {}
+pub struct BoolType {}
+pub struct StrType {}
+pub struct VoidType {}
+pub struct NeverType {}
 
-struct IntType {
-    name Str
-    signed Bool
-    bits Int
+pub struct IntType {
+    pub name Str
+    pub signed Bool
+    pub bits Int
 }
 
-struct Field {
-    name Str
-    typ &Type
-    is_mut Bool
+pub struct Field {
+    pub name Str
+    pub typ &Type
+    pub is_mut Bool
 }
 
-struct StructType {
-    name Str
-    fields []Field
+pub struct StructType {
+    pub name Str
+    pub fields []Field
 }
 
-struct UnionType {
-    name Str
-    variants []&Type
+pub struct UnionType {
+    pub name Str
+    pub variants []&Type
 }
 
-union Type = BoolType | StrType | VoidType | NeverType | IntType | StructType | UnionType
+pub union Type = BoolType | StrType | VoidType | NeverType | IntType | StructType | UnionType
 
-fun type_of<T>() Type {
+pub fun type_of<T>() Type {
     panic("comp::type_of must only be used as a macro argument")
 }

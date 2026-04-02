@@ -12,7 +12,7 @@ a:-
 
 ```nodes
 n1:Int(value=1):a
-n2:Var(name="x",mut=false,expr=n1:Int):a
+n2:Var(name="x",expr=n1:Int):a
 ```
 
 **Block creates scope**
@@ -28,7 +28,7 @@ b:a
 
 ```nodes
 n1:Int(value=1):b
-n2:Var(name="x",mut=false,expr=n1:Int):b
+n2:Var(name="x",expr=n1:Int):b
 n3:Block(exprs=[n2:Var]):a
 ```
 
@@ -46,9 +46,9 @@ c:b
 
 ```nodes
 n1:Int(value=1):b
-n2:Var(name="x",mut=false,expr=n1:Int):b
+n2:Var(name="x",expr=n1:Int):b
 n3:Int(value=2):c
-n4:Var(name="y",mut=false,expr=n3:Int):c
+n4:Var(name="y",expr=n3:Int):c
 n5:Block(exprs=[n4:Var]):b
 n6:Block(exprs=[n2:Var,n5:Block]):a
 ```
@@ -108,7 +108,7 @@ b:a
 
 ```nodes
 n1:SimpleType(name="Int"):b
-n2:StructField(name="one",mut=false,type=n1:SimpleType):b
+n2:StructField(name="one",type=n1:SimpleType):b
 n3:Struct(name="Foo",fields=[n2:StructField]):a
 ```
 
@@ -126,7 +126,7 @@ c:b
 
 ```nodes
 n1:SimpleType(name="Str"):b
-n2:StructField(name="name",mut=false,type=n1:SimpleType):b
+n2:StructField(name="name",type=n1:SimpleType):b
 n3:SimpleType(name="Showable"):c
 n4:FunParam(name="self",type=n3:SimpleType):c
 n5:SimpleType(name="Str"):c
@@ -148,7 +148,7 @@ b:a
 ```nodes
 n1:TypeParam(name="T"):b
 n2:SimpleType(name="T"):b
-n3:StructField(name="value",mut=false,type=n2:SimpleType):b
+n3:StructField(name="value",type=n2:SimpleType):b
 n4:Struct(name="Foo",typeParams=[n1:TypeParam],fields=[n3:StructField]):a
 ```
 

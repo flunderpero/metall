@@ -36,7 +36,7 @@ let x = 123
 ```
 
 ```ast
-Var(name="x",mut=false)
+Var(name="x")
   expr=Int(value=123)
 ```
 
@@ -58,7 +58,7 @@ let x Str = "hello"
 ```
 
 ```ast
-Var(name="x",mut=false)
+Var(name="x")
   type=SimpleType(name="Str")
   expr=String(value="hello")
 ```
@@ -358,15 +358,15 @@ Module(fileName="test.met",name="test",main=true)
 Block()
   exprs[0]=Fun(name="foo")
     params=FunParam(name="a")
-      type=RefType(mut=false)
+      type=RefType()
         type=SimpleType(name="Int")
     returnType=SimpleType(name="void")
     block=Block()
-  exprs[1]=Var(name="x",mut=false)
+  exprs[1]=Var(name="x")
     expr=Int(value=123)
   exprs[2]=Call()
     callee=Ident(name="foo")
-    args=Ref(mut=false)
+    args=Ref()
       target=Ident(name="x")
 ```
 
@@ -377,7 +377,7 @@ let f = fun(a Int, b Int) Bool { true }
 ```
 
 ```ast
-Var(name="f",mut=false)
+Var(name="f")
   expr=Block()
     exprs[0]=Fun(name="__fun_lit_0")
       params[0]=FunParam(name="a")
@@ -579,7 +579,7 @@ struct Foo { one Str mut two Int }
 
 ```ast
 Struct(name="Foo")
-  fields[0]=StructField(name="one",mut=false)
+  fields[0]=StructField(name="one")
     type=SimpleType(name="Str")
   fields[1]=StructField(name="two",mut=true)
     type=SimpleType(name="Int")
@@ -593,8 +593,65 @@ struct Foo { @myalloc Arena }
 
 ```ast
 Struct(name="Foo")
-  fields=StructField(name="@myalloc",mut=false)
+  fields=StructField(name="@myalloc")
     type=SimpleType(name="Arena")
+```
+
+**Pub struct with pub and pub mut fields**
+
+```metall module
+pub struct Foo { pub one Str pub mut two Int three Bool }
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Struct(name="Foo",pub=true)
+    fields[0]=StructField(name="one",pub=true)
+      type=SimpleType(name="Str")
+    fields[1]=StructField(name="two",pub=true,mut=true)
+      type=SimpleType(name="Int")
+    fields[2]=StructField(name="three")
+      type=SimpleType(name="Bool")
+```
+
+**Pub fun**
+
+```metall module
+pub fun foo() void {}
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Fun(name="foo",pub=true)
+    returnType=SimpleType(name="void")
+    block=Block()
+```
+
+**Pub unsafe fun**
+
+```metall module
+pub unsafe fun foo() void {}
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Fun(name="foo",pub=true)
+    returnType=SimpleType(name="void")
+    block=Block()
+```
+
+**Pub extern fun**
+
+```metall module
+pub extern fun abs(n I32) I32
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=FunDecl(name="abs",pub=true)
+    params=FunParam(name="n")
+      type=SimpleType(name="I32")
+    returnType=SimpleType(name="I32")
 ```
 
 **Type construction**
@@ -696,7 +753,7 @@ Call()
 ```
 
 ```ast
-Ref(mut=false)
+Ref()
   target=Ident(name="x")
 ```
 
@@ -707,7 +764,7 @@ Ref(mut=false)
 ```
 
 ```ast
-Ref(mut=false)
+Ref()
   target=FieldAccess(field=two)
     target=FieldAccess(field=one)
       target=Ident(name="x")
@@ -732,7 +789,7 @@ Ref(mut=true)
 ```
 
 ```ast
-Ref(mut=false)
+Ref()
   target=Index()
     target=Ident(name="x")
     index=Int(value=1)
@@ -745,7 +802,7 @@ Ref(mut=false)
 ```
 
 ```ast
-Ref(mut=false)
+Ref()
   target=Deref()
     expr=Ident(name="x")
 ```
@@ -757,7 +814,7 @@ Ref(mut=false)
 ```
 
 ```ast
-Ref(mut=false)
+Ref()
   target=FieldAccess(field=three)
     target=Index()
       target=FieldAccess(field=one)
@@ -807,7 +864,7 @@ fun foo() &Int {}
 
 ```ast
 Fun(name="foo")
-  returnType=RefType(mut=false)
+  returnType=RefType()
     type=SimpleType(name="Int")
   block=Block()
 ```
@@ -820,8 +877,8 @@ fun foo() &&Int {}
 
 ```ast
 Fun(name="foo")
-  returnType=RefType(mut=false)
-    type=RefType(mut=false)
+  returnType=RefType()
+    type=RefType()
       type=SimpleType(name="Int")
   block=Block()
 ```
@@ -1046,8 +1103,8 @@ fun foo(a [][]Str) void {}
 ```ast
 Fun(name="foo")
   params=FunParam(name="a")
-    type=SliceType(mut=false)
-      type=SliceType(mut=false)
+    type=SliceType()
+      type=SliceType()
         type=SimpleType(name="Str")
   returnType=SimpleType(name="void")
   block=Block()
@@ -1063,7 +1120,7 @@ fun foo(a [3][]Int) void {}
 Fun(name="foo")
   params=FunParam(name="a")
     type=ArrayType(len=3)
-      type=SliceType(mut=false)
+      type=SliceType()
         type=SimpleType(name="Int")
   returnType=SimpleType(name="void")
   block=Block()
@@ -1683,7 +1740,7 @@ struct Foo<T> { value T }
 ```ast
 Struct(name="Foo")
   typeParams=TypeParam(name="T")
-  fields=StructField(name="value",mut=false)
+  fields=StructField(name="value")
     type=SimpleType(name="T")
 ```
 
@@ -1697,9 +1754,9 @@ struct Foo<A, B> { a A b B }
 Struct(name="Foo")
   typeParams[0]=TypeParam(name="A")
   typeParams[1]=TypeParam(name="B")
-  fields[0]=StructField(name="a",mut=false)
+  fields[0]=StructField(name="a")
     type=SimpleType(name="A")
-  fields[1]=StructField(name="b",mut=false)
+  fields[1]=StructField(name="b")
     type=SimpleType(name="B")
 ```
 
@@ -1774,7 +1831,7 @@ let x void = void
 ```
 
 ```ast
-Var(name="x",mut=false)
+Var(name="x")
   type=SimpleType(name="void")
   expr=Ident(name="void")
 ```
@@ -1931,7 +1988,7 @@ struct Foo<T = Int> { value T }
 Struct(name="Foo")
   typeParams=TypeParam(name="T")
     default=SimpleType(name="Int")
-  fields=StructField(name="value",mut=false)
+  fields=StructField(name="value")
     type=SimpleType(name="T")
 ```
 
@@ -1979,9 +2036,9 @@ Struct(name="Pair")
   typeParams[0]=TypeParam(name="A")
   typeParams[1]=TypeParam(name="B")
     default=SimpleType(name="Int")
-  fields[0]=StructField(name="a",mut=false)
+  fields[0]=StructField(name="a")
     type=SimpleType(name="A")
-  fields[1]=StructField(name="b",mut=false)
+  fields[1]=StructField(name="b")
     type=SimpleType(name="B")
 ```
 
@@ -2013,7 +2070,7 @@ Fun(name="foo")
       typeArgs=SimpleType(name="Int")
   params[2]=FunParam(name="c")
     type=SimpleType(name="Option")
-      typeArgs=RefType(mut=false)
+      typeArgs=RefType()
         type=SimpleType(name="Int")
   params[3]=FunParam(name="d")
     type=SimpleType(name="Result")
@@ -2021,7 +2078,7 @@ Fun(name="foo")
         type=SimpleType(name="Int")
   params[4]=FunParam(name="e")
     type=SimpleType(name="Option")
-      typeArgs=SliceType(mut=false)
+      typeArgs=SliceType()
         type=SimpleType(name="Int")
   params[5]=FunParam(name="f")
     type=SimpleType(name="Result")
@@ -2042,7 +2099,7 @@ shape Foo { name Str }
 
 ```ast
 Shape(name="Foo")
-  fields=StructField(name="name",mut=false)
+  fields=StructField(name="name")
     type=SimpleType(name="Str")
 ```
 
@@ -2068,12 +2125,46 @@ shape Foo { name Str fun Foo.bar(f Foo) Str }
 
 ```ast
 Shape(name="Foo")
-  fields=StructField(name="name",mut=false)
+  fields=StructField(name="name")
     type=SimpleType(name="Str")
   funs=FunDecl(name="Foo.bar")
     params=FunParam(name="f")
       type=SimpleType(name="Foo")
     returnType=SimpleType(name="Str")
+```
+
+**Pub shape with pub fields and pub fun**
+
+```metall module
+pub shape Foo { pub name Str fun Foo.bar(f Foo) Str pub fun Foo.baz(f Foo) Int }
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Shape(name="Foo",pub=true)
+    fields=StructField(name="name",pub=true)
+      type=SimpleType(name="Str")
+    funs[0]=FunDecl(name="Foo.bar")
+      params=FunParam(name="f")
+        type=SimpleType(name="Foo")
+      returnType=SimpleType(name="Str")
+    funs[1]=FunDecl(name="Foo.baz",pub=true)
+      params=FunParam(name="f")
+        type=SimpleType(name="Foo")
+      returnType=SimpleType(name="Int")
+```
+
+**Pub union**
+
+```metall module
+pub union Foo = Str | Int
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Union(name="Foo",pub=true)
+    variants[0]=SimpleType(name="Str")
+    variants[1]=SimpleType(name="Int")
 ```
 
 ## Unions
@@ -2139,7 +2230,7 @@ union Foo = &Str | Int
 
 ```ast
 Union(name="Foo")
-  variants[0]=RefType(mut=false)
+  variants[0]=RefType()
     type=SimpleType(name="Str")
   variants[1]=SimpleType(name="Int")
 ```
@@ -2152,7 +2243,7 @@ union Foo = []Int | Str
 
 ```ast
 Union(name="Foo")
-  variants[0]=SliceType(mut=false)
+  variants[0]=SliceType()
     type=SimpleType(name="Int")
   variants[1]=SimpleType(name="Str")
 ```
@@ -2383,7 +2474,7 @@ let x = math::pow
 ```
 
 ```ast
-Var(name="x",mut=false)
+Var(name="x")
   expr=Path(segments=math::pow)
 ```
 
@@ -2734,18 +2825,18 @@ fun main() void {}
 ```ast
 Module(fileName="test.met",name="test",main=true)
   decls[0]=Struct(name="Foo")
-    fields[0]=StructField(name="one",mut=false)
+    fields[0]=StructField(name="one")
       type=SimpleType(name="Int")
-    fields[1]=StructField(name="two",mut=false)
+    fields[1]=StructField(name="two")
       type=SimpleType(name="Str")
-  decls[1]=Var(name="a",mut=false)
+  decls[1]=Var(name="a")
     expr=Int(value=42)
-  decls[2]=Var(name="b",mut=false)
+  decls[2]=Var(name="b")
     expr=TypeConstruction()
       target=Ident(name="Foo")
       args[0]=Int(value=1)
       args[1]=String(value="hello")
-  decls[3]=Var(name="c",mut=false)
+  decls[3]=Var(name="c")
     expr=ArrayLiteral(len=3)
       first=Int(value=1)
   decls[4]=Fun(name="main")

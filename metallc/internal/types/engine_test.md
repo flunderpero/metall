@@ -9298,3 +9298,163 @@ Module: test
 fun01 = fun() Int
 fun02 = fun() void
 ```
+
+## Pub
+
+**Shape requires pub field, struct has pub field**
+
+```metall module
+shape HasName { pub name Str }
+struct Foo { pub name Str }
+fun foo<T HasName>(t T) void {}
+fun main() void { foo<Foo>(Foo("hi")) }
+```
+
+```error
+```
+
+**Shape requires pub field, struct has non-pub field**
+
+```metall module
+shape HasName { pub name Str }
+struct Foo { name Str }
+fun foo<T HasName>(t T) void {}
+fun main() void { foo<Foo>(Foo("hi")) }
+```
+
+```error
+test.met:4:19: type test.Foo does not satisfy shape HasName: field name must be public
+    fun foo<T HasName>(t T) void {}
+    fun main() void { foo<Foo>(Foo("hi")) }
+                      ^^^^^^^^
+```
+
+**Shape requires non-pub field, struct has pub field**
+
+```metall module
+shape HasName { name Str }
+struct Foo { pub name Str }
+fun foo<T HasName>(t T) void {}
+fun main() void { foo<Foo>(Foo("hi")) }
+```
+
+```error
+test.met:4:19: type test.Foo does not satisfy shape HasName: field name must not be public
+    fun foo<T HasName>(t T) void {}
+    fun main() void { foo<Foo>(Foo("hi")) }
+                      ^^^^^^^^
+```
+
+**Shape requires pub method, struct has pub method**
+
+```metall module
+shape Greet { pub fun Greet.greet(g &Greet) Str }
+struct Foo { name Str }
+pub fun Foo.greet(f &Foo) Str { f.name }
+fun foo<T Greet>(t &T) Str { t.greet() }
+fun main() void { let f = Foo("hi") _ = foo<Foo>(&f) }
+```
+
+```error
+```
+
+**Shape requires pub method, struct has non-pub method**
+
+```metall module
+shape Greet { pub fun Greet.greet(g &Greet) Str }
+struct Foo { name Str }
+fun Foo.greet(f &Foo) Str { f.name }
+fun foo<T Greet>(t &T) Str { t.greet() }
+fun main() void { let f = Foo("hi") _ = foo<Foo>(&f) }
+```
+
+```error
+test.met:5:41: type test.Foo does not satisfy shape Greet: method greet must be public
+    fun foo<T Greet>(t &T) Str { t.greet() }
+    fun main() void { let f = Foo("hi") _ = foo<Foo>(&f) }
+                                            ^^^^^^^^
+```
+
+**Shape requires non-pub method, struct has pub method**
+
+```metall module
+shape Greet { fun Greet.greet(g &Greet) Str }
+struct Foo { name Str }
+pub fun Foo.greet(f &Foo) Str { f.name }
+fun foo<T Greet>(t &T) Str { t.greet() }
+fun main() void { let f = Foo("hi") _ = foo<Foo>(&f) }
+```
+
+```error
+test.met:5:41: type test.Foo does not satisfy shape Greet: method greet must not be public
+    fun foo<T Greet>(t &T) Str { t.greet() }
+    fun main() void { let f = Foo("hi") _ = foo<Foo>(&f) }
+                                            ^^^^^^^^
+```
+
+**Shape with pub and non-pub fields mixed**
+
+```metall module
+shape Mixed { pub x Int y Str }
+struct Foo { pub x Int y Str }
+fun foo<T Mixed>(t T) void {}
+fun main() void { foo<Foo>(Foo(1, "hi")) }
+```
+
+```error
+```
+
+**Shape with pub mut field**
+
+```metall module
+shape HasMut { pub mut x Int }
+struct Foo { pub mut x Int }
+fun foo<T HasMut>(t T) void {}
+fun main() void { foo<Foo>(Foo(1)) }
+```
+
+```error
+```
+
+**Shape requires pub mut, struct has pub but not mut**
+
+```metall module
+shape HasMut { pub mut x Int }
+struct Foo { pub x Int }
+fun foo<T HasMut>(t T) void {}
+fun main() void { foo<Foo>(Foo(1)) }
+```
+
+```error
+test.met:4:19: type test.Foo does not satisfy shape HasMut: field x must be mut
+    fun foo<T HasMut>(t T) void {}
+    fun main() void { foo<Foo>(Foo(1)) }
+                      ^^^^^^^^
+```
+
+**Pub union with pub variants is ok**
+
+```metall module
+pub struct MyErr { pub msg Str }
+pub union MyResult = Int | MyErr
+fun main() void {}
+```
+
+```error
+```
+
+**Pub union with non-pub variant is rejected**
+
+```metall module
+struct Secret { msg Str }
+pub union Bad = Int | Secret
+fun main() void {}
+```
+
+```error
+test.met:2:23: public union Bad contains non-public variant type test.Secret
+    struct Secret { msg Str }
+    pub union Bad = Int | Secret
+                          ^^^^^^
+    fun main() void {}
+```

@@ -8,9 +8,9 @@ use std::iter
 struct ConstantHash {
     value Int
 }
-fun ConstantHash.eq(c ConstantHash, other ConstantHash) Bool { c.value == other.value }
-fun ConstantHash.hash(c ConstantHash) U64 { 1 }
-fun ConstantHash.fmt(c ConstantHash, sb &mut StrBuilder) void { sb.int(c.value)}
+pub fun ConstantHash.eq(c ConstantHash, other ConstantHash) Bool { c.value == other.value }
+pub fun ConstantHash.hash(c ConstantHash) U64 { 1 }
+pub fun ConstantHash.fmt(c ConstantHash, sb &mut StrBuilder) void { sb.int(c.value)}
 
 fun main() void {
     let @local = Arena()

@@ -2889,24 +2889,6 @@ fun main() void {
 42
 ```
 
-**Str.byte_len method**
-
-```metall
-fun Str.byte_len(self Str) Int { self.data.len }
-fun main() void {
-    let s = "hello"
-    DebugIntern.print_int(s.byte_len())
-    DebugIntern.print_int("".byte_len())
-    DebugIntern.print_int("abc".byte_len())
-}
-```
-
-```output
-5
-0
-3
-```
-
 **shape field access**
 
 ```metall
@@ -3688,7 +3670,7 @@ fun Iter.next(it &mut Iter) ?Pos {
 }
 
 fun main() void {
-    mut it = Iter("hi".data, 0)
+    mut it = Iter([U8('h'), 'i'][..], 0)
     match (&mut it).next() {
         case Pos p: DebugIntern.print_int(p.a.to_int())
         else: DebugIntern.print_str("none")

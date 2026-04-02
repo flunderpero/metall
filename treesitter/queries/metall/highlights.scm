@@ -7,6 +7,7 @@
   "union"
   "use"
   "let"
+  "pub"
   "if"
   "else"
   "for"
@@ -45,6 +46,7 @@
 
 (simple_type (type_identifier) @type)
 (simple_type "void" @type)
+(simple_type "never" @type)
 (reference_type "&" @operator)
 
 ; >>> Generics

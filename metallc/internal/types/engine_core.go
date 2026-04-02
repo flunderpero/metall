@@ -95,18 +95,28 @@ func (c *EngineCore) namespacedName(nodeID ast.NodeID, name string) string {
 	return c.scopeGraph.NodeScope(nodeID).NamespacedName(name)
 }
 
+// preludeModule is a synthetic module for prelude nodes (which have no Module AST parent).
+var preludeModule = ast.Module{ //nolint:gochecknoglobals
+	FileName: "prelude", Name: "prelude", Main: false, Imports: nil, Decls: nil,
+}
+
+var preludeModuleNode = &ast.Node{ //nolint:gochecknoglobals
+	ID: ast.PreludeFirstID, Span: base.Span{}, Kind: preludeModule,
+}
+
 func (c *EngineCore) moduleOf(nodeID ast.NodeID) (*ast.Node, ast.Module) {
 	scope := c.scopeGraph.NodeScope(nodeID)
-	for {
+	for scope != nil && scope.Node != 0 {
 		scopeNode := c.ast.Node(scope.Node)
 		if mod, ok := scopeNode.Kind.(ast.Module); ok {
 			return scopeNode, mod
 		}
 		scope = scope.Parent
-		if scope == nil {
-			panic(base.Errorf("no module found for node %s", nodeID))
-		}
 	}
+	if !ast.IsPreludeNode(nodeID) {
+		panic(base.Errorf("no module found for node %s", nodeID))
+	}
+	return preludeModuleNode, preludeModule
 }
 
 func (c *EngineCore) updateCachedType(

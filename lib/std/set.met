@@ -1,26 +1,26 @@
 use std::map
 
-struct Set<T map::Key> {
+pub struct Set<T map::Key> {
     m &mut map::Map<T, Bool>
 }
 
-fun Set.new<T map::Key>(capacity Int, @a Arena) &mut Set<T> {
+pub fun Set.new<T map::Key>(capacity Int, @a Arena) &mut Set<T> {
     let m = map::Map.new<T, Bool>(capacity, @a)
     @a.new_mut(Set<T>(m))
 }
 
-fun Set.len<T map::Key>(s &Set<T>) Int {
+pub fun Set.len<T map::Key>(s &Set<T>) Int {
     s.m.len
 }
 
-fun Set.add<T map::Key>(s &mut Set<T>, value T) void {
+pub fun Set.add<T map::Key>(s &mut Set<T>, value T) void {
     s.m.set(value, true)
 }
 
-fun Set.del<T map::Key>(s &mut Set<T>, value T) Bool {
+pub fun Set.del<T map::Key>(s &mut Set<T>, value T) Bool {
     s.m.del(value)
 }
 
-fun Set.has<T map::Key>(s &Set<T>, value T) Bool {
+pub fun Set.has<T map::Key>(s &Set<T>, value T) Bool {
     s.m.has(value)
 }

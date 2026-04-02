@@ -10,12 +10,15 @@ extern fun fwrite(buf ffi::Ptr<U8>, sizeof Int, len Int, file ffi::PtrMut<void>)
 --- The default path delimiter `/`. ---
 let path_delim = [U8(47)][..]
 
-struct Path {
-    -- todo: should be private
+pub struct Path {
     raw []U8
 }
 
-fun Path.from_str(s Str) Path {
+pub fun Path.as_bytes(p Path) []U8 {
+    p.raw
+}
+
+pub fun Path.from_str(s Str) Path {
     Path(s.as_bytes())
 }
 
@@ -23,7 +26,7 @@ fun Path.from_str(s Str) Path {
 
     This is a strictly lexicographic join and not a Posix path join
     where `"parent".join("/absolute/path")` would yield `"/absolute/path"`. ---
-fun Path.join(parent Path, child Path, @a Arena) Path {
+pub fun Path.join(parent Path, child Path, @a Arena) Path {
     let p =
         if parent.raw.ends_with(path_delim) {
             parent.raw[0..parent.raw.len-path_delim.len]
@@ -39,18 +42,17 @@ fun Path.join(parent Path, child Path, @a Arena) Path {
     Path(p.concat([path_delim, c][..], @a))
 }
 
-fun Path.eq(p Path, other Path) Bool {
+pub fun Path.eq(p Path, other Path) Bool {
     p.raw.eq(other.raw)
 }
 
-fun Path.fmt(p Path, sb &mut StrBuilder) void {
+pub fun Path.fmt(p Path, sb &mut StrBuilder) void {
     -- todo: We should escape non-utf8 characters.
     let @local = Arena()
     sb.str(Str.from_utf8_lossy(p.raw, @local))
 }
 
-struct File {
-    -- todo: must be private
+pub struct File {
     mut file_ptr ffi::PtrMut<void>
     mut closed Bool
 }
@@ -80,7 +82,7 @@ struct File {
               The file is created if it does not exist.  Output is always
               appended to the end of the file.
               The read position is undefined. ---
-fun File.open(path Path, mode Str, @a Arena) !&mut File {
+pub fun File.open(path Path, mode Str, @a Arena) !&mut File {
     let @local = Arena()
     if not (mode.eq("r") or mode.eq("w") or mode.eq("a") or mode.eq("r+") or mode.eq("w+") or mode.eq("a+")) {
         return Err("invalid open mode")
@@ -94,7 +96,7 @@ fun File.open(path Path, mode Str, @a Arena) !&mut File {
     file
 }
 
-fun File.write(f &mut File, data []U8) !Int {
+pub fun File.write(f &mut File, data []U8) !Int {
     if f.closed {
         return Err("file is closed")
     }
@@ -109,7 +111,7 @@ fun File.write(f &mut File, data []U8) !Int {
 --- Read into `buf` and return a slice of `buf` with the data read.
 
     `buf` can be uninitialized. ---
-fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
+pub fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
     if f.closed {
         return Err("file is closed")
     }
@@ -125,7 +127,7 @@ fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
     buf[0..bytes_read]
 }
 
-fun File.close(f &mut File) !void {
+pub fun File.close(f &mut File) !void {
     if f.closed {
         -- is already closed
         return void
@@ -139,7 +141,7 @@ fun File.close(f &mut File) !void {
 }
 
 --- Overwrite the file with the given data. ---
-fun write_file(path Path, data []U8) !void {
+pub fun write_file(path Path, data []U8) !void {
     let @local = Arena()
     let f = try File.open(path, "w", @local)
     defer { _ = f.close() }
@@ -150,7 +152,7 @@ fun write_file(path Path, data []U8) !void {
 }
 
 --- Read the entire file. ---
-fun read_file(path Path, @a Arena) ![]mut U8 {
+pub fun read_file(path Path, @a Arena) ![]mut U8 {
     let @local = Arena()
     -- The file is closed by `io::read_all`.
     let f = try File.open(path, "r", @local)

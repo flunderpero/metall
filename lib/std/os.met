@@ -2,9 +2,9 @@ use std::ffi
 use std::posix
 use std::fs
 
-struct RunResult {
-    status Int
-    output Str
+pub struct RunResult {
+    pub status Int
+    pub output Str
 }
 
 let popen_mode = [U8('r'), 0][..]
@@ -19,7 +19,7 @@ extern c_chdir = fun chdir(dir ffi::Ptr<U8>) I32
     Return an `Err` only if we fail to start the program not if the
     program exits with a non-zero status code.
 ---
-fun shell(cmd []Str, @a Arena) !RunResult {
+pub fun shell(cmd []Str, @a Arena) !RunResult {
     let @local = Arena()
     let sb = StrBuilder.new(256, @local)
     sb.slice(cmd, " ")
@@ -61,7 +61,7 @@ fun shell(cmd []Str, @a Arena) !RunResult {
     Return an `Err` if we fail to start the program or if the program exits with
     a non-zero status code.
 ---
-fun shell_output(cmd []Str, @a Arena) !Str {
+pub fun shell_output(cmd []Str, @a Arena) !Str {
     let result = try shell(cmd, @a)
     if result.status != 0 {
         return Err("non-zero exit code")
@@ -74,7 +74,7 @@ fun shell_output(cmd []Str, @a Arena) !Str {
     Return an `Err` if we fail to start the program or if the program exits with
     a non-zero status code.
 ---
-fun shell_checked(cmd []Str, @a Arena) !void {
+pub fun shell_checked(cmd []Str, @a Arena) !void {
     let result = try shell(cmd, @a)
     if result.status != 0 {
         return Err("non-zero exit code")
@@ -82,10 +82,10 @@ fun shell_checked(cmd []Str, @a Arena) !void {
 }
 
 --- Change the current working directory of this process. ---
-fun chdir(dir fs::Path) !void {
+pub fun chdir(dir fs::Path) !void {
     let @local = Arena()
     posix::reset_errno()
-    let res = unsafe c_chdir(ffi::cstr(dir.raw, @local)) 
+    let res = unsafe c_chdir(ffi::cstr(dir.as_bytes(), @local)) 
     if res != 0 {
         return Err(posix::errno_str())
     }

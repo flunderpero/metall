@@ -85,6 +85,16 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 					)
 					return false
 				}
+				if reqField.Pub && !field.Pub {
+					e.diag(span, "type %s does not satisfy shape %s: field %s must be public",
+						concreteDisplay, shapeType.DeclName, field.Name)
+					return false
+				}
+				if !reqField.Pub && field.Pub {
+					e.diag(span, "type %s does not satisfy shape %s: field %s must not be public",
+						concreteDisplay, shapeType.DeclName, field.Name)
+					return false
+				}
 				if reqField.Mut && !field.Mut {
 					e.diag(span, "type %s does not satisfy shape %s: field %s must be mut",
 						concreteDisplay, shapeType.DeclName, field.Name)
@@ -134,6 +144,18 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 		}
 		e.debug.Print(0, "SatisfiesShape method=%s expected=%s concrete=%s",
 			methodName, e.FunTypeDisplay(expectedFunType), e.FunTypeDisplay(concreteFunType))
+		// Check pub modifier matches.
+		concretePub := e.declIsPub(binding.Decl)
+		if funDecl.Pub && !concretePub {
+			e.diag(span, "type %s does not satisfy shape %s: method %s must be public",
+				concreteDisplay, shapeType.DeclName, methodName)
+			return false
+		}
+		if !funDecl.Pub && concretePub {
+			e.diag(span, "type %s does not satisfy shape %s: method %s must not be public",
+				concreteDisplay, shapeType.DeclName, methodName)
+			return false
+		}
 		if !e.shapeMethodMatches(expectedFunType, concreteFunType) {
 			e.diag(span,
 				"type %s does not satisfy shape %s: method %s has signature %s, expected %s",
@@ -298,7 +320,12 @@ func (e *Engine) CheckShapeCompleteType(
 				return TypeDepFailed
 			}
 			fieldNode := base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind)
-			fields[i] = StructField{Name: fieldNode.Name.Name, Type: fieldTypeID, Mut: fieldNode.Mut}
+			fields[i] = StructField{
+				Name: fieldNode.Name.Name,
+				Type: fieldTypeID,
+				Pub:  fieldNode.Pub,
+				Mut:  fieldNode.Mut,
+			}
 		}
 		shapeType.Fields = fields
 		for _, funDeclNodeID := range shapeNode.Funs {

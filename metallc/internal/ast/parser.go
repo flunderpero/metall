@@ -88,38 +88,35 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 		if !ok {
 			return decls, result
 		}
-		switch t.Kind { //nolint:exhaustive
-		case token.Fun:
+		switch {
+		case p.lookAhead(token.Fun) ||
+			p.lookAhead(token.Unsafe, token.Fun) ||
+			p.lookAhead(token.Pub, token.Fun) ||
+			p.lookAhead(token.Pub, token.Unsafe, token.Fun):
 			if fun, ok := p.ParseFun(); ok {
 				decls = append(decls, fun)
 			}
-		case token.Struct:
+		case p.lookAhead(token.Struct) || p.lookAhead(token.Pub, token.Struct):
 			if struct_, ok := p.ParseStruct(); ok {
 				decls = append(decls, struct_)
 			}
-		case token.Shape:
+		case p.lookAhead(token.Shape) || p.lookAhead(token.Pub, token.Shape):
 			if shape, ok := p.ParseShape(); ok {
 				decls = append(decls, shape)
 			}
-		case token.Union:
+		case p.lookAhead(token.Union) || p.lookAhead(token.Pub, token.Union):
 			if union, ok := p.ParseUnion(); ok {
 				decls = append(decls, union)
 			}
-		case token.Unsafe:
-			p.next()
-			if fun, ok := p.ParseUnsafeFun(true); ok {
-				decls = append(decls, fun)
-			}
-		case token.Extern:
-			p.next()
+		case p.lookAhead(token.Extern) || p.lookAhead(token.Pub, token.Extern):
 			if decl, ok := p.ParseExternFun(); ok {
 				decls = append(decls, decl)
 			}
-		case token.Let:
+		case p.lookAhead(token.Let) || p.lookAhead(token.Pub, token.Let):
 			if v, ok := p.ParseVar(); ok {
 				decls = append(decls, v)
 			}
-		case token.Ident:
+		case t.Kind == token.Ident:
 			if expr, ok := p.ParseExpr(0); ok {
 				decls = append(decls, expr)
 			}
@@ -206,15 +203,20 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 }
 
 func (p *Parser) ParseFunDecl() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
 	decl, startSpan, ok := p.parseFunDecl()
 	if !ok {
 		return ParseFailed, false
 	}
 	return p.NewFunDecl(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType,
-		false, false, startSpan.Combine(p.span())), true
+		pub, false, false, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseExternFun() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
+	if _, ok := p.expect(token.Extern); !ok {
+		return ParseFailed, false
+	}
 	next, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
@@ -231,7 +233,7 @@ func (p *Parser) ParseExternFun() (NodeID, bool) {
 			return ParseFailed, false
 		}
 		return p.NewExternFunDecl(alias, decl.Name.Name, decl.TypeParams, decl.Params, decl.ReturnType,
-			startSpan.Combine(p.span())), true
+			pub, startSpan.Combine(p.span())), true
 	}
 	// Simple form: extern fun c_name(...)
 	decl, startSpan, ok := p.parseFunDecl()
@@ -239,14 +241,12 @@ func (p *Parser) ParseExternFun() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewExternFunDecl(decl.Name, decl.Name.Name, decl.TypeParams, decl.Params, decl.ReturnType,
-		startSpan.Combine(p.span())), true
+		pub, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFun() (NodeID, bool) {
-	return p.ParseUnsafeFun(false)
-}
-
-func (p *Parser) ParseUnsafeFun(unsafe bool) (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
+	unsafe := p.lookAheadConsume(token.Unsafe)
 	decl, startSpan, ok := p.parseFunDecl()
 	if !ok {
 		return ParseFailed, false
@@ -255,8 +255,8 @@ func (p *Parser) ParseUnsafeFun(unsafe bool) (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFun(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType, block, unsafe,
-		startSpan.Combine(p.span())), true
+	return p.NewFun(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType, block,
+		pub, unsafe, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseReturn() (NodeID, bool) {
@@ -283,7 +283,21 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 		}
 		span := t.Span
 		var name Name
+		pub := false
 		mut := false
+		if t.Kind == token.Pub {
+			// If `pub` is followed by a stop token, don't consume it --
+			// the caller handles it (e.g. `pub fun` in shapes).
+			if next, ok := p.mayPeek1(); ok && slices.Contains(stopAt, next.Kind) {
+				return fields, true
+			}
+			pub = true
+			p.next()
+			t, ok = p.mustPeek()
+			if !ok {
+				return nil, false
+			}
+		}
 		switch t.Kind { //nolint:exhaustive
 		case token.Ident, token.AllocatorIdent:
 			name = Name{t.Value, t.Span}
@@ -304,11 +318,12 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 		if !ok {
 			return nil, false
 		}
-		fields = append(fields, p.NewStructField(name, type_, mut, span.Combine(p.span())))
+		fields = append(fields, p.NewStructField(name, type_, pub, mut, span.Combine(p.span())))
 	}
 }
 
 func (p *Parser) ParseStruct() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
 	t, ok := p.expect(token.Struct)
 	if !ok {
 		return ParseFailed, false
@@ -336,10 +351,11 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if _, ok := p.expect(token.RCurly); !ok {
 		return ParseFailed, false
 	}
-	return p.NewStruct(name, typeParams, fields, t.Span.Combine(p.span())), true
+	return p.NewStruct(name, typeParams, fields, pub, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseShape() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
 	t, ok := p.expect(token.Shape)
 	if !ok {
 		return ParseFailed, false
@@ -356,10 +372,7 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 	if _, ok := p.expect(token.LCurly); !ok {
 		return ParseFailed, false
 	}
-	fields, ok := p.ParseStructFields(token.RCurly, token.Fun)
-	if !ok {
-		return ParseFailed, false
-	}
+	var fields []NodeID
 	var funs []NodeID
 	for {
 		next, ok := p.mayPeek()
@@ -370,16 +383,28 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 			p.next()
 			break
 		}
-		funDecl, ok := p.ParseFunDecl()
+		// `[pub] fun` -> method declaration.
+		// `[pub] [mut] <ident>` -> field.
+		if p.lookAhead(token.Fun) || p.lookAhead(token.Pub, token.Fun) {
+			funDecl, ok := p.ParseFunDecl()
+			if !ok {
+				return ParseFailed, false
+			}
+			funs = append(funs, funDecl)
+			continue
+		}
+		// Stop field parsing before `fun` or `pub fun` (which are methods).
+		parsed, ok := p.ParseStructFields(token.RCurly, token.Fun)
 		if !ok {
 			return ParseFailed, false
 		}
-		funs = append(funs, funDecl)
+		fields = append(fields, parsed...)
 	}
-	return p.NewShape(name, typeParams, fields, funs, t.Span.Combine(p.span())), true
+	return p.NewShape(name, typeParams, fields, funs, pub, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseUnion() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
 	t, ok := p.expect(token.Union)
 	if !ok {
 		return ParseFailed, false
@@ -417,7 +442,7 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 		p.diagnostic(p.span(), "union requires at least 2 variants")
 		return ParseFailed, false
 	}
-	return p.NewUnion(name, typeParams, variants, t.Span.Combine(p.span())), true
+	return p.NewUnion(name, typeParams, variants, pub, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
@@ -860,15 +885,11 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = var_
 	case token.Unsafe:
+		if p.lookAhead(token.Unsafe, token.Fun) {
+			return p.ParseFun()
+		}
 		p.next()
 		span := t.Span
-		next, ok := p.mustPeek()
-		if !ok {
-			return ParseFailed, false
-		}
-		if next.Kind == token.Fun {
-			return p.ParseUnsafeFun(true)
-		}
 		inner, ok := p.ParseExpr(0)
 		if !ok {
 			return ParseFailed, false
@@ -982,6 +1003,7 @@ func (p *Parser) ParseAllocatorVar(span base.Span) (NodeID, bool) {
 }
 
 func (p *Parser) ParseVar() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
 	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
@@ -1031,7 +1053,7 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewVar(name, type_, init, mut, span.Combine(p.span())), true
+	return p.NewVar(name, type_, init, pub, mut, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFunParams() ([]NodeID, bool) {
@@ -1801,7 +1823,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	}
 	return FunDecl{
 		Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
-		Builtin: false, Extern: false, Unsafe: false,
+		Pub: false, Builtin: false, Extern: false, Unsafe: false,
 	}, t.Span, true
 }
 
@@ -1865,7 +1887,7 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) { //nolint:funlen
 	span := t.Span.Combine(p.span())
 	name := fmt.Sprintf("__fun_lit_%d", p.nextFunLitID)
 	p.nextFunLitID++
-	funID := p.NewFun(Name{name, span}, nil, params, returnType, body, false, span)
+	funID := p.NewFun(Name{name, span}, nil, params, returnType, body, false, false, span)
 	if len(captures) > 0 {
 		node := p.Node(funID)
 		fun, _ := node.Kind.(Fun)
@@ -1919,6 +1941,30 @@ func (p *Parser) mayPeek1() (*token.Token, bool) {
 		return nil, false
 	}
 	return &p.tokens[p.pos+1], true
+}
+
+// lookAhead checks whether the next tokens match the given kinds.
+func (p *Parser) lookAhead(kinds ...token.TokenKind) bool {
+	for i, kind := range kinds {
+		pos := p.pos + i
+		if pos >= len(p.tokens) || p.tokens[pos].Kind == token.EOF {
+			return false
+		}
+		if p.tokens[pos].Kind != kind {
+			return false
+		}
+	}
+	return true
+}
+
+// lookAheadConsume checks whether the next tokens match the given kinds
+// and consumes them if they do.
+func (p *Parser) lookAheadConsume(kinds ...token.TokenKind) bool {
+	if !p.lookAhead(kinds...) {
+		return false
+	}
+	p.pos += len(kinds)
+	return true
 }
 
 // Same as `peek()` but adds a diagnostic if there are no more tokens.

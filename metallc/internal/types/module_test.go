@@ -14,10 +14,11 @@ import (
 
 // moduleFilePaths maps module tags to their file system paths.
 var moduleFilePaths = map[string]string{ //nolint:gochecknoglobals
-	"lib":     "lib/lib.met",
-	"generic": "lib/generic.met",
-	"local":   "local/hello.met",
-	"shapes":  "lib/shapes.met",
+	"lib":      "lib/lib.met",
+	"lib_test": "lib/lib_test.met",
+	"generic":  "lib/generic.met",
+	"local":    "local/hello.met",
+	"shapes":   "lib/shapes.met",
 }
 
 // moduleContents is populated by the setup test case from the MD file.

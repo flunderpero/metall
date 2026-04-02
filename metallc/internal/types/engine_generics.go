@@ -681,7 +681,12 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 					return TypeDepFailed
 				}
 				fieldNode := base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind)
-				fields[i] = StructField{Name: fieldNode.Name.Name, Type: fieldTypeID, Mut: fieldNode.Mut}
+				fields[i] = StructField{
+					Name: fieldNode.Name.Name,
+					Type: fieldTypeID,
+					Pub:  fieldNode.Pub,
+					Mut:  fieldNode.Mut,
+				}
 			}
 			resolved = StructType{Name: inst.Name, Fields: fields, TypeArgs: argTypeIDs}
 		case ast.Union:
@@ -705,7 +710,12 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 					return TypeDepFailed
 				}
 				fieldNode := base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind)
-				fields[i] = StructField{Name: fieldNode.Name.Name, Type: fieldTypeID, Mut: fieldNode.Mut}
+				fields[i] = StructField{
+					Name: fieldNode.Name.Name,
+					Type: fieldTypeID,
+					Pub:  fieldNode.Pub,
+					Mut:  fieldNode.Mut,
+				}
 			}
 			resolved = ShapeType{Name: decl.name, DeclName: decl.declName, Fields: fields, TypeArgs: argTypeIDs}
 			typeID = e.env.newType(resolved, decl.declNodeID, declNode.Span, TypeOK)

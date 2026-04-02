@@ -2110,8 +2110,8 @@ test.met:7:9: reference escaping its allocation scope (via block result)
 ```
 
 ```module.lib
-fun safe(a &Int) &Int { a }
-fun leaky(a &Int) &Int {
+pub fun safe(a &Int) &Int { a }
+pub fun leaky(a &Int) &Int {
     mut local = 42
     &local
 }
