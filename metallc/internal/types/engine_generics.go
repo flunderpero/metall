@@ -685,7 +685,6 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 					Name: fieldNode.Name.Name,
 					Type: fieldTypeID,
 					Pub:  fieldNode.Pub,
-					Mut:  fieldNode.Mut,
 				}
 			}
 			resolved = StructType{Name: inst.Name, Fields: fields, TypeArgs: argTypeIDs}
@@ -714,7 +713,6 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 					Name: fieldNode.Name.Name,
 					Type: fieldTypeID,
 					Pub:  fieldNode.Pub,
-					Mut:  fieldNode.Mut,
 				}
 			}
 			resolved = ShapeType{Name: decl.name, DeclName: decl.declName, Fields: fields, TypeArgs: argTypeIDs}

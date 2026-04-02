@@ -190,7 +190,7 @@ test.met:7:15: reference escaping its allocation scope (via deref assignment)
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     mut x = 123
     mut y = Foo(&x)
     {
@@ -212,7 +212,7 @@ test.met:7:17: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     mut x = 123
     mut y = 456
     mut z = Foo(&x)
@@ -955,7 +955,7 @@ test.met:4:18: reference escaping its allocation scope (via block result)
 
 ```metall
 {
-    struct Wrapper { mut one &Int }
+    struct Wrapper { one &Int }
     mut x = 123
     mut y = [Wrapper(&x)]
     {
@@ -977,7 +977,7 @@ test.met:7:20: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    struct Wrapper { mut one &Int }
+    struct Wrapper { one &Int }
     mut x = 123
     mut y = 456
     mut z = [Wrapper(&x)]
@@ -992,7 +992,7 @@ test.met:7:20: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    struct Foo { mut one [1]&mut Int }
+    struct Foo { one [1]&mut Int }
     mut x = 123
     mut y = Foo([&mut x])
     {
@@ -1014,7 +1014,7 @@ test.met:7:20: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    struct Foo { mut one [1]&mut Int }
+    struct Foo { one [1]&mut Int }
     mut x = 123
     mut y = 456
     mut z = Foo([&mut x])
@@ -1267,7 +1267,7 @@ test.met:5:9: reference escaping its allocation scope (via block result)
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     fun foo(a &mut Foo, b &Int) void {
         a.one = b
     }
@@ -1292,7 +1292,7 @@ test.met:10:21: reference escaping its allocation scope (via mutation of outer v
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     fun identity(a &mut Foo) &mut Foo { a }
     mut x = 42
     mut y = Foo(&mut x)
@@ -1316,7 +1316,7 @@ test.met:9:17: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     fun identity(a &mut Foo) &mut Foo { a }
     mut x = 12742
     mut y = Foo(&mut x)
@@ -1340,7 +1340,7 @@ test.met:9:17: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     fun foo(a &mut Foo, b &Int) void { a.one = b }
     let @myalloc = Arena()
     mut x = 1
@@ -1364,7 +1364,7 @@ test.met:9:16: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     fun foo(a &mut Foo, b &Int) void {
         bar(a, b)
     }
@@ -1437,7 +1437,7 @@ test.met:4:9: reference escaping its allocation scope (via block result)
 ```metall
 {
     struct Foo {
-        mut one &Int
+        one &Int
     }
 
     fun foo(a &mut Foo, b &Int) Int {
@@ -1473,7 +1473,7 @@ test.met:21:21: reference escaping its allocation scope (via mutation of outer v
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     fun identity(a &mut Foo) &mut Foo { a }
     fun foo(a &mut Foo, b &Int) void { a.one = b }
 
@@ -1498,7 +1498,7 @@ test.met:10:31: reference escaping its allocation scope (via mutation of outer v
 
 ```metall
 {
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     mut x = 12742
     mut y = Foo(&mut x)
     mut z = &mut y
@@ -1523,7 +1523,7 @@ test.met:9:21: reference escaping its allocation scope (via deref assignment)
 
 ```metall
 {
-    struct Foo { mut one &mut &Int }
+    struct Foo { one &mut &Int }
     mut x = 12742
     mut y = &x
     mut z = Foo(&mut y)
@@ -1546,7 +1546,7 @@ test.met:8:19: reference escaping its allocation scope (via deref assignment)
 
 ```metall
 {
-    struct Foo { mut one Str  mut two &Int }
+    struct Foo { one Str  two &Int }
     mut x = 12742
     mut y = Foo("hello", &x)
     {
@@ -2436,7 +2436,7 @@ test.met:7:54: reference escaping its allocation scope (via block result)
 ```metall
 {
     shape Shape {
-        mut one &Int
+        one &Int
     }
 
     fun foo<T Shape>(s &mut T) void {
@@ -2458,9 +2458,9 @@ test.met:8:17: reference escaping its allocation scope (via mutation of outer va
 
 ```metall
 {
-    shape HasRef { mut one &Int }
-    struct Foo { mut one &Int }
-    struct Bar { mut one &Int }
+    shape HasRef { one &Int }
+    struct Foo { one &Int }
+    struct Bar { one &Int }
     fun baz<T HasRef>(t &mut T, b &Int) void { t.one = b }
     mut x = 42
     mut foo = Foo(&mut x)
@@ -2485,7 +2485,7 @@ test.met:10:28: reference escaping its allocation scope (via mutation of outer v
 {
     shape HasRef { one &Int }
     struct Foo { one &Int }
-    struct Bar { mut one &Int }
+    struct Bar { one &Int }
     fun baz<T HasRef>(t T, b &mut Bar) void { b.one = b.one }
     let x = 42
     mut y = Bar(&x)
@@ -2505,7 +2505,7 @@ test.met:10:28: reference escaping its allocation scope (via mutation of outer v
 {
     shape HasRef { one &Int }
     struct Foo { one &Int }
-    struct Bar { mut one &Int }
+    struct Bar { one &Int }
     fun baz<T HasRef>(t T, b &mut Bar) void { b.one = t.one }
     let x = 42
     mut y = Bar(&x)
@@ -2532,7 +2532,7 @@ test.met:10:22: reference escaping its allocation scope (via mutation of outer v
         fun S.do(s &mut S, x []Int) void
     }
 
-    struct Foo { mut n Int }
+    struct Foo { n Int }
 
     fun Foo.do(f &mut Foo, x []Int) void {
         f.n = x.len
@@ -2558,7 +2558,7 @@ test.met:10:22: reference escaping its allocation scope (via mutation of outer v
     shape S {
         fun S.do(s &mut S, x &Int) void
     }
-    struct Foo { mut one &Int }
+    struct Foo { one &Int }
     fun Foo.do(f &mut Foo, x &Int) void {
         f.one = x
     }
@@ -2574,7 +2574,7 @@ test.met:10:22: reference escaping its allocation scope (via mutation of outer v
 
 ```error
 test.met:6:5: method Foo.do violates shape S contract: parameter x flows into parameter f
-        struct Foo { mut one &Int }
+        struct Foo { one &Int }
         fun Foo.do(f &mut Foo, x &Int) void {
         ^
             f.one = x
@@ -2590,7 +2590,7 @@ test.met:6:5: method Foo.do violates shape S contract: parameter x flows into pa
     shape S {
         fun S.do(s &mut S, x &Int) void
     }
-    struct Foo { mut n Int }
+    struct Foo { n Int }
     fun Foo.do(f &mut Foo, x &Int) void {
         f.n = 1
     }

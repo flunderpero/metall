@@ -177,7 +177,6 @@ type StructField struct {
 	Name Name
 	Type NodeID
 	Pub  bool
-	Mut  bool
 }
 
 func (StructField) isKind() {}
@@ -627,8 +626,8 @@ func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, pub boo
 	)
 }
 
-func (a *AST) NewStructField(name Name, type_ NodeID, pub bool, mut bool, span base.Span) NodeID {
-	return a.node(StructField{Name: name, Type: type_, Pub: pub, Mut: mut}, span)
+func (a *AST) NewStructField(name Name, type_ NodeID, pub bool, span base.Span) NodeID {
+	return a.node(StructField{Name: name, Type: type_, Pub: pub}, span)
 }
 
 func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, span base.Span) NodeID {
@@ -1287,9 +1286,6 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if kind.Pub {
 			addAttr("pub", "true")
-		}
-		if kind.Mut {
-			addAttr("mut", "true")
 		}
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))

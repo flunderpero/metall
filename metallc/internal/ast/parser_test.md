@@ -574,14 +574,14 @@ When(cases=2)
 **Struct declaration**
 
 ```metall
-struct Foo { one Str mut two Int }
+struct Foo { one Str pub two Int }
 ```
 
 ```ast
 Struct(name="Foo")
   fields[0]=StructField(name="one")
     type=SimpleType(name="Str")
-  fields[1]=StructField(name="two",mut=true)
+  fields[1]=StructField(name="two",pub=true)
     type=SimpleType(name="Int")
 ```
 
@@ -597,10 +597,10 @@ Struct(name="Foo")
     type=SimpleType(name="Arena")
 ```
 
-**Pub struct with pub and pub mut fields**
+**Pub struct with pub fields**
 
 ```metall module
-pub struct Foo { pub one Str pub mut two Int three Bool }
+pub struct Foo { pub one Str pub two Int three Bool }
 ```
 
 ```ast
@@ -608,7 +608,7 @@ Module(fileName="test.met",name="test",main=true)
   decls=Struct(name="Foo",pub=true)
     fields[0]=StructField(name="one",pub=true)
       type=SimpleType(name="Str")
-    fields[1]=StructField(name="two",pub=true,mut=true)
+    fields[1]=StructField(name="two",pub=true)
       type=SimpleType(name="Int")
     fields[2]=StructField(name="three")
       type=SimpleType(name="Bool")

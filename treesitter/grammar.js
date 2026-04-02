@@ -195,7 +195,6 @@ module.exports = grammar({
     struct_field: ($) =>
       seq(
         optional("pub"),
-        optional("mut"),
         field("name", choice($.identifier, $.allocator_identifier)),
         field("type", $._type),
       ),

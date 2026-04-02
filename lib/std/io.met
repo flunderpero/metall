@@ -25,7 +25,7 @@ pub shape ReaderCloser<T> {
 
 pub struct Buffer<T> {
     data &mut list::List<T>
-    mut read_pos Int
+    read_pos Int
 }
 
 pub fun Buffer.new<T>(initial_capacity Int, @a Arena) &mut Buffer<T> {

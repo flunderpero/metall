@@ -10,7 +10,7 @@ struct Test {
 
 pub struct Suite {
     name Str
-    mut bail Bool
+    bail Bool
     tests &mut list::List<Test>
 }
 

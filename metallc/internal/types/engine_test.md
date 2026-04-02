@@ -925,7 +925,7 @@ struct01 = Foo { one Str }
 **Field write access**
 
 ```metall
-{ struct Foo { mut one Str } mut x = Foo("hello") x.one = "bye" }
+{ struct Foo { one Str } mut x = Foo("hello") x.one = "bye" }
 ```
 
 ```types
@@ -942,13 +942,13 @@ Block: void
       Ident: struct01
     String: Str
 ---
-struct01 = Foo { mut one Str }
+struct01 = Foo { one Str }
 ```
 
 **Field write through mut ref param**
 
 ```metall
-{ struct Foo { mut one Str } fun foo(a &mut Foo) void { a.one = "X" } mut x = Foo("hello") foo(&mut x) }
+{ struct Foo { one Str } fun foo(a &mut Foo) void { a.one = "X" } mut x = Foo("hello") foo(&mut x) }
 ```
 
 ```types
@@ -975,14 +975,14 @@ Block: void
     Ref: &mut struct01
       Ident: struct01
 ---
-struct01 = Foo { mut one Str }
+struct01 = Foo { one Str }
 fun01    = fun(&mut struct01) void
 ```
 
 **Nested field write on mut struct**
 
 ```metall
-{ struct Foo { mut one Int } struct Bar { mut one Foo } mut x = Bar(Foo(1)) x.one.one = 2 }
+{ struct Foo { one Int } struct Bar { one Foo } mut x = Bar(Foo(1)) x.one.one = 2 }
 ```
 
 ```types
@@ -1005,14 +1005,14 @@ Block: void
         Ident: struct02
     Int: Int
 ---
-struct01 = Foo { mut one Int }
-struct02 = Bar { mut one struct01 }
+struct01 = Foo { one Int }
+struct02 = Bar { one struct01 }
 ```
 
 **Field write through let binding of mut ref**
 
 ```metall
-{ struct Foo { mut one Str } mut x = Foo("hello") let y = &mut x y.one = "X" }
+{ struct Foo { one Str } mut x = Foo("hello") let y = &mut x y.one = "X" }
 ```
 
 ```types
@@ -1032,7 +1032,7 @@ Block: void
       Ident: &mut struct01
     String: Str
 ---
-struct01 = Foo { mut one Str }
+struct01 = Foo { one Str }
 ```
 
 ## Unions
@@ -2144,10 +2144,10 @@ Block: &Int
   Ident: &Int
 ```
 
-**Mut ref of mut field**
+**Mutable reference to struct field**
 
 ```metall
-{ struct Foo { mut one Int } mut x = Foo(42) let y = &mut x.one y }
+{ struct Foo { one Int } mut x = Foo(42) let y = &mut x.one y }
 ```
 
 ```types
@@ -2165,7 +2165,7 @@ Block: &mut Int
         Ident: struct01
   Ident: &mut Int
 ---
-struct01 = Foo { mut one Int }
+struct01 = Foo { one Int }
 ```
 
 **Deref**
@@ -2411,10 +2411,10 @@ Block: void
 struct01 = Foo { one &mut Int }
 ```
 
-**Reassign mut field of mut ref type**
+**Reassign field of mutable ref type**
 
 ```metall
-{ struct Foo { mut one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &mut y z.one.* = 99 }
+{ struct Foo { one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &mut y z.one.* = 99 }
 ```
 
 ```types
@@ -2443,7 +2443,7 @@ Block: void
         Ident: struct01
     Int: Int
 ---
-struct01 = Foo { mut one &mut Int }
+struct01 = Foo { one &mut Int }
 ```
 
 ## Forward declaration and recursion
@@ -4142,7 +4142,7 @@ fun01    = fun(struct01) Int
 **Method call with args**
 
 ```metall
-{ struct Foo { mut one Int } fun Foo.add(f Foo, n Int) Int { f.one + n } let x = Foo(10) x.add(5) }
+{ struct Foo { one Int } fun Foo.add(f Foo, n Int) Int { f.one + n } let x = Foo(10) x.add(5) }
 ```
 
 ```types
@@ -4170,7 +4170,7 @@ Block: Int
       Ident: struct01
     Int: Int
 ---
-struct01 = Foo { mut one Int }
+struct01 = Foo { one Int }
 fun01    = fun(struct01, Int) Int
 ```
 
@@ -6509,7 +6509,7 @@ fun03    = fun(struct01) Int
     shape Iter<T> {
         fun Iter.next(it &mut Iter) ?T
     }
-    struct Nums { mut i Int }
+    struct Nums { i Int }
     fun Nums.next(n &mut Nums) ?Int { let v = n.i n.i = n.i + 1 Option(v) }
     fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
     mut n = Nums(0)
@@ -6578,7 +6578,7 @@ Block: union01
 struct01 = None {  }
 union01  = Option<Int> = Int | struct01
 shape01  = Iter {  }
-struct02 = Nums { mut i Int }
+struct02 = Nums { i Int }
 fun01    = fun(&mut struct02) union01
 union02  = Option<E> = E | struct01
 fun02    = fun(&mut T) union02
@@ -6594,7 +6594,7 @@ fun04    = fun(&mut struct02) union01
     shape Iter<T> {
         fun Iter.next(it &mut Iter) ?T
     }
-    struct Nums { mut i Int }
+    struct Nums { i Int }
     fun Nums.next(n &mut Nums) ?Int { let v = n.i n.i = n.i + 1 Option(v) }
     fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
     mut n = Nums(0)
@@ -6661,7 +6661,7 @@ Block: union01
 struct01 = None {  }
 union01  = Option<Int> = Int | struct01
 shape01  = Iter {  }
-struct02 = Nums { mut i Int }
+struct02 = Nums { i Int }
 fun01    = fun(&mut struct02) union01
 union02  = Option<E> = E | struct01
 fun02    = fun(&mut T) union02
@@ -7968,91 +7968,55 @@ test.met:1:23: cannot take mutable reference to immutable value
                           ^^^^^^
 ```
 
-**&mut of immutable field**
-
-```metall
-{ struct Foo { one Int } mut x = Foo(42) let y = &mut x.one }
-```
-
-```error
-test.met:1:50: cannot take mutable reference to immutable value
-    { struct Foo { one Int } mut x = Foo(42) let y = &mut x.one }
-                                                     ^^^^^^^^^^
-```
-
 **Field write on let binding**
 
 ```metall
-{ struct Foo{mut one Str} let x = Foo("hello") x.one = "bye" }
+{ struct Foo{one Str} let x = Foo("hello") x.one = "bye" }
 ```
 
 ```error
-test.met:1:48: cannot assign to field of immutable value
-    { struct Foo{mut one Str} let x = Foo("hello") x.one = "bye" }
-                                                   ^^^^^
+test.met:1:44: cannot assign to field of immutable value
+    { struct Foo{one Str} let x = Foo("hello") x.one = "bye" }
+                                               ^^^^^
 ```
 
 **Nested field write on let binding**
 
 ```metall
-{ struct Foo{mut one Int} struct Bar{mut one Foo} let x = Bar(Foo(1)) x.one.one = 2 }
+{ struct Foo{one Int} struct Bar{one Foo} let x = Bar(Foo(1)) x.one.one = 2 }
 ```
 
 ```error
-test.met:1:71: cannot assign to field of immutable value
-    { struct Foo{mut one Int} struct Bar{mut one Foo} let x = Bar(Foo(1)) x.one.one = 2 }
-                                                                          ^^^^^^^^^
-```
-
-**Nested field write through non-mut field**
-
-```metall
-{ struct Foo{mut one Int} struct Bar{one Foo} mut x = Bar(Foo(1)) x.one.one = 2 }
-```
-
-```error
-test.met:1:67: cannot assign to field of immutable value
-    { struct Foo{mut one Int} struct Bar{one Foo} mut x = Bar(Foo(1)) x.one.one = 2 }
-                                                                      ^^^^^^^^^
+test.met:1:63: cannot assign to field of immutable value
+    { struct Foo{one Int} struct Bar{one Foo} let x = Bar(Foo(1)) x.one.one = 2 }
+                                                                  ^^^^^^^^^
 ```
 
 **Field write through immutable ref**
 
 ```metall
-{ struct Foo{mut one Str} let x = Foo("hello") let y = &x y.one = "X" }
+{ struct Foo{one Str} let x = Foo("hello") let y = &x y.one = "X" }
 ```
 
 ```error
-test.met:1:59: cannot assign to field of immutable value
-    { struct Foo{mut one Str} let x = Foo("hello") let y = &x y.one = "X" }
-                                                              ^^^^^
+test.met:1:55: cannot assign to field of immutable value
+    { struct Foo{one Str} let x = Foo("hello") let y = &x y.one = "X" }
+                                                          ^^^^^
 ```
 
 **Field write through immutable ref param**
 
 ```metall
-{ struct Foo{mut one Str} fun foo(a &Foo) void { a.one = "X" } }
+{ struct Foo{one Str} fun foo(a &Foo) void { a.one = "X" } }
 ```
 
 ```error
-test.met:1:50: cannot assign to field of immutable value
-    { struct Foo{mut one Str} fun foo(a &Foo) void { a.one = "X" } }
-                                                     ^^^^^
+test.met:1:46: cannot assign to field of immutable value
+    { struct Foo{one Str} fun foo(a &Foo) void { a.one = "X" } }
+                                                 ^^^^^
 ```
 
-**Field write on non-mut field**
-
-```metall
-{ struct Foo { one Str } mut x = Foo("hi") x.one = "bye" }
-```
-
-```error
-test.met:1:44: cannot assign to immutable field: one
-    { struct Foo { one Str } mut x = Foo("hi") x.one = "bye" }
-                                               ^^^^^
-```
-
-**Pass &ref where &mut field expected**
+**Pass &ref where field type is &mut**
 
 ```metall
 { struct Foo { one &mut Int } let x = 123 let y = Foo(&x) }
@@ -8076,16 +8040,16 @@ test.met:1:55: cannot assign through dereference: expected mutable reference, go
                                                           ^^^^^^^
 ```
 
-**Reassign non-mut &mut field**
+**Assign &ref to field of type &mut**
 
 ```metall
 { struct Foo { one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &y }
 ```
 
 ```error
-test.met:1:71: cannot assign to immutable field: one
+test.met:1:79: type mismatch: expected &mut Int, got &Int
     { struct Foo { one &mut Int } mut x = 1 mut y = 2 mut z = Foo(&mut x) z.one = &y }
-                                                                          ^^^^^
+                                                                                  ^^
 ```
 
 **Reassign &mut param**
@@ -8771,17 +8735,6 @@ test.met:1:108: type Foo does not satisfy shape HasPair: field two has type Str,
                                                                                                                ^^^^^^^^^^
 ```
 
-**Shape not satisfied field not mut**
-
-```metall
-{ shape S { mut one Int } struct Foo { one Int } fun foo<T S>(t T) Int { t.one } foo<Foo>(Foo(1)) }
-```
-
-```error
-test.met:1:82: type Foo does not satisfy shape S: field one must be mut
-    { shape S { mut one Int } struct Foo { one Int } fun foo<T S>(t T) Int { t.one } foo<Foo>(Foo(1)) }
-                                                                                     ^^^^^^^^
-```
 
 **Shape not satisfied ref vs mut ref**
 
@@ -9093,21 +9046,6 @@ test.met:2:5: symbol already defined: x
     fun main() void {}
 ```
 
-**Module-level let with struct with mut field is rejected**
-
-```metall module
-struct Foo { mut one Int }
-let x = Foo(42)
-fun main() void {}
-```
-
-```error
-test.met:2:9: module-level constants cannot contain mutable fields or references
-    struct Foo { mut one Int }
-    let x = Foo(42)
-            ^^^^^^^
-    fun main() void {}
-```
 
 **Module-level let with type coercion is allowed**
 
@@ -9404,33 +9342,6 @@ fun main() void { foo<Foo>(Foo(1, "hi")) }
 ```error
 ```
 
-**Shape with pub mut field**
-
-```metall module
-shape HasMut { pub mut x Int }
-struct Foo { pub mut x Int }
-fun foo<T HasMut>(t T) void {}
-fun main() void { foo<Foo>(Foo(1)) }
-```
-
-```error
-```
-
-**Shape requires pub mut, struct has pub but not mut**
-
-```metall module
-shape HasMut { pub mut x Int }
-struct Foo { pub x Int }
-fun foo<T HasMut>(t T) void {}
-fun main() void { foo<Foo>(Foo(1)) }
-```
-
-```error
-test.met:4:19: type test.Foo does not satisfy shape HasMut: field x must be mut
-    fun foo<T HasMut>(t T) void {}
-    fun main() void { foo<Foo>(Foo(1)) }
-                      ^^^^^^^^
-```
 
 **Pub union with pub variants is ok**
 

@@ -53,8 +53,8 @@ pub fun Path.fmt(p Path, sb &mut StrBuilder) void {
 }
 
 pub struct File {
-    mut file_ptr ffi::PtrMut<void>
-    mut closed Bool
+    file_ptr ffi::PtrMut<void>
+    closed Bool
 }
 
 --- Open a file.

@@ -85,7 +85,7 @@ pub fun any<A, I Iter<A>>(it &mut I, f fun(A) Bool) Bool {
 pub struct ChainIter<A, I1 Iter<A>, I2 Iter<A>> {
     it1 &mut I1
     it2 &mut I2
-    mut use1 Bool
+    use1 Bool
 }
 
 pub fun ChainIter.next<A, I1 Iter<A>, I2 Iter<A>>(it &mut ChainIter<A, I1, I2>) ?A {
@@ -132,7 +132,7 @@ pub fun fold<A, B, I Iter<A>>(it &mut I, initial B, f fun(B, A) B) B {
 
 pub struct PeekIter<A, I Iter<A>> {
     it &mut I
-    mut peeked ?A
+    peeked ?A
 }
 
 pub fun PeekIter.peek<A, I Iter<A>>(p &mut PeekIter<A, I>) ?A {
@@ -165,7 +165,7 @@ pub fun peekable<A, I Iter<A>>(it &mut I) PeekIter<A, I> {
 
 pub struct TakeIter<A, I Iter<A>> {
     it &mut I
-    mut left Int
+    left Int
 }
 
 pub fun TakeIter.next<A, I Iter<A>>(t &mut TakeIter<A, I>) ?A {

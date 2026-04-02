@@ -294,7 +294,7 @@ func (r *compTypeRenderer) renderStruct(kind StructType, span base.Span) (string
 		}
 		val := r.letTyped("comp::Type", fExpr)
 		ref := r.let(fmt.Sprintf("@a.new(%s)", val))
-		fields = append(fields, fmt.Sprintf("comp::Field(%q, %s, %t)", f.Name, ref, f.Mut))
+		fields = append(fields, fmt.Sprintf("comp::Field(%q, %s, false)", f.Name, ref))
 	}
 	return fmt.Sprintf(
 		"comp::StructType(%q, [%s][..])", shortName(kind.Name), strings.Join(fields, ", "),

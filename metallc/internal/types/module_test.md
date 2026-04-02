@@ -8,6 +8,9 @@
 ```module.lib
 pub struct Point { pub x Int pub y Int }
 pub struct Secret { hidden Int }
+pub struct RefHolder { pub r &mut Int }
+pub fun make_mixed() Mixed { Mixed(1, 2) }
+pub struct Mixed { pub visible Int internal Int }
 pub fun get_lib() Int { 42 }
 pub fun Point.sum(p Point) Int { p.x + p.y }
 fun internal_helper() Int { 99 }
@@ -494,4 +497,54 @@ test.met:2:23: lib::private_const is not public
     use lib
     fun main() void { _ = lib::private_const }
                           ^^^^^^^^^^^^^^^^^^
+```
+
+**can write through pub &mut field from outside module**
+
+```metall
+use lib
+
+fun main() void {
+    mut x = 42
+    let h = lib::RefHolder(&mut x)
+    h.r.* = 99
+}
+```
+
+```error
+```
+
+**can reassign pub field from outside module with mutable container**
+
+```metall
+use lib
+
+fun main() void {
+    mut x = 42
+    mut y = 99
+    mut h = lib::RefHolder(&mut x)
+    h.r = &mut y
+}
+```
+
+```error
+```
+
+**cannot access non-pub field from outside module**
+
+```metall
+use lib
+
+fun main() void {
+    mut m = lib::make_mixed()
+    m.internal = 99
+}
+```
+
+```error
+test.met:5:7: field lib.Mixed.internal is not public
+        mut m = lib::make_mixed()
+        m.internal = 99
+          ^^^^^^^^
+    }
 ```

@@ -284,7 +284,6 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 		span := t.Span
 		var name Name
 		pub := false
-		mut := false
 		if t.Kind == token.Pub {
 			// If `pub` is followed by a stop token, don't consume it --
 			// the caller handles it (e.g. `pub fun` in shapes).
@@ -302,14 +301,6 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 		case token.Ident, token.AllocatorIdent:
 			name = Name{t.Value, t.Span}
 			p.next()
-		case token.Mut:
-			mut = true
-			p.next()
-			nt, ok := p.expect(token.Ident)
-			if !ok {
-				return nil, false
-			}
-			name = Name{nt.Value, nt.Span}
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
 			return nil, false
@@ -318,7 +309,7 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 		if !ok {
 			return nil, false
 		}
-		fields = append(fields, p.NewStructField(name, type_, pub, mut, span.Combine(p.span())))
+		fields = append(fields, p.NewStructField(name, type_, pub, span.Combine(p.span())))
 	}
 }
 

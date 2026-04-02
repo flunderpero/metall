@@ -95,11 +95,6 @@ func (e *Engine) SatisfiesShape( //nolint:funlen
 						concreteDisplay, shapeType.DeclName, field.Name)
 					return false
 				}
-				if reqField.Mut && !field.Mut {
-					e.diag(span, "type %s does not satisfy shape %s: field %s must be mut",
-						concreteDisplay, shapeType.DeclName, field.Name)
-					return false
-				}
 				break
 			}
 			if !matched {
@@ -324,7 +319,6 @@ func (e *Engine) CheckShapeCompleteType(
 				Name: fieldNode.Name.Name,
 				Type: fieldTypeID,
 				Pub:  fieldNode.Pub,
-				Mut:  fieldNode.Mut,
 			}
 		}
 		shapeType.Fields = fields

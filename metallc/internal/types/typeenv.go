@@ -376,7 +376,7 @@ func (e *TypeEnv) containsMutablePart(typeID TypeID) bool {
 		return kind.Mut || e.containsMutablePart(kind.Type)
 	case StructType:
 		for _, field := range kind.Fields {
-			if field.Mut || e.containsMutablePart(field.Type) {
+			if e.containsMutablePart(field.Type) {
 				return true
 			}
 		}

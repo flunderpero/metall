@@ -1,11 +1,7 @@
 --- A re-allocating array list. ---
 pub struct List<T> {
-    -- todo: This is bad API design. We use the .len field to determine the length as a public API.
-    --       But .len is mutable!
-    pub mut len Int
-
-    -- private fields 
-    mut data []mut T 
+    pub len Int
+    data []mut T 
     @a Arena
 }
 

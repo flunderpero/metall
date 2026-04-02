@@ -1335,7 +1335,7 @@ func (e *Engine) checkModule( //nolint:funlen
 		typeID := e.env.TypeOfNode(varNode.Expr).ID
 		if e.env.containsMutablePart(typeID) {
 			exprSpan := e.ast.Node(varNode.Expr).Span
-			e.diag(exprSpan, "module-level constants cannot contain mutable fields or references")
+			e.diag(exprSpan, "module-level constants cannot contain mutable references or slices")
 			depFailed = true
 			continue
 		}
@@ -1665,7 +1665,7 @@ func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType Struc
 			return TypeDepFailed, structType
 		}
 		fieldNode := base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind)
-		fields[i] = StructField{Name: fieldNode.Name.Name, Type: fieldTypeID, Pub: fieldNode.Pub, Mut: fieldNode.Mut}
+		fields[i] = StructField{Name: fieldNode.Name.Name, Type: fieldTypeID, Pub: fieldNode.Pub}
 	}
 	structType.Fields = fields
 	return TypeOK, structType
@@ -2247,7 +2247,7 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 			_, containerMut = e.isPlaceMutable(kind.Target)
 		}
 		if containerMut {
-			e.diag(node.Span, "cannot assign to immutable field: %s", kind.Field.Name)
+			e.diag(node.Span, "cannot assign to non-public field: %s", kind.Field.Name)
 		} else {
 			e.diag(node.Span, "cannot assign to field of immutable value")
 		}
@@ -2342,7 +2342,9 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 		}
 		for _, field := range fields {
 			if field.Name == kind.Field.Name {
-				return typeID, field.Mut
+				// Same module: all fields are mutable.
+				// Cross-module: only pub fields are mutable.
+				return typeID, e.isVisible(e.env.DeclNode(structTypeID), field.Pub, nodeID)
 			}
 		}
 		return typeID, false

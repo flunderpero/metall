@@ -88,7 +88,6 @@ type StructField struct {
 	Name string
 	Type TypeID
 	Pub  bool
-	Mut  bool
 }
 
 type StructType struct {

@@ -28,14 +28,14 @@
 use std::ffi
 
 struct ArenaAllocator {
-    mut first_page ffi::PtrMut<U8>
-    mut page_start ffi::PtrMut<U8>
-    mut page_end ffi::PtrMut<U8>
-    mut bump ffi::PtrMut<U8>
+    first_page ffi::PtrMut<U8>
+    page_start ffi::PtrMut<U8>
+    page_end ffi::PtrMut<U8>
+    bump ffi::PtrMut<U8>
 
-    mut max_page_size Int
-    mut next_page_size Int
-    mut debug_enabled Bool
+    max_page_size Int
+    next_page_size Int
+    debug_enabled Bool
 }
 
 extern fun malloc(size Int) ffi::PtrMut<U8>

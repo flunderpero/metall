@@ -340,9 +340,6 @@ func (d *debugTypes) structDetailWithID(kind StructType, typeID TypeID) string {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		if f.Mut {
-			sb.WriteString("mut ")
-		}
 		sb.WriteString(f.Name)
 		sb.WriteString(" ")
 		sb.WriteString(d.typeLabelForID(f.Type))
@@ -406,9 +403,6 @@ func (d *debugTypes) shapeDetail(kind ShapeType) string {
 	for i, f := range kind.Fields {
 		if i > 0 {
 			sb.WriteString(", ")
-		}
-		if f.Mut {
-			sb.WriteString("mut ")
 		}
 		sb.WriteString(f.Name)
 		sb.WriteString(" ")

@@ -33,8 +33,8 @@ fun MapSlot.key<K Key, V>(s MapSlot<K, V>) ?K {
 
 --- A general purpose hash-map ---
 pub struct Map<K Key, V> {
-    mut data []mut MapSlot<K, V>
-    pub mut len Int
+    data []mut MapSlot<K, V>
+    pub len Int
     @a Arena
 }
 
@@ -132,7 +132,7 @@ pub fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
 
 pub struct MapIter<K Key, V> {
     data []MapSlot<K, V>
-    mut pos Int
+    pos Int
 }
 
 pub fun MapIter.next<K Key, V>(it &mut MapIter<K, V>) ?MapEntry<K, V> {

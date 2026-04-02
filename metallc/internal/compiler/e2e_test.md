@@ -612,8 +612,8 @@ fun main() void {
 
 ```metall
 struct Foo {
-    mut one Str
-    mut two Int
+    one Str
+    two Int
 }
 
 fun main() void {
@@ -660,7 +660,7 @@ hello
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 fun foo(a &Foo) void {
@@ -710,12 +710,12 @@ hello
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 struct Bar {
     one Foo
-    mut two Foo
+    two Foo
 }
 
 fun main() void {
@@ -737,7 +737,7 @@ bye
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 fun main() void {
@@ -758,11 +758,11 @@ world
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 struct Bar {
-    mut one Foo
+    one Foo
 }
 
 fun main() void {
@@ -808,7 +808,7 @@ fun main() void {
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 fun main() void {
@@ -828,7 +828,7 @@ world
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 fun main() void {
@@ -1108,7 +1108,7 @@ fun main() void {
 
 ```metall
 struct Box<V> {
-    mut items []V
+    items []V
 }
 
 fun Box.len<V>(b &Box<V>) Int {
@@ -1390,7 +1390,7 @@ fun main() void {
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 fun main() void {
@@ -1449,7 +1449,7 @@ hello
 
 ```metall
 struct Foo {
-    mut one Str
+    one Str
 }
 
 fun set(a &mut Foo, b Str) void {
@@ -1677,7 +1677,7 @@ hello
 
 ```metall
 struct Foo {
-    mut one Int
+    one Int
     two Str
 }
 
@@ -1704,7 +1704,7 @@ fun main() void {
 
 ```metall
 struct Foo {
-    mut one Int
+    one Int
     two Str
 }
 
@@ -1784,7 +1784,7 @@ fun main() void {
 
 ```metall
 fun main() void {
-    struct Foo { mut one Int }
+    struct Foo { one Int }
     mut a = [Foo(1)]
     a[0].one = 42
     DebugIntern.print_int(a[0].one)
@@ -1800,7 +1800,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    struct Foo { mut one Int }
+    struct Foo { one Int }
     let a = unsafe @a.slice_uninit_mut<Foo>(1)
     a[0] = Foo(1)
     a[0].one = 42
@@ -1816,7 +1816,7 @@ fun main() void {
 
 ```metall
 fun main() void {
-    struct Foo { mut one Int }
+    struct Foo { one Int }
     mut a = [Foo(1)]
     mut b = &mut a[0]
     b.one = 42
@@ -1833,7 +1833,7 @@ fun main() void {
 ```metall
 fun main() void {
     let @a = Arena()
-    struct Foo { mut one Int }
+    struct Foo { one Int }
     let a = unsafe @a.slice_uninit_mut<Foo>(1)
     a[0] = Foo(1)
     let b = &mut a[0]
@@ -2933,18 +2933,14 @@ use local::e2e
 fun main() void {
     e2e::say_hello()
 
-    mut f = e2e::Foo(123)
+    let f = e2e::Foo(123)
     f.print()
-
-    f.one = 321
-    e2e::Foo.print(f)
 }
 ```
 
 ```output
 hello
 123
-321
 ```
 
 **union match int variants**
@@ -3633,7 +3629,7 @@ struct Pos { a U32 b Int }
 
 struct Iter {
     data []U8
-    mut pos Int
+    pos Int
 }
 
 fun Iter.next(it &mut Iter) ?Pos {
@@ -4830,7 +4826,7 @@ fun main() void {
 ```metall
 use std::ffi
 
-struct Pair { mut a Int mut b Int }
+struct Pair { a Int b Int }
 
 fun main() void {
     mut x = 0
@@ -4895,7 +4891,7 @@ fun main() void {
 ```metall
 use std::ffi
 
-struct Vec2 { mut x Int mut y Int }
+struct Vec2 { x Int y Int }
 
 fun main() void {
     let @a = Arena()

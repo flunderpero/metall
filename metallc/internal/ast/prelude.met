@@ -148,7 +148,7 @@ pub fun RuneIndex.fmt(r RuneIndex, sb &mut StrBuilder) void {
 
 struct StrRuneIndexIter {
     bytes []U8
-    mut index Int
+    index Int
 }
 
 --- Iterate over all runes (unicode code points) in the string
@@ -164,7 +164,7 @@ pub fun StrRuneIndexIter.next(it &mut StrRuneIndexIter) ?RuneIndex {
 
 pub struct StrRuneIter {
     bytes []U8
-    mut index Int
+    index Int
 }
 
 --- Iterate over all runes (Unicode code points) in the string. ---
@@ -444,7 +444,7 @@ pub fun Str.hash(s Str) U64 {
 }
 
 pub struct StrSplitIter {
-    mut data []U8
+    data []U8
     sep Str
 }
 
@@ -469,8 +469,8 @@ pub fun Str.split(s Str, sep Str) StrSplitIter {
 
 --- A convenient way to build strings. ---
 pub struct StrBuilder {
-    mut out []mut U8
-    pub mut len Int
+    out []mut U8
+    pub len Int
     @a Arena
 }
 
@@ -768,7 +768,7 @@ pub fun Slice.eq<T HasEq>(s []T, other []T) Bool {
 
 pub struct SliceIter<T> {
     data []T
-    mut pos Int
+    pos Int
 }
 
 pub fun SliceIter.next<T>(it &mut SliceIter<T>) ?T {
