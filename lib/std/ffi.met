@@ -137,6 +137,23 @@ pub fun sizeof<T>() Int {
     panic("this is implemented by the runtime")
 }
 
+--- A function pointer points to a free function and - if it's a capturing closure -
+    to its captured data. ---
+pub struct FunPtr {
+    pub fun_ptr Ptr<void>
+    pub data_ptr Ptr<void>
+}
+
+--- Take the given function and return a callable void pointer to it and its captured data. ---
+pub fun fun_ptr(f fun() void) FunPtr {
+    panic("this is implemented by the runtime")
+}
+
+--- Call the given function with the associated data as the first argument. ---
+pub fun FunPtr.call(f FunPtr) void {
+    panic("this is implemented by the runtime")
+}
+
 --- Take the given byte array and convert it to a C-style 0-terminated string. ---
 pub fun cstr(b []U8, @a Arena) Ptr<U8> {
     mut s = unsafe @a.slice_uninit_mut<U8>(b.len + 1)

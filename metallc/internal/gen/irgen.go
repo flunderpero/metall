@@ -1661,6 +1661,31 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		g.write("%s = getelementptr %s, ptr %s, i64 %s", reg, elemIR, ptrReg, offsetReg)
 		g.setCode(id, reg)
 		return true
+	case "ffi::fun_ptr":
+		// fun_ptr(f) takes a fun() void ({ptr, ptr}) and returns FunPtr ({ptr, ptr}).
+		// Same layout -- just pass through the pointer to the aggregate.
+		g.Gen(call.Args[0])
+		g.setCode(id, g.lookupCode(call.Args[0]))
+		return true
+	case "ffi::FunPtr.call":
+		// FunPtr.call(f) extracts fn ptr and data ptr, calls fn(data).
+		receiver, ok := g.env.MethodCallReceiver(id)
+		if !ok {
+			panic(fmt.Sprintf("expected a method call receiver for %s", name))
+		}
+		g.Gen(receiver)
+		funPtrReg := g.lookupCode(receiver)
+		fnField := g.reg()
+		g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 0", fnField, funPtrReg)
+		fnPtr := g.reg()
+		g.write("%s = load ptr, ptr %s", fnPtr, fnField)
+		dataField := g.reg()
+		g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 1", dataField, funPtrReg)
+		dataPtr := g.reg()
+		g.write("%s = load ptr, ptr %s", dataPtr, dataField)
+		g.write("call void %s(ptr %s)", fnPtr, dataPtr)
+		g.setCode(id, "void")
+		return true
 	case "ffi::PtrMut.write":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {

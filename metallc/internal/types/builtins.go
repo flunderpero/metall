@@ -14,6 +14,7 @@ var ffiBuiltinFuns = map[string]bool{ //nolint:gochecknoglobals
 	"ref_ptr_mut":     true,
 	"slice_ptr":       true,
 	"slice_ptr_mut":   true,
+	"fun_ptr":         true,
 	"Ptr.as_u64":      true,
 	"Ptr.cast":        true,
 	"Ptr.is_null":     true,
@@ -30,6 +31,7 @@ var ffiBuiltinFuns = map[string]bool{ //nolint:gochecknoglobals
 	"PtrMut.offset":   true,
 	"PtrMut.as_ptr":   true,
 	"PtrMut.as_slice": true,
+	"FunPtr.call":     true,
 }
 
 var ffiBuiltinStructs = map[string]bool{ //nolint:gochecknoglobals
