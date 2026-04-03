@@ -1527,7 +1527,12 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 				decl.node.ID,
 				decl.cachedType.Type.ID,
 			)
+			prev := e.skipRegisterFun
+			if len(funKind.TypeParams) > 0 {
+				e.skipRegisterFun = true
+			}
 			e.checkFunBody(decl.node.ID, funKind, decl.cachedType.Type.ID, funType)
+			e.skipRegisterFun = prev
 		}
 	}
 }
@@ -1982,7 +1987,7 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 	if binding.Decl != 0 {
 		if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok {
 			if len(typeArgs) > 0 || len(funNode.TypeParams) > 0 {
-				argTypeIDs, status := e.QueryTypeArgs(typeArgs)
+				typeArgIDs, status := e.QueryTypeArgs(typeArgs)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
@@ -1991,7 +1996,7 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
-				argTypeIDs, status = e.SolveGenericArgs(spec, argTypeIDs, nodeID, span)
+				typeArgIDs, status = e.SolveGenericArgs(spec, typeArgIDs, nodeID, span)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
@@ -2000,7 +2005,7 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 					binding.TypeID,
 					nodeID,
 					span,
-					argTypeIDs,
+					typeArgIDs,
 				)
 				if status.Failed() {
 					return InvalidTypeID, status

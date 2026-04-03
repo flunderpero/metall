@@ -3768,6 +3768,45 @@ fun main() void {
 42
 ```
 
+**closure inside generic function calls captured function**
+
+```metall
+fun wrap<T>(f fun() T) void {
+    let g = fun[f]() void {
+        let res = f()
+        _ = res
+    }
+    g()
+}
+
+fun main() void {
+    wrap<Str>(fun() Str { DebugIntern.print_str("hello") "ok" })
+    wrap<Int>(fun() Int { DebugIntern.print_str("world") 42 })
+}
+```
+
+```output
+hello
+world
+```
+
+**nested function inside generic uses type parameter**
+
+```metall
+fun apply<T>(x T, f fun(T) T) T {
+    fun inner(v T) T { v }
+    f(inner(x))
+}
+
+fun main() void {
+    DebugIntern.print_int(apply<Int>(10, fun(x Int) Int { x * 2 }))
+}
+```
+
+```output
+20
+```
+
 ## Defer
 
 **defer basic**

@@ -49,7 +49,7 @@ type genericDecl struct {
 type genericInstance struct {
 	Decl       genericDecl
 	Spec       *GenericSpec
-	ArgTypeIDs []TypeID
+	TypeArgIDs []TypeID
 	Name       string
 }
 
@@ -65,16 +65,16 @@ func (s *GenericSpec) MinArgs() int {
 	return len(s.Params)
 }
 
-func (s *GenericSpec) Bindings(argTypeIDs []TypeID) map[TypeID]TypeID {
-	bindings := make(map[TypeID]TypeID, len(argTypeIDs))
+func (s *GenericSpec) Bindings(typeArgIDs []TypeID) map[TypeID]TypeID {
+	bindings := make(map[TypeID]TypeID, len(typeArgIDs))
 	if s == nil {
 		return bindings
 	}
 	for i, param := range s.Params {
-		if i >= len(argTypeIDs) {
+		if i >= len(typeArgIDs) {
 			break
 		}
-		bindings[param.TypeID] = argTypeIDs[i]
+		bindings[param.TypeID] = typeArgIDs[i]
 	}
 	return bindings
 }
@@ -227,9 +227,9 @@ func (e *Engine) SolveGenericArgs(
 	return resolved, TypeOK
 }
 
-func (e *Engine) BindGenericArgs(spec *GenericSpec, argTypeIDs []TypeID) {
+func (e *Engine) BindGenericArgs(spec *GenericSpec, typeArgIDs []TypeID) {
 	for i, param := range spec.Params {
-		e.bind(param.NodeID, param.Name, false, argTypeIDs[i], e.ast.Node(param.NodeID).Span)
+		e.bind(param.NodeID, param.Name, false, typeArgIDs[i], e.ast.Node(param.NodeID).Span)
 	}
 }
 
@@ -237,12 +237,12 @@ func (e *Engine) genericDeclSpec(decl genericDecl) (*GenericSpec, TypeStatus) {
 	return e.BuildGenericSpec(decl.originTypeID, decl.typeParams)
 }
 
-func (e *Engine) PrepareGenericInstance(decl genericDecl, argTypeIDs []TypeID) (*genericInstance, TypeStatus) {
+func (e *Engine) PrepareGenericInstance(decl genericDecl, typeArgIDs []TypeID) (*genericInstance, TypeStatus) {
 	spec, status := e.genericDeclSpec(decl)
 	if status.Failed() {
 		return nil, status
 	}
-	return &genericInstance{Decl: decl, Spec: spec, ArgTypeIDs: argTypeIDs, Name: decl.cacheName(e, argTypeIDs)}, TypeOK
+	return &genericInstance{Decl: decl, Spec: spec, TypeArgIDs: typeArgIDs, Name: decl.cacheName(e, typeArgIDs)}, TypeOK
 }
 
 func (e *Engine) withGenericArgs(
@@ -253,7 +253,7 @@ func (e *Engine) withGenericArgs(
 		return TypeFailed
 	}
 	defer e.enterChildEnv()()
-	e.BindGenericArgs(inst.Spec, inst.ArgTypeIDs)
+	e.BindGenericArgs(inst.Spec, inst.TypeArgIDs)
 	return fn()
 }
 
@@ -435,9 +435,9 @@ func sameGenericFamily(lhs, rhs TypeID) bool {
 	return lhs == rhs
 }
 
-func (e *Engine) mangledName(baseName string, genericTypeID TypeID, argTypeIDs []TypeID) string {
-	parts := make([]string, len(argTypeIDs))
-	for i, id := range argTypeIDs {
+func (e *Engine) mangledName(baseName string, genericTypeID TypeID, typeArgIDs []TypeID) string {
+	parts := make([]string, len(typeArgIDs))
+	for i, id := range typeArgIDs {
 		parts[i] = id.String()
 	}
 	return fmt.Sprintf("%s.%s.%s", baseName, genericTypeID, strings.Join(parts, "."))
@@ -445,21 +445,21 @@ func (e *Engine) mangledName(baseName string, genericTypeID TypeID, argTypeIDs [
 
 func (e *Engine) QueryTypeArgs(typeArgNodeIDs []ast.NodeID) ([]TypeID, TypeStatus) {
 	replacements := e.visibleTypeParamBindings()
-	argTypeIDs := make([]TypeID, len(typeArgNodeIDs))
+	typeArgIDs := make([]TypeID, len(typeArgNodeIDs))
 	for i, typeArgNodeID := range typeArgNodeIDs {
-		argTypeID, status := e.Query(typeArgNodeID)
+		typeArgID, status := e.Query(typeArgNodeID)
 		if status.Failed() {
 			return nil, TypeDepFailed
 		}
 		if len(replacements) > 0 {
-			argTypeID, status = e.RewriteType(argTypeID, replacements)
+			typeArgID, status = e.RewriteType(typeArgID, replacements)
 			if status.Failed() {
 				return nil, status
 			}
 		}
-		argTypeIDs[i] = argTypeID
+		typeArgIDs[i] = typeArgID
 	}
-	return argTypeIDs, TypeOK
+	return typeArgIDs, TypeOK
 }
 
 func (e *Engine) visibleTypeParamBindings() map[TypeID]TypeID {
@@ -596,11 +596,11 @@ func (e *Engine) NormalizeGenericDecl(nodeID ast.NodeID, originTypeID TypeID, na
 	return e.normalizeGenericCallableDecl(originTypeID, nodeID, name, node.Kind)
 }
 
-func (d genericDecl) cacheName(e *Engine, argTypeIDs []TypeID) string {
-	if d.kind == genericDeclShape && len(argTypeIDs) == 0 {
+func (d genericDecl) cacheName(e *Engine, typeArgIDs []TypeID) string {
+	if d.kind == genericDeclShape && len(typeArgIDs) == 0 {
 		return d.name
 	}
-	return e.mangledName(d.name, d.originTypeID, argTypeIDs)
+	return e.mangledName(d.name, d.originTypeID, typeArgIDs)
 }
 
 func (d genericDecl) lookupTypeWork(e *Engine, name string) (TypeWork, bool) {
@@ -643,19 +643,19 @@ func (e *Engine) MaterializeNamedTypeRef(
 	if !ok {
 		panic(base.Errorf("type %s is not generic-instantiable", originTypeID))
 	}
-	argTypeIDs, status := e.ResolveTypeArgs(decl.typeParams, typeArgNodeIDs, decl.declNodeID, span)
+	typeArgIDs, status := e.ResolveTypeArgs(decl.typeParams, typeArgNodeIDs, decl.declNodeID, span)
 	if status.Failed() {
 		return InvalidTypeID, status
 	}
-	return e.materializeNamedType(originTypeID, argTypeIDs)
+	return e.materializeNamedType(originTypeID, typeArgIDs)
 }
 
-func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) (TypeID, TypeStatus) { //nolint:funlen
+func (e *Engine) materializeNamedType(originTypeID TypeID, typeArgIDs []TypeID) (TypeID, TypeStatus) { //nolint:funlen
 	decl, ok := e.NormalizeGenericDecl(e.env.DeclNode(originTypeID), originTypeID, "")
 	if !ok {
 		panic(base.Errorf("type %s is not generic-instantiable", originTypeID))
 	}
-	inst, status := e.PrepareGenericInstance(decl, argTypeIDs)
+	inst, status := e.PrepareGenericInstance(decl, typeArgIDs)
 	if status.Failed() {
 		return InvalidTypeID, status
 	}
@@ -671,7 +671,7 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 		decl.storeTypeWork(e, inst.Name, TypeWork{NodeID: decl.declNodeID, TypeID: InvalidTypeID, Env: e.env})
 		switch kind := declNode.Kind.(type) {
 		case ast.Struct:
-			placeholder := StructType{Name: inst.Name, Fields: nil, TypeArgs: argTypeIDs}
+			placeholder := StructType{Name: inst.Name, Fields: nil, TypeArgs: typeArgIDs}
 			typeID = e.env.newType(placeholder, decl.declNodeID, declNode.Span, TypeInProgress)
 			decl.storeTypeWork(e, inst.Name, TypeWork{NodeID: decl.declNodeID, TypeID: typeID, Env: e.env})
 			fields := make([]StructField, len(kind.Fields))
@@ -687,9 +687,9 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 					Pub:  fieldNode.Pub,
 				}
 			}
-			resolved = StructType{Name: inst.Name, Fields: fields, TypeArgs: argTypeIDs}
+			resolved = StructType{Name: inst.Name, Fields: fields, TypeArgs: typeArgIDs}
 		case ast.Union:
-			placeholder := UnionType{Name: inst.Name, Variants: nil, TypeArgs: argTypeIDs}
+			placeholder := UnionType{Name: inst.Name, Variants: nil, TypeArgs: typeArgIDs}
 			typeID = e.env.newType(placeholder, decl.declNodeID, declNode.Span, TypeInProgress)
 			decl.storeTypeWork(e, inst.Name, TypeWork{NodeID: decl.declNodeID, TypeID: typeID, Env: e.env})
 			variants := make([]TypeID, len(kind.Variants))
@@ -700,7 +700,7 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 				}
 				variants[i] = variantTypeID
 			}
-			resolved = UnionType{Name: inst.Name, Variants: variants, TypeArgs: argTypeIDs}
+			resolved = UnionType{Name: inst.Name, Variants: variants, TypeArgs: typeArgIDs}
 		case ast.Shape:
 			fields := make([]StructField, len(kind.Fields))
 			for i, fieldNodeID := range kind.Fields {
@@ -715,7 +715,7 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, argTypeIDs []TypeID) 
 					Pub:  fieldNode.Pub,
 				}
 			}
-			resolved = ShapeType{Name: decl.name, DeclName: decl.declName, Fields: fields, TypeArgs: argTypeIDs}
+			resolved = ShapeType{Name: decl.name, DeclName: decl.declName, Fields: fields, TypeArgs: typeArgIDs}
 			typeID = e.env.newType(resolved, decl.declNodeID, declNode.Span, TypeOK)
 			decl.storeTypeWork(e, inst.Name, TypeWork{NodeID: decl.declNodeID, TypeID: typeID, Env: e.env})
 		default:
@@ -1116,28 +1116,28 @@ func (e *Engine) MaterializeFun(
 	genericTypeID TypeID,
 	callSiteNodeID ast.NodeID,
 	span base.Span,
-	argTypeIDs []TypeID,
+	typeArgIDs []TypeID,
 ) (typeID TypeID, mangledName string, status TypeStatus) {
 	decl, _ := e.NormalizeGenericDecl(funNodeID, genericTypeID, "")
 	if decl.name == "" {
 		return InvalidTypeID, "", TypeFailed
 	}
-	mangledName = decl.cacheName(e, argTypeIDs)
+	mangledName = decl.cacheName(e, typeArgIDs)
 	if cached, ok := e.funs[mangledName]; ok {
 		return cached.TypeID, mangledName, TypeOK
 	}
 	defer e.enterChildEnv()()
 	var funTyp FunType
-	inst, status := e.PrepareGenericInstance(decl, argTypeIDs)
+	inst, status := e.PrepareGenericInstance(decl, typeArgIDs)
 	if status.Failed() {
 		return InvalidTypeID, "", status
 	}
-	e.BindGenericArgs(inst.Spec, inst.ArgTypeIDs)
-	funTyp, status = e.RewriteCallable(decl.typeParams, argTypeIDs, decl.paramNodeIDs, decl.returnNodeID, nil)
+	e.BindGenericArgs(inst.Spec, inst.TypeArgIDs)
+	funTyp, status = e.RewriteCallable(decl.typeParams, typeArgIDs, decl.paramNodeIDs, decl.returnNodeID, nil)
 	if status.Failed() {
 		return InvalidTypeID, "", status
 	}
-	funTyp, _, status = e.RewriteFunType(funTyp, inst.Spec.Bindings(argTypeIDs))
+	funTyp, _, status = e.RewriteFunType(funTyp, inst.Spec.Bindings(typeArgIDs))
 	if status.Failed() {
 		return InvalidTypeID, "", status
 	}
@@ -1147,9 +1147,12 @@ func (e *Engine) MaterializeFun(
 	if !decl.builtin {
 		e.funs[mangledName] = FunWork{NodeID: funNodeID, TypeID: funTypeID, Name: mangledName, Env: e.env}
 		prevScope := e.instantiationScope
+		prevSkip := e.skipRegisterFun
 		e.instantiationScope = &callSiteNodeID
+		e.skipRegisterFun = false
 		funNode := base.Cast[ast.Fun](e.ast.Node(funNodeID).Kind)
 		e.checkFunBody(funNodeID, funNode, funTypeID, funTyp)
+		e.skipRegisterFun = prevSkip
 		e.instantiationScope = prevScope
 	}
 	return funTypeID, mangledName, TypeOK
@@ -1157,7 +1160,7 @@ func (e *Engine) MaterializeFun(
 
 func (e *Engine) RewriteCallable(
 	typeParamNodeIDs []ast.NodeID,
-	argTypeIDs []TypeID,
+	typeArgIDs []TypeID,
 	paramNodeIDs []ast.NodeID,
 	returnTypeNodeID ast.NodeID,
 	replacements map[TypeID]TypeID,
@@ -1168,7 +1171,7 @@ func (e *Engine) RewriteCallable(
 		if status.Failed() {
 			return FunType{}, status
 		}
-		maps.Copy(bindings, spec.Bindings(argTypeIDs))
+		maps.Copy(bindings, spec.Bindings(typeArgIDs))
 	}
 	maps.Copy(bindings, replacements)
 	paramTypeIDs := make([]TypeID, len(paramNodeIDs))

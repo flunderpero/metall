@@ -6,16 +6,17 @@ import (
 )
 
 type EngineCore struct {
-	ast         *ast.AST
-	debug       base.Debug
-	diagnostics base.Diagnostics
-	scopeGraph  *ast.ScopeGraph
-	env         *TypeEnv
-	funs        map[string]FunWork
-	structs     map[string]TypeWork
-	unions      map[string]TypeWork
-	shapes      map[string]TypeWork
-	consts      []ConstWork
+	ast             *ast.AST
+	debug           base.Debug
+	diagnostics     base.Diagnostics
+	scopeGraph      *ast.ScopeGraph
+	env             *TypeEnv
+	funs            map[string]FunWork
+	structs         map[string]TypeWork
+	unions          map[string]TypeWork
+	shapes          map[string]TypeWork
+	consts          []ConstWork
+	skipRegisterFun bool
 }
 
 func NewEngineCore(a *ast.AST, g *ast.ScopeGraph) *EngineCore {
@@ -59,6 +60,9 @@ func (c *EngineCore) registerFun(nodeID ast.NodeID) {
 		return
 	}
 	if funNode.Builtin || funNode.Extern {
+		return
+	}
+	if c.skipRegisterFun {
 		return
 	}
 	name, ok := c.env.NamedFunRef(nodeID)

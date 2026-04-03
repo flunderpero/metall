@@ -255,7 +255,7 @@ func (e *Engine) MethodSignature(
 			if status.Failed() {
 				return FunType{}, status
 			}
-			argTypeIDs, status := e.SolveGenericArgs(spec, seedArgs, scopeNodeID, span)
+			typeArgIDs, status := e.SolveGenericArgs(spec, seedArgs, scopeNodeID, span)
 			if status.Failed() {
 				return FunType{}, status
 			}
@@ -264,7 +264,7 @@ func (e *Engine) MethodSignature(
 				binding.TypeID,
 				scopeNodeID,
 				span,
-				argTypeIDs,
+				typeArgIDs,
 			)
 			if status.Failed() {
 				return FunType{}, status
@@ -405,21 +405,21 @@ func (e *Engine) ResolveMethodBinding(
 		e.registerFun(binding.Decl)
 		return binding.TypeID, TypeOK, true
 	}
-	var argTypeIDs []TypeID
+	var typeArgIDs []TypeID
 	if typeArgs, ok := ImplicitTypeArgs(targetTyp.Kind); ok {
-		argTypeIDs = append(argTypeIDs, typeArgs...)
+		typeArgIDs = append(typeArgIDs, typeArgs...)
 	}
 	extraArgs, status := e.QueryTypeArgs(fieldAccess.TypeArgs)
 	if status.Failed() {
 		return InvalidTypeID, status, true
 	}
-	argTypeIDs = append(argTypeIDs, extraArgs...)
+	typeArgIDs = append(typeArgIDs, extraArgs...)
 	decl, _ := e.NormalizeGenericDecl(binding.Decl, binding.TypeID, "")
 	spec, status := e.BuildGenericSpec(decl.originTypeID, decl.typeParams)
 	if status.Failed() {
 		return InvalidTypeID, status, true
 	}
-	argTypeIDs, status = e.SolveGenericArgs(spec, argTypeIDs, nodeID, fieldAccess.Field.Span)
+	typeArgIDs, status = e.SolveGenericArgs(spec, typeArgIDs, nodeID, fieldAccess.Field.Span)
 	if status.Failed() {
 		return InvalidTypeID, status, true
 	}
@@ -428,7 +428,7 @@ func (e *Engine) ResolveMethodBinding(
 		binding.TypeID,
 		nodeID,
 		fieldAccess.Field.Span,
-		argTypeIDs,
+		typeArgIDs,
 	)
 	if status.Failed() {
 		return InvalidTypeID, status, true
