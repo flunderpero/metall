@@ -4747,6 +4747,60 @@ test.met:2:5: something went wrong
 
 ## FFI
 
+**fun_ptr and FunPtr.call**
+
+```metall
+use std::ffi
+
+fun hello() void {
+    DebugIntern.print_str("hello")
+}
+
+fun main() void {
+    let fp = ffi::fun_ptr(hello)
+    fp.call()
+    let fp2 = ffi::fun_ptr(fun() void { DebugIntern.print_str("lambda") })
+    fp2.call()
+    let msg = "captured"
+    let fp3 = ffi::fun_ptr(fun[msg]() void { DebugIntern.print_str(msg) })
+    fp3.call()
+}
+```
+
+```output
+hello
+lambda
+captured
+```
+
+**fun_ptr_alloc survives outside its creating scope**
+
+```metall
+use std::ffi
+
+fun hello() void {
+    DebugIntern.print_str("hello")
+}
+
+fun make_fun_ptr(@a Arena) ffi::FunPtr {
+    let msg = "from arena"
+    ffi::fun_ptr_alloc(@a, fun[msg]() void { DebugIntern.print_str(msg) })
+}
+
+fun main() void {
+    let @a = Arena()
+    let fp1 = ffi::fun_ptr_alloc(@a, hello)
+    fp1.call()
+    let fp2 = make_fun_ptr(@a)
+    fp2.call()
+}
+```
+
+```output
+hello
+from arena
+```
+
 **call extern C function**
 
 ```metall

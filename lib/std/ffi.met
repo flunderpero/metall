@@ -149,6 +149,11 @@ pub fun fun_ptr(f fun() void) FunPtr {
     panic("this is implemented by the runtime")
 }
 
+--- Take the given function and copy its pointer and captured data to the heap and return a pointer to that. ---
+pub fun fun_ptr_alloc(@a Arena, f fun() void) FunPtr {
+    panic("this is implemented by the runtime")
+}
+
 --- Call the given function with the associated data as the first argument. ---
 pub fun FunPtr.call(f FunPtr) void {
     panic("this is implemented by the runtime")

@@ -355,3 +355,20 @@ define internal i32 @"Rune.to_u32"(i32 %v) alwaysinline {
 @str_index_out_of_bounds = private constant %Str { { ptr, i64 } { ptr @str_index_out_of_bounds.data, i64 19 } }
 @str_slice_out_of_bounds.data = private constant [19 x i8] c"slice out of bounds"
 @str_slice_out_of_bounds = private constant %Str { { ptr, i64 } { ptr @str_slice_out_of_bounds.data, i64 19 } }
+
+; __fun_ptr_ctx_copy copies a closure's capture context to the arena.
+; The context is prefixed by an i64 size (see emitClosureValue).
+; Returns null if data_ptr is null (non-capturing function).
+define internal ptr @__fun_ptr_ctx_copy(ptr %arena, ptr %data_ptr) alwaysinline {
+    %is_null = icmp eq ptr %data_ptr, null
+    br i1 %is_null, label %ret_null, label %do_copy
+ret_null:
+    ret ptr null
+do_copy:
+    %base = getelementptr i8, ptr %data_ptr, i64 -8
+    %size = load i64, ptr %base
+    %new_base = call ptr @runtime$arena.arena_alloc(ptr %arena, i64 %size)
+    call void @llvm.memcpy.p0.p0.i64(ptr %new_base, ptr %base, i64 %size, i1 false)
+    %new_ctx = getelementptr i8, ptr %new_base, i64 8
+    ret ptr %new_ctx
+}

@@ -1667,6 +1667,24 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		g.Gen(call.Args[0])
 		g.setCode(id, g.lookupCode(call.Args[0]))
 		return true
+	case "ffi::fun_ptr_alloc":
+		// fun_ptr_alloc(@a, f) copies the closure context to the arena.
+		// See emitClosureValue for context layout and __fun_ptr_ctx_copy in builtins.ll.
+		g.Gen(call.Args[0])
+		arenaReg := g.lookupCode(call.Args[0])
+		g.Gen(call.Args[1])
+		funReg := g.lookupCode(call.Args[1])
+		// Extract data_ptr (field 1 of the {ptr, ptr} fat pointer).
+		dataField := g.reg()
+		g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 1", dataField, funReg)
+		dataPtr := g.reg()
+		g.write("%s = load ptr, ptr %s", dataPtr, dataField)
+		newCtx := g.reg()
+		g.write("%s = call ptr @__fun_ptr_ctx_copy(ptr %s, ptr %s)", newCtx, arenaReg, dataPtr)
+		// Copy the input FunPtr and replace the data pointer.
+		g.write("store ptr %s, ptr %s", newCtx, dataField)
+		g.setCode(id, funReg)
+		return true
 	case "ffi::FunPtr.call":
 		// FunPtr.call(f) extracts fn ptr and data ptr, calls fn(data).
 		receiver, ok := g.env.MethodCallReceiver(id)
@@ -1980,6 +1998,15 @@ func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string {
 	return wrapperName
 }
 
+func (g *IRFunGen) closureCtxSize(fun ast.Fun) int64 {
+	var total int64
+	for _, capNodeID := range fun.Captures {
+		capTypeID, _ := g.env.BindingType(ast.BindingID(capNodeID))
+		total += irTypeSize(g.env, capTypeID)
+	}
+	return total
+}
+
 // closureCtxType returns the LLVM struct type for a closure's capture context,
 // e.g. "{i64, ptr}" for two captures of those types.
 func (g *IRFunGen) closureCtxType(fun ast.Fun) string {
@@ -1997,11 +2024,22 @@ func (g *IRFunGen) closureCtxType(fun ast.Fun) string {
 }
 
 // emitClosureValue allocates the capture context, stores captures, and emits
-// a fat pointer {fn, ctx}.
+// emitClosureValue builds a function value {fn_ptr, data_ptr} for a closure.
+// The capture context is prefixed by an i64 with its total byte size.
 func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
 	ctxType := g.closureCtxType(fun)
+	wrapperType := fmt.Sprintf("{i64, %s}", ctxType)
+	baseReg := g.reg()
+	g.writeAlloca(baseReg, wrapperType)
+	// Store total size at offset 0.
+	ctxSize := g.closureCtxSize(fun)
+	totalSize := 8 + ctxSize // i64 prefix + context
+	sizeField := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", sizeField, wrapperType, baseReg)
+	g.write("store i64 %d, ptr %s", totalSize, sizeField)
+	// Context pointer is at offset 1 (past the i64).
 	ctxReg := g.reg()
-	g.writeAlloca(ctxReg, ctxType)
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", ctxReg, wrapperType, baseReg)
 
 	for i, capNodeID := range fun.Captures {
 		capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
@@ -2017,12 +2055,10 @@ func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
 		g.write("%s = getelementptr %s, ptr %s, i32 0, i32 %d", gepReg, ctxType, ctxReg, i)
 		switch capture.Mode {
 		case ast.CaptureByRef, ast.CaptureByMutRef:
-			// Store the address of the outer variable (sym.Reg is already a ptr).
 			g.write("store ptr %s, ptr %s", sym.Reg, gepReg)
 		case ast.CaptureByValue:
 			capTyp := g.env.Type(outerBinding.TypeID)
 			if _, isAlloc := capTyp.Kind.(types.AllocatorType); isAlloc {
-				// Allocator: sym.Reg IS the pointer, store it directly.
 				g.write("store ptr %s, ptr %s", sym.Reg, gepReg)
 			} else {
 				capIRTyp := g.irType(outerBinding.TypeID)
