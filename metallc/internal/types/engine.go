@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"math/big"
 	"strings"
 
@@ -296,6 +297,19 @@ func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint *TypeID) (TypeID, Typ
 		typeID = e.tryUnionAutoWrap(nodeID, typeID, *typeHint)
 	}
 	return typeID, status
+}
+
+// mangledName returns a unique name for a declaration by combining the scope
+// namespace with the parent function's TypeID when inside a materialized generic.
+func (e *Engine) declMangledName(nodeID ast.NodeID, name string) string {
+	n := e.scopeGraph.NodeScope(nodeID).NamespacedName(name)
+	if len(e.funStack) > 0 {
+		parentTypeID := e.funStack[len(e.funStack)-1]
+		if _, ok := e.env.GenericOrigin(parentTypeID); ok {
+			n = fmt.Sprintf("%s.%s", n, parentTypeID)
+		}
+	}
+	return n
 }
 
 func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
@@ -1337,7 +1351,7 @@ func (e *Engine) checkModule( //nolint:funlen
 			depFailed = true
 			continue
 		}
-		name := e.namespacedName(declNodeID, varNode.Name.Name)
+		name := e.declMangledName(declNodeID, varNode.Name.Name)
 		e.registerConst(declNodeID, name, typeID)
 	}
 	MarkBuiltins(e.ast, module)
@@ -1525,12 +1539,12 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 				decl.node.ID,
 				decl.cachedType.Type.ID,
 			)
-			prev := e.skipRegisterFun
+			prev := e.skipRegisterWork
 			if len(funKind.TypeParams) > 0 {
-				e.skipRegisterFun = true
+				e.skipRegisterWork = true
 			}
 			e.checkFunBody(decl.node.ID, funKind, decl.cachedType.Type.ID, funType)
-			e.skipRegisterFun = prev
+			e.skipRegisterWork = prev
 		}
 	}
 }
@@ -1580,7 +1594,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 	if fun.Extern {
 		e.env.setNamedFunRef(node.ID, fun.ExternName)
 	} else {
-		e.env.setNamedFunRef(node.ID, e.namespacedName(node.ID, fun.Name.Name))
+		e.env.setNamedFunRef(node.ID, e.declMangledName(node.ID, fun.Name.Name))
 	}
 	return funTypeID, TypeOK
 }
@@ -1602,7 +1616,7 @@ func (e *Engine) resolveMethodBindName(
 }
 
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
-	name := e.namespacedName(node.ID, structNode.Name.Name)
+	name := e.declMangledName(node.ID, structNode.Name.Name)
 	typeID := e.env.newType(
 		StructType{Name: name, Fields: []StructField{}, TypeArgs: nil},
 		node.ID,
@@ -1616,7 +1630,7 @@ func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct)
 }
 
 func (e *Engine) checkUnionCreateAndBind(node *ast.Node, unionNode ast.Union) (TypeID, TypeStatus) {
-	name := e.namespacedName(node.ID, unionNode.Name.Name)
+	name := e.declMangledName(node.ID, unionNode.Name.Name)
 	typeID := e.env.newType(UnionType{name, nil, nil}, node.ID, node.Span, TypeInProgress)
 	if !e.bind(node.ID, unionNode.Name.Name, false, typeID, unionNode.Name.Span) {
 		return typeID, TypeFailed

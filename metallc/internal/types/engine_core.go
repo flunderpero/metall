@@ -6,17 +6,17 @@ import (
 )
 
 type EngineCore struct {
-	ast             *ast.AST
-	debug           base.Debug
-	diagnostics     base.Diagnostics
-	scopeGraph      *ast.ScopeGraph
-	env             *TypeEnv
-	funs            map[string]FunWork
-	structs         map[string]TypeWork
-	unions          map[string]TypeWork
-	shapes          map[string]TypeWork
-	consts          []ConstWork
-	skipRegisterFun bool
+	ast              *ast.AST
+	debug            base.Debug
+	diagnostics      base.Diagnostics
+	scopeGraph       *ast.ScopeGraph
+	env              *TypeEnv
+	funs             map[string]FunWork
+	structs          map[string]TypeWork
+	unions           map[string]TypeWork
+	shapes           map[string]TypeWork
+	consts           []ConstWork
+	skipRegisterWork bool
 }
 
 func NewEngineCore(a *ast.AST, g *ast.ScopeGraph) *EngineCore {
@@ -62,7 +62,7 @@ func (c *EngineCore) registerFun(nodeID ast.NodeID) {
 	if funNode.Builtin || funNode.Extern {
 		return
 	}
-	if c.skipRegisterFun {
+	if c.skipRegisterWork {
 		return
 	}
 	name, ok := c.env.NamedFunRef(nodeID)
@@ -80,12 +80,18 @@ func (c *EngineCore) registerStruct(structType StructType, nodeID ast.NodeID, ty
 	if !ok || structNode.Builtin {
 		return
 	}
+	if c.skipRegisterWork {
+		return
+	}
 	if _, ok := c.structs[structType.Name]; !ok {
 		c.structs[structType.Name] = TypeWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
 	}
 }
 
 func (c *EngineCore) registerUnion(unionType UnionType, nodeID ast.NodeID, typeID TypeID) {
+	if c.skipRegisterWork {
+		return
+	}
 	if _, ok := c.unions[unionType.Name]; !ok {
 		c.unions[unionType.Name] = TypeWork{NodeID: nodeID, TypeID: typeID, Env: c.env}
 	}
@@ -93,10 +99,6 @@ func (c *EngineCore) registerUnion(unionType UnionType, nodeID ast.NodeID, typeI
 
 func (c *EngineCore) registerConst(nodeID ast.NodeID, name string, typeID TypeID) {
 	c.consts = append(c.consts, ConstWork{NodeID: nodeID, TypeID: typeID, Name: name, Env: c.env})
-}
-
-func (c *EngineCore) namespacedName(nodeID ast.NodeID, name string) string {
-	return c.scopeGraph.NodeScope(nodeID).NamespacedName(name)
 }
 
 // preludeModule is a synthetic module for prelude nodes (which have no Module AST parent).

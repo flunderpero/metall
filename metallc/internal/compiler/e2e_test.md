@@ -3824,11 +3824,57 @@ fun apply<T>(x T, f fun(T) T) T {
 
 fun main() void {
     DebugIntern.print_int(apply<Int>(10, fun(x Int) Int { x * 2 }))
+    DebugIntern.print_str(apply<Str>("hi", fun(s Str) Str { s }))
 }
 ```
 
 ```output
 20
+hi
+```
+
+**multiple materializations of generic with inner struct**
+
+```metall
+use std::ffi
+
+fun wrap<T>(val T) Int {
+    struct W { inner T }
+    let w = W(val)
+    _ = w
+    ffi::sizeof<W>()
+}
+
+fun main() void {
+    DebugIntern.print_int(wrap<Int>(42))
+    DebugIntern.print_int(wrap<Str>("hi"))
+}
+```
+
+```output
+8
+16
+```
+
+**multiple materializations of generic with closure**
+
+```metall
+fun call_and_print<T>(f fun() T, print fun(T) void) void {
+    let g = fun[f, print]() void {
+        print(f())
+    }
+    g()
+}
+
+fun main() void {
+    call_and_print<Int>(fun() Int { 42 }, fun(x Int) void { DebugIntern.print_int(x) })
+    call_and_print<Str>(fun() Str { "hello" }, fun(s Str) void { DebugIntern.print_str(s) })
+}
+```
+
+```output
+42
+hello
 ```
 
 ## Defer

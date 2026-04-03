@@ -276,7 +276,7 @@ func (e *Engine) MethodSignature(
 }
 
 func (e *Engine) CheckShapeCreateAndBind(node *ast.Node, shapeNode ast.Shape) (TypeID, TypeStatus) {
-	name := e.namespacedName(node.ID, shapeNode.Name.Name)
+	name := e.declMangledName(node.ID, shapeNode.Name.Name)
 	typeID := e.env.newType(
 		ShapeType{Name: name, DeclName: shapeNode.Name.Name, Fields: nil, TypeArgs: nil},
 		node.ID,

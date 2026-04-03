@@ -1162,12 +1162,12 @@ func (e *Engine) MaterializeFun(
 	if !decl.builtin {
 		e.funs[mangledName] = FunWork{NodeID: funNodeID, TypeID: funTypeID, Name: mangledName, Env: e.env}
 		prevScope := e.instantiationScope
-		prevSkip := e.skipRegisterFun
+		prevSkip := e.skipRegisterWork
 		e.instantiationScope = &callSiteNodeID
-		e.skipRegisterFun = false
+		e.skipRegisterWork = false
 		funNode := base.Cast[ast.Fun](e.ast.Node(funNodeID).Kind)
 		e.checkFunBody(funNodeID, funNode, funTypeID, funTyp)
-		e.skipRegisterFun = prevSkip
+		e.skipRegisterWork = prevSkip
 		e.instantiationScope = prevScope
 	}
 	return funTypeID, mangledName, TypeOK
