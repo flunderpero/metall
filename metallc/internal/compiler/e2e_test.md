@@ -63,6 +63,30 @@ fun main() void { mut x = 123 DebugIntern.print_int(x) x = 456 DebugIntern.print
 456
 ```
 
+**void is a value**
+
+```metall
+fun takes_void(v void) Int { 42 }
+fun returns_void() void { void }
+fun main() void {
+    let x = void
+    _ = x
+    let y = returns_void()
+    _ = y
+    DebugIntern.print_int(takes_void(void))
+    DebugIntern.print_int(takes_void(returns_void()))
+    let z = if true { void } else { void }
+    _ = z
+    DebugIntern.print_str("ok")
+}
+```
+
+```output
+42
+42
+ok
+```
+
 **fun returns int**
 
 ```metall
@@ -4851,6 +4875,39 @@ fun main() void {
 16
 true
 true
+```
+
+**ffi sizeof void is zero**
+
+```metall
+use std::ffi
+
+fun main() void {
+    DebugIntern.print_int(ffi::sizeof<void>())
+}
+```
+
+```output
+0
+```
+
+**ffi PtrMut write and read void**
+
+```metall
+use std::ffi
+
+fun main() void {
+    mut x = void
+    let p = ffi::ref_ptr_mut<void>(&mut x)
+    unsafe p.write(void)
+    let v = unsafe p.read()
+    _ = v
+    DebugIntern.print_str("ok")
+}
+```
+
+```output
+ok
 ```
 
 **ffi strlen via slice_ptr**

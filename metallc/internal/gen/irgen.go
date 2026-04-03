@@ -10,6 +10,9 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/types"
 )
 
+// voidValue is the LLVM IR literal for a value of the void type ({}).
+const voidValue = "zeroinitializer"
+
 //go:embed builtins.ll
 var builtinsIR string
 
@@ -141,7 +144,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genContinue(id)
 	case ast.Defer:
 		// Defer blocks are collected during genBlock and emitted at exit points.
-		g.setCode(id, "void")
+		g.setCode(id, voidValue)
 	case ast.Return:
 		g.genReturn(id, kind)
 	case ast.TypeConstruction:
@@ -718,9 +721,7 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	g.write("define%s %s @%s(%s) %s{", internal, signatureIRTyp, name, params.String(), attrs)
 	g.indent++
 	// We use a return alloca to store values for early returns (i.e. `return <expr>`).
-	if retIRTyp != "void" {
-		g.write("%s = alloca %s", g.funRetReg, retIRTyp)
-	}
+	g.write("%s = alloca %s", g.funRetReg, retIRTyp)
 	if len(astFun.Params) > 0 {
 		g.write(paramAllocas.String())
 	}
@@ -769,9 +770,7 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	// Write the result of the block into the ret reg.
 	lastCode := g.lookupCode(astFun.Block)
 	if !g.breaksControlFlow(astFun.Block) {
-		if retIRTyp != "void" {
-			g.storeValue(lastCode, g.funRetReg, fun.Return)
-		}
+		g.storeValue(lastCode, g.funRetReg, fun.Return)
 		g.write("br label %%%s", g.funRetLabel)
 	}
 	g.writeLabel(g.funRetLabel)
@@ -790,13 +789,9 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		g.write("store %s %s, ptr %%out_ptr", retIRTyp, resReg)
 		g.write("ret void")
 	default:
-		if retIRTyp == "void" {
-			g.write("ret void")
-		} else {
-			resReg := g.reg()
-			g.write("%s = load %s, ptr %s", resReg, retIRTyp, g.funRetReg)
-			g.write("ret %s %s", retIRTyp, resReg)
-		}
+		resReg := g.reg()
+		g.write("%s = load %s, ptr %s", resReg, retIRTyp, g.funRetReg)
+		g.write("ret %s %s", retIRTyp, resReg)
 	}
 	g.indent--
 	g.write("}\n")
@@ -806,9 +801,7 @@ func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
 	g.Gen(return_.Expr)
 	exprReg := g.lookupCode(return_.Expr)
 	retTyp := g.typeIDOfNode(return_.Expr)
-	if g.irType(retTyp) != "void" {
-		g.storeValue(exprReg, g.funRetReg, retTyp)
-	}
+	g.storeValue(exprReg, g.funRetReg, retTyp)
 	g.emitAllBlockCleanups(0)
 	g.write("br label %%%s", g.funRetLabel)
 	g.setCode(id, exprReg)
@@ -847,7 +840,7 @@ func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
 		if d, ok := g.ast.Node(expr).Kind.(ast.Defer); ok {
 			top := len(g.deferStack) - 1
 			g.deferStack[top] = append(g.deferStack[top], d.Block)
-			g.setCode(expr, "void")
+			g.setCode(expr, voidValue)
 		} else {
 			g.Gen(expr)
 		}
@@ -859,7 +852,7 @@ func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
 	}
 	g.arenaRegStack = g.arenaRegStack[:len(g.arenaRegStack)-1]
 	g.deferStack = g.deferStack[:len(g.deferStack)-1]
-	code := "void"
+	code := voidValue
 	if len(block.Exprs) > 0 {
 		code = g.lookupCode(block.Exprs[len(block.Exprs)-1])
 	}
@@ -887,7 +880,7 @@ func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 	g.Gen(forNode.Body)
 	g.write("br label %%%s", labelStart)
 	g.writeLabel(labelEnd)
-	g.setCode(id, "void")
+	g.setCode(id, voidValue)
 }
 
 func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
@@ -929,21 +922,21 @@ func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
 	g.write("store i64 %s, ptr %s", incrReg, counterReg)
 	g.write("br label %%%s", labelCond)
 	g.writeLabel(labelEnd)
-	g.setCode(id, "void")
+	g.setCode(id, voidValue)
 }
 
 func (g *IRFunGen) genBreak(id ast.NodeID) {
 	loopLabel := g.loopStack[len(g.loopStack)-1]
 	g.emitAllBlockCleanups(loopLabel.arenaStackBase)
 	g.write("br label %%%s", loopLabel.break_)
-	g.setCode(id, "void")
+	g.setCode(id, voidValue)
 }
 
 func (g *IRFunGen) genContinue(id ast.NodeID) {
 	loopLabel := g.loopStack[len(g.loopStack)-1]
 	g.emitAllBlockCleanups(loopLabel.arenaStackBase)
 	g.write("br label %%%s", loopLabel.continue_)
-	g.setCode(id, "void")
+	g.setCode(id, voidValue)
 }
 
 func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
@@ -971,7 +964,7 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 	}
 	phiElseLabel := g.lastLabel
 	g.writeLabel(contLabel)
-	code := "void"
+	code := voidValue
 	if ifNode.Else != nil {
 		phi := g.reg()
 		thenCode := g.lookupCode(ifNode.Then)
@@ -981,7 +974,7 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 		if g.isAggregateType(thenType.ID) {
 			typ = "ptr" // Aggregate values flow as pointers in code registers.
 		}
-		if typ != "void" {
+		if typ != "{}" && typ != "void" {
 			g.write(
 				"%s = phi %s [%s, %%%s], [%s, %%%s]",
 				phi,
@@ -1049,14 +1042,14 @@ func (g *IRFunGen) genWhen(id ast.NodeID, when ast.When) { //nolint:funlen
 		}
 	}
 	g.writeLabel(contLabel)
-	code := "void"
+	code := voidValue
 	if len(phiNodes) > 0 {
 		firstType := g.typeOfNode(phiNodes[0])
 		typ := g.irType(firstType.ID)
 		if g.isAggregateType(firstType.ID) {
 			typ = "ptr"
 		}
-		if typ != "void" {
+		if typ != "{}" && typ != "void" {
 			phi := g.reg()
 			parts := make([]string, len(phiNodes))
 			for i, nodeID := range phiNodes {
@@ -1210,11 +1203,11 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 	g.writeLabel(contLabel)
 	if len(phiEntries) == 0 {
 		g.write("unreachable")
-		g.setCode(id, "void")
+		g.setCode(id, voidValue)
 		return
 	}
-	if resultIRType == "void" {
-		g.setCode(id, "void")
+	if resultIRType == "{}" || resultIRType == "void" {
+		g.setCode(id, voidValue)
 		return
 	}
 	phi := g.reg()
@@ -1251,7 +1244,7 @@ func (g *IRFunGen) genMatchElseBinding(match ast.Match, payloadPtr string) {
 func (g *IRFunGen) genMatchBinding(bindID ast.BindingID, name string, typeID types.TypeID, ptr string) {
 	valReg := g.loadValue(ptr, typeID)
 	irTyp := g.irType(typeID)
-	if irTyp == "void" || g.isAggregateType(typeID) {
+	if irTyp == "{}" || g.isAggregateType(typeID) {
 		g.setSymbol(bindID, name, valReg, "ptr")
 		return
 	}
@@ -1277,14 +1270,14 @@ func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	g.Gen(assign.RHS)
 	// `_ = expr` discards the result.
 	if ident, ok := g.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
-		g.setCode(id, "void")
+		g.setCode(id, voidValue)
 		return
 	}
 	rhs := g.lookupCode(assign.RHS)
 	ptrReg := g.genPlaceAddr(assign.LHS)
 	rhsTypeID := g.typeIDOfNode(assign.RHS)
 	g.storeValue(rhs, ptrReg, rhsTypeID)
-	g.setCode(id, "void")
+	g.setCode(id, voidValue)
 }
 
 // emitSafeIntOp emits an inline division/remainder with a zero-check.
@@ -1702,7 +1695,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		dataPtr := g.reg()
 		g.write("%s = load ptr, ptr %s", dataPtr, dataField)
 		g.write("call void %s(ptr %s)", fnPtr, dataPtr)
-		g.setCode(id, "void")
+		g.setCode(id, voidValue)
 		return true
 	case "ffi::PtrMut.write":
 		receiver, ok := g.env.MethodCallReceiver(id)
@@ -1715,7 +1708,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		valReg := g.lookupCode(call.Args[0])
 		valTypeID := g.typeIDOfNode(call.Args[0])
 		g.storeValue(valReg, ptrReg, valTypeID)
-		g.setCode(id, "void")
+		g.setCode(id, voidValue)
 		return true
 	}
 	if method, fa, ok := g.arenaAllocMethod(call); ok {
@@ -1732,7 +1725,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		arg1Reg := g.lookupCode(call.Args[0])
 		locReg := g.addStrConst(span.String())
 		g.write("call void @panic(ptr %s, ptr %s)", arg1Reg, locReg)
-		g.setCode(id, "void")
+		g.setCode(id, voidValue)
 		return true
 	}
 	if ref == "std::debug.location" {
@@ -1770,12 +1763,9 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		return
 	}
 	sb := strings.Builder{}
-	retType := g.env.Type(fun.Return)
 	isRetAggregate := g.isAggregateType(fun.Return)
 	var resReg string
-	if _, ok := retType.Kind.(types.VoidType); ok {
-		g.setCode(id, "void")
-	} else if isRetAggregate {
+	if isRetAggregate {
 		resReg = g.reg()
 		g.writeAlloca(resReg, g.irType(fun.Return))
 		g.setCode(id, resReg)
@@ -1830,19 +1820,15 @@ func (g *IRFunGen) genIndirectCall(id ast.NodeID, call ast.Call, fun types.FunTy
 
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIRTyp := g.irType(fun.Return)
-	retType := g.env.Type(fun.Return)
-	_, isVoid := retType.Kind.(types.VoidType)
 
 	var sb strings.Builder
 	callRetType := retIRTyp
-	if isRetAggregate || isVoid {
+	if isRetAggregate {
 		callRetType = "void"
 	}
 
 	var resReg string
 	switch {
-	case isVoid:
-		g.setCode(id, "void")
 	case isRetAggregate:
 		resReg = g.reg()
 		g.writeAlloca(resReg, retIRTyp)
@@ -1894,6 +1880,10 @@ func (g *IRFunGen) genPath(id ast.NodeID) {
 }
 
 func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
+	if ident.Name == "void" {
+		g.setCode(id, voidValue)
+		return
+	}
 	// Named function reference — emit fat pointer.
 	if name, ok := g.env.NamedFunRef(id); ok {
 		// Check if this is a closure with captures.
@@ -1910,7 +1900,7 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 		identType := g.typeOfNode(id)
 		if _, ok := identType.Kind.(types.AllocatorType); ok ||
 			g.isAggregateType(identType.ID) ||
-			g.irType(identType.ID) == "void" {
+			g.irType(identType.ID) == "{}" {
 			g.setCode(id, symbol.Reg)
 			return
 		}
@@ -2303,7 +2293,9 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 		return fmt.Sprintf("i%d", kind.Bits)
 	case types.BoolType:
 		return "i1"
-	case types.VoidType, types.NeverType:
+	case types.VoidType:
+		return "{}"
+	case types.NeverType:
 		return "void"
 	case types.StructType:
 		if kind.Name == "Str" {
@@ -2481,8 +2473,8 @@ func (g *IRFunGen) lookupSymbol(nodeID ast.NodeID) (Symbol, bool) {
 
 func (g *IRFunGen) loadValue(ptrReg string, typeID types.TypeID) string {
 	irTyp := g.irType(typeID)
-	if irTyp == "void" {
-		return "void"
+	if irTyp == "{}" {
+		return voidValue
 	}
 	if g.isAggregateType(typeID) {
 		return ptrReg
@@ -2494,7 +2486,7 @@ func (g *IRFunGen) loadValue(ptrReg string, typeID types.TypeID) string {
 
 func (g *IRFunGen) storeValue(srcReg string, dstReg string, typeID types.TypeID) {
 	irTyp := g.irType(typeID)
-	if irTyp == "void" {
+	if irTyp == "{}" {
 		return
 	}
 	if g.isAggregateType(typeID) {

@@ -469,7 +469,7 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 			lastExprTypeID, status = e.queryWithHint(exprNodeID, typeHint)
 		} else {
 			lastExprTypeID, status = e.Query(exprNodeID)
-			if !status.Failed() && e.isInstantiable(lastExprTypeID) {
+			if !status.Failed() && e.isInstantiable(lastExprTypeID) && lastExprTypeID != e.voidTyp {
 				switch e.ast.Node(exprNodeID).Kind.(type) {
 				case ast.Fun, ast.Struct, ast.Shape, ast.Union:
 					// Declarations are not expressions — skip the check.
@@ -509,7 +509,7 @@ func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatu
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if e.isInstantiable(blockTypeID) {
+	if blockTypeID != e.voidTyp && e.isInstantiable(blockTypeID) {
 		e.diag(span, "defer block must not yield a value, got %s", e.env.TypeDisplay(blockTypeID))
 		return InvalidTypeID, TypeFailed
 	}
@@ -552,7 +552,7 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if e.isInstantiable(bodyTypeID) {
+	if bodyTypeID != e.voidTyp && e.isInstantiable(bodyTypeID) {
 		bodySpan := e.ast.Node(for_.Body).Span
 		e.diag(bodySpan, "for loop body must not yield a value, got %s", e.env.TypeDisplay(bodyTypeID))
 		return InvalidTypeID, TypeFailed
@@ -2374,7 +2374,7 @@ func (e *Engine) tryUnionAutoWrap(nodeID ast.NodeID, typeID TypeID, hintTypeID T
 }
 
 func (e *Engine) isInstantiable(t TypeID) bool {
-	return t != e.voidTyp && t != e.neverTyp
+	return t != e.neverTyp
 }
 
 func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {

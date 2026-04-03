@@ -154,16 +154,91 @@ Block: void
     Int: Int
 ```
 
-**Discard void is illegal**
+**Discard void**
 
 ```metall
 _ = void
 ```
 
-```error
-test.met:1:5: cannot discard expression of type void
-    _ = void
-        ^^^^
+```types
+Assign: void
+  Ident: ?
+  Ident: void
+```
+
+**Assign void to variable**
+
+```metall
+let x = void
+```
+
+```types
+Var: void
+  Ident: void
+```
+
+```bindings
+Var: scope01
+  Ident: scope01
+---
+scope01:
+  x: void
+```
+
+**Pass void as function argument**
+
+```metall
+{ fun foo(a void) Int { 42 } foo(void) }
+```
+
+```types
+Block: Int
+  Fun: fun01
+    FunParam: void
+      SimpleType: void
+    SimpleType: Int
+    Block: Int
+      Int: Int
+  Call: Int
+    Ident: fun01
+    Ident: void
+---
+fun01 = fun(void) Int
+```
+
+**Return void from function**
+
+```metall
+{ fun foo() void { void } foo() }
+```
+
+```types
+Block: void
+  Fun: fun01
+    SimpleType: void
+    Block: void
+      Ident: void
+  Call: void
+    Ident: fun01
+---
+fun01 = fun() void
+```
+
+**Void in if-else expression**
+
+```metall
+{ let x = if true { void } else { void } }
+```
+
+```types
+Block: void
+  Var: void
+    If: void
+      Bool: Bool
+      Block: void
+        Ident: void
+      Block: void
+        Ident: void
 ```
 
 ## Functions
