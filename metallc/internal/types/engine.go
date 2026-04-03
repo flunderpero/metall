@@ -1141,12 +1141,10 @@ func (e *Engine) isVisible(declNodeID ast.NodeID, pub bool, from ast.NodeID) boo
 }
 
 func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) { //nolint:funlen
-	diagCount := len(e.diagnostics)
-	if _, status, ok := e.InferFunCall(call, span); ok && status.Failed() {
-		if len(e.diagnostics) == diagCount {
-			e.diag(span, "could not infer type arguments for this call")
+	if _, status, ok := e.InferFunCall(call, span); ok {
+		if status.Failed() {
+			return InvalidTypeID, status
 		}
-		return InvalidTypeID, status
 	}
 	calleeTypeID, status := e.Query(call.Callee)
 	if status.Failed() {

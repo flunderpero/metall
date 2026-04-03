@@ -735,12 +735,15 @@ func (e *Engine) materializeNamedType(originTypeID TypeID, typeArgIDs []TypeID) 
 	return typeID, TypeOK
 }
 
+// inferTypeArgs attempts to determine type arguments from concrete argument types.
+// Returns (inferred, true, status) on success or diagnosed failure,
+// and (nil, false, _) when inference was inconclusive.
 func (e *Engine) inferTypeArgs(
 	typeParamNodeIDs []ast.NodeID, genericTypeIDs, concreteTypeIDs []TypeID, scopeNodeID ast.NodeID, span base.Span,
-) ([]TypeID, TypeStatus) {
+) (inferred []TypeID, ok bool, status TypeStatus) {
 	spec, status := e.BuildGenericSpec(InvalidTypeID, typeParamNodeIDs)
 	if status.Failed() {
-		return nil, status
+		return nil, true, status
 	}
 	bindings := map[TypeID]TypeID{}
 	for i, genericTypeID := range genericTypeIDs {
@@ -752,20 +755,19 @@ func (e *Engine) inferTypeArgs(
 		}
 	}
 	e.inferTypeArgsFromConstraints(spec, bindings, scopeNodeID, span)
-	inferred := make([]TypeID, 0, len(spec.Params))
+	result := make([]TypeID, 0, len(spec.Params))
 	for _, param := range spec.Params {
-		concreteID, ok := bindings[param.TypeID]
-		if !ok {
+		concreteID, bound := bindings[param.TypeID]
+		if !bound {
 			break
 		}
-		inferred = append(inferred, concreteID)
+		result = append(result, concreteID)
 	}
-	if len(inferred) < spec.MinArgs() {
-		// Inference couldn't determine all type arguments — fail silently
-		// so the caller can try the non-inference path.
-		return nil, TypeFailed
+	if len(result) < spec.MinArgs() {
+		return nil, false, TypeOK
 	}
-	return e.SolveGenericArgs(spec, inferred, scopeNodeID, span)
+	solved, solveStatus := e.SolveGenericArgs(spec, result, scopeNodeID, span)
+	return solved, true, solveStatus
 }
 
 func (e *Engine) inferTypeArgsFromConstraints(
@@ -893,18 +895,21 @@ func (e *Engine) inferStructConstruction(
 	lit ast.TypeConstruction,
 	span base.Span,
 	typeParamNodeIDs []ast.NodeID,
-) ([]TypeID, TypeStatus) {
+) (inferred []TypeID, ok bool, status TypeStatus) {
 	structType := base.Cast[StructType](targetKind)
+	if len(lit.Args) != len(structType.Fields) {
+		e.diag(span, "argument count mismatch: expected %d, got %d", len(structType.Fields), len(lit.Args))
+		return nil, true, TypeFailed
+	}
 	fieldTypeIDs := make([]TypeID, len(structType.Fields))
 	for i, field := range structType.Fields {
 		fieldTypeIDs[i] = field.Type
 	}
-	argTypeIDs, status := e.queryArgsForInference(lit.Args, fieldTypeIDs)
-	if status.Failed() {
-		return nil, TypeDepFailed
+	argTypeIDs, queryStatus := e.queryArgsForInference(lit.Args, fieldTypeIDs)
+	if queryStatus.Failed() {
+		return nil, true, TypeDepFailed
 	}
-	inferred, inferStatus := e.inferTypeArgs(typeParamNodeIDs, fieldTypeIDs, argTypeIDs, lit.Target, span)
-	return inferred, inferStatus
+	return e.inferTypeArgs(typeParamNodeIDs, fieldTypeIDs, argTypeIDs, lit.Target, span)
 }
 
 func (e *Engine) inferUnionConstruction(
@@ -912,14 +917,14 @@ func (e *Engine) inferUnionConstruction(
 	targetKind TypeKind,
 	lit ast.TypeConstruction,
 	span base.Span,
-) ([]TypeID, TypeStatus) {
+) ([]TypeID, bool, TypeStatus) {
 	if len(lit.Args) != 1 {
 		e.diag(span, "union constructor takes exactly 1 argument, got %d", len(lit.Args))
-		return nil, TypeFailed
+		return nil, true, TypeFailed
 	}
 	argTypeID, status := e.Query(lit.Args[0])
 	if status.Failed() {
-		return nil, TypeDepFailed
+		return nil, true, TypeDepFailed
 	}
 	unionType := base.Cast[UnionType](targetKind)
 	bindings := map[TypeID]TypeID{}
@@ -929,42 +934,47 @@ func (e *Engine) inferUnionConstruction(
 	decl, _ := e.NormalizeGenericDecl(e.env.DeclNode(binding.TypeID), binding.TypeID, "")
 	spec, status := e.BuildGenericSpec(decl.originTypeID, decl.typeParams)
 	if status.Failed() {
-		return nil, status
+		return nil, true, status
 	}
 	inferred := make([]TypeID, 0, len(spec.Params))
 	for _, param := range spec.Params {
-		concreteID, ok := bindings[param.TypeID]
-		if !ok {
+		concreteID, bound := bindings[param.TypeID]
+		if !bound {
 			break
 		}
 		inferred = append(inferred, concreteID)
 	}
-	return e.SolveGenericArgs(spec, inferred, lit.Target, span)
+	if len(inferred) < spec.MinArgs() {
+		return nil, false, TypeOK
+	}
+	solved, solveStatus := e.SolveGenericArgs(spec, inferred, lit.Target, span)
+	return solved, true, solveStatus
 }
 
 func (e *Engine) inferNamedConstruction(
 	binding *Binding, targetKind TypeKind, lit ast.TypeConstruction, span base.Span,
 ) (TypeID, TypeStatus, bool) {
 	var inferred []TypeID
+	var inferOK bool
 	var status TypeStatus
 	switch kind := e.ast.Node(binding.Decl).Kind.(type) {
 	case ast.Struct:
 		if len(kind.TypeParams) == 0 {
 			return InvalidTypeID, TypeFailed, false
 		}
-		inferred, status = e.inferStructConstruction(targetKind, lit, span, kind.TypeParams)
-		if status.Failed() {
-			return InvalidTypeID, status, true
-		}
+		inferred, inferOK, status = e.inferStructConstruction(targetKind, lit, span, kind.TypeParams)
 	case ast.Union:
 		if len(kind.TypeParams) == 0 {
 			return InvalidTypeID, TypeFailed, false
 		}
-		inferred, status = e.inferUnionConstruction(binding, targetKind, lit, span)
-		if status.Failed() {
-			return InvalidTypeID, status, true
-		}
+		inferred, inferOK, status = e.inferUnionConstruction(binding, targetKind, lit, span)
 	default:
+		return InvalidTypeID, TypeFailed, false
+	}
+	if status.Failed() {
+		return InvalidTypeID, status, true
+	}
+	if !inferOK {
 		return InvalidTypeID, TypeFailed, false
 	}
 	typeID, status := e.materializeNamedType(binding.TypeID, inferred)
@@ -1088,13 +1098,18 @@ func (e *Engine) InferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed, true
 	}
-	diagCount := len(e.diagnostics)
-	inferred, status := e.inferTypeArgs(funNode.TypeParams, genericFunType.Params, argTypeIDs, call.Callee, span)
+	inferred, inferOK, status := e.inferTypeArgs(
+		funNode.TypeParams,
+		genericFunType.Params,
+		argTypeIDs,
+		call.Callee,
+		span,
+	)
 	if status.Failed() {
-		if isFieldAccess && len(e.diagnostics) == diagCount {
-			return InvalidTypeID, TypeFailed, false
-		}
 		return InvalidTypeID, status, true
+	}
+	if !inferOK {
+		return InvalidTypeID, TypeFailed, false
 	}
 	typeID, mangledName, status := e.MaterializeFun(
 		binding.Decl,

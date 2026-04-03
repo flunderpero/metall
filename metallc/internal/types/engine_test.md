@@ -7485,6 +7485,18 @@ test.met:1:30: argument count mismatch: expected 2, got 1
                                  ^^^^^^
 ```
 
+**Generic struct construction wrong arg count**
+
+```metall
+{ struct Foo<T> { a Int b T } fun bar<T>() !&Foo<T> { Foo(42) } }
+```
+
+```error
+test.met:1:55: argument count mismatch: expected 2, got 1
+    { struct Foo<T> { a Int b T } fun bar<T>() !&Foo<T> { Foo(42) } }
+                                                          ^^^^^^^
+```
+
 **Defaults do not apply to union construction**
 
 ```metall
@@ -8422,6 +8434,30 @@ test.met:1:23: type mismatch: expected type of LHS: U8, got Int
 test.met:1:75: argument count mismatch: expected 0, got 2
     { struct Foo { one Int } fun Foo.get(f Foo) Int { f.one } let x = Foo(42) x.get(1, 2) }
                                                                               ^^^^^^^^^^^
+```
+
+**Generic fun call wrong arg count**
+
+```metall
+{ fun foo<T>(a T, b T) T { a } foo(1) }
+```
+
+```error
+test.met:1:32: argument count mismatch: expected 2, got 1
+    { fun foo<T>(a T, b T) T { a } foo(1) }
+                                   ^^^^^^
+```
+
+**Generic method call wrong arg count**
+
+```metall
+{ struct Foo<T> { one T } fun Foo.add<T>(f Foo<T>, n T) T { n } let x = Foo(42) x.add(1, 2) }
+```
+
+```error
+test.met:1:81: argument count mismatch: expected 1, got 2
+    { struct Foo<T> { one T } fun Foo.add<T>(f Foo<T>, n T) T { n } let x = Foo(42) x.add(1, 2) }
+                                                                                    ^^^^^^^^^^^
 ```
 
 **Method call wrong arg type**
