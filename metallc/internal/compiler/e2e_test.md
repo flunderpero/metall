@@ -87,6 +87,21 @@ fun main() void {
 ok
 ```
 
+**closure inside nested generic materialization**
+
+```metall
+fun invoke<T>(f fun() T) void {
+    let inner = fun[f]() void { let _ = f() }
+}
+
+fun wrapper<T>(f fun() T) void { invoke(f) }
+
+fun main() void { wrapper(fun() void { DebugIntern.print_int(42) }) }
+```
+
+```output
+```
+
 **fun returns int**
 
 ```metall

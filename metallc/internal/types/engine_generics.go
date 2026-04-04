@@ -1163,13 +1163,22 @@ func (e *Engine) MaterializeFun(
 		prevScope := e.instantiationScope
 		prevSkip := e.skipRegisterWork
 		e.instantiationScope = &callSiteNodeID
-		e.skipRegisterWork = false
+		e.skipRegisterWork = e.hasUnresolvedTypeParams(typeArgIDs)
 		funNode := base.Cast[ast.Fun](e.ast.Node(funNodeID).Kind)
 		e.checkFunBody(funNodeID, funNode, funTypeID, funTyp)
 		e.skipRegisterWork = prevSkip
 		e.instantiationScope = prevScope
 	}
 	return funTypeID, mangledName, TypeOK
+}
+
+func (e *Engine) hasUnresolvedTypeParams(typeArgIDs []TypeID) bool {
+	for _, id := range typeArgIDs {
+		if _, ok := e.env.Type(id).Kind.(TypeParamType); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) RewriteCallable(
