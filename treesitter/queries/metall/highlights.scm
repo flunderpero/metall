@@ -9,6 +9,7 @@
   "let"
   "pub"
   "sync"
+  "unsync"
   "if"
   "else"
   "for"

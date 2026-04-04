@@ -80,6 +80,7 @@ const (
 	Struct
 	Sync
 	Tilde
+	Unsync
 	True
 	Try
 	TypeIdent
@@ -162,6 +163,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Struct:                "<struct>",
 	Sync:                  "<sync>",
 	True:                  "true",
+	Unsync:                "<unsync>",
 	Try:                   "<try>",
 	TypeIdent:             "<type identifier>",
 	Unsafe:                "<unsafe>",
@@ -222,6 +224,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"struct":   Struct,
 	"sync":     Sync,
 	"true":     True,
+	"unsync":   Unsync,
 	"try":      Try,
 	"unsafe":   Unsafe,
 	"union":    Union,

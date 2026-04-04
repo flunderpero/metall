@@ -9,6 +9,14 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
+type SyncMode int
+
+const (
+	SyncNone   SyncMode = iota
+	SyncSync   SyncMode = iota
+	SyncUnsync SyncMode = iota
+)
+
 type NodeID uint64
 
 func (id NodeID) String() string {
@@ -85,7 +93,7 @@ func (SliceType) isKind() {}
 type FunType struct {
 	Params     []NodeID
 	ReturnType NodeID
-	Sync       bool
+	Sync       SyncMode
 }
 
 func (FunType) isKind() {}
@@ -147,6 +155,7 @@ type FunDecl struct {
 	Builtin    bool
 	Extern     bool
 	Unsafe     bool
+	Sync       SyncMode
 }
 
 func (FunDecl) isKind() {}
@@ -187,7 +196,7 @@ type Struct struct {
 	TypeParams []NodeID
 	Fields     []NodeID
 	Pub        bool
-	Sync       bool
+	Sync       SyncMode
 	Builtin    bool
 	Extern     bool
 }
@@ -198,7 +207,7 @@ type TypeParam struct {
 	Name       Name
 	Constraint *NodeID
 	Default    *NodeID
-	Sync       bool
+	Sync       SyncMode
 }
 
 func (TypeParam) isKind() {}
@@ -218,7 +227,7 @@ type Union struct {
 	TypeParams []NodeID
 	Variants   []NodeID // Type nodes (SimpleType, RefType, etc.)
 	Pub        bool
-	Sync       bool
+	Sync       SyncMode
 }
 
 func (Union) isKind() {}
@@ -577,7 +586,7 @@ func (a *AST) NewFunDecl(
 	return a.node(
 		FunDecl{
 			Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
-			Pub: pub, Builtin: false, Extern: extern, Unsafe: unsafe,
+			Pub: pub, Builtin: false, Extern: extern, Unsafe: unsafe, Sync: SyncNone,
 		}, span)
 }
 
@@ -588,13 +597,13 @@ func (a *AST) NewExternFunDecl(
 	return a.node(
 		FunDecl{
 			Name: name, ExternName: externName, TypeParams: typeParams, Params: params, ReturnType: returnType,
-			Pub: pub, Builtin: false, Extern: true, Unsafe: true,
+			Pub: pub, Builtin: false, Extern: true, Unsafe: true, Sync: SyncNone,
 		}, span)
 }
 
 func (a *AST) NewFun(
 	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID,
-	pub bool, unsafe bool, span base.Span,
+	pub bool, unsafe bool, sync SyncMode, span base.Span,
 ) NodeID {
 	return a.node(
 		Fun{
@@ -608,6 +617,7 @@ func (a *AST) NewFun(
 				Builtin:    false,
 				Extern:     false,
 				Unsafe:     unsafe,
+				Sync:       sync,
 			},
 			Captures: nil,
 			Block:    block,
@@ -624,7 +634,9 @@ func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, span base
 	return a.node(FunParam{Name: name, Type: type_, Default: defaultVal}, span)
 }
 
-func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, pub bool, sync bool, span base.Span) NodeID {
+func (a *AST) NewStruct(
+	name Name, typeParams []NodeID, fields []NodeID, pub bool, sync SyncMode, span base.Span,
+) NodeID {
 	return a.node(
 		Struct{
 			Name:       name,
@@ -643,7 +655,7 @@ func (a *AST) NewStructField(name Name, type_ NodeID, pub bool, span base.Span) 
 	return a.node(StructField{Name: name, Type: type_, Pub: pub}, span)
 }
 
-func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, sync bool, span base.Span) NodeID {
+func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, sync SyncMode, span base.Span) NodeID {
 	return a.node(TypeParam{Name: name, Constraint: constraint, Default: defaultType, Sync: sync}, span)
 }
 
@@ -653,8 +665,13 @@ func (a *AST) NewShape(
 	return a.node(Shape{Name: name, TypeParams: typeParams, Fields: fields, Funs: funs, Pub: pub}, span)
 }
 
-func (a *AST) NewUnion(name Name, typeParams []NodeID, variants []NodeID, pub bool, sync bool, span base.Span) NodeID {
-	return a.node(Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub, Sync: sync}, span)
+func (a *AST) NewUnion(
+	name Name, typeParams []NodeID, variants []NodeID, pub bool, sync SyncMode, span base.Span,
+) NodeID {
+	return a.node(
+		Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub, Sync: sync},
+		span,
+	)
 }
 
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
@@ -697,7 +714,7 @@ func (a *AST) NewSliceType(elemType NodeID, mut bool, span base.Span) NodeID {
 	return a.node(SliceType{Elem: elemType, Mut: mut}, span)
 }
 
-func (a *AST) NewFunType(params []NodeID, returnType NodeID, sync bool, span base.Span) NodeID {
+func (a *AST) NewFunType(params []NodeID, returnType NodeID, sync SyncMode, span base.Span) NodeID {
 	return a.node(FunType{Params: params, ReturnType: returnType, Sync: sync}, span)
 }
 
@@ -1176,6 +1193,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Pub {
 			addAttr("pub", "true")
 		}
+		if kind.Sync == SyncUnsync {
+			addAttr("unsync", "true")
+		}
 		if !children {
 			if len(kind.Captures) > 0 {
 				addAttr("captures", nodeIDList(kind.Captures))
@@ -1222,8 +1242,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			}
 		}
 	case FunType:
-		if kind.Sync {
+		if kind.Sync == SyncSync {
 			addAttr("sync", "true")
+		}
+		if kind.Sync == SyncUnsync {
+			addAttr("unsync", "true")
 		}
 		if !children {
 			addAttr("params", nodeIDList(kind.Params))
@@ -1237,8 +1260,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Pub {
 			addAttr("pub", "true")
 		}
-		if kind.Sync {
+		if kind.Sync == SyncSync {
 			addAttr("sync", "true")
+		}
+		if kind.Sync == SyncUnsync {
+			addAttr("unsync", "true")
 		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
@@ -1274,8 +1300,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Pub {
 			addAttr("pub", "true")
 		}
-		if kind.Sync {
+		if kind.Sync == SyncSync {
 			addAttr("sync", "true")
+		}
+		if kind.Sync == SyncUnsync {
+			addAttr("unsync", "true")
 		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
@@ -1290,7 +1319,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case TypeParam:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
-		if kind.Sync {
+		if kind.Sync == SyncSync {
 			addAttr("sync", "true")
 		}
 		if kind.Constraint != nil {

@@ -9866,3 +9866,182 @@ fun main() void {
 
 ```error
 ```
+
+## Unsync
+
+**unsync struct with all-sync fields is not sync**
+
+```metall module
+unsync struct NotSync { x Int y Bool }
+fun is_sync(f sync fun() void) void {}
+fun main() void {
+    let s = NotSync(1, true)
+    is_sync(fun[s]() void { _ = s })
+}
+```
+
+```error
+test.met:5:13: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let s = NotSync(1, true)
+        is_sync(fun[s]() void { _ = s })
+                ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**unsync union with all-sync variants is not sync**
+
+```metall module
+unsync union NotSync = Int | Bool
+fun is_sync(f sync fun() void) void {}
+fun main() void {
+    let u = NotSync(42)
+    is_sync(fun[u]() void { _ = u })
+}
+```
+
+```error
+test.met:5:13: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let u = NotSync(42)
+        is_sync(fun[u]() void { _ = u })
+                ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**unsync fun with all-sync params is not sync**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    unsync fun inner() void {}
+    takes_sync(inner)
+}
+```
+
+```error
+test.met:4:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        unsync fun inner() void {}
+        takes_sync(inner)
+                   ^^^^^
+    }
+```
+
+**unsync fun closure with all-sync captures is not sync**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    let x = 42
+    takes_sync(unsync fun[x]() void { _ = x })
+}
+```
+
+```error
+test.met:4:23: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let x = 42
+        takes_sync(unsync fun[x]() void { _ = x })
+                          ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**pub unsync struct parses correctly**
+
+```metall module
+pub unsync struct Foo { pub x Int }
+fun is_sync(f sync fun() void) void {}
+fun main() void {
+    let s = Foo(1)
+    is_sync(fun[s]() void { _ = s })
+}
+```
+
+```error
+test.met:5:13: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let s = Foo(1)
+        is_sync(fun[s]() void { _ = s })
+                ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**pub unsync union parses correctly**
+
+```metall module
+pub unsync union Foo = Int | Bool
+fun is_sync(f sync fun() void) void {}
+fun main() void {
+    let u = Foo(42)
+    is_sync(fun[u]() void { _ = u })
+}
+```
+
+```error
+test.met:5:13: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let u = Foo(42)
+        is_sync(fun[u]() void { _ = u })
+                ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**unsync fun type annotation**
+
+```metall
+{
+    fun is_sync(x Int) void { _ = x }
+    mut x unsync fun(Int) void = is_sync
+    _ = x
+}
+```
+
+```error
+```
+
+**unsync fun assigned to sync var should not compile**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    unsync fun inner() void {}
+    mut x sync fun() void = inner
+    _ = x
+    takes_sync(inner)
+}
+```
+
+```error
+test.met:4:29: type mismatch: expected sync fun() void, got fun() void
+        unsync fun inner() void {}
+        mut x sync fun() void = inner
+                                ^^^^^
+        _ = x
+
+test.met:5:9: symbol not defined: x
+        mut x sync fun() void = inner
+        _ = x
+            ^
+        takes_sync(inner)
+
+test.met:6:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        _ = x
+        takes_sync(inner)
+                   ^^^^^
+    }
+```
+
+**struct with unsync field is not sync**
+
+```metall module
+unsync struct Inner { x Int }
+struct Outer { i Inner }
+fun is_sync(f sync fun() void) void {}
+fun main() void {
+    let o = Outer(Inner(1))
+    is_sync(fun[o]() void { _ = o })
+}
+```
+
+```error
+test.met:6:13: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let o = Outer(Inner(1))
+        is_sync(fun[o]() void { _ = o })
+                ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```

@@ -91,13 +91,18 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 		switch {
 		case p.lookAhead(token.Fun) ||
 			p.lookAhead(token.Unsafe, token.Fun) ||
+			p.lookAhead(token.Unsync, token.Fun) ||
+			p.lookAhead(token.Unsync, token.Unsafe, token.Fun) ||
 			p.lookAhead(token.Pub, token.Fun) ||
-			p.lookAhead(token.Pub, token.Unsafe, token.Fun):
+			p.lookAhead(token.Pub, token.Unsafe, token.Fun) ||
+			p.lookAhead(token.Pub, token.Unsync, token.Fun) ||
+			p.lookAhead(token.Pub, token.Unsync, token.Unsafe, token.Fun):
 			if fun, ok := p.ParseFun(); ok {
 				decls = append(decls, fun)
 			}
 		case p.lookAhead(token.Struct) || p.lookAhead(token.Pub, token.Struct) ||
-			p.lookAhead(token.Sync, token.Struct) || p.lookAhead(token.Pub, token.Sync, token.Struct):
+			p.lookAhead(token.Sync, token.Struct) || p.lookAhead(token.Pub, token.Sync, token.Struct) ||
+			p.lookAhead(token.Unsync, token.Struct) || p.lookAhead(token.Pub, token.Unsync, token.Struct):
 			if struct_, ok := p.ParseStruct(); ok {
 				decls = append(decls, struct_)
 			}
@@ -106,7 +111,8 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 				decls = append(decls, shape)
 			}
 		case p.lookAhead(token.Union) || p.lookAhead(token.Pub, token.Union) ||
-			p.lookAhead(token.Sync, token.Union) || p.lookAhead(token.Pub, token.Sync, token.Union):
+			p.lookAhead(token.Sync, token.Union) || p.lookAhead(token.Pub, token.Sync, token.Union) ||
+			p.lookAhead(token.Unsync, token.Union) || p.lookAhead(token.Pub, token.Unsync, token.Union):
 			if union, ok := p.ParseUnion(); ok {
 				decls = append(decls, union)
 			}
@@ -170,7 +176,7 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	span := t.Span
-	sync := p.lookAheadConsume(token.Sync)
+	sync := p.parseSyncMode()
 	if _, ok := p.expect(token.Fun); !ok {
 		return ParseFailed, false
 	}
@@ -251,6 +257,7 @@ func (p *Parser) ParseExternFun() (NodeID, bool) {
 
 func (p *Parser) ParseFun() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
+	sync := p.parseSyncMode()
 	unsafe := p.lookAheadConsume(token.Unsafe)
 	decl, startSpan, ok := p.parseFunDecl()
 	if !ok {
@@ -261,7 +268,7 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewFun(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType, block,
-		pub, unsafe, startSpan.Combine(p.span())), true
+		pub, unsafe, sync, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseReturn() (NodeID, bool) {
@@ -320,7 +327,7 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 
 func (p *Parser) ParseStruct() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
-	sync := p.lookAheadConsume(token.Sync)
+	sync := p.parseSyncMode()
 	t, ok := p.expect(token.Struct)
 	if !ok {
 		return ParseFailed, false
@@ -402,7 +409,7 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 
 func (p *Parser) ParseUnion() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
-	sync := p.lookAheadConsume(token.Sync)
+	sync := p.parseSyncMode()
 	t, ok := p.expect(token.Union)
 	if !ok {
 		return ParseFailed, false
@@ -724,7 +731,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		var ok bool
 		if next, peekOK := p.mayPeek1(); peekOK &&
 			(next.Kind == token.LParen || next.Kind == token.LBracket || next.Kind == token.LBracketImmediate) {
-			fun, ok = p.parseFunLiteral()
+			fun, ok = p.parseFunLiteral(SyncNone)
 		} else {
 			fun, ok = p.ParseFun()
 		}
@@ -882,6 +889,20 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = var_
+	case token.Unsync:
+		// `unsync fun[...]()` or `unsync fun()` -> literal; `unsync fun name(...)` -> declaration.
+		if p.lookAhead(token.Unsync, token.Fun, token.LParen) ||
+			p.lookAhead(token.Unsync, token.Fun, token.LBracket) ||
+			p.lookAhead(token.Unsync, token.Fun, token.LBracketImmediate) {
+			p.next() // consume unsync
+			fun, ok := p.parseFunLiteral(SyncUnsync)
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = fun
+		} else {
+			return p.ParseFun()
+		}
 	case token.Unsafe:
 		if p.lookAhead(token.Unsafe, token.Fun) {
 			return p.ParseFun()
@@ -1196,7 +1217,7 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 			return ParseFailed, false
 		}
 		return p.NewRefType(inner, mut, span.Combine(p.span())), true
-	case token.Sync, token.Fun:
+	case token.Sync, token.Unsync, token.Fun:
 		return p.ParseFunType()
 	case token.Question:
 		p.next()
@@ -1519,6 +1540,16 @@ func (p *Parser) parseRangeRHS(lo *NodeID) (NodeID, bool) {
 	return p.NewRange(lo, hi, inclusive, rangeSpan), true
 }
 
+func (p *Parser) parseSyncMode() SyncMode {
+	if p.lookAheadConsume(token.Sync) {
+		return SyncSync
+	}
+	if p.lookAheadConsume(token.Unsync) {
+		return SyncUnsync
+	}
+	return SyncNone
+}
+
 func (p *Parser) parseTry() (NodeID, bool) {
 	t, ok := p.expect(token.Try)
 	if !ok {
@@ -1698,7 +1729,7 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
 				return nil, false
 			}
 		}
-		isSync := p.lookAheadConsume(token.Sync)
+		isSync := p.parseSyncMode()
 		t, ok = p.expect(token.TypeIdent)
 		if !ok {
 			return nil, false
@@ -1822,11 +1853,11 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	}
 	return FunDecl{
 		Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
-		Pub: false, Builtin: false, Extern: false, Unsafe: false,
+		Pub: false, Builtin: false, Extern: false, Unsafe: false, Sync: SyncNone,
 	}, t.Span, true
 }
 
-func (p *Parser) parseFunLiteral() (NodeID, bool) { //nolint:funlen
+func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 	t, ok := p.expect(token.Fun)
 	if !ok {
 		return ParseFailed, false
@@ -1886,7 +1917,7 @@ func (p *Parser) parseFunLiteral() (NodeID, bool) { //nolint:funlen
 	span := t.Span.Combine(p.span())
 	name := fmt.Sprintf("__fun_lit_%d", p.nextFunLitID)
 	p.nextFunLitID++
-	funID := p.NewFun(Name{name, span}, nil, params, returnType, body, false, false, span)
+	funID := p.NewFun(Name{name, span}, nil, params, returnType, body, false, false, sync, span)
 	if len(captures) > 0 {
 		node := p.Node(funID)
 		fun, _ := node.Kind.(Fun)

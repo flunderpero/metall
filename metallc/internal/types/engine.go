@@ -321,8 +321,8 @@ func (e *Engine) isSync(typeID TypeID) bool {
 	case StructType:
 		declNode := e.env.DeclNode(typeID)
 		if declNode != 0 {
-			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Sync {
-				return true
+			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Sync != ast.SyncNone {
+				return s.Sync == ast.SyncSync
 			}
 		}
 		for _, field := range kind.Fields {
@@ -334,8 +334,8 @@ func (e *Engine) isSync(typeID TypeID) bool {
 	case UnionType:
 		declNode := e.env.DeclNode(typeID)
 		if declNode != 0 {
-			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Sync {
-				return true
+			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Sync != ast.SyncNone {
+				return u.Sync == ast.SyncSync
 			}
 		}
 		for _, variant := range kind.Variants {
@@ -350,7 +350,7 @@ func (e *Engine) isSync(typeID TypeID) bool {
 		declNode := e.env.DeclNode(typeID)
 		if declNode != 0 {
 			if tp, ok := e.ast.Node(declNode).Kind.(ast.TypeParam); ok {
-				return tp.Sync
+				return tp.Sync == ast.SyncSync
 			}
 		}
 		return false
@@ -368,6 +368,9 @@ func (e *Engine) isSync(typeID TypeID) bool {
 func (e *Engine) isFunDeclSync(node *ast.Node) bool {
 	funNode, ok := node.Kind.(ast.Fun)
 	if !ok {
+		return false
+	}
+	if funNode.Sync == ast.SyncUnsync {
 		return false
 	}
 	for _, capNodeID := range funNode.Captures {
@@ -1873,7 +1876,7 @@ func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	funTyp := FunType{Params: params, Return: returnType, Macro: false, Sync: funType.Sync}
+	funTyp := FunType{Params: params, Return: returnType, Macro: false, Sync: funType.Sync == ast.SyncSync}
 	return e.env.buildFunType(funTyp, nodeID, span), TypeOK
 }
 
