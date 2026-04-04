@@ -5074,6 +5074,22 @@ fun03 = fun(T) Int
 fun04 = fun(Str) Int
 ```
 
+**Materialized generic resolves shadowed param to concrete type**
+
+```metall
+{ 
+    fun foo<T>(it T) T {
+        mut it = it
+        it 
+    }
+
+    foo(42)
+}
+```
+
+```error
+```
+
 **Generic fun creates struct from type param**
 
 ```metall

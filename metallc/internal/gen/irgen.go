@@ -2594,7 +2594,7 @@ func (g *IRGen) genModuleConsts(consts []types.ConstWork) {
 		f.Gen(varNode.Expr)
 		exprReg := f.lookupCode(varNode.Expr)
 		f.storeValue(exprReg, globalRef, c.TypeID)
-		b, ok := c.Env.Lookup(c.NodeID, varNode.Name.Name)
+		b, ok := c.Env.Lookup(c.NodeID, varNode.Name.Name, -1)
 		if !ok {
 			panic(base.Errorf("constant binding not found: %s", varNode.Name.Name))
 		}

@@ -328,9 +328,9 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 	}
 }
 
-func (e *TypeEnv) Lookup(nodeID ast.NodeID, name string) (*Binding, bool) {
+func (e *TypeEnv) Lookup(nodeID ast.NodeID, name string, blockExprsIndex int) (*Binding, bool) {
 	scope := e.scopeGraph.NodeScope(nodeID)
-	scopeBinding, _, ok := scope.Lookup(name)
+	scopeBinding, _, ok := scope.Lookup(name, blockExprsIndex)
 	if !ok {
 		return nil, false
 	}
@@ -339,7 +339,7 @@ func (e *TypeEnv) Lookup(nodeID ast.NodeID, name string) (*Binding, bool) {
 		return b, true
 	}
 	if e.parent != nil {
-		return e.parent.Lookup(nodeID, name)
+		return e.parent.Lookup(nodeID, name, blockExprsIndex)
 	}
 	return nil, false
 }
@@ -476,15 +476,15 @@ func (e *TypeEnv) buildSliceType(elemTypeID TypeID, mut bool, nodeID ast.NodeID,
 	return mutableID
 }
 
-func (e *TypeEnv) bind(decl ast.NodeID, name string, mut bool, typeID TypeID) bool {
+func (e *TypeEnv) bind(decl ast.NodeID, name string, mut bool, typeID TypeID, blockExprsIndex int) bool {
 	scope := e.scopeGraph.NodeScope(decl)
-	b, isNew := scope.Bind(name, decl)
+	b, isNew := scope.Bind(name, decl, blockExprsIndex)
 	e.bindings[b.ID] = &Binding{b, typeID, mut}
 	return isNew
 }
 
 func (e *TypeEnv) bindInScope(scope *ast.Scope, decl ast.NodeID, name string, typeID TypeID) bool {
-	b, isNew := scope.Bind(name, decl)
+	b, isNew := scope.Bind(name, decl, -1)
 	e.bindings[b.ID] = &Binding{b, typeID, false}
 	return isNew
 }

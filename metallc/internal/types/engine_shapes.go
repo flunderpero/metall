@@ -174,7 +174,7 @@ func (e *Engine) LookupShapeMethodBinding(
 	shapeOriginID := typeIDOrigin(e.env, shapeTypeID)
 	shapeType := base.Cast[ShapeType](e.env.Type(shapeOriginID).Kind)
 	bindName := shapeType.DeclName + "." + methodName
-	binding, ok := e.lookup(scopeNodeID, bindName)
+	binding, ok := e.lookup(scopeNodeID, bindName, -1)
 	if !ok {
 		binding, ok = e.lookupInTypeModule(e.env.Type(shapeOriginID), bindName)
 	}
@@ -283,7 +283,7 @@ func (e *Engine) CheckShapeCreateAndBind(node *ast.Node, shapeNode ast.Shape) (T
 		node.Span,
 		TypeInProgress,
 	)
-	if !e.bind(node.ID, shapeNode.Name.Name, false, typeID, shapeNode.Name.Span) {
+	if !e.bind(node.ID, shapeNode.Name.Name, false, typeID, shapeNode.Name.Span, -1) {
 		return typeID, TypeFailed
 	}
 	return typeID, TypeInProgress

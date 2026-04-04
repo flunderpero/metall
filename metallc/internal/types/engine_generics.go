@@ -128,7 +128,7 @@ func (e *Engine) bindTypeParams(typeParamNodeIDs []ast.NodeID) TypeStatus {
 			e.env.reg.typeParamTypes[typeParamNodeID] = typeParamID
 		}
 
-		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, typeParamID, typeParamNode.Name.Span)
+		e.bind(typeParamNodeID, typeParamNode.Name.Name, false, typeParamID, typeParamNode.Name.Span, -1)
 	}
 	return TypeOK
 }
@@ -229,7 +229,7 @@ func (e *Engine) SolveGenericArgs(
 
 func (e *Engine) BindGenericArgs(spec *GenericSpec, typeArgIDs []TypeID) {
 	for i, param := range spec.Params {
-		e.bind(param.NodeID, param.Name, false, typeArgIDs[i], e.ast.Node(param.NodeID).Span)
+		e.bind(param.NodeID, param.Name, false, typeArgIDs[i], e.ast.Node(param.NodeID).Span, -1)
 	}
 }
 
@@ -844,7 +844,7 @@ func (e *Engine) InferTypeConstruction(
 	if !ok || len(ident.TypeArgs) > 0 {
 		return InvalidTypeID, TypeFailed, false
 	}
-	binding, ok := e.lookup(lit.Target, ident.Name)
+	binding, ok := e.lookup(lit.Target, ident.Name, -1)
 	if !ok {
 		return InvalidTypeID, TypeFailed, false
 	}
@@ -988,14 +988,14 @@ func (e *Engine) resolveCallBinding(call ast.Call) (*Binding, bool) {
 	calleeNode := e.ast.Node(call.Callee)
 	switch kind := calleeNode.Kind.(type) {
 	case ast.Ident:
-		binding, ok := e.lookup(call.Callee, kind.Name)
+		binding, ok := e.lookup(call.Callee, kind.Name, -1)
 		return binding, ok && binding.Decl != 0
 	case ast.Path:
 		if len(kind.Segments) != 2 {
 			return nil, false
 		}
 		moduleName := kind.Segments[0]
-		modBinding, ok := e.lookup(call.Callee, moduleName)
+		modBinding, ok := e.lookup(call.Callee, moduleName, -1)
 		if !ok {
 			return nil, false
 		}
@@ -1011,7 +1011,7 @@ func (e *Engine) resolveCallBinding(call ast.Call) (*Binding, bool) {
 		if len(mod.Decls) == 0 {
 			return nil, false
 		}
-		binding, ok := e.env.Lookup(mod.Decls[0], kind.Segments[1])
+		binding, ok := e.env.Lookup(mod.Decls[0], kind.Segments[1], -1)
 		return binding, ok
 	case ast.FieldAccess:
 		return e.resolveMethodCallBinding(call.Callee, kind)
@@ -1060,7 +1060,7 @@ func (e *Engine) lookupMethodBinding(scopeNodeID ast.NodeID, targetTypeID TypeID
 	if !ok {
 		return nil, false
 	}
-	binding, ok := e.lookup(scopeNodeID, lookupName)
+	binding, ok := e.lookup(scopeNodeID, lookupName, -1)
 	if !ok {
 		binding, ok = e.lookupInTypeModule(lookupType, lookupName)
 	}

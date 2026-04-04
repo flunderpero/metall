@@ -28,30 +28,36 @@ type Scope struct {
 }
 
 type Binding struct {
-	ID   BindingID
-	Name string
-	Decl NodeID
+	ID                  BindingID
+	Name                string
+	Decl                NodeID
+	FromBlockExprsIndex int // Index in Block.Exprs where this binding becomes visible. -1 means always visible.
+	ToBlockExprsIndex   int // Index in Block.Exprs where this binding stops being visible. -1 means forever.
 }
 
 func NewScope(root NodeID, id ScopeID, parent *Scope, namespace string) *Scope {
 	return &Scope{id, parent, root, namespace, map[string]*Binding{}}
 }
 
-func (s *Scope) Bind(name string, decl NodeID) (*Binding, bool) {
+func (s *Scope) Bind(name string, decl NodeID, blockExprsIndex int) (*Binding, bool) {
 	if b, ok := s.Bindings[name]; ok {
 		return b, b.Decl == decl
 	}
-	b := &Binding{BindingID(decl), name, decl}
+	b := &Binding{BindingID(decl), name, decl, blockExprsIndex, -1}
 	s.Bindings[name] = b
 	return b, true
 }
 
-func (s *Scope) Lookup(name string) (*Binding, *Scope, bool) {
+func (s *Scope) Lookup(name string, blockExprsIndex int) (*Binding, *Scope, bool) {
 	if b, ok := s.Bindings[name]; ok {
-		return b, s, true
+		if blockExprsIndex == -1 || b.FromBlockExprsIndex == -1 || blockExprsIndex > b.FromBlockExprsIndex {
+			return b, s, true
+		}
 	}
 	if s.Parent != nil {
-		return s.Parent.Lookup(name)
+		// When crossing into a parent scope, position no longer applies —
+		// the parent's bindings have their own independent block indices.
+		return s.Parent.Lookup(name, -1)
 	}
 	return nil, nil, false
 }

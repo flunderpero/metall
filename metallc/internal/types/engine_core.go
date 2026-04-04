@@ -36,16 +36,23 @@ func (c *EngineCore) diag(span base.Span, msg string, msgArgs ...any) {
 	c.diagnostics = append(c.diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
 
-func (c *EngineCore) bind(nodeID ast.NodeID, name string, mut bool, typeID TypeID, span base.Span) bool {
-	if !c.env.bind(nodeID, name, mut, typeID) && c.env.IsRoot() {
+func (c *EngineCore) bind(
+	nodeID ast.NodeID,
+	name string,
+	mut bool,
+	typeID TypeID,
+	span base.Span,
+	blockExprsIndex int,
+) bool {
+	if !c.env.bind(nodeID, name, mut, typeID, blockExprsIndex) && c.env.IsRoot() {
 		c.diag(span, "symbol already defined: %s", name)
 		return false
 	}
 	return true
 }
 
-func (c *EngineCore) lookup(nodeID ast.NodeID, name string) (*Binding, bool) {
-	return c.env.Lookup(nodeID, name)
+func (c *EngineCore) lookup(nodeID ast.NodeID, name string, blockExprsIndex int) (*Binding, bool) {
+	return c.env.Lookup(nodeID, name, blockExprsIndex)
 }
 
 func (c *EngineCore) enterChildEnv() func() {

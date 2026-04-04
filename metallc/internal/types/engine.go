@@ -41,6 +41,7 @@ type Engine struct {
 	loopStack          []ast.NodeID
 	funStack           []TypeID
 	typeHint           *TypeID
+	blockExprsIndex    int // Current index in Block.Exprs during block checking. -1 when outside a block.
 	instantiationScope *ast.NodeID
 	voidTyp            TypeID
 	boolTyp            TypeID
@@ -67,6 +68,7 @@ func NewEngine(
 		EngineCore:       c,
 		moduleResolution: moduleResolution,
 		macroExpander:    macroExpander,
+		blockExprsIndex:  -1,
 	}
 	for _, root := range preludeAST.Roots {
 		e.Query(root)
@@ -378,7 +380,7 @@ func (e *Engine) isFunDeclSync(node *ast.Node) bool {
 		if capture.Mode != ast.CaptureByValue {
 			return false
 		}
-		outerBinding, ok := e.lookup(node.ID, capture.Name.Name)
+		outerBinding, ok := e.lookup(node.ID, capture.Name.Name, -1)
 		if !ok {
 			return false
 		}
@@ -562,6 +564,8 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 			e.diag(e.ast.Node(exprNodeID).Span, "unreachable code")
 			return InvalidTypeID, TypeDepFailed
 		}
+		prevBlockExprsIndex := e.blockExprsIndex
+		e.blockExprsIndex = i
 		if i == lastIdx {
 			lastExprTypeID, status = e.queryWithHint(exprNodeID, typeHint)
 		} else {
@@ -583,6 +587,7 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 		if status.Failed() {
 			depFailed = true
 		}
+		e.blockExprsIndex = prevBlockExprsIndex
 		if lastExprTypeID == e.neverTyp {
 			wouldBeDeadCode = true
 		}
@@ -631,7 +636,7 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 		if _, status := e.Query(*for_.Cond); status.Failed() {
 			return InvalidTypeID, status
 		}
-		e.bind(for_.Body, for_.Binding.Name, false, e.intTyp, for_.Binding.Span)
+		e.bind(for_.Body, for_.Binding.Name, false, e.intTyp, for_.Binding.Span, -1)
 	} else if for_.Cond != nil {
 		condType, status := e.Query(*for_.Cond)
 		if status.Failed() {
@@ -788,7 +793,7 @@ func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, sp
 		e.diag(span, "argument count mismatch: expected %d, got %d", 0, len(alloc.Args))
 		return InvalidTypeID, TypeFailed
 	}
-	e.bind(nodeID, alloc.Name.Name, false, e.arenaTyp, span)
+	e.bind(nodeID, alloc.Name.Name, false, e.arenaTyp, span, e.blockExprsIndex)
 	return e.voidTyp, TypeOK
 }
 
@@ -1123,9 +1128,9 @@ func (e *Engine) resolveMethod( //nolint:funlen
 	if !ok {
 		return InvalidTypeID, TypeFailed, false
 	}
-	binding, ok := e.lookup(nodeID, lookupName)
+	binding, ok := e.lookup(nodeID, lookupName, -1)
 	if !ok && e.instantiationScope != nil {
-		binding, ok = e.lookup(*e.instantiationScope, lookupName)
+		binding, ok = e.lookup(*e.instantiationScope, lookupName, -1)
 	}
 	if !ok {
 		binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
@@ -1137,7 +1142,7 @@ func (e *Engine) resolveMethod( //nolint:funlen
 			structNode := base.Cast[ast.Struct](e.ast.Node(structNodeID).Kind)
 			structName := e.scopeGraph.NodeScope(structNodeID).NamespacedName(structNode.Name.Name)
 			lookupName = structName + "." + methodName
-			binding, ok = e.lookup(nodeID, lookupName)
+			binding, ok = e.lookup(nodeID, lookupName, -1)
 			if !ok {
 				binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
 			}
@@ -1154,7 +1159,7 @@ func (e *Engine) resolveMethod( //nolint:funlen
 			unionNode := base.Cast[ast.Union](e.ast.Node(unionNodeID).Kind)
 			unionName := e.scopeGraph.NodeScope(unionNodeID).NamespacedName(unionNode.Name.Name)
 			lookupName = unionName + "." + methodName
-			binding, ok = e.lookup(nodeID, lookupName)
+			binding, ok = e.lookup(nodeID, lookupName, -1)
 			if !ok {
 				binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
 			}
@@ -1190,7 +1195,7 @@ func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
 	if len(typModule.Decls) == 0 {
 		return nil, false
 	}
-	return e.env.Lookup(typModule.Decls[0], name)
+	return e.env.Lookup(typModule.Decls[0], name, -1)
 }
 
 func (e *Engine) declIsPub(declNodeID ast.NodeID) bool {
@@ -1663,7 +1668,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		}
 		bindName = resolved
 	}
-	if !e.bind(node.ID, bindName, false, funTypeID, fun.Name.Span) {
+	if !e.bind(node.ID, bindName, false, funTypeID, fun.Name.Span, -1) {
 		return InvalidTypeID, TypeFailed
 	}
 	if fun.Extern {
@@ -1677,7 +1682,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 func (e *Engine) resolveMethodBindName(
 	nodeID ast.NodeID, structName, methodName string, span base.Span,
 ) (string, bool) {
-	binding, ok := e.lookup(nodeID, structName)
+	binding, ok := e.lookup(nodeID, structName, -1)
 	if !ok {
 		e.diag(span, "method receiver type not found: %s", structName)
 		return "", false
@@ -1698,7 +1703,7 @@ func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct)
 		node.Span,
 		TypeInProgress,
 	)
-	if !e.bind(node.ID, structNode.Name.Name, false, typeID, structNode.Name.Span) {
+	if !e.bind(node.ID, structNode.Name.Name, false, typeID, structNode.Name.Span, -1) {
 		return typeID, TypeFailed
 	}
 	return typeID, TypeInProgress
@@ -1707,7 +1712,7 @@ func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct)
 func (e *Engine) checkUnionCreateAndBind(node *ast.Node, unionNode ast.Union) (TypeID, TypeStatus) {
 	name := e.declMangledName(node.ID, unionNode.Name.Name)
 	typeID := e.env.newType(UnionType{name, nil, nil}, node.ID, node.Span, TypeInProgress)
-	if !e.bind(node.ID, unionNode.Name.Name, false, typeID, unionNode.Name.Span) {
+	if !e.bind(node.ID, unionNode.Name.Name, false, typeID, unionNode.Name.Span, -1) {
 		return typeID, TypeFailed
 	}
 	return typeID, TypeInProgress
@@ -1807,7 +1812,7 @@ func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID T
 	for i, paramNodeID := range funNode.Params {
 		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
 		paramTypeID := funType.Params[i]
-		if !e.bind(paramNodeID, paramNode.Name.Name, false, paramTypeID, paramNode.Name.Span) {
+		if !e.bind(paramNodeID, paramNode.Name.Name, false, paramTypeID, paramNode.Name.Span, -1) {
 			return
 		}
 	}
@@ -1920,7 +1925,7 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 		return InvalidTypeID, TypeFailed
 	}
 	moduleName := path.Segments[0]
-	modBinding, ok := e.lookup(nodeID, moduleName)
+	modBinding, ok := e.lookup(nodeID, moduleName, -1)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", moduleName)
 		return InvalidTypeID, TypeFailed
@@ -1952,7 +1957,7 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 		}
 		lookupName = resolved
 	}
-	binding, ok := e.env.Lookup(mod.Decls[0], lookupName)
+	binding, ok := e.env.Lookup(mod.Decls[0], lookupName, -1)
 	if !ok {
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
@@ -1978,7 +1983,7 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		}
 		lookupName = resolved
 	}
-	binding, ok := e.lookup(nodeID, lookupName)
+	binding, ok := e.lookup(nodeID, lookupName, e.blockExprsIndex)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
@@ -1998,7 +2003,7 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Capture) {
 	// Look up the captured name from the outer scope via the Fun node (which
 	// lives in the enclosing scope, before the function's own scope).
-	outerBinding, ok := e.lookup(funNodeID, capture.Name.Name)
+	outerBinding, ok := e.lookup(funNodeID, capture.Name.Name, -1)
 	if !ok {
 		e.diag(capture.Name.Span, "capture: symbol not defined: %s", capture.Name.Name)
 		return
@@ -2021,7 +2026,7 @@ func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Captur
 		}
 		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, true, capture.Name.Span)
 	}
-	e.bind(capNodeID, capture.Name.Name, false, captureTypeID, capture.Name.Span)
+	e.bind(capNodeID, capture.Name.Name, false, captureTypeID, capture.Name.Span, -1)
 	e.env.captureOrigins[capNodeID] = outerBinding
 }
 
@@ -2168,7 +2173,7 @@ func (e *Engine) checkRefType(
 }
 
 func (e *Engine) checkSimpleType(nodeID ast.NodeID, simpleType ast.SimpleType, span base.Span) (TypeID, TypeStatus) {
-	binding, ok := e.lookup(nodeID, simpleType.Name.Name)
+	binding, ok := e.lookup(nodeID, simpleType.Name.Name, -1)
 	if !ok {
 		e.diag(span, "symbol not defined: %s", simpleType.Name.Name)
 		return InvalidTypeID, TypeFailed
@@ -2279,7 +2284,7 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 		}
 		bindTypeID = declTypeID
 	}
-	if !e.bind(nodeID, varNode.Name.Name, varNode.Mut, bindTypeID, varNode.Name.Span) {
+	if !e.bind(nodeID, varNode.Name.Name, varNode.Mut, bindTypeID, varNode.Name.Span, e.blockExprsIndex) {
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK
@@ -2352,7 +2357,7 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 	node := e.ast.Node(nodeID)
 	switch kind := node.Kind.(type) {
 	case ast.Ident:
-		binding, ok := e.lookup(nodeID, kind.Name)
+		binding, ok := e.lookup(nodeID, kind.Name, -1)
 		if !ok {
 			return InvalidTypeID, false
 		}

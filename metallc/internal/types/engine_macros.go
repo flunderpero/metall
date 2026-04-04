@@ -130,7 +130,7 @@ func (e *Engine) isMacroCall(call ast.Call) (bool, ast.NodeID) {
 		return false, 0
 	}
 	moduleName := path.Segments[0]
-	modBinding, ok := e.lookup(call.Callee, moduleName)
+	modBinding, ok := e.lookup(call.Callee, moduleName, -1)
 	if !ok {
 		return false, 0
 	}
@@ -215,7 +215,7 @@ func (e *Engine) renderCompTypeOf(call ast.Call, span base.Span) (macros.MacroAr
 	if !ok || len(path.Segments) != 2 || path.Segments[1] != "type_of" {
 		return macros.MacroArg{}, false
 	}
-	modBinding, ok := e.lookup(call.Callee, path.Segments[0])
+	modBinding, ok := e.lookup(call.Callee, path.Segments[0], -1)
 	if !ok {
 		return macros.MacroArg{}, false
 	}

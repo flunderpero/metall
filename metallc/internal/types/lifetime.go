@@ -486,7 +486,7 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 	// by name (handles shape method calls like S.do).
 	if declID == 0 {
 		if ref, ok := a.env.NamedFunRef(call.Callee); ok {
-			if binding, ok := a.env.Lookup(call.Callee, ref); ok {
+			if binding, ok := a.env.Lookup(call.Callee, ref, -1); ok {
 				declID = binding.Decl
 			}
 		}
@@ -695,7 +695,7 @@ func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
 
 	innerScope := a.scopeGraph.NodeScope(forNode.Body)
 	for name, vt := range ss.Vars {
-		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
+		if _, foundIn, ok := innerScope.Lookup(name, -1); !ok || foundIn == innerScope {
 			continue
 		}
 		if forNode.Binding != nil && vt.Flow.Taints.ContainsAny(ss.LocalTaints) {
@@ -931,7 +931,7 @@ func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	// Skip variables declared in this block's own scope (they shadow, not mutate).
 	innerScope := a.scopeGraph.NodeScope(lastExpr)
 	for name, vt := range ss.Vars {
-		if _, foundIn, ok := innerScope.Lookup(name); !ok || foundIn == innerScope {
+		if _, foundIn, ok := innerScope.Lookup(name, -1); !ok || foundIn == innerScope {
 			continue
 		}
 		a.debug(1, nodeID, "analyzeBlock: outer var %q %s localTaints=%s escape=%v",
@@ -1292,7 +1292,7 @@ func (s *shapeContractsCheck) verifyFunWork(fw FunWork) {
 
 func (s *shapeContractsCheck) resolveShapeDeclID(calleeNodeID ast.NodeID) ast.NodeID {
 	if ref, ok := s.env.NamedFunRef(calleeNodeID); ok {
-		if binding, ok := s.env.Lookup(calleeNodeID, ref); ok {
+		if binding, ok := s.env.Lookup(calleeNodeID, ref, -1); ok {
 			if _, isFunDecl := s.ast.Node(binding.Decl).Kind.(ast.FunDecl); isFunDecl {
 				return binding.Decl
 			}
