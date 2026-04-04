@@ -298,13 +298,7 @@ func (e *Engine) RewriteType(typeID TypeID, bindings map[TypeID]TypeID) (TypeID,
 		if !changed {
 			return typeID, TypeOK
 		}
-		cacheKey := funTypeCacheKey(rewritten)
-		if cached, ok := e.env.cachedFunType(cacheKey); ok {
-			return cached.Type.ID, cached.Status
-		}
-		funTypeID := e.env.newType(rewritten, 0, base.Span{}, TypeOK)
-		e.env.cacheFunType(cacheKey, funTypeID)
-		return funTypeID, TypeOK
+		return e.env.buildFunType(rewritten, 0, base.Span{}), TypeOK
 	case StructType:
 		return e.rewriteNamedType(typeID, kind.TypeArgs, bindings)
 	case UnionType:
@@ -317,7 +311,12 @@ func (e *Engine) RewriteType(typeID TypeID, bindings map[TypeID]TypeID) (TypeID,
 }
 
 func (e *Engine) RewriteFunType(funType FunType, bindings map[TypeID]TypeID) (FunType, bool, TypeStatus) {
-	result := FunType{Params: make([]TypeID, len(funType.Params)), Return: funType.Return, Macro: funType.Macro}
+	result := FunType{
+		Params: make([]TypeID, len(funType.Params)),
+		Return: funType.Return,
+		Macro:  funType.Macro,
+		Sync:   funType.Sync,
+	}
 	changed := false
 	for i, paramTypeID := range funType.Params {
 		rewritten, status := e.RewriteType(paramTypeID, bindings)
@@ -1214,7 +1213,7 @@ func (e *Engine) RewriteCallable(
 			return FunType{}, status
 		}
 	}
-	funType := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false}
+	funType := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false, Sync: false}
 	if len(bindings) == 0 {
 		return funType, TypeOK
 	}

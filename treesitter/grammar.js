@@ -101,6 +101,7 @@ module.exports = grammar({
     ),
 
     type_parameter: ($) => seq(
+      optional("sync"),
       field("name", $.type_identifier),
       field("constraint", optional($.type_identifier)),
       optional(seq("=", field("default", $._type))),
@@ -177,6 +178,7 @@ module.exports = grammar({
     parameter: ($) =>
       seq(
         field("name", choice($.identifier, $.allocator_identifier)),
+        optional("sync"),
         field("type", $._type),
         optional(seq("=", field("default", $._expression))),
       ),
@@ -186,6 +188,7 @@ module.exports = grammar({
     struct_declaration: ($) =>
       seq(
         optional("pub"),
+        optional("sync"),
         "struct",
         field("name", $.type_identifier),
         optional(field("type_parameters", $.type_parameters)),
@@ -227,6 +230,7 @@ module.exports = grammar({
     union_declaration: ($) =>
       seq(
         optional("pub"),
+        optional("sync"),
         "union",
         field("name", $.type_identifier),
         optional(field("type_parameters", $.type_parameters)),

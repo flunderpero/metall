@@ -312,6 +312,86 @@ func (e *Engine) declMangledName(nodeID ast.NodeID, name string) string {
 	return n
 }
 
+// isSync returns true if the given type is safe to share across threads.
+func (e *Engine) isSync(typeID TypeID) bool {
+	typ := e.env.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case VoidType, NeverType, BoolType, IntType:
+		return true
+	case StructType:
+		declNode := e.env.DeclNode(typeID)
+		if declNode != 0 {
+			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Sync {
+				return true
+			}
+		}
+		for _, field := range kind.Fields {
+			if !e.isSync(field.Type) {
+				return false
+			}
+		}
+		return true
+	case UnionType:
+		declNode := e.env.DeclNode(typeID)
+		if declNode != 0 {
+			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Sync {
+				return true
+			}
+		}
+		for _, variant := range kind.Variants {
+			if !e.isSync(variant) {
+				return false
+			}
+		}
+		return true
+	case ArrayType:
+		return e.isSync(kind.Elem)
+	case TypeParamType:
+		declNode := e.env.DeclNode(typeID)
+		if declNode != 0 {
+			if tp, ok := e.ast.Node(declNode).Kind.(ast.TypeParam); ok {
+				return tp.Sync
+			}
+		}
+		return false
+	case FunType:
+		return typeID&syncFunFlag != 0
+	case RefType, SliceType, AllocatorType:
+		return false
+	default:
+		panic(fmt.Sprintf("unknown type: %T", kind))
+	}
+}
+
+// isFunDeclSync determines if a function declaration produces a sync fun type.
+// A function is sync if all its parameters, return type, and captures are sync.
+func (e *Engine) isFunDeclSync(node *ast.Node) bool {
+	funNode, ok := node.Kind.(ast.Fun)
+	if !ok {
+		return false
+	}
+	for _, capNodeID := range funNode.Captures {
+		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
+		if capture.Mode != ast.CaptureByValue {
+			return false
+		}
+		outerBinding, ok := e.lookup(node.ID, capture.Name.Name)
+		if !ok {
+			return false
+		}
+		if !e.isSync(outerBinding.TypeID) {
+			return false
+		}
+	}
+	for _, paramNodeID := range funNode.Params {
+		paramTypeID := e.env.TypeOfNode(paramNodeID).ID
+		if !e.isSync(paramTypeID) {
+			return false
+		}
+	}
+	return e.isSync(e.env.TypeOfNode(funNode.ReturnType).ID)
+}
+
 func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	// `_ = expr` discards the result of expr.
 	if ident, ok := e.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
@@ -1569,17 +1649,9 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		}
 		paramTypeIDs[i] = paramTypeID
 	}
-	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false}
-	cacheKey := funTypeCacheKey(funTyp)
-	cached, ok := e.env.cachedFunType(cacheKey)
-	var funTypeID TypeID
-	if ok {
-		funTypeID = cached.Type.ID
-		e.env.setNodeType(node.ID, cached)
-	} else {
-		funTypeID = e.env.newType(funTyp, node.ID, node.Span, TypeOK)
-		e.env.cacheFunType(cacheKey, funTypeID)
-	}
+	isSync := e.isFunDeclSync(node)
+	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false, Sync: isSync}
+	funTypeID := e.env.buildFunType(funTyp, node.ID, node.Span)
 	bindName := fun.Name.Name
 	if structName, methodName, ok := strings.Cut(fun.Name.Name, "."); ok {
 		resolved, ok := e.resolveMethodBindName(node.ID, structName, methodName, fun.Name.Span)
@@ -1801,15 +1873,8 @@ func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	funTyp := FunType{Params: params, Return: returnType, Macro: false}
-	cacheKey := funTypeCacheKey(funTyp)
-	cached, ok := e.env.cachedFunType(cacheKey)
-	if ok {
-		return cached.Type.ID, cached.Status
-	}
-	typeID := e.env.newType(funTyp, nodeID, span, TypeOK)
-	e.env.cacheFunType(cacheKey, typeID)
-	return typeID, TypeOK
+	funTyp := FunType{Params: params, Return: returnType, Macro: false, Sync: funType.Sync}
+	return e.env.buildFunType(funTyp, nodeID, span), TypeOK
 }
 
 func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeStatus) {
@@ -1822,7 +1887,7 @@ func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeSt
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if exprTypeID != funType.Return {
+	if !e.isAssignableTo(exprTypeID, funType.Return) {
 		span := e.ast.Node(return_.Expr).Span
 		e.diag(
 			span,
@@ -2401,6 +2466,10 @@ func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
 	}
 	// A []mut T is assignable to []T (coerce by masking off the mutable slice flag).
 	if got&mutableSliceFlag != 0 && got&^mutableSliceFlag == expected {
+		return true
+	}
+	// A sync fun is assignable to a non-sync fun (relaxing the sync guarantee).
+	if got&syncFunFlag != 0 && got&^syncFunFlag == expected {
 		return true
 	}
 	// Recursively check nested slices/refs (e.g. [][]mut T → [][]T).

@@ -350,6 +350,9 @@ func (d *debugTypes) structDetailWithID(kind StructType, typeID TypeID) string {
 
 func (d *debugTypes) funDetail(kind FunType) string {
 	var sb strings.Builder
+	if kind.Sync {
+		sb.WriteString("sync ")
+	}
 	sb.WriteString("fun(")
 	for i, p := range kind.Params {
 		if i > 0 {

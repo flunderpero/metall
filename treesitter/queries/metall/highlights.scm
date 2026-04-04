@@ -8,6 +8,7 @@
   "use"
   "let"
   "pub"
+  "sync"
   "if"
   "else"
   "for"

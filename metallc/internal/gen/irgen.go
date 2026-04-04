@@ -2246,7 +2246,13 @@ func (g *IRFunGen) typeOfNode(nodeID ast.NodeID) *types.Type {
 			return g.env.Type(wrapTypeID)
 		}
 	}
-	return g.env.TypeOfNode(nodeID)
+	typ := g.env.TypeOfNode(nodeID)
+	// Strip the sync flag -- it's irrelevant for codegen.
+	stripped := types.StripSyncFlag(typ.ID)
+	if stripped != typ.ID {
+		return g.env.Type(stripped)
+	}
+	return typ
 }
 
 func (g *IRFunGen) typeIDOfNode(nodeID ast.NodeID) types.TypeID {

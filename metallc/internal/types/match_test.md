@@ -141,7 +141,7 @@ Fun: fun01
         Return: never
           Int: Int
 ---
-fun01   = fun() Int
+fun01   = sync fun() Int
 union01 = Foo = Str | Int
 ```
 
@@ -184,7 +184,7 @@ Fun: fun01
       Block: Int
         Int: Int
 ---
-fun01   = fun() Int
+fun01   = sync fun() Int
 union01 = Tri = Int | Bool | Str
 ```
 

@@ -78,6 +78,7 @@ const (
 	StarPercent
 	String
 	Struct
+	Sync
 	Tilde
 	True
 	Try
@@ -159,6 +160,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	String:                "<string>",
 	Tilde:                 "~",
 	Struct:                "<struct>",
+	Sync:                  "<sync>",
 	True:                  "true",
 	Try:                   "<try>",
 	TypeIdent:             "<type identifier>",
@@ -218,6 +220,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"return":   Return,
 	"shape":    Shape,
 	"struct":   Struct,
+	"sync":     Sync,
 	"true":     True,
 	"try":      Try,
 	"unsafe":   Unsafe,

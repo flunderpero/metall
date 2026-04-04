@@ -85,6 +85,7 @@ func (SliceType) isKind() {}
 type FunType struct {
 	Params     []NodeID
 	ReturnType NodeID
+	Sync       bool
 }
 
 func (FunType) isKind() {}
@@ -186,6 +187,7 @@ type Struct struct {
 	TypeParams []NodeID
 	Fields     []NodeID
 	Pub        bool
+	Sync       bool
 	Builtin    bool
 	Extern     bool
 }
@@ -196,6 +198,7 @@ type TypeParam struct {
 	Name       Name
 	Constraint *NodeID
 	Default    *NodeID
+	Sync       bool
 }
 
 func (TypeParam) isKind() {}
@@ -215,6 +218,7 @@ type Union struct {
 	TypeParams []NodeID
 	Variants   []NodeID // Type nodes (SimpleType, RefType, etc.)
 	Pub        bool
+	Sync       bool
 }
 
 func (Union) isKind() {}
@@ -620,9 +624,18 @@ func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, span base
 	return a.node(FunParam{Name: name, Type: type_, Default: defaultVal}, span)
 }
 
-func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, pub bool, span base.Span) NodeID {
+func (a *AST) NewStruct(name Name, typeParams []NodeID, fields []NodeID, pub bool, sync bool, span base.Span) NodeID {
 	return a.node(
-		Struct{Name: name, TypeParams: typeParams, Fields: fields, Pub: pub, Builtin: false, Extern: false}, span,
+		Struct{
+			Name:       name,
+			TypeParams: typeParams,
+			Fields:     fields,
+			Pub:        pub,
+			Sync:       sync,
+			Builtin:    false,
+			Extern:     false,
+		},
+		span,
 	)
 }
 
@@ -630,8 +643,8 @@ func (a *AST) NewStructField(name Name, type_ NodeID, pub bool, span base.Span) 
 	return a.node(StructField{Name: name, Type: type_, Pub: pub}, span)
 }
 
-func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, span base.Span) NodeID {
-	return a.node(TypeParam{Name: name, Constraint: constraint, Default: defaultType}, span)
+func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, sync bool, span base.Span) NodeID {
+	return a.node(TypeParam{Name: name, Constraint: constraint, Default: defaultType, Sync: sync}, span)
 }
 
 func (a *AST) NewShape(
@@ -640,8 +653,8 @@ func (a *AST) NewShape(
 	return a.node(Shape{Name: name, TypeParams: typeParams, Fields: fields, Funs: funs, Pub: pub}, span)
 }
 
-func (a *AST) NewUnion(name Name, typeParams []NodeID, variants []NodeID, pub bool, span base.Span) NodeID {
-	return a.node(Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub}, span)
+func (a *AST) NewUnion(name Name, typeParams []NodeID, variants []NodeID, pub bool, sync bool, span base.Span) NodeID {
+	return a.node(Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub, Sync: sync}, span)
 }
 
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
@@ -684,8 +697,8 @@ func (a *AST) NewSliceType(elemType NodeID, mut bool, span base.Span) NodeID {
 	return a.node(SliceType{Elem: elemType, Mut: mut}, span)
 }
 
-func (a *AST) NewFunType(params []NodeID, returnType NodeID, span base.Span) NodeID {
-	return a.node(FunType{Params: params, ReturnType: returnType}, span)
+func (a *AST) NewFunType(params []NodeID, returnType NodeID, sync bool, span base.Span) NodeID {
+	return a.node(FunType{Params: params, ReturnType: returnType, Sync: sync}, span)
 }
 
 func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
@@ -1209,6 +1222,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			}
 		}
 	case FunType:
+		if kind.Sync {
+			addAttr("sync", "true")
+		}
 		if !children {
 			addAttr("params", nodeIDList(kind.Params))
 			addAttr("returnType", nodeIDKind(kind.ReturnType))
@@ -1220,6 +1236,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if kind.Pub {
 			addAttr("pub", "true")
+		}
+		if kind.Sync {
+			addAttr("sync", "true")
 		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
@@ -1255,6 +1274,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Pub {
 			addAttr("pub", "true")
 		}
+		if kind.Sync {
+			addAttr("sync", "true")
+		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
@@ -1268,6 +1290,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case TypeParam:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Sync {
+			addAttr("sync", "true")
+		}
 		if kind.Constraint != nil {
 			if !children {
 				addAttr("constraint", nodeIDKind(*kind.Constraint))

@@ -203,7 +203,7 @@ Block: Int
     Ident: fun01
     Ident: void
 ---
-fun01 = fun(void) Int
+fun01 = sync fun(void) Int
 ```
 
 **Return void from function**
@@ -221,7 +221,7 @@ Block: void
   Call: void
     Ident: fun01
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Void in if-else expression**
@@ -271,7 +271,7 @@ Block: void
       SimpleType: Str
     Int: Int
 ---
-fun01 = fun(Int) void
+fun01 = sync fun(Int) void
 fun02 = fun(Int) void
 ```
 
@@ -291,7 +291,7 @@ Fun: fun01
   Block: Int
     Int: Int
 ---
-fun01 = fun(Int, Str) Int
+fun01 = sync fun(Int, Str) Int
 ```
 
 **Fun params**
@@ -308,7 +308,7 @@ Fun: fun01
   Block: Int
     Ident: Int
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 **Fun params are scoped to the fun**
@@ -330,7 +330,7 @@ Block: fun01
     SimpleType: void
     Block: void
 ---
-fun01 = fun(Int) void
+fun01 = sync fun(Int) void
 ```
 
 **Fun call**
@@ -351,7 +351,7 @@ Block: Int
     Ident: fun01
     Int: Int
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 **Call void fun**
@@ -368,7 +368,7 @@ Block: void
   Call: void
     Ident: fun01
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Builtin print_str**
@@ -382,7 +382,7 @@ Call: void
   Ident: fun01
   String: Str
 ---
-fun01 = fun(Str) void
+fun01 = sync fun(Str) void
 ```
 
 **Builtin print_int**
@@ -396,7 +396,7 @@ Call: void
   Ident: fun01
   Int: Int
 ---
-fun01 = fun(Int) void
+fun01 = sync fun(Int) void
 ```
 
 **Builtin print_bool**
@@ -410,7 +410,7 @@ Call: void
   Ident: fun01
   Bool: Bool
 ---
-fun01 = fun(Bool) void
+fun01 = sync fun(Bool) void
 ```
 
 **Shadowing**
@@ -447,7 +447,7 @@ Fun: fun01
     Return: never
       Int: Int
 ---
-fun01 = fun() Int
+fun01 = sync fun() Int
 ```
 
 **Return void**
@@ -463,7 +463,7 @@ Fun: fun01
     Return: never
       Ident: void
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Return expr type is void**
@@ -479,7 +479,7 @@ Fun: fun01
     Return: never
       Int: Int
 ---
-fun01 = fun() Int
+fun01 = sync fun() Int
 ```
 
 **Fun type**
@@ -513,13 +513,13 @@ fun01 = fun(fun02) void
 
 ```types
 Block: fun01
-  Fun: fun02
+  Fun: fun04
     FunParam: Int
       SimpleType: Int
     SimpleType: Str
     Block: Str
       String: Str
-  Fun: fun02
+  Fun: fun04
     FunParam: Int
       SimpleType: Int
     SimpleType: Str
@@ -546,6 +546,7 @@ Block: fun01
 fun02 = fun(Int) Str
 fun03 = fun(fun02) Bool
 fun01 = fun(fun02, fun02, fun03) void
+fun04 = sync fun(Int) Str
 ```
 
 **Named fun assignable to fun-type**
@@ -567,21 +568,22 @@ Block: Int
     Block: Int
       Ident: Int
   Fun: fun02
-    FunParam: fun01
-      FunType: fun01
+    FunParam: fun03
+      FunType: fun03
         SimpleType: Int
         SimpleType: Int
     SimpleType: Int
     Block: Int
       Call: Int
-        Ident: fun01
+        Ident: fun03
         Int: Int
   Call: Int
     Ident: fun02
     Ident: fun01
 ---
-fun01 = fun(Int) Int
-fun02 = fun(fun01) Int
+fun01 = sync fun(Int) Int
+fun03 = fun(Int) Int
+fun02 = fun(fun03) Int
 ```
 
 **If branches with different named funs**
@@ -621,7 +623,7 @@ Block: fun01
     Block: fun01
       Ident: fun01
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 **Nested function cannot reference outer variable**
@@ -743,7 +745,7 @@ Block: fun01
             Ident: fun01
             Ident: Int
 ---
-fun01    = fun(Int) Int
+fun01    = sync fun(Int) Int
 struct01 = Foo { x Int }
 ```
 
@@ -929,7 +931,7 @@ Block: struct01
       SimpleType: ?
 ---
 struct01 = Foo { one Str }
-fun01    = fun(struct01) void
+fun01    = sync fun(struct01) void
 ```
 
 **Struct construction**
@@ -1159,7 +1161,7 @@ Block: union01
     SimpleType: ?
 ---
 union01 = Foo = Str | Int
-fun01   = fun(union01) void
+fun01   = sync fun(union01) void
 ```
 
 **Union with struct variant**
@@ -1188,7 +1190,7 @@ Block: fun01
 ---
 struct01 = Bar { one Int }
 union01  = Foo = Str | struct01
-fun01    = fun(union01) void
+fun01    = sync fun(union01) void
 ```
 
 **Union with ref variant**
@@ -1239,7 +1241,7 @@ Block: fun01
     Block: void
 ---
 union01 = Maybe<Int> = Int | Bool
-fun01   = fun(union01) void
+fun01   = sync fun(union01) void
 union02 = Maybe = T | Bool
 ```
 
@@ -1280,10 +1282,10 @@ Block: fun01
     Block: void
 ---
 union01 = Maybe<Str> = Str | Bool
-fun01   = fun(union01) void
+fun01   = sync fun(union01) void
 union02 = Maybe = T | Bool
 union03 = Maybe<Int> = Int | Bool
-fun02   = fun(union03) void
+fun02   = sync fun(union03) void
 ```
 
 **Method on union**
@@ -1352,7 +1354,7 @@ Block: fun01
 ---
 struct01 = Bar { one Int }
 union01  = Foo = Str | struct01
-fun01    = fun(union01, struct01) Int
+fun01    = sync fun(union01, struct01) Int
 ```
 
 **Generic union with generic struct variant**
@@ -1385,7 +1387,7 @@ Block: fun01
 ---
 struct01 = Box<Int> { value Int }
 union01  = Maybe<Int> = Int | struct01
-fun01    = fun(union01) void
+fun01    = sync fun(union01) void
 struct02 = Box { value T }
 struct03 = Box<T> { value T }
 union02  = Maybe = T | struct03
@@ -1577,7 +1579,7 @@ scope02:
 scope03:
   f: union01
 union01 = Foo = Str | Int
-fun01   = fun(union01) void
+fun01   = sync fun(union01) void
 ```
 
 **Auto-wrap in return and implicit return**
@@ -1608,7 +1610,7 @@ Block: fun01
       String: Str
 ---
 union01 = Foo = Str | Int
-fun01   = fun() union01
+fun01   = sync fun() union01
 ```
 
 **Auto-wrap in if-else branches**
@@ -1642,7 +1644,7 @@ Block: fun01
           String: Str
 ---
 union01 = Foo = Str | Int
-fun01   = fun(Bool) union01
+fun01   = sync fun(Bool) union01
 ```
 
 **Auto-wrap in assignment**
@@ -1682,7 +1684,7 @@ scope03:
 scope04:
   x: union01 (mut)
 union01 = Foo = Str | Int
-fun01   = fun() void
+fun01   = sync fun() void
 ```
 
 **Auto-wrap with generic union**
@@ -1835,7 +1837,7 @@ scope07:
 struct01 = MyErr { msg Str }
 union01  = MyResult = T | struct01
 union02  = MyResult<void> = void | struct01
-fun01    = fun(Bool) union02
+fun01    = sync fun(Bool) union02
 ```
 
 ## Booleans and If
@@ -1949,7 +1951,7 @@ Fun: fun01
         String: Str
     Int: Int
 ---
-fun01 = fun() Int
+fun01 = sync fun() Int
 ```
 
 **If with one branch break**
@@ -1971,7 +1973,7 @@ Fun: fun01
           Block: Str
             String: Str
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **If with one branch continue**
@@ -1993,7 +1995,7 @@ Fun: fun01
           Block: Str
             String: Str
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **If with both branches return**
@@ -2015,7 +2017,7 @@ Fun: fun01
         Return: never
           Int: Int
 ---
-fun01 = fun() Int
+fun01 = sync fun() Int
 ```
 
 **Nested if with all branches return**
@@ -2043,7 +2045,7 @@ Fun: fun01
         Return: never
           Int: Int
 ---
-fun01 = fun() Int
+fun01 = sync fun() Int
 ```
 
 **Nested return breaks outer if control flow**
@@ -2075,7 +2077,7 @@ Fun: fun01
         String: Str
     Int: Int
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 ## References
@@ -2537,7 +2539,7 @@ Block: fun01
     SimpleType: void
     Block: void
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Self recursion**
@@ -2560,7 +2562,7 @@ Block: Int
     Ident: fun01
     Int: Int
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 **Mutual recursion**
@@ -2591,7 +2593,7 @@ Block: Int
     Ident: fun01
     Int: Int
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 ## Allocators
@@ -2910,7 +2912,7 @@ Fun: fun01
   SimpleType: void
   Block: void
 ---
-fun01 = fun([5]Int) void
+fun01 = sync fun([5]Int) void
 ```
 
 **Array type ids are stable**
@@ -2941,7 +2943,7 @@ Fun: fun01
         Int: Int
         Int: Int
 ---
-fun01 = fun([5]Int, [5]Int, [6]Int) void
+fun01 = sync fun([5]Int, [5]Int, [6]Int) void
 ```
 
 **Array literal**
@@ -3687,7 +3689,7 @@ Fun: fun01
   SimpleType: void
   Block: void
 ---
-fun01 = fun([3][4]Int) void
+fun01 = sync fun([3][4]Int) void
 ```
 
 **Multidimensional slice type**
@@ -3993,7 +3995,7 @@ Block: U8
     Ident: fun01
     RuneLiteral: U8
 ---
-fun01 = fun(U8) U8
+fun01 = sync fun(U8) U8
 ```
 
 **Int materialization call arg**
@@ -4014,7 +4016,7 @@ Block: U8
     Ident: fun01
     Int: U8
 ---
-fun01 = fun(U8) U8
+fun01 = sync fun(U8) U8
 ```
 
 **Int materialization array literal**
@@ -4211,7 +4213,7 @@ Block: Int
       Ident: struct01
 ---
 struct01 = Foo { one Int }
-fun01    = fun(struct01) Int
+fun01    = sync fun(struct01) Int
 ```
 
 **Method call with args**
@@ -4246,7 +4248,7 @@ Block: Int
     Int: Int
 ---
 struct01 = Foo { one Int }
-fun01    = fun(struct01, Int) Int
+fun01    = sync fun(struct01, Int) Int
 ```
 
 **Method call on &ref receiver**
@@ -4303,7 +4305,7 @@ Block: fun01
         Ident: struct01
 ---
 struct01 = Foo { one Int }
-fun01    = fun(struct01) Int
+fun01    = sync fun(struct01) Int
 ```
 
 **Direct qualified call**
@@ -4333,7 +4335,7 @@ Block: Int
     Ident: struct01
 ---
 struct01 = Foo { one Int }
-fun01    = fun(struct01) Int
+fun01    = sync fun(struct01) Int
 ```
 
 **Direct qualified call with extra args**
@@ -4368,7 +4370,7 @@ Block: Int
     Int: Int
 ---
 struct01 = Foo { one Int }
-fun01    = fun(struct01, Int) Int
+fun01    = sync fun(struct01, Int) Int
 ```
 
 **Method call on builtin type**
@@ -4393,7 +4395,7 @@ Block: Int
     FieldAccess: fun01
       Ident: Int
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 **Direct qualified call on builtin type**
@@ -4416,7 +4418,7 @@ Block: Int
     Ident: fun01
     Int: Int
 ---
-fun01 = fun(Int) Int
+fun01 = sync fun(Int) Int
 ```
 
 **Method call in namespace**
@@ -4447,9 +4449,9 @@ Fun: fun01
       FieldAccess: fun02
         Ident: struct01
 ---
-fun01    = fun() Int
+fun01    = sync fun() Int
 struct01 = Foo { one Int }
-fun02    = fun(struct01) Int
+fun02    = sync fun(struct01) Int
 ```
 
 **Direct qualified call in namespace**
@@ -4480,9 +4482,9 @@ Fun: fun01
       Ident: fun02
       Ident: struct01
 ---
-fun01    = fun() Int
+fun01    = sync fun() Int
 struct01 = Foo { one Int }
-fun02    = fun(struct01) Int
+fun02    = sync fun(struct01) Int
 ```
 
 ## Generics - Structs
@@ -5444,8 +5446,9 @@ Block: Int
 ---
 fun02 = fun(T) Int
 fun01 = fun(T, fun02) Int
-fun03 = fun(Str) Int
-fun04 = fun(Str, fun03) Int
+fun03 = sync fun(Str) Int
+fun05 = fun(Str) Int
+fun04 = fun(Str, fun05) Int
 ```
 
 ## Shapes
@@ -5646,7 +5649,7 @@ Block: Str
 ---
 shape01  = Showable {  }
 struct01 = Guitar { name Str }
-fun01    = fun(struct01) Str
+fun01    = sync fun(struct01) Str
 fun02    = fun(T) Str
 fun03    = fun(T) Str
 fun04    = fun(struct01) Str
@@ -5854,8 +5857,8 @@ shape01  = HasName {  }
 shape02  = HasAge {  }
 struct01 = Foo { n Str }
 struct02 = Bar { a Int }
-fun01    = fun(struct01) Str
-fun02    = fun(struct02) Int
+fun01    = sync fun(struct01) Str
+fun02    = sync fun(struct02) Int
 fun03    = fun(A, B) Str
 fun04    = fun(A) Str
 fun05    = fun(struct01, struct02) Str
@@ -5913,7 +5916,7 @@ Block: struct01
 ---
 struct01 = Foo { x Int }
 shape01  = Clonable {  }
-fun01    = fun(struct01) struct01
+fun01    = sync fun(struct01) struct01
 fun02    = fun(T) T
 fun03    = fun(T) T
 fun04    = fun(struct01) struct01
@@ -5982,7 +5985,7 @@ Block: Bool
 ---
 shape01  = Eq {  }
 struct01 = Num { x Int }
-fun01    = fun(struct01, struct01) Bool
+fun01    = sync fun(struct01, struct01) Bool
 fun02    = fun(T, T) Bool
 fun03    = fun(T, T) Bool
 fun04    = fun(struct01, struct01) Bool
@@ -6051,8 +6054,8 @@ Block: Str
 shape01  = Showable {  }
 struct01 = A {  }
 struct02 = B {  }
-fun01    = fun(struct01) Str
-fun02    = fun(struct02) Str
+fun01    = sync fun(struct01) Str
+fun02    = sync fun(struct02) Str
 fun03    = fun(T) Str
 fun04    = fun(T) Str
 fun05    = fun(struct01) Str
@@ -6121,8 +6124,8 @@ Block: Str
 ---
 shape01  = S {  }
 struct01 = X {  }
-fun01    = fun(struct01) Int
-fun02    = fun(struct01) Str
+fun01    = sync fun(struct01) Int
+fun02    = sync fun(struct01) Str
 fun03    = fun(T) Str
 fun04    = fun(T) Int
 fun05    = fun(T) Str
@@ -6191,7 +6194,7 @@ Block: Str
 ---
 shape01  = Named { name Str }
 struct01 = Person { name Str, age Int }
-fun01    = fun(struct01) Str
+fun01    = sync fun(struct01) Str
 fun02    = fun(T) Str
 fun03    = fun(T) Str
 fun04    = fun(struct01) Str
@@ -6239,7 +6242,7 @@ Block: Int
     Int: Int
 ---
 shape01 = Displayable {  }
-fun01   = fun(Int) Int
+fun01   = sync fun(Int) Int
 fun02   = fun(T) Int
 fun03   = fun(T) Int
 fun04   = fun(Int) Int
@@ -6299,7 +6302,7 @@ Block: Int
     Int: Int
 ---
 shape01 = Displayable {  }
-fun01   = fun(Int) Int
+fun01   = sync fun(Int) Int
 fun02   = fun(T) Int
 fun03   = fun(T) Int
 fun04   = fun(K) Int
@@ -6414,8 +6417,8 @@ Block: Int
 ---
 shape01 = HasFmt {  }
 shape02 = HasEqFmt {  }
-fun01   = fun(Int, Int) Int
-fun02   = fun(Int, Int) Bool
+fun01   = sync fun(Int, Int) Int
+fun02   = sync fun(Int, Int) Bool
 fun03   = fun(T, Int) Int
 fun04   = fun(T, Int) Int
 fun05   = fun(T, T, Int) Int
@@ -6492,7 +6495,7 @@ struct01 = Wrapper { value T }
 struct02 = Wrapper<T> { value T }
 fun01    = fun(struct02) Int
 fun02    = fun(T) Int
-fun03    = fun(Int) Int
+fun03    = sync fun(Int) Int
 fun04    = fun(T) Int
 fun05    = fun(T) Int
 struct03 = Wrapper<Int> { value Int }
@@ -6571,7 +6574,7 @@ shape01  = Iter {  }
 struct01 = Range { cur Int, max Int }
 struct02 = None {  }
 union01  = Option<Int> = Int | struct02
-fun01    = fun(struct01) union01
+fun01    = sync fun(struct01) union01
 fun02    = fun(T) Int
 shape02  = Iter {  }
 fun03    = fun(struct01) Int
@@ -6968,7 +6971,7 @@ Block: Str
     String: Str
 ---
 shape01 = ToStr {  }
-fun01   = fun(Str) Str
+fun01   = sync fun(Str) Str
 fun02   = fun(T) Str
 fun03   = fun(T) Str
 fun04   = fun(Str) Str
@@ -7263,7 +7266,7 @@ Block: union01
 ---
 union01 = MyResult<Int> = Int | Str
 union02 = MyResult = T | Str
-fun01   = fun() union01
+fun01   = sync fun() union01
 ```
 
 **Infer type args from return type via if**
@@ -7307,7 +7310,7 @@ Block: union01
 ---
 union01 = MyResult<Int> = Int | Str
 union02 = MyResult = T | Str
-fun01   = fun(Bool) union01
+fun01   = sync fun(Bool) union01
 ```
 
 **Infer type args from return type via match**
@@ -7359,7 +7362,7 @@ Block: union01
 ---
 union01 = MyResult<Int> = Int | Str
 union02 = MyResult = T | Str
-fun01   = fun(union01) union01
+fun01   = sync fun(union01) union01
 ```
 
 ## Default Parameters
@@ -7387,7 +7390,7 @@ Block: Int
     Ident: fun01
     Int: Int
 ---
-fun01 = fun(Int, Int) Int
+fun01 = sync fun(Int, Int) Int
 ```
 
 **Call with default arg provided**
@@ -7414,7 +7417,7 @@ Block: Int
     Int: Int
     Int: Int
 ---
-fun01 = fun(Int, Int) Int
+fun01 = sync fun(Int, Int) Int
 ```
 
 **Call with multiple defaults partially provided**
@@ -7446,7 +7449,7 @@ Block: Int
     Int: Int
     Int: Int
 ---
-fun01 = fun(Int, Int, Int) Int
+fun01 = sync fun(Int, Int, Int) Int
 ```
 
 **All defaults omitted**
@@ -7472,7 +7475,7 @@ Block: Int
   Call: Int
     Ident: fun01
 ---
-fun01 = fun(Int, Int) Int
+fun01 = sync fun(Int, Int) Int
 ```
 
 **Method with default arg**
@@ -7509,7 +7512,7 @@ Block: Int
         Int: Int
 ---
 struct01 = Foo { x Int }
-fun01    = fun(struct01, Int) Int
+fun01    = sync fun(struct01, Int) Int
 ```
 
 **Default value type mismatch**
@@ -7636,7 +7639,7 @@ Block: Str
 ---
 shape01  = HasFmt {  }
 struct01 = Foo { x Int }
-fun01    = fun(struct01) Str
+fun01    = sync fun(struct01) Str
 fun02    = fun(T, Str) Str
 fun03    = fun(T) Str
 fun04    = fun(struct01, Str) Str
@@ -8944,7 +8947,7 @@ test.met:1:36: symbol already defined: S.foo
 ```
 
 ```error
-test.met:3:5: cannot access field on non-struct type: fun() void
+test.met:3:5: cannot access field on non-struct type: sync fun() void
         fun foo() void {}
         foo.bar()
         ^^^
@@ -9002,8 +9005,8 @@ Module: test
 ---
 struct01 = Err { msg Str }
 union01  = Result<void> = void | struct01
-fun01    = fun() union01
-fun02    = fun() void
+fun01    = sync fun() union01
+fun02    = sync fun() void
 ```
 
 ## Module Constants
@@ -9032,7 +9035,7 @@ Module: test
     SimpleType: void
     Block: void
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Module-level let with struct, array, and function usage**
@@ -9079,8 +9082,8 @@ Module: test
     Block: void
 ---
 struct01 = Point { x Int, y Int }
-fun01    = fun() Int
-fun02    = fun() void
+fun01    = sync fun() Int
+fun02    = sync fun() void
 ```
 
 **Module-level let referencing earlier let**
@@ -9101,7 +9104,7 @@ Module: test
     SimpleType: void
     Block: void
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Module-level let with reference to another constant**
@@ -9123,7 +9126,7 @@ Module: test
     SimpleType: void
     Block: void
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Module-level let ordering: no forward references**
@@ -9175,7 +9178,7 @@ Module: test
     SimpleType: void
     Block: void
 ---
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **Module-level let with function call is rejected**
@@ -9272,7 +9275,7 @@ Block: Int
 shape01 = Show {  }
 fun01   = fun([]T) Int
 fun02   = fun(T) Int
-fun03   = fun(Int) Int
+fun03   = sync fun(Int) Int
 fun04   = fun([]Int) Int
 ```
 
@@ -9288,7 +9291,7 @@ Call: never
   Ident: fun01
   String: Str
 ---
-fun01 = fun(Str) never
+fun01 = sync fun(Str) never
 ```
 
 **code after panic is unreachable**
@@ -9345,7 +9348,7 @@ Module: test
           Ident: fun01
 ---
 fun01 = fun() Int
-fun02 = fun() void
+fun02 = sync fun() void
 ```
 
 ## Pub
@@ -9479,4 +9482,387 @@ test.met:2:23: public union Bad contains non-public variant type test.Secret
     pub union Bad = Int | Secret
                           ^^^^^^
     fun main() void {}
+```
+
+## Sync
+
+**closure with sync captures is sync fun**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    let x = 42
+    takes_sync(fun[x]() void { _ = x })
+}
+```
+
+```error
+```
+
+**non-capturing closure is sync fun**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    takes_sync(fun() void {})
+}
+```
+
+```error
+```
+
+**closure with ref capture is not sync fun**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    mut x = 42
+    takes_sync(fun[&mut x]() void { x.* = 1 })
+}
+```
+
+```error
+test.met:4:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        mut x = 42
+        takes_sync(fun[&mut x]() void { x.* = 1 })
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**fun value is not assignable to sync fun**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    fun not_sync(f fun() void) fun() void { f }
+    let f = not_sync(fun() void {})
+    takes_sync(f)
+}
+```
+
+```error
+test.met:5:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let f = not_sync(fun() void {})
+        takes_sync(f)
+                   ^
+    }
+```
+
+**sync fun is assignable to fun**
+
+```metall
+{
+    fun takes_fun(f fun() void) void {}
+    let x = 42
+    takes_fun(fun[x]() void { _ = x })
+}
+```
+
+```error
+```
+
+**closure capturing non-sync value is not sync**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    let v = 42
+    let r = &v
+    takes_sync(fun[r]() void { _ = r })
+}
+```
+
+```error
+test.met:5:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let r = &v
+        takes_sync(fun[r]() void { _ = r })
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**sync struct overrides field check**
+
+```metall module
+sync struct Safe { r &Int }
+fun is_sync(x sync fun() void) void {}
+fun main() void {
+    let v = 42
+    let s = Safe(&v)
+    is_sync(fun[s]() void { _ = s })
+}
+```
+
+```error
+```
+
+**named function with all-sync params and return is sync**
+
+```metall
+{
+    fun takes_sync(f sync fun(Int) Int) void {}
+    fun add_one(x Int) Int { x }
+    takes_sync(add_one)
+}
+```
+
+```error
+```
+
+**named function with non-sync param is not sync**
+
+```metall
+{
+    fun takes_sync(f sync fun(&Int) void) void {}
+    fun use_ref(r &Int) void { _ = r }
+    takes_sync(use_ref)
+}
+```
+
+```error
+test.met:4:16: type mismatch at argument 1: expected sync fun(&Int) void, got fun(&Int) void
+        fun use_ref(r &Int) void { _ = r }
+        takes_sync(use_ref)
+                   ^^^^^^^
+    }
+```
+
+**named function with non-sync return is not sync**
+
+```metall module
+fun get_ref() &Int {
+    let v = 42
+    &v
+}
+fun takes_sync(f sync fun() &Int) void {}
+fun main() void {
+    takes_sync(get_ref)
+}
+```
+
+```error
+test.met:7:16: type mismatch at argument 1: expected sync fun() &Int, got fun() &Int
+    fun main() void {
+        takes_sync(get_ref)
+                   ^^^^^^^
+    }
+```
+
+**assign sync fun to non-sync var (coercion)**
+
+```metall
+{
+    fun add(x Int) Int { x }
+    let f fun() void = fun() void {}
+    _ = f
+    _ = add
+}
+```
+
+```error
+```
+
+**assign non-sync fun to sync var should not compile**
+
+```metall
+{
+    fun takes_ref(r &Int) void { _ = r }
+    mut x sync fun(&Int) void = takes_ref
+    _ = x
+}
+```
+
+```error
+test.met:3:33: type mismatch: expected sync fun(&Int) void, got fun(&Int) void
+        fun takes_ref(r &Int) void { _ = r }
+        mut x sync fun(&Int) void = takes_ref
+                                    ^^^^^^^^^
+        _ = x
+
+test.met:4:9: symbol not defined: x
+        mut x sync fun(&Int) void = takes_ref
+        _ = x
+            ^
+    }
+```
+
+**reassign sync var with non-sync fun should not compile**
+
+```metall
+{
+    fun is_sync(x Int) void { _ = x }
+    fun not_sync(r &Int) void { _ = r }
+    mut x sync fun(Int) void = is_sync
+    x = not_sync
+}
+```
+
+```error
+test.met:5:9: type mismatch: expected sync fun(Int) void, got fun(&Int) void
+        mut x sync fun(Int) void = is_sync
+        x = not_sync
+            ^^^^^^^^
+    }
+```
+
+**return sync fun from non-sync return type (coercion)**
+
+```metall module
+fun make_fun() fun() void {
+    fun inner() void {}
+    inner
+}
+fun main() void {
+    _ = make_fun()
+}
+```
+
+```error
+```
+
+**return non-sync fun from sync return type should not compile**
+
+```metall module
+fun make_sync() sync fun(&Int) void {
+    fun inner(r &Int) void { _ = r }
+    inner
+}
+fun main() void {
+    _ = make_sync()
+}
+```
+
+```error
+test.met:3:5: return type mismatch: expected sync fun(&Int) void, got fun(&Int) void
+        fun inner(r &Int) void { _ = r }
+        inner
+        ^^^^^
+    }
+```
+
+**array of sync type is sync**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    let arr = [1, 2, 3]
+    takes_sync(fun[arr]() void { _ = arr })
+}
+```
+
+```error
+```
+
+**array of non-sync type is not sync**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    let v = 42
+    let arr = [&v]
+    takes_sync(fun[arr]() void { _ = arr })
+}
+```
+
+```error
+test.met:5:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let arr = [&v]
+        takes_sync(fun[arr]() void { _ = arr })
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**struct with all sync fields is sync**
+
+```metall
+{
+    struct Pair { a Int b Bool }
+    fun takes_sync(f sync fun() void) void {}
+    let p = Pair(1, true)
+    takes_sync(fun[p]() void { _ = p })
+}
+```
+
+```error
+```
+
+**struct with ref field is not sync**
+
+```metall
+{
+    struct HasRef { r &Int }
+    fun takes_sync(f sync fun() void) void {}
+    let v = 42
+    let h = HasRef(&v)
+    takes_sync(fun[h]() void { _ = h })
+}
+```
+
+```error
+test.met:6:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let h = HasRef(&v)
+        takes_sync(fun[h]() void { _ = h })
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**union with all sync variants is sync**
+
+```metall module
+union IntOrBool = Int | Bool
+fun takes_sync(f sync fun() void) void {}
+fun main() void {
+    let u = IntOrBool(42)
+    takes_sync(fun[u]() void { _ = u })
+}
+```
+
+```error
+```
+
+**union with non-sync variant is not sync**
+
+```metall module
+union RefOrInt = &Int | Int
+fun takes_sync(f sync fun() void) void {}
+fun main() void {
+    let v = 42
+    let u = RefOrInt(&v)
+    takes_sync(fun[u]() void { _ = u })
+}
+```
+
+```error
+test.met:6:16: type mismatch at argument 1: expected sync fun() void, got fun() void
+        let u = RefOrInt(&v)
+        takes_sync(fun[u]() void { _ = u })
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**sync union overrides variant check**
+
+```metall module
+sync union MaybeRef = &Int | Int
+fun is_sync(x sync fun() void) void {}
+fun main() void {
+    let v = 42
+    let u = MaybeRef(&v)
+    is_sync(fun[u]() void { _ = u })
+}
+```
+
+```error
+```
+
+**closure capturing sync fun is sync**
+
+```metall
+{
+    fun takes_sync(f sync fun() void) void {}
+    fun inner() void {}
+    takes_sync(fun[inner]() void { inner() })
+}
+```
+
+```error
 ```

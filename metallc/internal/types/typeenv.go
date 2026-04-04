@@ -12,7 +12,13 @@ import (
 const (
 	mutableRefFlag   TypeID = 1 << 62
 	mutableSliceFlag TypeID = 1 << 61
+	syncFunFlag      TypeID = 1 << 60
 )
+
+// StripSyncFlag removes the sync qualifier flag from a TypeID.
+func StripSyncFlag(id TypeID) TypeID {
+	return id &^ syncFunFlag
+}
 
 type Binding struct {
 	*ast.Binding
@@ -280,6 +286,9 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 		return fmt.Sprintf("&%s", e.TypeDisplay(kind.Type))
 	case FunType:
 		var sb strings.Builder
+		if typeID&syncFunFlag != 0 {
+			sb.WriteString("sync ")
+		}
 		sb.WriteString("fun(")
 		for i, paramTypeID := range kind.Params {
 			if i > 0 {
@@ -494,13 +503,26 @@ func (e *TypeEnv) cachedTypeInfo(typeID TypeID) (*cachedType, bool) {
 	return cached, ok
 }
 
-func (e *TypeEnv) cachedFunType(key string) (*cachedType, bool) {
-	cached, ok := e.reg.funTypes[key]
-	return cached, ok
-}
-
-func (e *TypeEnv) cacheFunType(key string, typeID TypeID) {
-	e.reg.funTypes[key] = e.reg.types[typeID]
+// buildFunType returns a (possibly cached) TypeID for the given FunType.
+// For sync fun types, the TypeID is the base (non-sync) TypeID with the syncFunFlag bit set,
+// mirroring how buildRefType handles mutable refs with mutableRefFlag.
+func (e *TypeEnv) buildFunType(typ FunType, nodeID ast.NodeID, span base.Span) TypeID {
+	cacheKey := funTypeCacheKey(typ)
+	if cached, ok := e.reg.funTypes[cacheKey]; ok {
+		return cached.Type.ID
+	}
+	if !typ.Sync {
+		typeID := e.newType(typ, nodeID, span, TypeOK)
+		e.reg.funTypes[cacheKey] = e.reg.types[typeID]
+		return typeID
+	}
+	baseTyp := typ
+	baseTyp.Sync = false
+	baseID := e.buildFunType(baseTyp, 0, span)
+	syncID := baseID | syncFunFlag
+	e.newTypeWithID(syncID, typ, nodeID, span, TypeOK)
+	e.reg.funTypes[cacheKey] = e.reg.types[syncID]
+	return syncID
 }
 
 func (e *TypeEnv) setNamedFunRef(nodeID ast.NodeID, name string) {
@@ -600,5 +622,5 @@ func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 }
 
 func funTypeCacheKey(typ FunType) string {
-	return fmt.Sprintf("fun:%v:%v:%v", typ.Params, typ.Return, typ.Macro)
+	return fmt.Sprintf("fun:%v:%v:%v:%v", typ.Params, typ.Return, typ.Macro, typ.Sync)
 }

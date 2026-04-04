@@ -87,7 +87,7 @@ scope02:
 scope03:
 scope04:
   x: Int
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **use imported struct**
@@ -124,7 +124,7 @@ scope02:
 scope03:
 scope04:
   p: struct01
-fun01    = fun() void
+fun01    = sync fun() void
 struct01 = Point { x Int, y Int }
 ```
 
@@ -173,7 +173,7 @@ scope02:
 scope03:
 scope04:
   s: Str
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **aliased import**
@@ -209,7 +209,7 @@ scope02:
 scope03:
 scope04:
   x: Int
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **infer type args for generic function from import**
@@ -237,7 +237,7 @@ scope02:
 scope03:
 scope04:
   x: Int
-fun01 = fun() void
+fun01 = sync fun() void
 ```
 
 **generic struct from import**
@@ -280,7 +280,7 @@ scope02:
 scope03:
 scope04:
   p: struct01
-fun01    = fun() void
+fun01    = sync fun() void
 struct01 = Pair<Int, Str> { first Int, second Str }
 ```
 
@@ -342,8 +342,8 @@ scope07:
   r: Int
   w: struct01
 struct01 = Widget { value Int }
-fun01    = fun() void
-fun02    = fun(struct01) Int
+fun01    = sync fun() void
+fun02    = sync fun(struct01) Int
 ```
 
 ## Error

@@ -57,7 +57,7 @@ func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
 		}
 		paramTypeIDs[i] = paramTypeID
 	}
-	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: true}
+	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: true, Sync: false}
 	funTypeID := e.env.newType(funTyp, node.ID, node.Span, TypeOK)
 	scope := e.scopeGraph.NodeScope(node.ID)
 	e.env.bindInScope(scope, node.ID, fun.Name.Name, funTypeID)

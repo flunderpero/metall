@@ -96,7 +96,8 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if fun, ok := p.ParseFun(); ok {
 				decls = append(decls, fun)
 			}
-		case p.lookAhead(token.Struct) || p.lookAhead(token.Pub, token.Struct):
+		case p.lookAhead(token.Struct) || p.lookAhead(token.Pub, token.Struct) ||
+			p.lookAhead(token.Sync, token.Struct) || p.lookAhead(token.Pub, token.Sync, token.Struct):
 			if struct_, ok := p.ParseStruct(); ok {
 				decls = append(decls, struct_)
 			}
@@ -104,7 +105,8 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if shape, ok := p.ParseShape(); ok {
 				decls = append(decls, shape)
 			}
-		case p.lookAhead(token.Union) || p.lookAhead(token.Pub, token.Union):
+		case p.lookAhead(token.Union) || p.lookAhead(token.Pub, token.Union) ||
+			p.lookAhead(token.Sync, token.Union) || p.lookAhead(token.Pub, token.Sync, token.Union):
 			if union, ok := p.ParseUnion(); ok {
 				decls = append(decls, union)
 			}
@@ -163,11 +165,15 @@ func (p *Parser) ParseImport() (NodeID, bool) {
 }
 
 func (p *Parser) ParseFunType() (NodeID, bool) {
-	t, ok := p.expect(token.Fun)
+	t, ok := p.mustPeek()
 	if !ok {
 		return ParseFailed, false
 	}
 	span := t.Span
+	sync := p.lookAheadConsume(token.Sync)
+	if _, ok := p.expect(token.Fun); !ok {
+		return ParseFailed, false
+	}
 	if _, ok := p.expect(token.LParen); !ok {
 		return ParseFailed, false
 	}
@@ -181,8 +187,7 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 			break
 		}
 		if len(params) > 0 {
-			_, ok := p.expect(token.Comma)
-			if !ok {
+			if _, ok := p.expect(token.Comma); !ok {
 				return ParseFailed, false
 			}
 		}
@@ -199,7 +204,7 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFunType(params, returnTyp, span.Combine(p.span())), ok
+	return p.NewFunType(params, returnTyp, sync, span.Combine(p.span())), ok
 }
 
 func (p *Parser) ParseFunDecl() (NodeID, bool) {
@@ -315,6 +320,7 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 
 func (p *Parser) ParseStruct() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
+	sync := p.lookAheadConsume(token.Sync)
 	t, ok := p.expect(token.Struct)
 	if !ok {
 		return ParseFailed, false
@@ -342,7 +348,7 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if _, ok := p.expect(token.RCurly); !ok {
 		return ParseFailed, false
 	}
-	return p.NewStruct(name, typeParams, fields, pub, t.Span.Combine(p.span())), true
+	return p.NewStruct(name, typeParams, fields, pub, sync, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseShape() (NodeID, bool) {
@@ -396,6 +402,7 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 
 func (p *Parser) ParseUnion() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
+	sync := p.lookAheadConsume(token.Sync)
 	t, ok := p.expect(token.Union)
 	if !ok {
 		return ParseFailed, false
@@ -433,7 +440,7 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 		p.diagnostic(p.span(), "union requires at least 2 variants")
 		return ParseFailed, false
 	}
-	return p.NewUnion(name, typeParams, variants, pub, t.Span.Combine(p.span())), true
+	return p.NewUnion(name, typeParams, variants, pub, sync, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
@@ -1189,7 +1196,7 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 			return ParseFailed, false
 		}
 		return p.NewRefType(inner, mut, span.Combine(p.span())), true
-	case token.Fun:
+	case token.Sync, token.Fun:
 		return p.ParseFunType()
 	case token.Question:
 		p.next()
@@ -1691,6 +1698,7 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
 				return nil, false
 			}
 		}
+		isSync := p.lookAheadConsume(token.Sync)
 		t, ok = p.expect(token.TypeIdent)
 		if !ok {
 			return nil, false
@@ -1726,7 +1734,7 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
 			p.diagnostic(t.Span, "type parameters with defaults must be last")
 			return nil, false
 		}
-		params = append(params, p.NewTypeParam(Name{t.Value, t.Span}, constraint, defaultType, t.Span))
+		params = append(params, p.NewTypeParam(Name{t.Value, t.Span}, constraint, defaultType, isSync, t.Span))
 	}
 }
 

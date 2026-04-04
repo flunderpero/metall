@@ -61,10 +61,12 @@ type FunType struct {
 	Params []TypeID
 	Return TypeID
 	Macro  bool
+	Sync   bool
 }
 
 func (f FunType) Equal(other FunType) bool {
-	return f.Return == other.Return && f.Macro == other.Macro && slices.Equal(f.Params, other.Params)
+	return f.Return == other.Return && f.Macro == other.Macro && f.Sync == other.Sync &&
+		slices.Equal(f.Params, other.Params)
 }
 
 func (FunType) isTypeKind() {}

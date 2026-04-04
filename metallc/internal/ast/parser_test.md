@@ -614,6 +614,49 @@ Module(fileName="test.met",name="test",main=true)
       type=SimpleType(name="Bool")
 ```
 
+**Sync struct**
+
+```metall module
+pub sync struct Mutex { locked Bool }
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Struct(name="Mutex",pub=true,sync=true)
+    fields=StructField(name="locked")
+      type=SimpleType(name="Bool")
+```
+
+**Sync type parameter**
+
+```metall
+fun foo<sync T>(x T) void {}
+```
+
+```ast
+Fun(name="foo")
+  typeParams=TypeParam(name="T",sync=true)
+  params=FunParam(name="x")
+    type=SimpleType(name="T")
+  returnType=SimpleType(name="void")
+  block=Block()
+```
+
+**Sync fun type**
+
+```metall
+fun foo(f sync fun() void) void {}
+```
+
+```ast
+Fun(name="foo")
+  params=FunParam(name="f")
+    type=FunType(sync=true)
+      returnType=SimpleType(name="void")
+  returnType=SimpleType(name="void")
+  block=Block()
+```
+
 **Pub fun**
 
 ```metall module
