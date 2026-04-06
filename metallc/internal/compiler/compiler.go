@@ -96,10 +96,10 @@ type CompileOpts struct {
 
 func (o CompileOpts) WithDefaults() CompileOpts {
 	if o.ArenaStackBufSize == 0 {
-		o.ArenaStackBufSize = 32
+		o.ArenaStackBufSize = 1024
 	}
 	if o.ArenaPageMinSize == 0 {
-		o.ArenaPageMinSize = 256
+		o.ArenaPageMinSize = 4096
 	}
 	if o.ArenaPageMaxSize == 0 {
 		o.ArenaPageMaxSize = 65536

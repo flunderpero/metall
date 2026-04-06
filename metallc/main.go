@@ -59,7 +59,7 @@ Usage:
 }
 
 func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
-	var opts compiler.CompileOpts
+	opts := compiler.CompileOpts{}.WithDefaults()
 	var includes includeFlags
 	flags := flag.NewFlagSet(command, flag.ExitOnError)
 	flags.Usage = func() {
