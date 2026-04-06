@@ -1,0 +1,48 @@
+use std::test
+use std::time
+
+fun main() void {
+    let @local = Arena()
+    let suite = test::Suite.new("time", @local)
+    suite.test("Instant and sleep", fun() !void {
+        let sut = time::Instant.new()
+        try test::eq(sut.elapsed().to(time::millisecond), 0, "aaa")
+        time::sleep(time::millisecond.times(50))
+        try test::gt_int(sut.elapsed().to(time::millisecond), 49)
+        try test::lt_int(sut.elapsed().to(time::millisecond), 60)
+    })
+    suite.test("Duration.fmt", fun() !void {
+        let @local = Arena()
+        let sb = StrBuilder.new(32, @local)
+        let fmt = fun[sb](d time::Duration) Str {
+            sb.reset()
+            sb.fmt(d)
+            sb.as_str()
+        }
+        -- Sub 1-second formats
+        try test::eq("0s", fmt(time::nanosecond.times(0)))
+        try test::eq("23ns", fmt(time::nanosecond.times(23)))
+        try test::eq("5.023µs", fmt(time::nanosecond.times(5023)))
+        try test::eq("23µs", fmt(time::microsecond.times(23)))
+        try test::eq("5.023ms", fmt(time::microsecond.times(5023)))
+        try test::eq("23ms", fmt(time::millisecond.times(23)))
+
+        -- Above 1-seconds formats
+        mut d = time::millisecond.times(23)
+        d = d.add(5, time::second)
+        try test::eq("5.023s", fmt(d))
+        d = d.add(2, time::minute)
+        try test::eq("2m5.023s", fmt(d))
+        d = d.add(12, time::hour)
+        try test::eq("12h2m5.023s", fmt(d))
+        d = d.add(9, time::day)
+        try test::eq("9d12h2m5.023s", fmt(d))
+        d = d.add(1000, time::day)
+        try test::eq("1009d12h2m5.023s", fmt(d), "day is the highest unit")
+
+        -- Negative durations
+        try test::eq("-123ns", fmt(time::nanosecond.times(-123)))
+        try test::eq("-1m5.023s", fmt(time::Duration.new(-5023 - 60 * 1000, time::millisecond)))
+    })
+    _ = suite.run()
+}

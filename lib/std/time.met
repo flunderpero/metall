@@ -1,0 +1,165 @@
+use std::ffi
+use std::posix
+
+pub let nanosecond = Duration(1)
+pub let microsecond = Duration(1000)
+pub let millisecond = Duration(1000000)
+pub let second = Duration(1000000000)
+pub let minute = Duration(1000000000 * 60)
+pub let hour = Duration(1000000000 * 60 * 60)
+pub let day = Duration(1000000000 * 60 * 60 * 24)
+
+--- An opaque monotonic timestamp that can (only) be used to
+    calculate the difference between two instances.
+
+    Use `Instant.new()` to capture the current time and `elapsed()` 
+    to measure how much time has passed since then.
+---
+pub struct Instant {
+    nsec Int
+}
+
+pub fun Instant.new() Instant {
+    mut ts = TimeSpec(0, 0)
+    call_clock_gettime(&mut ts, clock_id_monotonic_raw)
+    Instant(ts.sec * second.nsec + ts.nsec)
+}
+
+pub fun Instant.elapsed(t Instant) Duration {
+    Duration(Instant.new().nsec - t.nsec)
+}
+
+
+--- Represent the elapsed time as an Int. 
+
+    The largest possible duration is around +/- 290 years.
+---
+pub struct Duration {
+    nsec Int
+}
+
+pub fun Duration.new(i Int, unit Duration) Duration {
+    Duration(i * unit.nsec)
+}
+
+pub fun Duration.to(d Duration, unit Duration) Int {
+    d.nsec / unit.nsec
+}
+
+pub fun Duration.add(d Duration, i Int, unit Duration) Duration {
+    Duration(d.nsec + i * unit.nsec)
+}
+
+--- Multiply the duration with the given multiplier.
+
+    This is usefule to build durations from the constants:
+
+        let d = time::second.times(5)
+---
+pub fun Duration.times(d Duration, multiplier Int) Duration {
+    Duration(d.nsec * multiplier)
+}
+
+--- Format the duration as something like `4h23m4.2468s`.
+
+    The zero duration is formatted as `0s`.
+---
+pub fun Duration.fmt(d Duration, sb &mut StrBuilder) void {
+    if d.nsec == 0 {
+        sb.str("0s")
+        return void
+    }
+    mut nsec = d.nsec
+    if d.nsec < 0 {
+        sb.rune('-')
+        nsec = nsec * -1
+    }
+
+    let steps = [1, microsecond.nsec, millisecond.nsec, second.nsec, minute.nsec, hour.nsec, day.nsec]
+    let units = ["ns", "µs", "ms", "s", "m", "h", "d"]
+    mut fraction_width = -3
+    if nsec < second.nsec {
+        -- For values below 1s we use the smaller units.
+        for i in 0..steps.len {
+            let t = steps[i]
+            if nsec < t {
+                let div = steps[i - 1]
+                sb.int(nsec / div)
+                let rem = nsec % div
+                if rem != 0 {
+                    sb.rune('.')
+                    sb.int(rem, 10, false, fraction_width)
+                    sb.trim_right(['0'][..])
+                }
+                sb.str(units[i - 1])
+                return void
+            }
+            fraction_width = fraction_width + 3
+        }
+    }
+    mut step = steps.len - 1
+    -- Skip all leading units that would be zero.
+    for step > 3 {
+        let value = steps[step]
+        if nsec >= value {
+            break
+        }
+        step = step - 1
+    }
+    -- Format all portions >= minute.
+    for step > 3 {
+        let value = steps[step]
+        let n = nsec / value
+        nsec = nsec - n*value
+        sb.int(n)
+        sb.str(units[step])
+        step = step - 1
+    } 
+    -- The remaining seconds fraction.
+    sb.int(nsec / second.nsec)
+    let rem = nsec % second.nsec
+    if rem > 0 {
+        sb.rune('.')
+        sb.int(rem, 10, false, 9)
+        sb.trim_right(['0'][..])
+    }
+    sb.rune('s')
+}
+
+pub fun sleep(d Duration) void {
+    if d.nsec <= 0 {
+        return void
+    }
+    let until = Instant.new().nsec + d.nsec  
+    mut remaining = d.nsec
+    for {
+        let ts = TimeSpec(remaining / second.nsec, remaining % second.nsec)
+        let res = unsafe nanosleep(ffi::ref_ptr<TimeSpec>(&ts), ffi::PtrMut.null<TimeSpec>())
+        if res != 0 {
+            panic(posix::errno_str())
+        }
+        remaining = until - Instant.new().nsec
+        if remaining <= 0 {
+            break
+        }
+    }
+}
+
+struct TimeSpec {
+    sec Int
+    nsec Int
+}
+
+extern fun clock_gettime(clock_id I32, ts ffi::PtrMut<TimeSpec>) I32
+extern fun nanosleep(req ffi::Ptr<TimeSpec>, remainder ffi::PtrMut<TimeSpec>) I32
+
+let clock_id_realtime = I32(0)
+let clock_id_monotonic_raw = I32(4)
+
+fun call_clock_gettime(ts &mut TimeSpec, clock_id I32) void {
+    posix::reset_errno()
+    let res = unsafe clock_gettime(clock_id, ffi::ref_ptr_mut<TimeSpec>(ts))
+    if res != 0 {
+        panic(posix::errno_str())
+    }
+}
