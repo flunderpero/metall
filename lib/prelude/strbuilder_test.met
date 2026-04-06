@@ -20,6 +20,20 @@ fun main() void {
         sut.str(" ")
         sut.u64(13370, 16, true)
         try test::eq("13370 11010000111010 32072 13370 343a 343A", sut.as_str())
+
+        -- min_width
+        sut.reset()
+        sut.u64(1, 10, false, 1)
+        try test::eq("1", sut.as_str())
+        sut.reset()
+        sut.u64(1, 10, false, 2)
+        try test::eq("01", sut.as_str())
+        sut.reset()
+        sut.u64(123, 10, false, 5)
+        try test::eq("00123", sut.as_str())
+        sut.reset()
+        sut.u64(23, 10, false, 5)
+        try test::eq("00023", sut.as_str())
     })
     suite.test("int", fun() !void {
         let @local = Arena()
@@ -38,6 +52,23 @@ fun main() void {
         sut.str(" ")
         sut.int(13370, 16, true)
         try test::eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.as_str())
+
+        -- min_width
+        sut.reset()
+        sut.int(1, 10, false, 1)
+        try test::eq("1", sut.as_str())
+        sut.reset()
+        sut.int(1, 10, false, 2)
+        try test::eq("01", sut.as_str())
+        sut.reset()
+        sut.int(123, 10, false, 5)
+        try test::eq("00123", sut.as_str())
+        sut.reset()
+        sut.int(23, 10, false, 5)
+        try test::eq("00023", sut.as_str())
+        sut.reset()
+        sut.int(-123, 10, false, 5)
+        try test::eq("-0123", sut.as_str())
     })
     suite.test("slice", fun() !void {
         let @local = Arena()
@@ -102,6 +133,18 @@ fun main() void {
         sut.reset()
         sut.str("ga")
         try test::eq("gallo", str)
+    })
+    suite.test("trim_right", fun() !void {
+        let @local = Arena()
+        let sut = StrBuilder.new(32, @local)
+        sut.str("hello \t \n \r")
+        sut.trim_right()
+        try test::eq("hello", sut.as_str())
+
+        sut.reset()
+        sut.str("hello!!?")
+        sut.trim_right(['!', '?'][..])
+        try test::eq("hello", sut.as_str())
     })
     _ = suite.run()
 }

@@ -373,60 +373,18 @@ pub fun Str.concat(s Str, other Str, @a Arena) Str {
     Str(data)
 }
 
-pub fun Str.trim(s Str, runes []Rune = [' ', '\t', '\n', '\r'][..]) Str {
-    s.trim_left(runes).trim_right(runes)
+let default_trim_runes = [' ', '\t', '\n', '\r'][..]
+
+pub fun Str.trim(s Str, runes []Rune = default_trim_runes) Str {
+    Str(s.data.utf8_trim_left(runes).utf8_trim_right(runes))
 }
 
-pub fun Str.trim_left(s Str, runes []Rune = [' ', '\t', '\n', '\r'][..]) Str {
-    -- First, convert the runes to byte slices.
-    -- We can afford this precomputation, because everything will
-    -- fit into the first page of the arena allocator which lives on the stack.
-    let @local = Arena()
-    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
-    for i in 0..runes.len {
-        rbs[i] = runes[i].to_bytes()
-    }
-    mut data = s.data
-    for data.len > 0 {
-        mut matched_any = false
-        for j in 0..rbs.len {
-            let rb = rbs[j]
-            if data.len >= rb.len and data[0..rb.len].eq(rb.bytes[0..rb.len]) {
-                matched_any = true
-                data = data[rb.len..]
-            }
-        }
-        if not matched_any {
-            break
-        }
-    }
-    Str(data)
+pub fun Str.trim_left(s Str, runes []Rune = default_trim_runes) Str {
+    Str(s.data.utf8_trim_left(runes))
 }
 
-pub fun Str.trim_right(s Str, runes [] Rune = [' ', '\t', '\n', '\r'][..]) Str {
-    -- First, convert the runes to byte slices.
-    -- We can afford this precomputation, because everything will
-    -- fit into the first page of the arena allocator which lives on the stack.
-    let @local = Arena()
-    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
-    for i in 0..runes.len {
-        rbs[i] = runes[i].to_bytes()
-    }
-    mut data = s.data
-    for data.len > 0 {
-        mut matched_any = false
-        for j in 0..rbs.len {
-            let rb = rbs[j]
-            if data.len >= rb.len and data[data.len - rb.len..].eq(rb.bytes[0..rb.len]) {
-                matched_any = true
-                data = data[0..data.len - rb.len]
-            }
-        }
-        if not matched_any {
-            break
-        }
-    }
-    Str(data)
+pub fun Str.trim_right(s Str, runes [] Rune = default_trim_runes) Str {
+    Str(s.data.utf8_trim_right(runes))
 }
 
 --- Return a slice to the underlying utf8 data. ---
@@ -487,7 +445,7 @@ pub fun StrBuilder.reset(sb &mut StrBuilder) void {
     sb.len = 0
 }
 
-pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false) void {
+pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false, min_width Int = 0) void {
     if base != 2 and base != 8 and base != 10 and base != 16 {
         panic("invalid base")
     }
@@ -502,7 +460,8 @@ pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = fa
         [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
     }
     mut x = v
-    mut result = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    mut result = [
+        U8('0'), '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
     mut i = 19
     for x > 0 {
         let digit = digits[(x % ubase).to_int_wrapping()]
@@ -510,10 +469,14 @@ pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = fa
         i = i - 1
         x = x / ubase
     }
-    sb.slice_raw(result[(i+1)..20])
+    i = i + 1
+    if i >= result.len - min_width {
+        i = result.len - min_width - 1
+    }
+    sb.slice_raw(result[i..result.len - 1])
 }
 
-pub fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false) void {
+pub fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false, min_width Int = 0) void {
     if base != 2 and base != 8 and base != 10 and base != 16 {
         panic("invalid base")
     }
@@ -530,7 +493,8 @@ pub fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = fa
     } else {
         [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
     }
-    mut result = [U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    mut result = [
+        U8('0'), '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
     mut i = 19
     for x > 0 {
         let digit = digits[(x % base)]
@@ -538,35 +502,40 @@ pub fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = fa
         i = i - 1
         x = x / base
     }
+    let min_width = if v < 0 { min_width } else { min_width + 1}
+    if i >= result.len - min_width {
+        i = result.len - min_width - 1
+    }
     if v < 0 {
         result[i] = '-'
         i = i - 1
     }
-    sb.slice_raw(result[(i+1)..20])
+    i = i + 1
+    sb.slice_raw(result[i..result.len - 1])
 }
 
-pub fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false) void { 
-    sb.u64(v.to_u64(), base, upper) 
+pub fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false, min_width Int = 0) void { 
+    sb.u64(v.to_u64(), base, upper, min_width) 
 }
 
-pub fun StrBuilder.u16(sb &mut StrBuilder, v U16, base Int = 10, upper Bool = false) void { 
-    sb.u64(v.to_u64(), base, upper)
+pub fun StrBuilder.u16(sb &mut StrBuilder, v U16, base Int = 10, upper Bool = false, min_width Int = 0) void { 
+    sb.u64(v.to_u64(), base, upper, min_width)
 }
 
-pub fun StrBuilder.u32(sb &mut StrBuilder, v U32, base Int = 10, upper Bool = false) void {
-    sb.u64(v.to_u64(), base, upper)
+pub fun StrBuilder.u32(sb &mut StrBuilder, v U32, base Int = 10, upper Bool = false, min_width Int = 0) void {
+    sb.u64(v.to_u64(), base, upper, min_width)
 }
 
-pub fun StrBuilder.i8(sb &mut StrBuilder, v I8, base Int = 10, upper Bool = false) void {
-    sb.int(v.to_int(), base, upper)
+pub fun StrBuilder.i8(sb &mut StrBuilder, v I8, base Int = 10, upper Bool = false, min_width Int = 0) void {
+    sb.int(v.to_int(), base, upper, min_width)
 }
 
-pub fun StrBuilder.i16(sb &mut StrBuilder, v I16, base Int = 10, upper Bool = false) void {
-    sb.int(v.to_int(), base, upper)
+pub fun StrBuilder.i16(sb &mut StrBuilder, v I16, base Int = 10, upper Bool = false, min_width Int = 0) void {
+    sb.int(v.to_int(), base, upper, min_width)
 }
 
-pub fun StrBuilder.i32(sb &mut StrBuilder, v I32, base Int = 10, upper Bool = false) void {
-    sb.int(v.to_int(), base, upper)
+pub fun StrBuilder.i32(sb &mut StrBuilder, v I32, base Int = 10, upper Bool = false, min_width Int = 0) void {
+    sb.int(v.to_int(), base, upper, min_width)
 }
 
 pub fun StrBuilder.str(sb &mut StrBuilder, s Str) void {
@@ -593,6 +562,12 @@ pub fun StrBuilder.nl(sb &mut StrBuilder) void { sb.rune('\n') }
 pub fun StrBuilder.space(sb &mut StrBuilder) void { sb.rune(' ') }
 
 pub fun StrBuilder.tab(sb &mut StrBuilder) void { sb.rune('\t' ) }
+
+--- Trim matching runes from the right. ---
+pub fun StrBuilder.trim_right(sb &mut StrBuilder, runes []Rune = default_trim_runes) void {
+    let out = sb.out[0..sb.len].utf8_trim_right(runes)
+    sb.len = out.len
+}
 
 --- Format the slice and cap the output at *roughly* `max_len` bytes. ---
 pub fun StrBuilder.slice<T HasFmt>(
@@ -659,7 +634,12 @@ pub fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
 --- Return a *view* to the underlying slice.
 
     The contents of the view can change when `StrBuilder.reset()` is called
-    to reuse the underlying slice. So be careful. ---
+    to reuse the underlying slice. So be careful.
+    todo: No, this is dangerous! This function should be renamed to `to_str()`
+          and copy the underlying `StrBuilder.out` or remove `.reset()` from
+          StrBuilder. Or keep this method but force the StrBuider to allocate
+          a new `out` on the next usage.
+    ---
 pub fun StrBuilder.as_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
 
 --- Append '\0' to make it a valid C-style string and return a *view* to the underlying slice.
@@ -765,6 +745,91 @@ pub fun Slice.eq<T HasEq>(s []T, other []T) Bool {
     }
     return true
 }
+
+pub fun Slice.sort_in_place<T>(s []mut T, cmp fun(T, T) Int) void {
+    fun partition<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) Int {
+        let pivot = s[hi]
+        mut i = lo
+        for j in lo..hi {
+            if cmp(s[j], pivot) < 0 {
+                let swap = s[i]
+                s[i] = s[j]
+                s[j] = swap
+                i = i + 1
+            }
+        }
+        let swap = s[i]
+        s[i] = s[hi]
+        s[hi] = swap
+        i
+    }
+    fun qs<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) void {
+        if lo >= hi {
+            return void
+        }
+        let p = partition(s, lo, hi, cmp)
+        qs(s, lo, p - 1, cmp)
+        qs(s, p + 1, hi, cmp)
+    }
+    qs(s, 0, s.len - 1, cmp)
+}
+
+--- Treat the slice of U8 as utf8-encoded and return a sub-slice starting at the first
+    rune that is not in the list of runes to trim. ---
+pub fun Slice.utf8_trim_left(s []U8, runes []Rune = [' ', '\t', '\n', '\r'][..]) []U8 {
+    -- First, convert the runes to byte slices.
+    -- We can afford this precomputation, because everything will
+    -- fit into the first page of the arena allocator which lives on the stack.
+    let @local = Arena()
+    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
+    for i in 0..runes.len {
+        rbs[i] = runes[i].to_bytes()
+    }
+    mut data = s
+    for data.len > 0 {
+        mut matched_any = false
+        for j in 0..rbs.len {
+            let rb = rbs[j]
+            if data.len >= rb.len and data[0..rb.len].eq(rb.bytes[0..rb.len]) {
+                matched_any = true
+                data = data[rb.len..]
+            }
+        }
+        if not matched_any {
+            break
+        }
+    }
+    data
+}
+
+--- Treat the slice of U8 as utf8-encoded and return a sub-slice starting at 0 and ending a 
+    the first rune that is not in the list of runes to trim. ---
+pub fun Slice.utf8_trim_right(s []U8, runes [] Rune = [' ', '\t', '\n', '\r'][..]) []U8 {
+    -- First, convert the runes to byte slices.
+    -- We can afford this precomputation, because everything will
+    -- fit into the first page of the arena allocator which lives on the stack.
+    let @local = Arena()
+    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
+    for i in 0..runes.len {
+        rbs[i] = runes[i].to_bytes()
+    }
+    mut data = s
+    for data.len > 0 {
+        mut matched_any = false
+        for j in 0..rbs.len {
+            let rb = rbs[j]
+            if data.len >= rb.len and data[data.len - rb.len..].eq(rb.bytes[0..rb.len]) {
+                matched_any = true
+                data = data[0..data.len - rb.len]
+            }
+        }
+        if not matched_any {
+            break
+        }
+    }
+    data
+}
+
 
 pub struct SliceIter<T> {
     data []T

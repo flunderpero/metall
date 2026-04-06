@@ -54,5 +54,26 @@ fun main() void {
         try test::eq(Option(3), (&mut it).next())
         try test::eq(Option<Int>(None()), (&mut it).next())
     })
+    suite.test("utf8_trim_left", fun() !void {
+        mut sut = "\n \r \thi".as_bytes()
+        try test::eq([U8('h'), 'i'][..], sut.utf8_trim_left())
+
+        sut = "!!? hi".as_bytes()
+        try test::eq([U8(' '), 'h', 'i'][..], sut.utf8_trim_left(['!', '?'][..]))
+    })
+    suite.test("utf8_trim_right", fun() !void {
+        mut sut = "hi \n \r \t".as_bytes()
+        try test::eq([U8('h'), 'i'][..], sut.utf8_trim_right())
+
+        sut = "hi ?!!".as_bytes()
+        try test::eq([U8('h'), 'i', ' '][..], sut.utf8_trim_right(['!', '?'][..]))
+    })
+    suite.test("sort_in_place", fun() !void {
+        mut sut1 = [3, 2, 4, 1]
+        mut sut = sut1[..]
+        sut[0] = 3
+        sut.sort_in_place(fun (a Int, b Int) Int { if a == b { return 0 } if a < b { return 0 - 1 } return 1 })
+        try test::eq([1, 2, 3, 4][..], sut)
+    })
     _ = suite.run()
 }
