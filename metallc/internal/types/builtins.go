@@ -1,38 +1,44 @@
 package types
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 )
 
-const ffiModuleName = "std::ffi"
+var builtinFuns = []string{ //nolint:gochecknoglobals
+	"std::ffi.sizeof",
+	"std::ffi.ref_ptr",
+	"std::ffi.ref_ptr_mut",
+	"std::ffi.slice_ptr",
+	"std::ffi.slice_ptr_mut",
+	"std::ffi.fun_ptr",
+	"std::ffi.fun_ptr_alloc",
+	"std::ffi.Ptr.as_u64",
+	"std::ffi.Ptr.cast",
+	"std::ffi.Ptr.is_null",
+	"std::ffi.Ptr.null",
+	"std::ffi.Ptr.read",
+	"std::ffi.Ptr.offset",
+	"std::ffi.Ptr.as_slice",
+	"std::ffi.PtrMut.as_u64",
+	"std::ffi.PtrMut.null",
+	"std::ffi.PtrMut.cast",
+	"std::ffi.PtrMut.is_null",
+	"std::ffi.PtrMut.write",
+	"std::ffi.PtrMut.read",
+	"std::ffi.PtrMut.offset",
+	"std::ffi.PtrMut.as_ptr",
+	"std::ffi.PtrMut.as_slice",
+	"std::ffi.FunPtr.call",
+	"std::os.args",
+}
 
-var ffiBuiltinFuns = map[string]bool{ //nolint:gochecknoglobals
-	"sizeof":          true,
-	"ref_ptr":         true,
-	"ref_ptr_mut":     true,
-	"slice_ptr":       true,
-	"slice_ptr_mut":   true,
-	"fun_ptr":         true,
-	"fun_ptr_alloc":   true,
-	"Ptr.as_u64":      true,
-	"Ptr.cast":        true,
-	"Ptr.is_null":     true,
-	"Ptr.null":        true,
-	"Ptr.read":        true,
-	"Ptr.offset":      true,
-	"Ptr.as_slice":    true,
-	"PtrMut.as_u64":   true,
-	"PtrMut.null":     true,
-	"PtrMut.cast":     true,
-	"PtrMut.is_null":  true,
-	"PtrMut.write":    true,
-	"PtrMut.read":     true,
-	"PtrMut.offset":   true,
-	"PtrMut.as_ptr":   true,
-	"PtrMut.as_slice": true,
-	"FunPtr.call":     true,
+// builtinCanonicalName converts "std::ffi.sizeof" to "ffi::sizeof".
+func builtinCanonicalName(qualifiedName string) string {
+	s := strings.TrimPrefix(qualifiedName, "std::")
+	return strings.Replace(s, ".", "::", 1)
 }
 
 var ffiBuiltinStructs = map[string]bool{ //nolint:gochecknoglobals
@@ -43,14 +49,11 @@ var ffiBuiltinStructs = map[string]bool{ //nolint:gochecknoglobals
 // MarkBuiltins marks functions and structs in known builtin modules (e.g. std::ffi)
 // so they are handled by the compiler instead of being compiled normally.
 func MarkBuiltins(a *ast.AST, module ast.Module) {
-	if module.Name != ffiModuleName {
-		return
-	}
 	for _, declNodeID := range module.Decls {
 		node := a.Node(declNodeID)
 		switch kind := node.Kind.(type) {
 		case ast.Fun:
-			if ffiBuiltinFuns[kind.Name.Name] {
+			if isBuiltinFun(module.Name + "." + kind.Name.Name) {
 				kind.Builtin = true
 				node.Kind = kind
 			}
@@ -63,17 +66,17 @@ func MarkBuiltins(a *ast.AST, module ast.Module) {
 	}
 }
 
+func isBuiltinFun(qualifiedName string) bool {
+	return slices.Contains(builtinFuns, qualifiedName)
+}
+
 // BuiltinName returns the canonical builtin name (e.g. "ffi::sizeof") for a
 // named function reference, or "" if it is not a builtin. The namedFunRef is
 // the mangled name from the type environment (e.g. "std::ffi.sizeof.t42.t8").
 func BuiltinName(namedFunRef string) string {
-	if !strings.HasPrefix(namedFunRef, "std::ffi.") {
-		return ""
-	}
-	rest := namedFunRef[len("std::ffi."):]
-	for name := range ffiBuiltinFuns {
-		if rest == name || strings.HasPrefix(rest, name+".") {
-			return "ffi::" + name
+	for _, b := range builtinFuns {
+		if namedFunRef == b || strings.HasPrefix(namedFunRef, b+".") {
+			return builtinCanonicalName(b)
 		}
 	}
 	return ""
@@ -109,8 +112,7 @@ func BuiltinFunEffects(name string) *FunEffects {
 	return nil
 }
 
-// IsBuiltinPtrStruct returns true if the struct type is an ffi::Ptr<T> type.
-// These are opaque pointer types that map to `ptr` in IR.
+// IsBuiltinPtrStruct returns true if the struct type lives in std::ffi.
 func IsBuiltinPtrStruct(s StructType) bool {
-	return len(s.Fields) == 0 && len(s.TypeArgs) == 1 && strings.HasPrefix(s.Name, ffiModuleName+".")
+	return len(s.Fields) == 0 && len(s.TypeArgs) == 1 && strings.HasPrefix(s.Name, "std::ffi.")
 }

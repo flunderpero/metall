@@ -32,6 +32,40 @@ type CompileListener interface {
 
 var ErrAbort = base.Errorf("aborted by listener")
 
+type OptLevel int
+
+const (
+	OptLevelNone OptLevel = 0
+	OptLevelSafe OptLevel = 1
+	OptLevelFast OptLevel = 2
+)
+
+func (o OptLevel) String() string {
+	switch o {
+	case OptLevelNone:
+		return "none"
+	case OptLevelSafe:
+		return "safe"
+	case OptLevelFast:
+		return "fast"
+	default:
+		panic(fmt.Sprintf("unknown OptLevel: %d", o))
+	}
+}
+
+func ParseOptLevel(s string) (OptLevel, error) {
+	switch s {
+	case "none":
+		return OptLevelNone, nil
+	case "safe":
+		return OptLevelSafe, nil
+	case "fast":
+		return OptLevelFast, nil
+	default:
+		return 0, base.Errorf("unknown opt-level: %s", s)
+	}
+}
+
 // LLVM optimization passes (https://llvm.org/docs/Passes.html):
 //   - mem2reg: Promote alloca'd scalars to SSA registers.
 //   - sroa: Scalar Replacement of Aggregates — decompose struct/array allocas into individual scalars.
@@ -47,6 +81,7 @@ type CompileOpts struct {
 	Output              string
 	KeepIR              bool
 	LLVMPasses          string
+	OptLevel            OptLevel
 	AddressSanitizer    bool
 	DebugArenaAllocator bool
 	ArenaStackBufSize   int
@@ -150,13 +185,14 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	ir, err := gen.GenIR(
 		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(), engine.Consts(),
 		gen.IROpts{
-			TargetDataLayout:  targetDataLayout,
-			TargetTriple:      targetTriple,
-			AddressSanitizer:  opts.AddressSanitizer,
-			ArenaDebug:        opts.DebugArenaAllocator,
-			ArenaStackBufSize: opts.ArenaStackBufSize,
-			ArenaPageMinSize:  opts.ArenaPageMinSize,
-			ArenaPageMaxSize:  opts.ArenaPageMaxSize,
+			TargetDataLayout:        targetDataLayout,
+			TargetTriple:            targetTriple,
+			ArithmeticOverflowCheck: opts.OptLevel != OptLevelFast,
+			AddressSanitizer:        opts.AddressSanitizer,
+			ArenaDebug:              opts.DebugArenaAllocator,
+			ArenaStackBufSize:       opts.ArenaStackBufSize,
+			ArenaPageMinSize:        opts.ArenaPageMinSize,
+			ArenaPageMaxSize:        opts.ArenaPageMaxSize,
 		},
 	)
 	if err != nil {
@@ -191,7 +227,13 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 
 	// Produce optimized textual IR (.opt.ll)
-	cmdline := []string{llvmHome + "/bin/opt", "-S", "-passes=" + opts.LLVMPasses, unopt_ll, "-o", opt_ll}
+	cmdline := []string{llvmHome + "/bin/opt", "-S"}
+	if opts.OptLevel != OptLevelNone {
+		cmdline = append(cmdline, "-O3")
+	} else if opts.LLVMPasses != "" {
+		cmdline = append(cmdline, "-passes="+opts.LLVMPasses)
+	}
+	cmdline = append(cmdline, unopt_ll, "-o", opt_ll)
 	if err := run_cmd(ctx, cmdline); err != nil {
 		return base.WrapErrorf(err, "failed to generate optimized IR")
 	}
@@ -208,6 +250,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 
 	// Compile from optimized bitcode.
 	cmdline = []string{llvmHome + "/bin/clang", bc, "-v", "-o", output}
+	if opts.OptLevel != OptLevelNone {
+		cmdline = append(cmdline, "-O3")
+	}
 	if opts.AddressSanitizer {
 		cmdline = append(cmdline, "-fsanitize=address")
 	}

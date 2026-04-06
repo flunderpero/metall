@@ -323,3 +323,19 @@ fun main() void {
 7
 99
 ```
+
+**os::args returns at least the program name**
+
+```metall
+use std::os
+use std::io
+
+fun main() void {
+    let a = os::args()
+    io::println(a.len > 0)
+}
+```
+
+```output
+true
+```

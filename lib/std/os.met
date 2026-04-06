@@ -90,3 +90,8 @@ pub fun chdir(dir fs::Path) !void {
         return Err(posix::errno_str())
     }
 }
+
+--- The command line arguments passed to this process. ---
+pub fun args() []Str {
+    panic("implemented by the runtime")
+}

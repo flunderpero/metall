@@ -6,6 +6,8 @@ precommit:
     just fmt
     just lint
     just test
+    just test-go safe
+    just test-stdlib fast
     just examples
 
 lint:
@@ -23,19 +25,25 @@ lint-no-excluded-tests:
 fmt:
     go tool golangci-lint fmt ./metallc/...
 
-test: test-go test-stdlib
+# Run all tests.
+#   opt: none, safe, fast - see `CompilerOpts`
+test opt="none": (test-go opt) (test-stdlib opt)
 
-test-go:
-    go test ./metallc/... -count 1
+# Run Go tests.
+#   opt: none, safe, fast - run the E2E tests with this opt-level, see `CompilerOpts`
+test-go opt="none":
+    {{ if opt != "" { "METALL_E2E_TEST_OPTLEVEL=" + opt } else { "" } }} go test ./metallc/... -count 1
 
-test-stdlib:
+# Run stdlib tests.
+#   opt: none, safe, fast - see `CompilerOpts`
+test-stdlib opt="none":
     #!/usr/bin/env bash
     set -uo pipefail
 
     failed=0
     for file in lib/*/*_test.met; do
         echo ">>> $file"
-        if go run ./metallc/... run "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
+        if go run ./metallc/... run --opt {{opt}} "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
             failed=1
         fi
         if [ "${PIPESTATUS[0]}" -ne 0 ]; then

@@ -667,6 +667,10 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	}
 	if isMain {
 		signatureIRTyp = "i32"
+		if params.Len() > 0 {
+			params.WriteString(", ")
+		}
+		params.WriteString("i32 %argc, ptr %argv")
 	} else if isRetAggregate {
 		signatureIRTyp = "void"
 		if params.Len() > 0 {
@@ -754,6 +758,7 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		}
 	}
 	if isMain {
+		g.write("call void @__os_args_init(i32 %argc, ptr %argv)")
 		g.write("call void @__const_init()")
 	}
 	// Record where to insert entry-block allocas that are collected during
@@ -1298,8 +1303,12 @@ func (g *IRFunGen) emitSafeIntOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string)
 }
 
 // emitCheckedArithmeticOp emits a call to a checked add/sub/mul builtin
-// that panics on overflow.
+// that panics on overflow if `opts.ArithmeticOverflowCheck` is set.
 func (g *IRFunGen) emitCheckedArithmeticOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string, signed bool) {
+	if !g.opts.ArithmeticOverflowCheck {
+		g.write("%s = %s %s %s, %s", reg, op, irTyp, lhs, rhs)
+		return
+	}
 	prefix := "s"
 	if !signed {
 		prefix = "u"
@@ -1709,6 +1718,14 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		valTypeID := g.typeIDOfNode(call.Args[0])
 		g.storeValue(valReg, ptrReg, valTypeID)
 		g.setCode(id, voidValue)
+		return true
+	case "os::args":
+		reg := g.reg()
+		g.writeAlloca(reg, "{ptr, i64}")
+		valReg := g.reg()
+		g.write("%s = load {ptr, i64}, ptr @__os_args", valReg)
+		g.write("store {ptr, i64} %s, ptr %s", valReg, reg)
+		g.setCode(id, reg)
 		return true
 	}
 	if method, fa, ok := g.arenaAllocMethod(call); ok {
@@ -2519,13 +2536,14 @@ func (g *IRFunGen) writeAlloca(reg, irTyp string) {
 }
 
 type IROpts struct {
-	TargetDataLayout  string
-	TargetTriple      string
-	AddressSanitizer  bool
-	ArenaDebug        bool
-	ArenaStackBufSize int
-	ArenaPageMinSize  int
-	ArenaPageMaxSize  int
+	TargetDataLayout        string
+	TargetTriple            string
+	ArithmeticOverflowCheck bool
+	AddressSanitizer        bool
+	ArenaDebug              bool
+	ArenaStackBufSize       int
+	ArenaPageMinSize        int
+	ArenaPageMaxSize        int
 }
 
 func (g *IRGen) genExternDecls(funs []types.FunWork) {
@@ -2541,6 +2559,8 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 		"fflush":            true,
 		"write":             true,
 		"arena_debug_print": true,
+		"strlen":            true,
+		"malloc":            true,
 	}
 	g.ast.Iter(func(nodeID ast.NodeID) bool {
 		funDecl, ok := g.ast.Node(nodeID).Kind.(ast.FunDecl)

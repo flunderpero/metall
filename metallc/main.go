@@ -70,6 +70,14 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
 	flags.Var(&includes, "I", "add include path (repeatable)")
 	flags.BoolVar(&opts.PrintTiming, "timing", false, "print compilation timing")
 	flags.BoolVar(&opts.KeepIR, "keep-ir", false, "keep intermediate .ll files next to the output")
+	flags.Func("opt", "optimization mode: none, safe, fast", func(s string) error {
+		level, err := compiler.ParseOptLevel(s)
+		if err != nil {
+			return base.WrapErrorf(err, "failed to parse -opt")
+		}
+		opts.OptLevel = level
+		return nil
+	})
 	flags.BoolVar(&opts.AddressSanitizer, "asan", false, "enable AddressSanitizer")
 	flags.BoolVar(&opts.PrintTypesDebug, "print-types-debug", false, "print type debug info to stderr")
 	flags.BoolVar(&opts.PrintBindingsDebug, "print-bindings-debug", false, "print binding debug info to stderr")

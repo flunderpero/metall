@@ -6,6 +6,48 @@ declare i32 @printf(ptr, ...)
 declare i32 @fflush(ptr)
 declare i64 @write(i32, ptr, i64)
 declare i32 @dprintf(i32, ptr, ...)
+declare i64 @strlen(ptr)
+declare ptr @malloc(i64)
+
+; >>> os::args global and init.
+; __os_args stores the []Str slice: {ptr to array of %Str, i64 count}.
+@__os_args = internal global {ptr, i64} zeroinitializer
+
+; __os_args_init converts C argc/argv into a []Str and stores it in @__os_args.
+; Each argv[i] (a null-terminated C string) becomes a %Str = { {ptr, i64} }.
+define internal void @__os_args_init(i32 %argc, ptr %argv) {
+entry:
+    %n = sext i32 %argc to i64
+    ; Allocate array of %Str (each is 16 bytes: {ptr, i64}).
+    %bytes = mul i64 %n, 16
+    %arr = call ptr @malloc(i64 %bytes)
+    br label %loop
+loop:
+    %i = phi i64 [ 0, %entry ], [ %next_i, %body ]
+    %done = icmp sge i64 %i, %n
+    br i1 %done, label %exit, label %body
+body:
+    ; Load argv[i] (a char*).
+    %argv_i_ptr = getelementptr ptr, ptr %argv, i64 %i
+    %cstr = load ptr, ptr %argv_i_ptr
+    ; Get string length.
+    %len = call i64 @strlen(ptr %cstr)
+    ; Store into arr[i] which is a %Str = { {ptr, i64} }.
+    %str_ptr = getelementptr %Str, ptr %arr, i64 %i
+    %data_field = getelementptr %Str, ptr %str_ptr, i32 0, i32 0, i32 0
+    store ptr %cstr, ptr %data_field
+    %len_field = getelementptr %Str, ptr %str_ptr, i32 0, i32 0, i32 1
+    store i64 %len, ptr %len_field
+    %next_i = add i64 %i, 1
+    br label %loop
+exit:
+    ; Store the slice {ptr, len} into the global.
+    %g_ptr = getelementptr {ptr, i64}, ptr @__os_args, i32 0, i32 0
+    store ptr %arr, ptr %g_ptr
+    %g_len = getelementptr {ptr, i64}, ptr @__os_args, i32 0, i32 1
+    store i64 %n, ptr %g_len
+    ret void
+}
 
 ; >>> Builtin functions.
 
