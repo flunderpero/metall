@@ -94,7 +94,7 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 
 	source := base.NewSource("test.met", "test", true, []rune(tc.Input))
 	reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
-	outputPath := "./.build/" + r.cfg.prefix + reg.ReplaceAllString(tc.Name, "_")
+	outputPath := "./.build/" + r.cfg.prefix + reg.ReplaceAllString(tc.FullName(), "_")
 
 	// Determine optimization level and LLVM passes.
 	optLevel := OptLevelNone
@@ -104,7 +104,6 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 			optLevel, err = ParseOptLevel(s)
 			assert.NoError(err, "METALL_E2E_TEST_OPTLEVEL is invalid")
 		}
-		t.Logf("optlevel: %s\n", optLevel)
 	}
 	llvmPasses := r.cfg.llvmPasses
 	if llvmPasses == "" {
@@ -120,7 +119,20 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 		LLVMPasses:       llvmPasses,
 		AddressSanitizer: true,
 		MinimalPrelude:   r.cfg.minimalPrelude,
+		// We deliberately use small stack buf sizes and small page sizes
+		// to force more allocations and stress test the allocator.
+		ArenaStackBufSize: 32,
+		ArenaPageMinSize:  512,
+		ArenaPageMaxSize:  2048,
 	}
+	if _, ok := tc.Want["error"]; ok {
+		_, _, err := CompileAndRun(t.Context(), source, opts, true)
+		if err != nil {
+			results["error"] = err.Error()
+		}
+		return results
+	}
+
 	exitCode, output, err := CompileAndRun(t.Context(), source, opts, true)
 	assert.NoError(err)
 

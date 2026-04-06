@@ -117,32 +117,34 @@ func RunFile(t *testing.T, path string, runner Runner) { //nolint:funlen
 		})
 	}
 
-	// After all subtests complete, apply updates sequentially.
-	if len(updates) == 0 {
-		return
-	}
-	// Sort by wantLine so we process from top to bottom with correct offsets.
-	// Use cases[entry.caseIdx].wantLines[entry.lang] as the sort key.
-	sortKey := func(e updateEntry) int {
-		return cases[e.caseIdx].wantLines[e.lang]
-	}
-	for i := 1; i < len(updates); i++ {
-		for j := i; j > 0 && sortKey(updates[j]) < sortKey(updates[j-1]); j-- {
-			updates[j], updates[j-1] = updates[j-1], updates[j]
+	// Apply updates after all subtests (including parallel ones) complete.
+	t.Cleanup(func() {
+		if len(updates) == 0 {
+			return
 		}
-	}
-	lines := strings.Split(string(content), "\n")
-	lineOffset := 0
-	for _, entry := range updates {
-		startLine := cases[entry.caseIdx].wantLines[entry.lang] + lineOffset
-		delta := updateExpectation(t, &lines, startLine, entry.lang, entry.actual)
-		lineOffset += delta
-	}
-	updated := strings.Join(lines, "\n")
-	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
-		t.Fatalf("failed to update test file %s: %v", path, err)
-	}
-	t.Log("updated expectations in", path)
+		// Sort by wantLine so we process from top to bottom with correct offsets.
+		sortKey := func(e updateEntry) int {
+			return cases[e.caseIdx].wantLines[e.lang]
+		}
+		for i := 1; i < len(updates); i++ {
+			for j := i; j > 0 && sortKey(updates[j]) < sortKey(updates[j-1]); j-- {
+				updates[j], updates[j-1] = updates[j-1], updates[j]
+			}
+		}
+		lines := strings.Split(string(content), "\n")
+		lineOffset := 0
+		for _, entry := range updates {
+			startLine := cases[entry.caseIdx].wantLines[entry.lang] + lineOffset
+			delta := updateExpectation(t, &lines, startLine, entry.lang, entry.actual)
+			lineOffset += delta
+		}
+		updated := strings.Join(lines, "\n")
+		if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
+			t.Errorf("failed to update test file %s: %v", path, err)
+			return
+		}
+		t.Log("updated expectations in", path)
+	})
 }
 
 // updateExpectation replaces the content of a fenced code block.
