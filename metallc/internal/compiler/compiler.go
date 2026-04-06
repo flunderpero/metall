@@ -273,6 +273,7 @@ func CompileAndRun(
 	ctx context.Context,
 	source *base.Source,
 	opts CompileOpts,
+	captureStdoutStderr bool,
 ) (exitCode int, output string, err error) {
 	runOpts := opts
 	if runOpts.Output == "" {
@@ -291,7 +292,14 @@ func CompileAndRun(
 	if opts.AddressSanitizer {
 		cmd.Env = append(os.Environ(), "ASAN_OPTIONS=detect_stack_use_after_return=1")
 	}
-	cmdOutput, err := cmd.CombinedOutput()
+	var cmdOutput []byte
+	if captureStdoutStderr {
+		cmdOutput, err = cmd.CombinedOutput()
+	} else {
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		err = cmd.Run()
+	}
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -477,7 +485,7 @@ func newMacroExpander(ctx context.Context, opts CompileOpts) types.MacroExpander
 			KeepIR:         true,
 			MinimalPrelude: false,
 		}
-		_, output, err := CompileAndRun(ctx, source, macroOpts)
+		_, output, err := CompileAndRun(ctx, source, macroOpts, true)
 		if err != nil {
 			return "", base.WrapErrorf(err, "macro compilation failed")
 		}

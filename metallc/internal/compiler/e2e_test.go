@@ -121,7 +121,7 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 		AddressSanitizer: true,
 		MinimalPrelude:   r.cfg.minimalPrelude,
 	}
-	exitCode, output, err := CompileAndRun(t.Context(), source, opts)
+	exitCode, output, err := CompileAndRun(t.Context(), source, opts, true)
 	assert.NoError(err)
 
 	if _, ok := tc.Want["output"]; ok {

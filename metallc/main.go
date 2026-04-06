@@ -44,7 +44,7 @@ Usage:
 		}
 	case "run":
 		opts, source := parseCommand("run")
-		exitCode, output, err := compiler.CompileAndRun(context.Background(), source, opts)
+		exitCode, output, err := compiler.CompileAndRun(context.Background(), source, opts, false)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "failed to run:", err)
 			os.Exit(1)
