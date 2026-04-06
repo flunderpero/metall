@@ -1,0 +1,2 @@
+all:
+    go run ../metallc/... run -I ../lib run.met

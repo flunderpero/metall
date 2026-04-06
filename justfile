@@ -58,6 +58,9 @@ test-stdlib opt="none":
         echo "All tests passed"
     fi
 
+benchmarks *args:
+    just -f benchmarks/justfile {{args}}
+
 examples:
     #!/usr/bin/env bash
     set -euo pipefail

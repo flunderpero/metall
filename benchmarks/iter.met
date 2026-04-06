@@ -1,0 +1,80 @@
+use std::iter
+use std::io
+use std::os
+
+pub struct RangeIter {
+    current U64
+    end U64
+}
+
+pub fun RangeIter.next(it &mut RangeIter) ?U64 {
+    if it.current < it.end {
+        let val = it.current
+        it.current = it.current + U64(1)
+        return Option(val)
+    }
+    None()
+}
+
+pub fun range(start U64, end U64) RangeIter {
+    RangeIter(start, end)
+}
+
+pub fun hash(x U64) U64 {
+    mut h = x ^ (x >> U64(30))
+    h = h *% U64(13787848793156543929) -- 0xbf58476d1ce4e5b9
+    h = h ^ (h >> U64(27))
+    h = h *% U64(10723151780598845931) -- 0x94d049bb133111eb
+    h = h ^ (h >> U64(31))
+    h
+}
+
+pub fun main() void {
+    let args = os::args()
+    let mode = if args.len > 1 { args[1] } else { "fold" }
+
+    let it = iter::pipe(range(U64(0), U64(500000000)))
+        .map(fun(x U64) U64 { hash(x) })
+        .filter(fun(x U64) Bool { (x % U64(3)) != U64(0) })
+        .map(fun(x U64) U64 { (x *% U64(17)) +% U64(42) })
+
+    io::print(mode)
+    io::print(": ")
+    when {
+    case mode.eq("fold"):
+        let result = it.fold(U64(0), fun(acc U64, x U64) U64 { acc +% x })
+        io::println(result)
+    case mode.eq("count"):
+        let result = it.count()
+        io::println(result)
+    case mode.eq("all"):
+        let result = it.all(fun(x U64) Bool { x < 18446744073709551615 })
+        io::println(result)
+    case mode.eq("any"):
+        let target = (hash(U64(499999990)) *% 17) +% 42
+        let result = it.any(fun[target](x U64) Bool { x == target })
+        io::println(result)
+    case mode.eq("find"):
+        let target = (hash(U64(499999990)) *% 17) +% 42
+        let result = it.find(fun[target](x U64) Bool { x == target })
+        match result {
+            case None: io::println("None")
+            else v: io::println(v)
+        }
+    case mode.eq("collect"):
+        let @a = Arena()
+        let result = it.collect(1024, @a)
+        io::println(result.len)
+    case mode.eq("take"):
+        let result = it.fold(U64(0), fun(acc U64, x U64) U64 { acc +% x })
+        io::println(result)
+    case mode.eq("take_while"):
+        let threshold = (hash(U64(499999990)) *% 17) +% 42
+        let result = it
+            .take_while(fun[threshold](x U64) Bool { x != threshold })
+            .fold(U64(0), fun(acc U64, x U64) U64 { acc +% x })
+        io::println(result)
+    else:
+        io::println("Unknown mode. Use: fold, count, all, any, find, take, take_while")
+    }
+}
