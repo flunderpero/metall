@@ -127,23 +127,22 @@ fun main() void {
         let @local = Arena()
         let m = map::Map.new<Int, Str>(16, @local)
         m.set(1, "a")
-        m.set(2, "b")
         m.set(3, "c")
+        m.set(2, "b")
         mut sut = m.iter()
-        let l = list::List.new<map::MapEntry<Int, Str>>(32, @local)
-        iter::collect(&mut sut, l)
+        let l = iter::pipe(sut).collect(32, @local)
         l.sort_in_place(fun (a map::MapEntry<Int, Str>, b map::MapEntry<Int, Str>) Int {
             if a.key == b.key { return 0 }
-            if a.key < b.key { return 0 - 1 }
+            if a.key < b.key { return -1 }
             1
         })
         try test::eq(3, l.len)
-        try test::eq(1, l.get(0).key)
-        try test::eq("a", l.get(0).value)
-        try test::eq(2, l.get(1).key)
-        try test::eq("b", l.get(1).value)
-        try test::eq(3, l.get(2).key)
-        try test::eq("c", l.get(2).value)
+        try test::eq(1, l[0].key)
+        try test::eq("a", l[0].value)
+        try test::eq(2, l[1].key)
+        try test::eq("b", l[1].value)
+        try test::eq(3, l[2].key)
+        try test::eq("c", l[2].value)
     })
     _ = suite.run()
 }

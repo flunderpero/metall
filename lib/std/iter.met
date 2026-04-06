@@ -1,212 +1,265 @@
---- Count the elements in the iterator. The iterator is consumed. ---
-pub fun count<A, I Iter<A>>(it &mut I) Int {
-    mut count = 0
-    for {
-        match it.next() {
-            case None: break
-            else: count = count + 1
-        }
-    }
-    count
+use std::list
+
+struct Skip {}
+
+union PipeIterVal<T> = T | None | Skip
+
+shape PipeIter<T> {
+    pub fun PipeIter.next(it &mut PipeIter) PipeIterVal<T>
 }
 
-pub struct MapIter<A, B, I Iter<A>> {
-    src &mut I
+struct IterToPipeIter<A, In Iter<A>> {
+    src In 
+}
+
+pub fun IterToPipeIter.next<A, In Iter<A>>(it &mut IterToPipeIter<A, In>) PipeIterVal<A> {
+    match (&mut it.src).next() {
+        case None: None()
+        else v: v
+    }
+}
+
+struct PipeIterToIter<A, In PipeIter<A>> {
+    src In 
+}
+
+pub fun PipeIterToIter.next<A, In PipeIter<A>>(it &mut PipeIterToIter<A, In>) ?A {
+    for {
+        match (&mut it.src).next() {
+            case None: return None()
+            case Skip:
+            else v: return v
+        }
+    }
+    panic("unreachable")
+}
+
+struct MapIter<A, B, I PipeIter<A>> {
+    src I
     f fun(A) B
 }
 
-pub fun MapIter.next<A, B, I Iter<A>>(it &mut MapIter<A, B, I>) ?B {
-    match it.src.next() {
+pub fun MapIter.next<A, B, I PipeIter<A>>(it &mut MapIter<A, B, I>) PipeIterVal<B> {
+    match (&mut it.src).next() {
+        case Skip: Skip()
         case None: None()
         else e: it.f(e)
     }
 }
 
---- Map all values in the iterator to another value. ---
-pub fun map<A, B, I Iter<A>>(it &mut I, f fun(A) B) MapIter<A, B, I> {
-    MapIter<A, B, I>(it, f)
-}
-
-pub struct FilterIter<A, I Iter<A>> {
-    src &mut I
+struct FilterIter<A, I PipeIter<A>> {
+    src I
     f fun(A) Bool
 }
 
-pub fun FilterIter.next<A, I Iter<A>>(it &mut FilterIter<A, I>) ?A {
-    for {
-        match it.src.next() {
-            case None: return None()
-            else a: 
-                if it.f(a) {
-                    return a
-                }
-        }
+pub fun FilterIter.next<A, I PipeIter<A>>(it &mut FilterIter<A, I>) PipeIterVal<A> {
+    match (&mut it.src).next() {
+        case None: None()
+        case Skip: Skip()
+        else a: if it.f(a) { a } else { Skip() }
     }
-    panic("unreachable")
 }
 
---- Filter out values that don't match the predicate. ---
-pub fun filter<A, I Iter<A>>(it &mut I, f fun(A) Bool) FilterIter<A, I> {
-    FilterIter<A, I>(it, f)
-}
-
---- Test if all elements match the given predicate. 
-    
-    Consume the iterator up to and including first non-matching element. ---
-pub fun all<A, I Iter<A>>(it &mut I, f fun(A) Bool) Bool {
-    for {
-        match it.next() {
-            case None: return true
-            else a: 
-                if not f(a) {
-                    return false
-                }
-        }
-    }
-    panic("unreachable")
-}
-
---- Test if any element matches the given predicate.
-
-    Consume the iterator up to and including the first matching element. ---
-pub fun any<A, I Iter<A>>(it &mut I, f fun(A) Bool) Bool {
-    for {
-        match it.next() {
-            case None: return false
-            else a:
-                if f(a) {
-                    return true
-                }
-        }
-    }
-    panic("unreachable")
-}
-
-pub struct ChainIter<A, I1 Iter<A>, I2 Iter<A>> {
-    it1 &mut I1
-    it2 &mut I2
+struct ChainIter<A, I1 PipeIter<A>, I2 Iter<A>> {
+    it1 I1
+    it2 I2
     use1 Bool
 }
 
-pub fun ChainIter.next<A, I1 Iter<A>, I2 Iter<A>>(it &mut ChainIter<A, I1, I2>) ?A {
+pub fun ChainIter.next<A, I1 PipeIter<A>, I2 Iter<A>>(it &mut ChainIter<A, I1, I2>) PipeIterVal<A> {
     if it.use1 {
-        match it.it1.next() {
+        match (&mut it.it1).next() {
             case None: it.use1 = false
             else a: return a
         }
     }
-    it.it2.next()
-}
-
---- Chain two iterators together to create a unified iterator over both sets of elements. ---
-pub fun chain<A, I1 Iter<A>, I2 Iter<A>>(it1 &mut I1, it2 &mut I2) ChainIter<A, I1, I2> {
-    ChainIter<A, I1, I2>(it1, it2, true)
+    match (&mut it.it2).next() {
+        case None: None()
+        else v: v
+    }
 }
 
 pub shape CollectTarget<A> {
     pub fun CollectTarget.push<A>(c &mut CollectTarget, v A) void
 }
 
---- Collect the iterator into a something with a `push()` method. ---
-pub fun collect<A, I Iter<A>, T CollectTarget<A>>(it &mut I, target &mut T) void {
-    for {
-        match it.next() {
-            case None: return void
-            else a: target.push(a)
-        }
-    }
-    panic("unreachable")
-}
-
---- Fold the iterator into a final value. Use this to sum up values for instance. ---
-pub fun fold<A, B, I Iter<A>>(it &mut I, initial B, f fun(B, A) B) B {
-    mut value = initial
-    for {
-        match it.next() {
-            case None: return value
-            else a: value = f(value, a)
-        }
-    }
-    panic("unreachable")
-}
-
-pub struct PeekIter<A, I Iter<A>> {
-    it &mut I
-    peeked ?A
-}
-
-pub fun PeekIter.peek<A, I Iter<A>>(p &mut PeekIter<A, I>) ?A {
-    match p.peeked {
-        case None:
-            p.peeked = p.it.next()
-            p.peeked
-        else a: a
-    }
-}
-
-pub fun PeekIter.next<A, I Iter<A>>(p &mut PeekIter<A, I>) ?A {
-    match p.peeked {
-        case None: p.it.next()
-        else a: 
-            p.peeked = None()
-            a
-    }
-}
-
-pub shape PeekableIter<A> {
-    pub fun PeekableIter.peek<A>(it &mut PeekableIter) ?A
-    pub fun PeekableIter.next<A>(it &mut PeekableIter) ?A
-}
-
---- Return an iterator with a `peek()` function. ---
-pub fun peekable<A, I Iter<A>>(it &mut I) PeekIter<A, I> {
-    PeekIter(it, Option<A>(None()))
-}
-
-pub struct TakeIter<A, I Iter<A>> {
-    it &mut I
+struct TakeIter<A, I PipeIter<A>> {
+    it I
     left Int
 }
 
-pub fun TakeIter.next<A, I Iter<A>>(t &mut TakeIter<A, I>) ?A {
+pub fun TakeIter.next<A, I PipeIter<A>>(t &mut TakeIter<A, I>) PipeIterVal<A> {
     if t.left > 0 {
-        t.left = t.left - 1
-        return t.it.next()
+        match (&mut t.it).next() {
+            case None: None()
+            case Skip: Skip()
+            else v: 
+                t.left = t.left - 1
+                v
+        }
+    } else {
+        None()
+    }
+}
+
+struct TakeWhileIter<A, I PipeIter<A>> {
+    it I
+    f fun(A) Bool
+}
+
+pub fun TakeWhileIter.next<A, I PipeIter<A>>(t &mut TakeWhileIter<A, I>) PipeIterVal<A> {
+    match (&mut t.it).next() {
+        case None: None()
+        case Skip: Skip()
+        else a: if t.f(a) { a } else { None() }
+    }
+}
+
+
+--- Iterator pipeline with adaptors that shape the iteration stream, e.g. `map()`, `filter()`, and
+    consumers that end the iteration, e.g. `count()`, `find()`, `fold()`, `collect()`. ---
+pub struct Pipeline<A, I PipeIter<A>> {
+    it I
+}
+
+--- Create an iterator pipeline. ---
+pub fun pipe<A, In Iter<A>>(it In) Pipeline<A, IterToPipeIter<A, In>> {
+    Pipeline(IterToPipeIter(it))
+}
+
+--- Map each element to another value. ---
+pub fun Pipeline.map<A, B, In PipeIter<A>>(p Pipeline<A, In>, map fun(A) B) Pipeline<B, MapIter<A, B, In>> {
+    Pipeline(MapIter(p.it, map))
+}
+
+--- Filter out elements based on the given `predicate`. --- 
+pub fun Pipeline.filter<A, I PipeIter<A>>(p Pipeline<A, I>, predicate fun(A) Bool) Pipeline<A, FilterIter<A, I>> {
+    Pipeline(FilterIter(p.it, predicate)) 
+}
+
+--- Consume the first `n` elements. ---
+pub fun Pipeline.take<A, I PipeIter<A>>(p Pipeline<A, I>, n Int) Pipeline<A, TakeIter<A, I>> {
+    Pipeline(TakeIter(p.it, n))
+}
+
+--- Consume elements until the given `predicate` yields false. This consumes one element
+    more than matches - the first one that does not match. ---
+pub fun Pipeline.take_while<A, I PipeIter<A>>(p Pipeline<A, I>, predicate fun(A) Bool) Pipeline<A, TakeWhileIter<A, I>> {
+    Pipeline(TakeWhileIter(p.it, predicate)) 
+}
+
+--- Chain two iterators together, i.e. first, read all elements from the current iterator
+    and then all from the given `it` iterator. ---
+pub fun Pipeline.chain<A, I1 PipeIter<A>, I2 Iter<A>>(p Pipeline<A, I1>, it I2) Pipeline<A, ChainIter<A, I1, I2>> {
+    Pipeline(ChainIter(p.it, it, true))
+}
+
+--- Convert the pipeline back to a regulare `Iter<T>`. ---
+pub fun Pipeline.iter<A, I PipeIter<A>>(p Pipeline<A, I>) PipeIterToIter<A, I> {
+    PipeIterToIter(p.it)
+}
+
+--- Find the first matching element. ---
+pub fun Pipeline.find<A, I PipeIter<A>>(p Pipeline<A, I>, f fun(A) Bool) ?A {
+    mut it = p.it
+    for {
+        match (&mut it).next() {
+            case None: break
+            case Skip: 
+            else v: if f(v) { return v }
+        }
     }
     None()
 }
 
---- Take up to n elements from the iterator. ---
-pub fun take<A, I Iter<A>>(it &mut I, n Int) TakeIter<A, I> {
-    TakeIter(it, n)
-}
-
-pub struct TakeWhileIter<A, I PeekableIter<A>> {
-    it &mut I
-    f fun(A) Bool
-}
-
-pub fun TakeWhileIter.next<A, I PeekableIter<A>>(t &mut TakeWhileIter<A, I>) ?A {
-    match t.it.peek() {
-        case None: return None()
-        else a:
-            if t.f(a) {
-                _ = t.it.next()
-                return a
-            }
-            return None()
+--- Return true if all elements in the pipeline match the given `predicate`. ---
+pub fun Pipeline.all<A, I PipeIter<A>>(p Pipeline<A, I>, predicate fun(A) Bool) Bool {
+    mut it = p.it
+    for {
+        match (&mut it).next() {
+            case None: break
+            case Skip: 
+            else v: if not predicate(v) { return false }
+        }
     }
+    true
 }
 
---- Take elements as long as the predicate returns `true`.
-
-    This only works on peekable iterators so that we don't consume the first non-matching element. --- 
-pub fun take_while<A, I PeekableIter<A>>(it &mut I, f fun(A) Bool) TakeWhileIter<A, I> {
-    TakeWhileIter(it, f)
+--- Return true if any element in the pipeline matches the given `predicate`. ---
+pub fun Pipeline.any<A, I PipeIter<A>>(p Pipeline<A, I>, predicate fun(A) Bool) Bool {
+    mut it = p.it
+    for {
+        match (&mut it).next() {
+            case None: break
+            case Skip: 
+            else v: if predicate(v) { return true }
+        }
+    }
+    false
 }
 
---- Find the first match. ---
-pub fun find<A, I Iter<A>>(it &mut I, f fun(A) Bool) ?A {
-    mut filterit = filter(it, f)
-    return (&mut filterit).next()
+--- Count the number of elements in the pipeline. ---
+pub fun Pipeline.count<A, I PipeIter<A>>(p Pipeline<A, I>) Int {
+    mut it = p.it
+    mut count = 0
+    for {
+        match (&mut it).next() {
+            case None: break
+            case Skip: 
+            else: count = count + 1
+        }
+    }
+    count
+}
+
+--- Reduce all elements of the pipeline to one value. ---
+pub fun Pipeline.fold<A, B, I PipeIter<A>>(p Pipeline<A, I>, initial B, f fun(B, A) B) B {
+    mut it = p.it
+    mut value = initial
+    for {
+        match (&mut it).next() {
+            case None: break
+            case Skip: 
+            else v: value = f(value, v)
+        }
+    }
+    value
+}
+
+--- Collect all elements in the pipeline into a slice. ---
+pub fun Pipeline.collect<A, I PipeIter<A>>(p Pipeline<A, I>, initial_capacity Int, @a Arena) []mut A {
+    mut slice = unsafe @a.slice_uninit_mut<A>(initial_capacity)
+    mut slice_len = slice.len
+    mut len = 0
+    mut it = p.it
+    for {
+        match (&mut it).next() {
+            case None: break
+            case Skip: 
+            else v: 
+                if len == slice_len {
+                    mut new = unsafe @a.slice_uninit_mut<A>(slice.len * 2) 
+                    _ = new.set(slice)
+                    slice = new
+                    slice_len = slice.len
+                }
+                slice[len] = v
+                len = len + 1
+        }
+    }
+    slice[0..len]
+}
+
+--- Collect all elements in the pipeline into a `list::List`. ---
+pub fun Pipeline.collect_list<A, I PipeIter<A>>(p Pipeline<A, I>, initial_capacity Int, @a Arena) &mut list::List<A> {
+    let l = list::List.new<A>(initial_capacity, @a)
+    mut it = p.it
+    for {
+        match (&mut it).next() {
+            case None: break
+            case Skip: 
+            else v: l.push(v)
+        }
+    }
+    l
 }

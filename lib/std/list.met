@@ -84,35 +84,7 @@ pub fun List.fmt<T HasFmt>(l &List<T>, sb &mut StrBuilder) void {
 
     todo: Use a proper `Ordering` enum once we support enums. ---
 pub fun List.sort_in_place<T>(l &mut List<T>, cmp fun(T, T) Int) void {
-    quicksort(l.data[0..l.len], cmp) 
-}
-
-fun quicksort<T>(s []mut T, cmp fun(T, T) Int) void {
-    fun partition<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) Int {
-        let pivot = s[hi]
-        mut i = lo
-        for j in lo..hi {
-            if cmp(s[j], pivot) < 0 {
-                let swap = s[i]
-                s[i] = s[j]
-                s[j] = swap
-                i = i + 1
-            }
-        }
-        let swap = s[i]
-        s[i] = s[hi]
-        s[hi] = swap
-        i
-    }
-    fun qs<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) void {
-        if lo >= hi {
-            return void
-        }
-        let p = partition(s, lo, hi, cmp)
-        qs(s, lo, p - 1, cmp)
-        qs(s, p + 1, hi, cmp)
-    }
-    qs(s, 0, s.len - 1, cmp)
+    l.data[0..l.len].sort_in_place(cmp)
 }
 
 --- An iterartor over the elements of the list.
