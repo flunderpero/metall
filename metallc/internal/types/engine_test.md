@@ -8470,6 +8470,55 @@ test.met:1:92: type mismatch at argument 1: expected []mut Int, got []Int
                                                                                                ^
 ```
 
+**Mut binding of array literal subslice is mutable**
+
+```metall
+{
+    mut sut = [3, 2, 4, 1][..]
+    sut[0] = 99
+}
+```
+
+```error
+```
+
+**Subslice of function return is not mutable**
+
+```metall
+{
+    fun arr() [4]Int { [1,2,3,4] }
+    mut sut = arr()[..]
+    sut[0] = 99
+}
+```
+
+```error
+test.met:4:5: cannot assign to element of immutable array or slice
+        mut sut = arr()[..]
+        sut[0] = 99
+        ^^^^^^
+    }
+```
+
+**Rebinding immutable slice param to mut does not make it mutable**
+
+```metall
+{
+    fun foo(s []Int) void {
+        mut s2 = s
+        s2[0] = 99
+    }
+}
+```
+
+```error
+test.met:4:9: cannot assign to element of immutable array or slice
+            mut s2 = s
+            s2[0] = 99
+            ^^^^^
+        }
+```
+
 **Cannot return allocator from fun**
 
 ```metall

@@ -2035,6 +2035,9 @@ func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Bind
 	case ast.Var:
 		// Module-level constants can be referenced from any function.
 		bindingScope := e.scopeGraph.NodeScope(binding.Decl)
+		if bindingScope.Node == 0 {
+			return false // Root scope - always reachable.
+		}
 		if _, ok := e.ast.Node(bindingScope.Node).Kind.(ast.Module); ok {
 			return false
 		}
@@ -2275,6 +2278,17 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 		return InvalidTypeID, TypeFailed
 	}
 	bindTypeID := exprTypeID
+	// This handles `mut sut = [3,2,4,1][..]` - the array literal is owned by
+	// this binding so mutation is safe.
+	if varNode.Mut {
+		if sliceTyp, ok := e.env.Type(exprTypeID).Kind.(SliceType); ok && !sliceTyp.Mut {
+			if subSlice, ok := e.ast.Node(varNode.Expr).Kind.(ast.SubSlice); ok {
+				if _, ok := e.ast.Node(subSlice.Target).Kind.(ast.ArrayLiteral); ok {
+					bindTypeID = e.env.buildSliceType(sliceTyp.Elem, true, nodeID, span)
+				}
+			}
+		}
+	}
 	if varNode.Type != nil {
 		if !e.isAssignableTo(exprTypeID, declTypeID) {
 			exprSpan := e.ast.Node(varNode.Expr).Span
