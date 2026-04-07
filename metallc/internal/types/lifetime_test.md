@@ -2583,6 +2583,162 @@ test.met:6:5: method Foo.do violates shape S contract: parameter x flows into pa
         fun bar<T S>(t &mut T) void {
 ```
 
+## Noescape
+
+**return ref directly**
+
+```metall
+{
+    fun leak(x noescape &Int) &Int { x }
+}
+```
+
+```error
+test.met:2:14: noescape parameter "x" must not escape through the return value
+    {
+        fun leak(x noescape &Int) &Int { x }
+                 ^^^^^^^^^^^^^^^
+    }
+```
+
+**return deref value is ok**
+
+```metall
+{
+    fun read(x noescape &Int) Int { x.* }
+}
+```
+
+```error
+```
+
+**return inner ref from struct**
+
+```metall
+{
+    struct Holder { r &Int }
+    fun steal(h noescape &Holder) &Int { h.r }
+}
+```
+
+```error
+test.met:3:15: noescape parameter "h" must not escape through the return value
+        struct Holder { r &Int }
+        fun steal(h noescape &Holder) &Int { h.r }
+                  ^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**return inner slice from struct**
+
+```metall
+{
+    struct Data { items []Int }
+    fun steal(d noescape &Data) []Int { d.items }
+}
+```
+
+```error
+test.met:3:15: noescape parameter "d" must not escape through the return value
+        struct Data { items []Int }
+        fun steal(d noescape &Data) []Int { d.items }
+                  ^^^^^^^^^^^^^^^^
+    }
+```
+
+**return noescape slice directly**
+
+```metall
+{
+    fun steal(s noescape []Int) []Int { s }
+}
+```
+
+```error
+test.met:2:15: noescape parameter "s" must not escape through the return value
+    {
+        fun steal(s noescape []Int) []Int { s }
+                  ^^^^^^^^^^^^^^^^
+    }
+```
+
+**write value into &mut Int is ok**
+
+```metall
+{
+    fun store(dst &mut Int, src noescape &Int) void { dst.* = src.* }
+}
+```
+
+```error
+```
+
+**noescape ref flows into &mut param holding ref**
+
+```metall
+{
+    struct Box { r &Int }
+    fun store(dst &mut Box, src noescape &Int) void { dst.* = Box(src) }
+}
+```
+
+```error
+test.met:3:29: noescape parameter "src" must not escape through other parameters
+        struct Box { r &Int }
+        fun store(dst &mut Box, src noescape &Int) void { dst.* = Box(src) }
+                                ^^^^^^^^^^^^^^^^^
+    }
+```
+
+**noescape slice flows into &mut param holding slice**
+
+```metall
+{
+    struct Buf { data []U8 }
+    fun store(dst &mut Buf, src noescape []U8) void { dst.* = Buf(src) }
+}
+```
+
+```error
+```
+
+**function type with noescape: violating function rejected**
+
+```metall
+{
+    fun id(x &Int) &Int { x }
+    fun apply(f fun(noescape &Int) &Int) void {
+        let x = 1
+        let _ = f(&x)
+    }
+    apply(id)
+}
+```
+
+```error
+test.met:7:11: noescape parameter "param 0" must not escape through the return value
+        }
+        apply(id)
+              ^^
+    }
+```
+
+**function type with noescape: ok function accepted**
+
+```metall
+{
+    fun read(x &Int) Int { x.* }
+    fun apply(f fun(noescape &Int) Int) Int {
+        let x = 42
+        f(&x)
+    }
+    apply(read)
+}
+```
+
+```error
+```
+
 **concrete method satisfies shape contract**
 
 ```metall

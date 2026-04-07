@@ -241,8 +241,8 @@ fun foo(bar fun(Str, Int) Bool) void {}
 Fun(name="foo")
   params=FunParam(name="bar")
     type=FunType()
-      params[0]=SimpleType(name="Str")
-      params[1]=SimpleType(name="Int")
+      paramTypes[0]=SimpleType(name="Str")
+      paramTypes[1]=SimpleType(name="Int")
       returnType=SimpleType(name="Bool")
   returnType=SimpleType(name="void")
   block=Block()
@@ -258,7 +258,7 @@ fun foo(bar fun(Int) void) void {}
 Fun(name="foo")
   params=FunParam(name="bar")
     type=FunType()
-      params=SimpleType(name="Int")
+      paramTypes=SimpleType(name="Int")
       returnType=SimpleType(name="void")
   returnType=SimpleType(name="void")
   block=Block()
@@ -2897,4 +2897,38 @@ mut x = 123
 test.met:1:1: unexpected token: <mut>
     mut x = 123
     ^^^
+```
+
+**noescape parameter**
+
+```metall
+fun foo(x noescape &Int) Int { x.* }
+```
+
+```ast
+Fun(name="foo")
+  params=FunParam(name="x",noescape=true)
+    type=RefType()
+      type=SimpleType(name="Int")
+  returnType=SimpleType(name="Int")
+  block=Block()
+    exprs=Deref()
+      expr=Ident(name="x")
+```
+
+**noescape in function type**
+
+```metall
+fun apply(f fun(noescape &Int) void) void {}
+```
+
+```ast
+Fun(name="apply")
+  params=FunParam(name="f")
+    type=FunType(noescape=[true])
+      paramTypes=RefType()
+        type=SimpleType(name="Int")
+      returnType=SimpleType(name="void")
+  returnType=SimpleType(name="void")
+  block=Block()
 ```

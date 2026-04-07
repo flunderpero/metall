@@ -10110,3 +10110,41 @@ test.met:6:13: type mismatch at argument 1: expected sync fun() void, got fun() 
                 ^^^^^^^^^^^^^^^^^^^^^^^
     }
 ```
+
+## Noescape
+
+**noescape param is reflected in function type**
+
+```metall
+{
+    fun foo(x noescape &Int) void {}
+}
+```
+
+```types
+Block: fun01
+  Fun: fun01
+    FunParam: &Int
+      RefType: &Int
+        SimpleType: Int
+    SimpleType: void
+    Block: void
+---
+fun01 = fun(noescape &Int) void
+```
+
+```error
+```
+
+**fun with noescape param accepts fun without noescape param**
+
+```metall
+{
+    fun read(x &Int) Int { x.* }
+    fun apply(f fun(noescape &Int) Int) void {}
+    apply(read)
+}
+```
+
+```error
+```

@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -1650,15 +1651,25 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		return InvalidTypeID, TypeFailed
 	}
 	paramTypeIDs := make([]TypeID, len(fun.Params))
+	noescapeParams := make([]bool, len(fun.Params))
 	for i, paramNodeID := range fun.Params {
 		paramTypeID, status := e.Query(paramNodeID)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
 		paramTypeIDs[i] = paramTypeID
+		if base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind).Noescape {
+			noescapeParams[i] = true
+		}
 	}
 	isSync := e.isFunDeclSync(node)
-	funTyp := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false, Sync: isSync}
+	funTyp := FunType{
+		Params:         paramTypeIDs,
+		Return:         retTypeID,
+		Macro:          false,
+		Sync:           isSync,
+		NoescapeParams: noescapeParams,
+	}
 	funTypeID := e.env.buildFunType(funTyp, node.ID, node.Span)
 	bindName := fun.Name.Name
 	if structName, methodName, ok := strings.Cut(fun.Name.Name, "."); ok {
@@ -1870,7 +1881,7 @@ func (e *Engine) checkFunParam(funParam ast.FunParam) (TypeID, TypeStatus) {
 
 func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.Span) (TypeID, TypeStatus) {
 	params := []TypeID{}
-	for _, paramNodeID := range funType.Params {
+	for _, paramNodeID := range funType.ParamTypes {
 		paramType, status := e.Query(paramNodeID)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
@@ -1881,7 +1892,13 @@ func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	funTyp := FunType{Params: params, Return: returnType, Macro: false, Sync: funType.Sync == ast.SyncSync}
+	funTyp := FunType{
+		Params:         params,
+		Return:         returnType,
+		Macro:          false,
+		Sync:           funType.Sync == ast.SyncSync,
+		NoescapeParams: funType.NoescapeParams,
+	}
 	return e.env.buildFunType(funTyp, nodeID, span), TypeOK
 }
 
@@ -2505,6 +2522,14 @@ func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
 	case RefType:
 		if expKind, ok := expTyp.Kind.(RefType); ok && gotKind.Mut == expKind.Mut {
 			return e.isAssignableTo(gotKind.Type, expKind.Type)
+		}
+	case FunType:
+		// Noescape differences do not render function types different.
+		// They are checked by lifetime analysis.
+		if expKind, ok := expTyp.Kind.(FunType); ok && gotKind.Macro == expKind.Macro &&
+			gotKind.Return == expKind.Return && gotKind.Sync == expKind.Sync &&
+			slices.Equal(gotKind.Params, expKind.Params) {
+			return true
 		}
 	}
 	return false

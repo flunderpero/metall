@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -91,9 +92,10 @@ type SliceType struct {
 func (SliceType) isKind() {}
 
 type FunType struct {
-	Params     []NodeID
-	ReturnType NodeID
-	Sync       SyncMode
+	ParamTypes     []NodeID
+	ReturnType     NodeID
+	Sync           SyncMode
+	NoescapeParams []bool
 }
 
 func (FunType) isKind() {}
@@ -138,9 +140,10 @@ type RefType struct {
 func (RefType) isKind() {}
 
 type FunParam struct {
-	Name    Name
-	Type    NodeID
-	Default *NodeID
+	Name     Name
+	Type     NodeID
+	Default  *NodeID
+	Noescape bool
 }
 
 func (FunParam) isKind() {}
@@ -630,8 +633,8 @@ func (a *AST) NewCapture(name Name, mode CaptureMode, span base.Span) NodeID {
 	return a.node(Capture{Name: name, Mode: mode}, span)
 }
 
-func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, span base.Span) NodeID {
-	return a.node(FunParam{Name: name, Type: type_, Default: defaultVal}, span)
+func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, noescape bool, span base.Span) NodeID {
+	return a.node(FunParam{Name: name, Type: type_, Default: defaultVal, Noescape: noescape}, span)
 }
 
 func (a *AST) NewStruct(
@@ -714,8 +717,17 @@ func (a *AST) NewSliceType(elemType NodeID, mut bool, span base.Span) NodeID {
 	return a.node(SliceType{Elem: elemType, Mut: mut}, span)
 }
 
-func (a *AST) NewFunType(params []NodeID, returnType NodeID, sync SyncMode, span base.Span) NodeID {
-	return a.node(FunType{Params: params, ReturnType: returnType, Sync: sync}, span)
+func (a *AST) NewFunType(
+	paramTypes []NodeID,
+	returnType NodeID,
+	sync SyncMode,
+	noescapeParams []bool,
+	span base.Span,
+) NodeID {
+	return a.node(
+		FunType{ParamTypes: paramTypes, ReturnType: returnType, Sync: sync, NoescapeParams: noescapeParams},
+		span,
+	)
 }
 
 func (a *AST) NewArrayLiteral(elems []NodeID, span base.Span) NodeID {
@@ -867,8 +879,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.ReturnType)
 		f(kind.Block)
 	case FunType:
-		for i := range len(kind.Params) {
-			f(kind.Params[i])
+		for i := range len(kind.ParamTypes) {
+			f(kind.ParamTypes[i])
 		}
 		f(kind.ReturnType)
 	case FunParam:
@@ -1229,6 +1241,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case FunParam:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Noescape {
+			addAttr("noescape", "true")
+		}
 		if !children {
 			addAttr("type", nodeIDKind(kind.Type))
 		} else {
@@ -1248,11 +1263,14 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Sync == SyncUnsync {
 			addAttr("unsync", "true")
 		}
+		if slices.Contains(kind.NoescapeParams, true) {
+			addAttr("noescape", fmt.Sprintf("%v", kind.NoescapeParams))
+		}
 		if !children {
-			addAttr("params", nodeIDList(kind.Params))
+			addAttr("paramTypes", nodeIDList(kind.ParamTypes))
 			addAttr("returnType", nodeIDKind(kind.ReturnType))
 		} else {
-			addChild("params", kind.Params...)
+			addChild("paramTypes", kind.ParamTypes...)
 			addChild("returnType", kind.ReturnType)
 		}
 	case Struct:

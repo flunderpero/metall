@@ -366,6 +366,17 @@ func (a *LifetimeCheck) analyzeTypeConstruction(nodeID ast.NodeID, lit ast.TypeC
 	for _, argNodeID := range lit.Args {
 		merged = merged.Merge(a.flow(argNodeID))
 	}
+	// Check noescape for struct fields that are function types.
+	resultType := a.env.TypeOfNode(nodeID)
+	if resultType != nil {
+		if st, ok := resultType.Kind.(StructType); ok {
+			for i, argNodeID := range lit.Args {
+				if i < len(st.Fields) {
+					a.checkNoescapeValueAssignment(argNodeID, st.Fields[i].Type)
+				}
+			}
+		}
+	}
 	a.flows[nodeID] = merged
 	a.debug(1, nodeID, "analyzeTypeConstruction: %s", merged)
 }
@@ -511,6 +522,20 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 	if !ok {
 		a.applyPessimisticEffects(nodeID, call)
 		return
+	}
+
+	// Check noescape compatibility for function-typed arguments.
+	calleeFun := base.Cast[FunType](calleeType.Kind)
+	{
+		args := call.Args
+		if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
+			args = append([]ast.NodeID{receiver}, args...)
+		}
+		for i, argNodeID := range args {
+			if i < len(calleeFun.Params) {
+				a.checkNoescapeValueAssignment(argNodeID, calleeFun.Params[i])
+			}
+		}
 	}
 
 	// Build the effective argument list: receiver (if method) + explicit args + defaults.
@@ -719,6 +744,12 @@ func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 	if a.isArenaAllocCall(varNode.Expr) {
 		storageTaint = 0
 	}
+	// Check noescape when the binding has an explicit function type with noescape.
+	if varNode.Type != nil {
+		if declType := a.env.TypeOfNode(*varNode.Type); declType != nil {
+			a.checkNoescapeValueAssignment(varNode.Expr, declType.ID)
+		}
+	}
 	ss.Vars[varNode.Name.Name] = &VarTaint{nodeID, storageTaint, f}
 	a.debug(1, nodeID, "analyzeVar: %s scope=%s storageTaint=%s %s", varNode.Name.Name, ss.ID, storageTaint, f)
 }
@@ -785,6 +816,36 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 	return false
 }
 
+// typeCanEscape is like typeContainsRefOrAlloc but also considers slices
+// and ffi::Ptr as pointer-carrying types. Used for noescape validation where
+// a param's slice or ffi pointer must not escape.
+func (a *LifetimeCheck) typeCanEscape(typeID TypeID) bool {
+	if typeID == InvalidTypeID {
+		return false
+	}
+	typ := a.env.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case RefType, AllocatorType, SliceType:
+		return true
+	case StructType:
+		if IsBuiltinPtrStruct(kind) {
+			return true
+		}
+		for _, field := range kind.Fields {
+			if a.typeCanEscape(field.Type) {
+				return true
+			}
+		}
+	case UnionType:
+		if slices.ContainsFunc(kind.Variants, a.typeCanEscape) {
+			return true
+		}
+	case ArrayType:
+		return a.typeCanEscape(kind.Elem)
+	}
+	return false
+}
+
 func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 	a.ast.Walk(nodeID, a.Check)
 	rhs := a.flow(assign.RHS)
@@ -813,6 +874,10 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 		a.analyzeDerefAssign(nodeID, lhsKind, rhs)
 	default:
 		panic(base.Errorf("unknown LHS kind: %T", lhsKind))
+	}
+	// Check noescape when assigning to a function-typed target.
+	if lhsType := a.env.TypeOfNode(assign.LHS); lhsType != nil {
+		a.checkNoescapeValueAssignment(assign.RHS, lhsType.ID)
 	}
 }
 
@@ -1071,6 +1136,16 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	a.debug(1, nodeID, "analyzeFun: effects for %s (nodeID=%d): taints=%v aliases=%v sideEffects=%v",
 		fun.Name.Name, nodeID, effects.ReturnTaints, effects.ReturnAliases, effects.SideEffects)
 
+	// Check noescape constraints on the function's own parameters.
+	funType := base.Cast[FunType](a.env.TypeOfNode(nodeID).Kind)
+	for i, paramNodeID := range fun.Params {
+		if !funType.IsNoescape(i) {
+			continue
+		}
+		paramName := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
+		a.checkNoescapeEffects(a.ast.Node(paramNodeID).Span, paramName, i, funType, effects)
+	}
+
 	// For closures with by-ref captures, the closure value itself carries
 	// the taints of the captured references. Register a VarTaint for the
 	// closure name in the enclosing scope so that the ident reference
@@ -1179,6 +1254,82 @@ func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, s
 		}
 		reported[diagNode] = true
 		a.diag(a.ast.Node(diagNode).Span, "reference escaping its allocation scope (%s)", detail)
+	}
+}
+
+// checkNoescapeEffects verifies that a noescape param doesn't escape through
+// the return value or other parameters, given computed effects.
+func (a *LifetimeCheck) checkNoescapeEffects(
+	span base.Span, paramName string, paramIdx int, funType FunType, effects *FunEffects,
+) {
+	if a.typeCanEscape(funType.Return) && slices.Contains(effects.ReturnAliases, paramIdx) {
+		a.diag(span, "noescape parameter %q must not escape through the return value", paramName)
+	}
+	for targetIdx, srcIndices := range effects.SideEffects {
+		if targetIdx == paramIdx {
+			continue
+		}
+		targetTypeID := funType.Params[targetIdx]
+		if ref, ok := a.env.Type(targetTypeID).Kind.(RefType); ok {
+			targetTypeID = ref.Type
+		}
+		if !a.typeCanEscape(targetTypeID) {
+			continue
+		}
+		if slices.Contains(srcIndices, paramIdx) {
+			a.diag(span, "noescape parameter %q must not escape through other parameters", paramName)
+		}
+	}
+}
+
+// checkNoescapeValueAssignment checks if targetTypeID is a function type with
+// noescape params, and if so verifies the function value at valueNodeID respects
+// the noescape contract. Called from call args, struct construction, var bindings,
+// and assignments.
+func (a *LifetimeCheck) checkNoescapeValueAssignment(valueNodeID ast.NodeID, targetTypeID TypeID) {
+	targetType := a.env.Type(targetTypeID)
+	targetFun, ok := targetType.Kind.(FunType)
+	if !ok || !slices.Contains(targetFun.NoescapeParams, true) {
+		return
+	}
+	a.checkNoescapeAssignment(valueNodeID, targetFun)
+}
+
+// checkNoescapeAssignment verifies that a concrete function assigned to a
+// function type with noescape params respects the noescape contract.
+func (a *LifetimeCheck) checkNoescapeAssignment(argNodeID ast.NodeID, targetFun FunType) {
+	var declID ast.NodeID
+	if d, ok := a.env.FunDeclNode(argNodeID); ok {
+		declID = d
+	}
+	if declID == 0 {
+		argType := a.env.TypeOfNode(argNodeID)
+		if argType != nil {
+			effectsTypeID := argType.ID
+			if origin, ok := a.env.GenericOrigin(effectsTypeID); ok {
+				effectsTypeID = origin
+			}
+			declID = a.env.DeclNode(effectsTypeID)
+		}
+	}
+	if declID == 0 {
+		if _, ok := a.ast.Node(argNodeID).Kind.(ast.Fun); ok {
+			declID = argNodeID
+		}
+	}
+	if declID == 0 {
+		return
+	}
+	effects, ok := a.funEffects[declID]
+	if !ok {
+		return
+	}
+	span := a.ast.Node(argNodeID).Span
+	for i := range targetFun.Params {
+		if !targetFun.IsNoescape(i) {
+			continue
+		}
+		a.checkNoescapeEffects(span, fmt.Sprintf("param %d", i), i, targetFun, effects)
 	}
 }
 

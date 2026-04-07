@@ -57,6 +57,7 @@ const (
 	MinusPercent
 	Mut
 	Neq
+	Noescape
 	Not
 	Number
 	Or
@@ -160,6 +161,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	StarPercent:           "*%",
 	String:                "<string>",
 	Tilde:                 "~",
+	Noescape:              "<noescape>",
 	Struct:                "<struct>",
 	Sync:                  "<sync>",
 	True:                  "true",
@@ -216,6 +218,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"let":      Let,
 	"match":    Match,
 	"mut":      Mut,
+	"noescape": Noescape,
 	"pub":      Pub,
 	"not":      Not,
 	"or":       Or,

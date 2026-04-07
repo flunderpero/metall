@@ -163,6 +163,22 @@ let f = fun[x](a Int) Int { x }
       body: (block (identifier)))))
 
 ================================================================================
+Noescape parameter
+================================================================================
+
+fun apply(x noescape &Int) Int { x }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    parameters: (parameter_list
+      (parameter name: (identifier) type: (reference_type (simple_type (type_identifier)))))
+    return_type: (simple_type (type_identifier))
+    body: (block (identifier))))
+
+================================================================================
 Closure with ref and mut ref captures
 ================================================================================
 

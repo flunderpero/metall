@@ -312,10 +312,11 @@ func (e *Engine) RewriteType(typeID TypeID, bindings map[TypeID]TypeID) (TypeID,
 
 func (e *Engine) RewriteFunType(funType FunType, bindings map[TypeID]TypeID) (FunType, bool, TypeStatus) {
 	result := FunType{
-		Params: make([]TypeID, len(funType.Params)),
-		Return: funType.Return,
-		Macro:  funType.Macro,
-		Sync:   funType.Sync,
+		Params:         make([]TypeID, len(funType.Params)),
+		Return:         funType.Return,
+		Macro:          funType.Macro,
+		Sync:           funType.Sync,
+		NoescapeParams: funType.NoescapeParams,
 	}
 	changed := false
 	for i, paramTypeID := range funType.Params {
@@ -1222,7 +1223,13 @@ func (e *Engine) RewriteCallable(
 			return FunType{}, status
 		}
 	}
-	funType := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false, Sync: false}
+	funType := FunType{
+		Params:         paramTypeIDs,
+		Return:         retTypeID,
+		Macro:          false,
+		Sync:           false,
+		NoescapeParams: make([]bool, len(paramTypeIDs)),
+	}
 	if len(bindings) == 0 {
 		return funType, TypeOK
 	}

@@ -180,6 +180,7 @@ func TestLexer(t *testing.T) {
 		{"struct", `struct`, []want{{Struct, "", "1:1-1:6"}}},
 		{"sync", `sync`, []want{{Sync, "", "1:1-1:4"}}},
 		{"unsync", `unsync`, []want{{Unsync, "", "1:1-1:6"}}},
+		{"noescape", `noescape`, []want{{Noescape, "", "1:1-1:8"}}},
 		{"shape", `shape`, []want{{Shape, "", "1:1-1:5"}}},
 		{"extern", `extern`, []want{{Extern, "", "1:1-1:6"}}},
 		{"unsafe", `unsafe`, []want{{Unsafe, "", "1:1-1:6"}}},

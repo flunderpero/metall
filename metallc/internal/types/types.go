@@ -3,7 +3,6 @@ package types
 import (
 	"fmt"
 	"math/big"
-	"slices"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -58,15 +57,15 @@ type RefType struct {
 func (RefType) isTypeKind() {}
 
 type FunType struct {
-	Params []TypeID
-	Return TypeID
-	Macro  bool
-	Sync   bool
+	Params         []TypeID
+	Return         TypeID
+	Macro          bool
+	Sync           bool
+	NoescapeParams []bool // nil if no params are noescape
 }
 
-func (f FunType) Equal(other FunType) bool {
-	return f.Return == other.Return && f.Macro == other.Macro && f.Sync == other.Sync &&
-		slices.Equal(f.Params, other.Params)
+func (f FunType) IsNoescape(paramIdx int) bool {
+	return paramIdx < len(f.NoescapeParams) && f.NoescapeParams[paramIdx]
 }
 
 func (FunType) isTypeKind() {}

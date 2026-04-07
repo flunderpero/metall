@@ -362,7 +362,13 @@ func (e *Engine) CheckShapeFunDecl(funDecl ast.FunDecl) (TypeID, TypeStatus) {
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	funType := FunType{Params: paramTypeIDs, Return: retTypeID, Macro: false, Sync: false}
+	funType := FunType{
+		Params:         paramTypeIDs,
+		Return:         retTypeID,
+		Macro:          false,
+		Sync:           false,
+		NoescapeParams: make([]bool, len(paramTypeIDs)),
+	}
 	return e.env.newType(funType, 0, base.Span{}, TypeOK), TypeOK
 }
 

@@ -184,6 +184,7 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	params := []NodeID{}
+	noescapeParams := []bool{}
 	for {
 		t, ok := p.mustPeek()
 		if !ok {
@@ -197,6 +198,7 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 				return ParseFailed, false
 			}
 		}
+		noescapeParams = append(noescapeParams, p.lookAheadConsume(token.Noescape))
 		param, ok := p.ParseType()
 		if !ok {
 			return ParseFailed, false
@@ -210,7 +212,7 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFunType(params, returnTyp, sync, span.Combine(p.span())), ok
+	return p.NewFunType(params, returnTyp, sync, noescapeParams, span.Combine(p.span())), ok
 }
 
 func (p *Parser) ParseFunDecl() (NodeID, bool) {
@@ -1093,6 +1095,7 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 				return funParams, false
 			}
 			name := Name{nameToken.Value, nameToken.Span}
+			noescape := p.lookAheadConsume(token.Noescape)
 			type_, ok := p.ParseType()
 			if !ok {
 				p.diagnostic(t.Span, "expected type, got %s", t.Kind)
@@ -1111,7 +1114,7 @@ func (p *Parser) ParseFunParams() ([]NodeID, bool) {
 				p.diagnostic(name.Span, "parameters with default values must be last")
 				return funParams, false
 			}
-			param := p.NewFunParam(name, type_, defaultVal, name.Span.Combine(p.span()))
+			param := p.NewFunParam(name, type_, defaultVal, noescape, name.Span.Combine(p.span()))
 			funParams = append(funParams, param)
 		case token.Comma:
 			p.next()

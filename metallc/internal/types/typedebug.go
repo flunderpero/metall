@@ -358,6 +358,9 @@ func (d *debugTypes) funDetail(kind FunType) string {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
+		if kind.IsNoescape(i) {
+			sb.WriteString("noescape ")
+		}
 		sb.WriteString(d.typeLabelForID(p))
 	}
 	sb.WriteString(") ")

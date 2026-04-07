@@ -179,7 +179,7 @@ module.exports = grammar({
     parameter: ($) =>
       seq(
         field("name", choice($.identifier, $.allocator_identifier)),
-        optional("sync"),
+        optional(choice("sync", "noescape")),
         field("type", $._type),
         optional(seq("=", field("default", $._expression))),
       ),
