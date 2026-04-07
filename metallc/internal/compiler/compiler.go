@@ -209,7 +209,10 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 
 	artifact_dir := filepath.Dir(output)
 	if !opts.KeepIR {
-		artifact_dir = os.TempDir()
+		artifact_dir, err = os.MkdirTemp("", "metallc-artifacts-*")
+		if err != nil {
+			return base.WrapErrorf(err, "failed to create temp dir for artifacts")
+		}
 		defer func() {
 			_ = os.RemoveAll(artifact_dir)
 		}()
