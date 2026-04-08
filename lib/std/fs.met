@@ -52,7 +52,7 @@ pub fun Path.fmt(p Path, sb &mut StrBuilder) void {
     sb.str(Str.from_utf8_lossy(p.raw, @local))
 }
 
-pub struct File {
+pub unsync struct File {
     file_ptr ffi::PtrMut<void>
     closed Bool
 }

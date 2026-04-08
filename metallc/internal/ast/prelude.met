@@ -3,6 +3,11 @@ pub shape HasEq {
     pub fun HasEq.eq(e HasEq, other HasEq) Bool
 }
 
+--- Ordering ---
+pub shape HasCmp {
+    pub fun HasCmp.cmp(c HasCmp, other HasCmp) Int
+}
+
 --- Hash function for use in hash map implementations.
 
     This does not produce cryptographic hashes. ---
@@ -938,6 +943,30 @@ pub fun Result.hash<T HasHash>(r Result<T>) U64 {
     } 
 }
 
+pub fun Result.is_err<T>(r Result<T>) Bool {
+    match r {
+    case Err: true
+    else: false
+    }
+}
+
+pub fun Result.is_ok<T>(r Result<T>) Bool {
+    match r {
+    case Err: false
+    else: true
+    }
+}
+
+pub fun I8.cmp(i I8, other I8) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
+pub fun I16.cmp(i I16, other I16) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
+pub fun I32.cmp(i I32, other I32) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
+pub fun Int.cmp(i Int, other Int) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
+pub fun U8.cmp(u U8, other U8) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
+pub fun U16.cmp(u U16, other U16) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
+pub fun U32.cmp(u U32, other U32) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
+pub fun U64.cmp(u U64, other U64) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
+pub fun Bool.cmp(b Bool, other Bool) Int { when { case b == other: 0 case not other: 1 else: -1 } }
+
 pub fun I8.eq(i I8, other I8) Bool { i == other }
 pub fun I16.eq(i I16, other I16) Bool { i == other }
 pub fun I32.eq(i I32, other I32) Bool { i == other }
@@ -948,6 +977,7 @@ pub fun U32.eq(u U32, other U32) Bool { u == other }
 pub fun U64.eq(u U64, other U64) Bool { u == other }
 pub fun Rune.eq(r Rune, other Rune) Bool { r == other }
 pub fun Bool.eq(b Bool, other Bool) Bool { b == other }
+
 pub fun I8.hash(i I8) U64 { i.to_u64_wrapping() *% 5871781006564002453 }
 pub fun I16.hash(i I16) U64 { i.to_u64_wrapping() *% 5871781006564002453 }
 pub fun I32.hash(i I32) U64 { i.to_u64_wrapping() *% 5871781006564002453 }
@@ -958,6 +988,7 @@ pub fun U32.hash(u U32) U64 { u.to_u64() *% 5871781006564002453 }
 pub fun U64.hash(u U64) U64 { u *% 5871781006564002453 }
 pub fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() *% 5871781006564002453 }
 pub fun Bool.hash(b Bool) U64 { if b { 1 } else { 0 } }
+
 pub fun Str.fmt(s Str, sb &mut StrBuilder) void { sb.str(s) }
 pub fun Int.fmt(i Int, sb &mut StrBuilder) void { sb.int(i) }
 pub fun I32.fmt(i I32, sb &mut StrBuilder) void { sb.i32(i) }
@@ -969,6 +1000,7 @@ pub fun U16.fmt(i U16, sb &mut StrBuilder) void { sb.u16(i) }
 pub fun U8.fmt(i U8, sb &mut StrBuilder) void { sb.u8(i) }
 pub fun Rune.fmt(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
 pub fun Bool.fmt(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
+
 pub fun U8.to_i8_checked(u U8) !I8 { if u > U8(127) { return Err("number out of range") } u.to_i8_wrapping() }
 pub fun U16.to_i16_checked(u U16) !I16 { if u > U16(32767) { return Err("number out of range") } u.to_i16_wrapping() }
 pub fun U32.to_i32_checked(u U32) !I32 { if u > U32(2147483647) { return Err("number out of range") } u.to_i32_wrapping() }
@@ -989,6 +1021,7 @@ pub fun Int.to_i8_checked(i Int) !I8 { if i < -128 or i > 127 { return Err("numb
 pub fun I32.to_i16_checked(i I32) !I16 { if i < -32768 or i > 32767 { return Err("number out of range") } i.to_i16_wrapping() }
 pub fun I32.to_i8_checked(i I32) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
 pub fun I16.to_i8_checked(i I16) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
+
 pub fun I16.to_i8_clamped(i I16) I8 { if i < -128 { return -128 } if i > 127 { return 127 } i.to_i8_wrapping() }
 pub fun I32.to_i8_clamped(i I32) I8 { if i < -128 { return -128 } if i > 127 { return 127 } i.to_i8_wrapping() }
 pub fun Int.to_i8_clamped(i Int) I8 { if i < -128 { return (-128) } if i > 127 { return 127 } i.to_i8_wrapping() }

@@ -7,7 +7,7 @@
     Thus, in `extern fun` declarations `Ptr<T>` just signals the *intent*
     not to modify the data behing the pointer.
 ---
-pub struct Ptr<T> {}
+pub unsync struct Ptr<T> {}
 
 pub fun Ptr.is_null<T>(p Ptr<T>) Bool {
     panic("this is implemented by the runtime")
@@ -46,7 +46,7 @@ pub unsafe fun Ptr.as_slice<T>(p Ptr<T>, len Int) []T {
 }
 
 --- A raw pointer to a mutable place of the given type. ---
-pub struct PtrMut<T> {}
+pub unsync struct PtrMut<T> {}
 
 pub fun PtrMut.is_null<T>(p PtrMut<T>) Bool {
     panic("this is implemented by the runtime")
@@ -139,7 +139,7 @@ pub fun sizeof<T>() Int {
 
 --- A function pointer points to a free function and - if it's a capturing closure -
     to its captured data. ---
-pub struct FunPtr {
+pub unsync struct FunPtr {
     pub fun_ptr Ptr<void>
     pub data_ptr Ptr<void>
 }

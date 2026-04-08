@@ -1,8 +1,14 @@
 use std::ffi
 
 extern fun __error() ffi::PtrMut<I32>
-extern fun strerror(e I32) ffi::Ptr<U8>
+extern strerror_ = fun strerror(e I32) ffi::Ptr<U8>
 extern fun strlen(s ffi::Ptr<U8>) Int
+
+-- todo: These are platform specific
+pub let eperm I32 = 1
+pub let ebusy I32 = 16
+pub let einval I32 = 22
+pub let edeadlk I32 = 11
 
 pub fun reset_errno() void {
     -- todo: This is MacOS specific.
@@ -16,9 +22,11 @@ pub fun errno() I32 {
 }
 
 pub fun errno_str() Str {
-    let e = errno()
-    let s = unsafe strerror(e)
+    strerror(errno())
+}
+
+pub fun strerror(code I32) Str {
+    let s = unsafe strerror_(code)
     let l = unsafe strlen(s)
     try Str.from_utf8_checked(unsafe s.as_slice(l)) else e { panic(e.msg) }
 }
-

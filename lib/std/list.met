@@ -10,6 +10,12 @@ pub fun List.new<T>(initial_capacity Int, @a Arena) &mut List<T> {
     @a.new_mut(List(0, data, @a))
 }
 
+pub fun List.from_slice<T>(slice []T, @a Arena) &mut List<T> {
+    let data = unsafe @a.slice_uninit_mut<T>(slice.len)
+    _ = data.set(slice)
+    @a.new_mut(List(slice.len, data, @a))
+}
+
 --- Add an element to the list.
 
     This might allocate and copy the existing data. 

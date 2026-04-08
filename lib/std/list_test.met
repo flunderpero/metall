@@ -21,6 +21,15 @@ fun main() void {
         try test::eq(42, sut.get(1))
         try test::eq(42, slice[1])
     })
+    suite.test("from_slice", fun() !void {
+        let @local = Arena()
+        mut slice = [1, 2, 3][..]
+        let sut = list::List.from_slice<Int>(slice, @local)
+        -- Make sure the slice is copied.
+        slice[0] = 137
+        try test::eq(3, sut.len)
+        try test::eq([1, 2, 3][..], sut.as_slice())
+    })
     suite.test("push_all", fun() !void {
         let @local = Arena()
         let sut = list::List.new<Int>(2, @local)
