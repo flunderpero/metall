@@ -9932,6 +9932,37 @@ fun main() void {
 ```error
 ```
 
+**sync type param accepts sync type**
+
+```metall
+{
+    struct Box<sync T> { value T }
+    let b = Box<Int>(42)
+}
+```
+
+```error
+```
+
+**sync type param rejects non-sync type**
+
+```metall
+{
+    struct Box<sync T> { value T }
+    struct Refs { r &Int }
+    let x = 1
+    let b = Box<Refs>(Refs(&x))
+}
+```
+
+```error
+test.met:5:13: type argument T must be sync, got Refs
+        let x = 1
+        let b = Box<Refs>(Refs(&x))
+                ^^^^^^^^^
+    }
+```
+
 ## Unsync
 
 **unsync struct with all-sync fields is not sync**

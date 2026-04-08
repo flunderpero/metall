@@ -15,6 +15,7 @@ type GenericParam struct {
 	Name       string
 	Constraint *TypeID
 	Default    *TypeID
+	Sync       bool
 }
 
 type GenericSpec struct {
@@ -154,6 +155,7 @@ func (e *Engine) BuildGenericSpec(originTypeID TypeID, typeParamNodeIDs []ast.No
 			Name:       typeParamNode.Name.Name,
 			Constraint: tpt.Shape,
 			Default:    tpt.Default,
+			Sync:       typeParamNode.Sync == ast.SyncSync,
 		}
 	}
 	spec := &GenericSpec{DeclNodeID: e.env.DeclNode(originTypeID), OriginTypeID: originTypeID, Params: params}
@@ -218,6 +220,13 @@ func (e *Engine) SolveGenericArgs(
 			}
 			if _, isTypeParam := e.env.Type(argTypeID).Kind.(TypeParamType); !isTypeParam &&
 				!e.SatisfiesShape(argTypeID, constraintTypeID, scopeNodeID, span) {
+				return nil, TypeFailed
+			}
+		}
+		if param.Sync {
+			if _, isTypeParam := e.env.Type(argTypeID).Kind.(TypeParamType); !isTypeParam &&
+				!e.isSync(argTypeID) {
+				e.diag(span, "type argument %s must be sync, got %s", param.Name, e.env.TypeDisplay(argTypeID))
 				return nil, TypeFailed
 			}
 		}
