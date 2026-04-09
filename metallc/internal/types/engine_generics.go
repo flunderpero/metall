@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -759,6 +760,10 @@ func (e *Engine) inferTypeArgs(
 		if i >= len(concreteTypeIDs) {
 			break
 		}
+		// Skip arguments that were deferred (function literals with inferred types).
+		if concreteTypeIDs[i] == DeferredTypeID {
+			continue
+		}
 		if !e.inferTypeBindings(genericTypeID, concreteTypeIDs[i], bindings) {
 			break
 		}
@@ -880,6 +885,16 @@ func (e *Engine) InferTypeConstruction(
 func (e *Engine) queryArgsForInference(argNodeIDs []ast.NodeID, patternTypeIDs []TypeID) ([]TypeID, TypeStatus) {
 	argTypeIDs := make([]TypeID, len(argNodeIDs))
 	for i, argNodeID := range argNodeIDs {
+		// When the argument is a function literal with inferred types and the
+		// expected parameter type contains unresolved type params, skip
+		// type-checking it now. Querying it here would cache it with the
+		// unresolved type params. Instead, resolveDeferredFunLitArgs will
+		// resolve them after partial inference from the other arguments.
+		if i < len(patternTypeIDs) && e.env.containsTypeParam(patternTypeIDs[i]) &&
+			e.isFunLitWithInferredTypes(argNodeID) {
+			argTypeIDs[i] = DeferredTypeID
+			continue
+		}
 		var argTypeID TypeID
 		var status TypeStatus
 		if i < len(patternTypeIDs) {
@@ -895,6 +910,69 @@ func (e *Engine) queryArgsForInference(argNodeIDs []ast.NodeID, patternTypeIDs [
 			return nil, TypeDepFailed
 		}
 		argTypeIDs[i] = argTypeID
+	}
+	return argTypeIDs, TypeOK
+}
+
+// isFunLitWithInferredTypes reports whether nodeID is a function literal block
+// (the Fun+Ident wrapper the parser emits) where at least one parameter type
+// or the return type has been omitted.
+func (e *Engine) isFunLitWithInferredTypes(nodeID ast.NodeID) bool {
+	block, ok := e.ast.Node(nodeID).Kind.(ast.Block)
+	if !ok || len(block.Exprs) != 2 {
+		return false
+	}
+	fun, ok := e.ast.Node(block.Exprs[0]).Kind.(ast.Fun)
+	if !ok {
+		return false
+	}
+	return e.funLitNeedsInference(fun)
+}
+
+// resolveDeferredFunLitArgs performs partial type inference from the already-resolved
+// arguments, then type-checks deferred function literal arguments using hints
+// where type parameters have been replaced with their inferred concrete types.
+func (e *Engine) resolveDeferredFunLitArgs(
+	typeParamNodeIDs []ast.NodeID,
+	genericTypeIDs []TypeID,
+	argNodeIDs []ast.NodeID,
+	argTypeIDs []TypeID,
+	scopeNodeID ast.NodeID,
+	span base.Span,
+) ([]TypeID, TypeStatus) {
+	// Build partial bindings from the already-resolved arguments.
+	spec, status := e.BuildGenericSpec(InvalidTypeID, typeParamNodeIDs)
+	if status.Failed() {
+		return nil, status
+	}
+	bindings := map[TypeID]TypeID{}
+	for i, genericTypeID := range genericTypeIDs {
+		if i >= len(argTypeIDs) {
+			break
+		}
+		if argTypeIDs[i] == DeferredTypeID {
+			continue
+		}
+		e.inferTypeBindings(genericTypeID, argTypeIDs[i], bindings)
+	}
+	e.inferTypeArgsFromConstraints(spec, bindings, scopeNodeID, span)
+	// Now resolve each deferred argument using the partial bindings.
+	for i, argTypeID := range argTypeIDs {
+		if argTypeID != DeferredTypeID {
+			continue
+		}
+		if i >= len(genericTypeIDs) {
+			continue
+		}
+		// Rewrite the generic pattern type, substituting known bindings.
+		resolvedHint, status := e.RewriteType(genericTypeIDs[i], bindings)
+		if status.Failed() {
+			return nil, status
+		}
+		argTypeIDs[i], status = e.queryWithHint(argNodeIDs[i], &resolvedHint)
+		if status.Failed() {
+			return nil, TypeDepFailed
+		}
 	}
 	return argTypeIDs, TypeOK
 }
@@ -1072,6 +1150,7 @@ func (e *Engine) lookupMethodBinding(scopeNodeID ast.NodeID, targetTypeID TypeID
 	return binding, true
 }
 
+//nolint:funlen
 func (e *Engine) InferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus, bool) {
 	binding, ok := e.inferFunCallBinding(call)
 	if !ok {
@@ -1105,6 +1184,17 @@ func (e *Engine) InferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 	argTypeIDs, status := e.queryArgsForInference(allArgNodeIDs, genericFunType.Params)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed, true
+	}
+	// If any arguments were deferred (function literals with inferred types),
+	// do partial inference from the resolved arguments first, then resolve the
+	// deferred arguments' hints using the partial bindings.
+	if slices.Contains(argTypeIDs, DeferredTypeID) {
+		argTypeIDs, status = e.resolveDeferredFunLitArgs(
+			funNode.TypeParams, genericFunType.Params, allArgNodeIDs, argTypeIDs, call.Callee, span,
+		)
+		if status.Failed() {
+			return InvalidTypeID, status, true
+		}
 	}
 	inferred, inferOK, status := e.inferTypeArgs(
 		funNode.TypeParams,

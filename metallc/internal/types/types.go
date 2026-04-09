@@ -10,6 +10,11 @@ import (
 
 const InvalidTypeID = TypeID(0)
 
+// DeferredTypeID is a sentinel used during generic type inference to mark
+// arguments whose type-checking was deferred (e.g. function literals with
+// inferred types that depend on other arguments being resolved first).
+const DeferredTypeID = TypeID(^uint64(0))
+
 type TypeID uint64
 
 func (id TypeID) String() string {

@@ -869,6 +869,188 @@ test.met:3:18: allocator captures must be by value, not by reference
     }
 ```
 
+## Inferred function literal types
+
+**Infer param type from call site**
+
+```metall
+{
+    fun apply(f fun(Int) Int) Int { f(1) }
+    _ = apply(fun(a) { a })
+}
+```
+
+```error
+```
+
+**Infer return type from call site**
+
+```metall
+{
+    fun apply(f fun(Int) Int) Int { f(1) }
+    _ = apply(fun(a Int) { a })
+}
+```
+
+```error
+```
+
+**Infer both param and return type from call site**
+
+```metall
+{
+    fun apply(f fun(Int) Int) Int { f(1) }
+    _ = apply(fun(a) { a })
+}
+```
+
+```error
+```
+
+**Infer types from variable declaration**
+
+```metall
+{
+    let f fun(Int) Int = fun(a) { a }
+    _ = f
+}
+```
+
+```error
+```
+
+**Infer param types with multiple params**
+
+```metall
+{
+    fun apply(f fun(Int, Str) Bool) Bool { f(1, "hi") }
+    _ = apply(fun(a, b) { true })
+}
+```
+
+```error
+```
+
+**Infer param types with mixed explicit and inferred**
+
+```metall
+{
+    fun apply(f fun(Int, Str) Bool) Bool { f(1, "hi") }
+    _ = apply(fun(a, b Str) { true })
+}
+```
+
+```error
+```
+
+**Infer only return type, params explicit**
+
+```metall
+{
+    fun apply(f fun(Int) Int) Int { f(1) }
+    _ = apply(fun(a Int) { a + 1 })
+}
+```
+
+```error
+```
+
+**Cannot infer param type without type hint**
+
+```metall
+{
+    _ = fun(a) { a }
+}
+```
+
+```error
+test.met:2:13: cannot infer type of parameter 'a'
+    {
+        _ = fun(a) { a }
+                ^
+    }
+```
+
+**Return type requires annotation without type hint**
+
+```metall
+{
+    _ = fun(a Int) { a }
+}
+```
+
+```error
+test.met:2:9: cannot infer return type of function literal
+    {
+        _ = fun(a Int) { a }
+            ^^^^^^^^^^^^^^^^
+    }
+```
+
+**Infer with closure captures**
+
+```metall
+{
+    fun apply(f fun(Int) Int) Int { f(1) }
+    let n = 10
+    _ = apply(fun[n](a) { n + a })
+}
+```
+
+```error
+```
+
+**Infer param types in generic function call (filter pattern)**
+
+```metall
+{
+    fun filter<T>(items []T, predicate fun(T) Bool) Bool { predicate(items[0]) }
+    _ = filter(['a', 'b'][..], fun(a) { a == 'a' })
+}
+```
+
+```error
+```
+
+**Infer param and return types in generic function call (map pattern)**
+
+```metall
+{
+    fun transform<A, B>(x A, f fun(A) B) B { f(x) }
+    _ = transform(42, fun(a) { a + 1 })
+}
+```
+
+```error
+```
+
+**Infer with multiple generic type params from receiver and fun lit**
+
+```metall
+{
+    fun fold<T, R>(items []T, init R, f fun(R, T) R) R { f(init, items[0]) }
+    _ = fold(['a', 'b'][..], U32(0), fun(acc, elem) { acc + elem.to_u32() })
+}
+```
+
+```error
+```
+
+**Infer in struct construction**
+
+```metall
+struct Wrapper {
+    f fun(Int) Int
+}
+fun foo() void {
+    let w = Wrapper { f: fun(a) { a } }
+    _ = w
+}
+```
+
+```error
+```
+
 ## Defer
 
 **Defer block is void**

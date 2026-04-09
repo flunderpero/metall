@@ -131,7 +131,7 @@ fun main() void {
         m.set(2, "b")
         mut sut = m.iter()
         let l = iter.pipe(sut).collect(32, @local)
-        l.sort_in_place(fun (a map.MapEntry<Int, Str>, b map.MapEntry<Int, Str>) Int {
+        l.sort_in_place(fun (a, b) {
             if a.key == b.key { return 0 }
             if a.key < b.key { return -1 }
             1

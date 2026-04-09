@@ -425,6 +425,58 @@ Block()
   exprs[1]=Ident(name="__fun_lit_0")
 ```
 
+**Function literal with inferred param types**
+
+```metall
+let f = fun(a, b) { true }
+```
+
+```ast
+Var(name="f")
+  expr=Block()
+    exprs[0]=Fun(name="__fun_lit_0",returnType=<inferred>)
+      params[0]=FunParam(name="a",type=<inferred>)
+      params[1]=FunParam(name="b",type=<inferred>)
+      block=Block()
+        exprs=Bool(value=true)
+    exprs[1]=Ident(name="__fun_lit_0")
+```
+
+**Function literal with inferred return type only**
+
+```metall
+let f = fun(a Int) { a }
+```
+
+```ast
+Var(name="f")
+  expr=Block()
+    exprs[0]=Fun(name="__fun_lit_0",returnType=<inferred>)
+      params=FunParam(name="a")
+        type=SimpleType(name="Int")
+      block=Block()
+        exprs=Ident(name="a")
+    exprs[1]=Ident(name="__fun_lit_0")
+```
+
+**Function literal with mixed param types (some inferred, some explicit)**
+
+```metall
+let f = fun(a, b Int) { b }
+```
+
+```ast
+Var(name="f")
+  expr=Block()
+    exprs[0]=Fun(name="__fun_lit_0",returnType=<inferred>)
+      params[0]=FunParam(name="a",type=<inferred>)
+      params[1]=FunParam(name="b")
+        type=SimpleType(name="Int")
+      block=Block()
+        exprs=Ident(name="b")
+    exprs[1]=Ident(name="__fun_lit_0")
+```
+
 **Fun with default param**
 
 ```metall

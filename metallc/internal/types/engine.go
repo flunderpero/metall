@@ -366,7 +366,9 @@ func (e *Engine) isSync(typeID TypeID) bool {
 
 // isFunDeclSync determines if a function declaration produces a sync fun type.
 // A function is sync if all its parameters, return type, and captures are sync.
-func (e *Engine) isFunDeclSync(node *ast.Node) bool {
+// paramTypeIDs and retTypeID are the already-resolved types (needed because
+// function literals may have inferred types not present as AST nodes).
+func (e *Engine) isFunDeclSync(node *ast.Node, paramTypeIDs []TypeID, retTypeID TypeID) bool {
 	funNode, ok := node.Kind.(ast.Fun)
 	if !ok {
 		return false
@@ -387,13 +389,12 @@ func (e *Engine) isFunDeclSync(node *ast.Node) bool {
 			return false
 		}
 	}
-	for _, paramNodeID := range funNode.Params {
-		paramTypeID := e.env.TypeOfNode(paramNodeID).ID
+	for _, paramTypeID := range paramTypeIDs {
 		if !e.isSync(paramTypeID) {
 			return false
 		}
 	}
-	return e.isSync(e.env.TypeOfNode(funNode.ReturnType).ID)
+	return e.isSync(retTypeID)
 }
 
 func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
@@ -552,6 +553,17 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 		return InvalidTypeID, TypeFailed
 	}
 	e.forwardDeclareTypes(newDeclIDs)
+	// Function literals with inferred types are resolved in a single pass before
+	// forwardDeclareFuns, which only deals with fully-typed declarations.
+	// We need either inferred param types (which always require a hint) or
+	// an inferred return type with a usable hint.
+	if len(block.Exprs) == 2 {
+		if funNode, ok := e.ast.Node(block.Exprs[0]).Kind.(ast.Fun); ok {
+			if e.funLitNeedsInference(funNode) {
+				return e.checkInferredFunLit(blockNodeID, block, funNode, typeHint)
+			}
+		}
+	}
 	e.forwardDeclareFuns(block.Exprs)
 	depFailed := false
 	var lastExprTypeID TypeID
@@ -1654,6 +1666,10 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 	if status := e.bindTypeParams(fun.TypeParams); status.Failed() {
 		return InvalidTypeID, status
 	}
+	if fun.ReturnType == ast.InferredType {
+		e.diag(node.Span, "cannot infer return type of function literal")
+		return InvalidTypeID, TypeFailed
+	}
 	retTypeID, status := e.Query(fun.ReturnType)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -1665,16 +1681,21 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 	paramTypeIDs := make([]TypeID, len(fun.Params))
 	noescapeParams := make([]bool, len(fun.Params))
 	for i, paramNodeID := range fun.Params {
+		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		if paramNode.Type == ast.InferredType {
+			e.diag(paramNode.Name.Span, "cannot infer type of parameter '%s'", paramNode.Name.Name)
+			return InvalidTypeID, TypeFailed
+		}
 		paramTypeID, status := e.Query(paramNodeID)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
 		paramTypeIDs[i] = paramTypeID
-		if base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind).Noescape {
+		if paramNode.Noescape {
 			noescapeParams[i] = true
 		}
 	}
-	isSync := e.isFunDeclSync(node)
+	isSync := e.isFunDeclSync(node, paramTypeIDs, retTypeID)
 	funTyp := FunType{
 		Params:         paramTypeIDs,
 		Return:         retTypeID,
@@ -1818,6 +1839,148 @@ func (e *Engine) checkUnionCompleteType(unionNode ast.Union, unionType UnionType
 	}
 	unionType.Variants = variants
 	return TypeOK, unionType
+}
+
+// funLitNeedsInference reports whether a function literal has any omitted
+// parameter types or return type that require inference.
+func (e *Engine) funLitNeedsInference(fun ast.Fun) bool {
+	if fun.ReturnType == ast.InferredType {
+		return true
+	}
+	for _, paramNodeID := range fun.Params {
+		if base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind).Type == ast.InferredType {
+			return true
+		}
+	}
+	return false
+}
+
+// checkInferredFunLit resolves a function literal whose parameter types and/or
+// return type were omitted. The hint (from the call site, variable type, etc.)
+// provides the expected function type. This replaces the normal two-phase
+// forwardDeclareFuns approach because fun literals don't participate in mutual
+// recursion and the hint is only available here.
+func (e *Engine) checkInferredFunLit( //nolint:funlen
+	_ ast.NodeID, block ast.Block, funNode ast.Fun, hintTypeID *TypeID,
+) (TypeID, TypeStatus) {
+	// Resolve the hint to a FunType if available.
+	var hintFun *FunType
+	if hintTypeID != nil {
+		if cached, ok := e.env.cachedTypeInfo(*hintTypeID); ok {
+			if ft, ok := cached.Type.Kind.(FunType); ok {
+				hintFun = &ft
+			}
+		}
+	}
+	funNodeID := block.Exprs[0]
+	node := e.ast.Node(funNodeID)
+	// Resolve parameter types.
+	paramTypeIDs := make([]TypeID, len(funNode.Params))
+	noescapeParams := make([]bool, len(funNode.Params))
+	for i, paramNodeID := range funNode.Params {
+		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		if paramNode.Type == ast.InferredType {
+			if hintFun == nil || i >= len(hintFun.Params) {
+				e.diag(paramNode.Name.Span, "cannot infer type of parameter '%s'", paramNode.Name.Name)
+				return InvalidTypeID, TypeFailed
+			}
+			paramTypeIDs[i] = hintFun.Params[i]
+			paramCached, paramOK := e.env.cachedTypeInfo(hintFun.Params[i])
+			if !paramOK {
+				panic(base.Errorf("type %s not found", hintFun.Params[i]))
+			}
+			e.env.setNodeType(paramNodeID, paramCached)
+		} else {
+			paramTypeID, status := e.Query(paramNodeID)
+			if status.Failed() {
+				return InvalidTypeID, TypeDepFailed
+			}
+			paramTypeIDs[i] = paramTypeID
+		}
+		if paramNode.Noescape {
+			noescapeParams[i] = true
+		}
+	}
+	// Resolve return type: use the hint if concrete, otherwise infer from the body.
+	var retTypeID TypeID
+	inferRetFromBody := false
+	if funNode.ReturnType == ast.InferredType {
+		if hintFun == nil {
+			e.diag(node.Span, "cannot infer return type of function literal")
+			return InvalidTypeID, TypeFailed
+		} else if _, isTypeParam := e.env.Type(hintFun.Return).Kind.(TypeParamType); isTypeParam {
+			inferRetFromBody = true
+		} else {
+			retTypeID = hintFun.Return
+		}
+	} else {
+		var status TypeStatus
+		retTypeID, status = e.Query(funNode.ReturnType)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	}
+	// Push a temporary fun type onto the stack so that `return` and `try`
+	// statements in the body resolve against this function, not an outer one.
+	// When inferring the return from the body, we don't push (no return/try
+	// support in that mode — it only applies when the hint return is a type param).
+	if !inferRetFromBody {
+		tmpFunType := FunType{
+			Params: paramTypeIDs, Return: retTypeID,
+			Macro: false, Sync: false, NoescapeParams: noescapeParams,
+		}
+		tmpFunTypeID := e.env.buildFunType(tmpFunType, 0, node.Span)
+		e.funStack = append(e.funStack, tmpFunTypeID)
+		defer func() { e.funStack = e.funStack[:len(e.funStack)-1] }()
+	}
+	// Bind captures and parameters, then check the body.
+	for _, capNodeID := range funNode.Captures {
+		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
+		e.bindCapture(funNodeID, capNodeID, capture)
+	}
+	for i, paramNodeID := range funNode.Params {
+		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		if !e.bind(paramNodeID, paramNode.Name.Name, false, paramTypeIDs[i], paramNode.Name.Span, -1) {
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	if inferRetFromBody {
+		// The hint's return type is an unresolved type parameter (e.g. B in
+		// map<A,B,...>). Query the body without a return type hint and use
+		// the body's result as the return type.
+		blockTypeID, status := e.Query(funNode.Block)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		retTypeID = blockTypeID
+	} else {
+		blockTypeID, status := e.queryWithHint(funNode.Block, &retTypeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if blockTypeID != e.neverTyp && !e.isAssignableTo(blockTypeID, retTypeID) {
+			e.diag(e.ast.Node(funNode.Block).Span,
+				"return type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(retTypeID), e.env.TypeDisplay(blockTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	// Build the function type, bind the name, and cache everything.
+	isSync := e.isFunDeclSync(node, paramTypeIDs, retTypeID)
+	funType := FunType{
+		Params: paramTypeIDs, Return: retTypeID,
+		Macro: false, Sync: isSync, NoescapeParams: noescapeParams,
+	}
+	funTypeID := e.env.buildFunType(funType, funNodeID, node.Span)
+	e.updateCachedType(node, funTypeID, TypeOK)
+	e.bind(funNodeID, funNode.Name.Name, false, funTypeID, funNode.Name.Span, -1)
+	e.env.setNamedFunRef(funNodeID, e.declMangledName(funNodeID, funNode.Name.Name))
+	// Query the Ident (last expr in the fun-lit block) so its type is cached.
+	identTypeID, status := e.queryWithHint(block.Exprs[1], hintTypeID)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	return identTypeID, TypeOK
 }
 
 func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID TypeID, funType FunType) {

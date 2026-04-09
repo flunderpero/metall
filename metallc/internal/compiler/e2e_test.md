@@ -3892,6 +3892,75 @@ fun main() void {
 hello
 ```
 
+**inferred function literal param and return types**
+
+```metall
+fun apply(f fun(Int) Int) Int { f(1) }
+
+fun main() void {
+    DebugIntern.print_int(apply(fun(a) { a + 41 }))
+    let f fun(Int, Int) Int = fun(a, b) { a + b }
+    DebugIntern.print_int(f(20, 22))
+}
+```
+
+```output
+42
+42
+```
+
+**inferred function literal types with closure**
+
+```metall
+fun apply(f fun(Int) Int) Int { f(1) }
+
+fun main() void {
+    let n = 10
+    DebugIntern.print_int(apply(fun[n](a) { n + a }))
+}
+```
+
+```output
+11
+```
+
+**inferred types in generic function call (map pattern)**
+
+```metall
+fun transform<A, B>(x A, f fun(A) B) B { f(x) }
+
+fun main() void {
+    DebugIntern.print_int(transform(42, fun(a) { a + 1 }))
+    DebugIntern.print_int(transform(10, fun(a) { a * 3 }))
+}
+```
+
+```output
+43
+30
+```
+
+**inferred types in generic fold pattern**
+
+```metall
+fun fold<T, R>(items []T, init R, f fun(R, T) R) R {
+    mut acc = init
+    for i in 0..items.len {
+        acc = f(acc, items[i])
+    }
+    acc
+}
+
+fun main() void {
+    let items = [1, 2, 3, 4][..]
+    DebugIntern.print_int(fold(items, 0, fun(acc, x) { acc + x }))
+}
+```
+
+```output
+10
+```
+
 ## Defer
 
 **defer basic**

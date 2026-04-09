@@ -2293,6 +2293,24 @@ test.met:3:5: reference escaping its allocation scope (via block result)
     }
 ```
 
+**closure with inferred types escapes ref via return**
+
+```metall
+fun foo() fun() &Int {
+    let x = 42
+    let r = &x
+    fun[r]() { r }
+}
+```
+
+```error
+test.met:3:13: reference escaping its allocation scope (via block result)
+        let x = 42
+        let r = &x
+                ^^
+        fun[r]() { r }
+```
+
 **defer block reading local ref does not escape**
 
 ```metall

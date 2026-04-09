@@ -1090,7 +1090,9 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	for _, tp := range fun.TypeParams {
 		a.Check(tp)
 	}
-	a.Check(fun.ReturnType)
+	if fun.ReturnType != ast.InferredType {
+		a.Check(fun.ReturnType)
+	}
 
 	// Analyze params first and capture their initial caller taints.
 	paramTaintToIdx := map[TaintID]int{}

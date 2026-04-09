@@ -15,7 +15,7 @@ fun main() void {
     thread_suite.test("happy path", fun() !void {
         let @local = Arena()
         let captured = "hello"
-        let sut = try thread.spawn(@local, fun[captured]() Str {
+        let sut = try thread.spawn(@local, fun[captured]() {
             captured
         })
         try test.eq("hello", try sut.join())
@@ -24,8 +24,8 @@ fun main() void {
         let @local = Arena()
         -- todo: Use fs.rm(path) once it is there
         try os.shell_checked(["rm", "-f", test_filename][..], @local)
-        
-        let sut = try thread.spawn(@local, fun() void {
+
+        let sut = try thread.spawn(@local, fun() {
             try fs.write_file(fs.Path.from_str(test_filename), "hello".as_bytes()) else { return void }
         })
         try sut.join()
@@ -38,11 +38,11 @@ fun main() void {
     tg_suite.test("happy path", fun() !void {
         let @local = Arena()
         let sut = thread.ThreadGroup.new<Int>(@local)
-        try sut.spawn(fun() Int { 1337 })
-        try sut.spawn(fun() Int { 42 })
-        try sut.spawn(fun() Int { 137 })
+        try sut.spawn(fun() { 1337 })
+        try sut.spawn(fun() { 42 })
+        try sut.spawn(fun() { 137 })
         mut res = iter.pipe(sut.join(@local).iter())
-            .map(fun(a Result<Int>) Int { try a else { return -1 } })
+            .map(fun(a) Int { try a else { return -1 } })
             .collect(16, @local)
         res.sort_in_place(Int.cmp)
         try test.eq([42, 137, 1337][..], res)
@@ -56,8 +56,8 @@ fun main() void {
         let tg = thread.ThreadGroup.new<!void>(@local)
         let thread_fun = fun[sut]() !void {
             for i in 0..100 {
-                try sut.with_lock(fun(v &mut Int) void {
-                    v.* = v.* + 1 
+                try sut.with_lock(fun(v) {
+                    v.* = v.* + 1
                 })
                 time.sleep(time.microsecond)
             }
@@ -75,9 +75,9 @@ fun main() void {
         let thread_fun = fun[sut]() !void {
             for i in 0..100 {
                 -- todo: use an atomic counter to count the lock misses
-                _ = try sut.with_try_lock(fun(v &mut Int) void {
-                    v.* = v.* + 1 
-                }) 
+                _ = try sut.with_try_lock(fun(v) {
+                    v.* = v.* + 1
+                })
                 time.sleep(time.microsecond)
             }
         }

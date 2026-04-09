@@ -3,6 +3,7 @@ package ast
 import (
 	"fmt"
 	"maps"
+	"math"
 	"math/big"
 	"slices"
 	"strings"
@@ -19,6 +20,11 @@ const (
 )
 
 type NodeID uint64
+
+// InferredType is a sentinel NodeID used in function literal parameters and
+// return types to indicate that the type was omitted and must be inferred
+// from context (e.g. a type hint from the call site or variable declaration).
+const InferredType = NodeID(math.MaxUint64)
 
 func (id NodeID) String() string {
 	return fmt.Sprintf("n%d", id)
@@ -861,7 +867,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for i := range len(kind.Params) {
 			f(kind.Params[i])
 		}
-		f(kind.ReturnType)
+		if kind.ReturnType != InferredType {
+			f(kind.ReturnType)
+		}
 		f(kind.Block)
 	case FunType:
 		for i := range len(kind.ParamTypes) {
@@ -869,7 +877,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		f(kind.ReturnType)
 	case FunParam:
-		f(kind.Type)
+		if kind.Type != InferredType {
+			f(kind.Type)
+		}
 		if kind.Default != nil {
 			f(*kind.Default)
 		}
@@ -1194,7 +1204,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
 			}
 			addAttr("params", nodeIDList(kind.Params))
-			addAttr("returnType", nodeIDKind(kind.ReturnType))
+			if kind.ReturnType == InferredType {
+				addAttr("returnType", "<inferred>")
+			} else {
+				addAttr("returnType", nodeIDKind(kind.ReturnType))
+			}
 			addAttr("block", nodeIDKind(kind.Block))
 		} else {
 			if len(kind.Captures) > 0 {
@@ -1204,7 +1218,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 				addChild("typeParams", kind.TypeParams...)
 			}
 			addChild("params", kind.Params...)
-			addChild("returnType", kind.ReturnType)
+			if kind.ReturnType != InferredType {
+				addChild("returnType", kind.ReturnType)
+			} else {
+				addAttr("returnType", "<inferred>")
+			}
 			addChild("block", kind.Block)
 		}
 	case Capture:
@@ -1222,9 +1240,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Noescape {
 			addAttr("noescape", "true")
 		}
-		if !children {
+		switch {
+		case kind.Type == InferredType:
+			addAttr("type", "<inferred>")
+		case !children:
 			addAttr("type", nodeIDKind(kind.Type))
-		} else {
+		default:
 			addChild("type", kind.Type)
 		}
 		if kind.Default != nil {

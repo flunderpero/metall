@@ -8,47 +8,47 @@ fun main() void {
     suite.test("happy path", fun() !void {
         let @local = Arena()
         let sut = iter.pipe("h.e.l.l.o.".iter())
-            .filter(fun(a Rune) Bool { a != '.' })
-            .map(fun(a Rune) U32 { a.to_u32() - 32 })
-            .map(fun(a U32) Rune { Rune.from_u32_lossy(a) })
+            .filter(fun(a) { a != '.' })
+            .map(fun(a) { a.to_u32() - 32 })
+            .map(fun(a) { Rune.from_u32_lossy(a) })
         -- Remember: sut and its internal iterator is _copied_ each time
         --           so we can consume it multiple times.
         -- collect()
         try test.eq(['H', 'E', 'L', 'L', 'O'][..], sut.collect(16, @local))
         -- collect_list()
-        try test.eq(['H', 'E', 'L', 'L', 'O'][..], sut.collect_list(16, @local).as_slice()) 
+        try test.eq(['H', 'E', 'L', 'L', 'O'][..], sut.collect_list(16, @local).as_slice())
         -- chain()
         try test.eq(
-            ['H', 'E', 'L', 'L', 'O', '!', '1'][..], 
+            ['H', 'E', 'L', 'L', 'O', '!', '1'][..],
             sut
                 .chain("!1".iter())
-                .collect_list(16, @local).as_slice()) 
+                .collect_list(16, @local).as_slice())
         -- take()
         try test.eq(
-            ['H', 'E'][..], 
+            ['H', 'E'][..],
             sut
                 .take(2)
                 .collect_list(16, @local).as_slice())
         -- take_while()
-        try test.eq(['H', 'E', 'L', 'L'][..], 
+        try test.eq(['H', 'E', 'L', 'L'][..],
             sut
-                .take_while(fun(a Rune) Bool { a != 'O' })
+                .take_while(fun(a) { a != 'O' })
                 .collect_list(16, @local).as_slice())
         -- fold()
         try test.eq(
             'H'.to_u32() + 'E'.to_u32() + 'L'.to_u32() + 'L'.to_u32() + 'O'.to_u32(),
-            sut.fold(U32(0), fun(res U32, a Rune) U32 { res + a.to_u32() }))
+            sut.fold(U32(0), fun(res, a) { res + a.to_u32() }))
         -- count()
         try test.eq(5, sut.count())
         -- all()
-        try test.eq(true, sut.all(fun(a Rune) Bool { a.is_upper() }))
-        try test.eq(false, sut.all(fun(a Rune) Bool { a.is_lower() }))
+        try test.eq(true, sut.all(fun(a) { a.is_upper() }))
+        try test.eq(false, sut.all(fun(a) { a.is_lower() }))
         -- any()
-        try test.eq(true, sut.any(fun(a Rune) Bool { a.is_upper() }))
-        try test.eq(false, sut.any(fun(a Rune) Bool { a.is_lower() }))
+        try test.eq(true, sut.any(fun(a) { a.is_upper() }))
+        try test.eq(false, sut.any(fun(a) { a.is_lower() }))
         -- find()
-        try test.eq(Option('O'), sut.find(fun(a Rune) Bool { a == 'O' }))
-        try test.eq(Option<Rune>(None()), sut.find(fun(a Rune) Bool { a == 'z' }))
+        try test.eq(Option('O'), sut.find(fun(a) { a == 'O' }))
+        try test.eq(Option<Rune>(None()), sut.find(fun(a) { a == 'z' }))
         -- iter()
         mut it = sut.iter()
         try test.eq(Option('H'), (&mut it).next())

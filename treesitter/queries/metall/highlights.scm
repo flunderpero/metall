@@ -71,6 +71,8 @@
 
 (parameter name: (identifier) @variable.parameter)
 (parameter name: (allocator_identifier) @attribute)
+(function_literal_parameter name: (identifier) @variable.parameter)
+(function_literal_parameter name: (allocator_identifier) @attribute)
 
 ; >>> Structs
 

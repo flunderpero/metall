@@ -39,6 +39,7 @@ fun main() void {
         }
     })
     _ = shell_suite.run()
+
     let chdir_suite = test.Suite.new("chdir", @local)
     chdir_suite.test("happy path", fun() !void {
         let @local = Arena()

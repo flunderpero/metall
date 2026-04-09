@@ -1493,6 +1493,67 @@ func (p *Parser) parseRangeRHS(lo *NodeID) (NodeID, bool) {
 	return p.NewRange(lo, hi, inclusive, rangeSpan), true
 }
 
+// parseFunLitParams parses function parameters for function literals,
+// allowing parameter types to be omitted (inferred from context).
+// When a type is omitted, InferredType is used as the type sentinel.
+func (p *Parser) parseFunLitParams() ([]NodeID, bool) {
+	if _, ok := p.expect(token.LParen); !ok {
+		return nil, false
+	}
+	funParams := []NodeID{}
+	seenDefault := false
+	for {
+		t, ok := p.mayPeek()
+		if !ok {
+			return funParams, true
+		}
+		switch t.Kind { //nolint:exhaustive
+		case token.Ident, token.AllocatorIdent:
+			nameToken, ok := p.next()
+			if !ok {
+				return funParams, false
+			}
+			name := Name{nameToken.Value, nameToken.Span}
+			// Check if a type follows. If the next token is ',', ')', or '=', the type is omitted.
+			type_ := InferredType
+			noescape := false
+			if next, ok := p.mayPeek(); ok &&
+				next.Kind != token.Comma && next.Kind != token.RParen && next.Kind != token.Eq {
+				noescape = p.lookAheadConsume(token.Noescape)
+				parsed, ok := p.ParseType()
+				if !ok {
+					p.diagnostic(t.Span, "expected type, got %s", t.Kind)
+					return funParams, false
+				}
+				type_ = parsed
+			}
+			var defaultVal *NodeID
+			if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
+				p.next()
+				expr, ok := p.ParseExpr(0)
+				if !ok {
+					return funParams, false
+				}
+				defaultVal = &expr
+				seenDefault = true
+			} else if seenDefault {
+				p.diagnostic(name.Span, "parameters with default values must be last")
+				return funParams, false
+			}
+			param := p.NewFunParam(name, type_, defaultVal, noescape, name.Span.Combine(p.span()))
+			funParams = append(funParams, param)
+		case token.Comma:
+			p.next()
+		case token.RParen:
+			p.next()
+			return funParams, true
+		default:
+			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
+			return funParams, false
+		}
+	}
+}
+
 func (p *Parser) parseSyncMode() SyncMode {
 	if p.lookAheadConsume(token.Sync) {
 		return SyncSync
@@ -1856,13 +1917,19 @@ func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 			captures = append(captures, p.NewCapture(name, mode, capSpan.Combine(name.Span)))
 		}
 	}
-	params, ok := p.ParseFunParams()
+	params, ok := p.parseFunLitParams()
 	if !ok {
 		return ParseFailed, false
 	}
-	returnType, ok := p.ParseType()
-	if !ok {
-		return ParseFailed, false
+	// Return type is optional for function literals. If the next token starts
+	// a block, the return type will be inferred from context.
+	returnType := InferredType
+	if peek, peekOK := p.mayPeek(); peekOK && peek.Kind != token.LCurly {
+		parsed, ok := p.ParseType()
+		if !ok {
+			return ParseFailed, false
+		}
+		returnType = parsed
 	}
 	body, ok := p.ParseBlock()
 	if !ok {

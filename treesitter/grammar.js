@@ -529,9 +529,19 @@ module.exports = grammar({
       seq(
         "fun",
         optional(field("captures", $.capture_list)),
-        "(", field("parameters", optional($.parameter_list)), ")",
-        field("return_type", $._type),
+        "(", field("parameters", optional($.function_literal_parameter_list)), ")",
+        optional(field("return_type", $._type)),
         field("body", $.block),
+      ),
+
+    function_literal_parameter_list: ($) =>
+      seq($.function_literal_parameter, repeat(seq(",", $.function_literal_parameter))),
+
+    function_literal_parameter: ($) =>
+      seq(
+        field("name", choice($.identifier, $.allocator_identifier)),
+        optional(seq(optional(choice("sync", "noescape")), field("type", $._type))),
+        optional(seq("=", field("default", $._expression))),
       ),
 
     capture_list: ($) => seq(

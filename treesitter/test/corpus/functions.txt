@@ -139,8 +139,8 @@ let f = fun(x Int) Int { x }
   (let_binding
     name: (identifier)
     value: (function_literal
-      parameters: (parameter_list
-        (parameter name: (identifier) type: (simple_type (type_identifier))))
+      parameters: (function_literal_parameter_list
+        (function_literal_parameter name: (identifier) type: (simple_type (type_identifier))))
       return_type: (simple_type (type_identifier))
       body: (block (identifier)))))
 
@@ -157,8 +157,8 @@ let f = fun[x](a Int) Int { x }
     name: (identifier)
     value: (function_literal
       captures: (capture_list (capture name: (identifier)))
-      parameters: (parameter_list
-        (parameter name: (identifier) type: (simple_type (type_identifier))))
+      parameters: (function_literal_parameter_list
+        (function_literal_parameter name: (identifier) type: (simple_type (type_identifier))))
       return_type: (simple_type (type_identifier))
       body: (block (identifier)))))
 
@@ -196,3 +196,53 @@ let f = fun[a, &b, &mut c]() void {}
         (capture name: (identifier)))
       return_type: (simple_type)
       body: (block))))
+
+================================================================================
+Function literal with inferred param types
+================================================================================
+
+let f = fun(a, b) { true }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (function_literal
+      parameters: (function_literal_parameter_list
+        (function_literal_parameter name: (identifier))
+        (function_literal_parameter name: (identifier)))
+      body: (block (boolean_literal)))))
+
+================================================================================
+Function literal with inferred return type
+================================================================================
+
+let f = fun(a Int) { a }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (function_literal
+      parameters: (function_literal_parameter_list
+        (function_literal_parameter name: (identifier) type: (simple_type (type_identifier))))
+      body: (block (identifier)))))
+
+================================================================================
+Function literal with mixed param types
+================================================================================
+
+let f = fun(a, b Int) { b }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (function_literal
+      parameters: (function_literal_parameter_list
+        (function_literal_parameter name: (identifier))
+        (function_literal_parameter name: (identifier) type: (simple_type (type_identifier))))
+      body: (block (identifier)))))
