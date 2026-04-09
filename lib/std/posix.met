@@ -1,8 +1,8 @@
-use std::ffi
+use std.ffi
 
-extern fun __error() ffi::PtrMut<I32>
-extern strerror_ = fun strerror(e I32) ffi::Ptr<U8>
-extern fun strlen(s ffi::Ptr<U8>) Int
+extern fun __error() ffi.PtrMut<I32>
+extern strerror_ = fun strerror(e I32) ffi.Ptr<U8>
+extern fun strlen(s ffi.Ptr<U8>) Int
 
 -- todo: These are platform specific
 pub let eperm I32 = 1

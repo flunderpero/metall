@@ -295,6 +295,9 @@ func (a *LifetimeCheck) placeStorage(nodeID ast.NodeID) (TaintID, AliasSet) {
 		}
 		return vt.StorageTaint, AliasSet{{foundIn.ID, kind.Name}}
 	case ast.FieldAccess:
+		if a.isModuleFieldAccess(nodeID, kind) {
+			return 0, nil
+		}
 		// If the target is a ref, the field lives in the referent's storage,
 		// not in the ref variable's stack slot - auto-deref like analyzeFieldAccess.
 		if _, ok := a.env.TypeOfNode(kind.Target).Kind.(RefType); ok {
@@ -337,6 +340,11 @@ func (a *LifetimeCheck) analyzeDeref(nodeID ast.NodeID, deref ast.Deref) {
 // analyzeFieldAccess: `x.foo`.
 // If x is a ref, auto-deref through x's aliases first.
 func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess) {
+	// Skip module member accesses - no lifetime concerns for module references.
+	if a.isModuleFieldAccess(nodeID, fa) {
+		a.ast.Walk(nodeID, a.Check)
+		return
+	}
 	a.ast.Walk(nodeID, a.Check)
 	targetType := a.env.TypeOfNode(fa.Target)
 	if _, ok := targetType.Kind.(RefType); ok {
@@ -348,6 +356,26 @@ func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess
 	flow := a.flow(fa.Target)
 	a.flows[nodeID] = flow
 	a.debug(1, nodeID, "analyzeFieldAccess: .%s %s", fa.Field.Name, flow)
+}
+
+// isModuleFieldAccess returns true if the FieldAccess targets a module.
+// Uses scope lookup rather than TypeOfNode because module ident nodes
+// may not have a cached type (e.g. inside struct field types resolved
+// in a child environment).
+func (a *LifetimeCheck) isModuleFieldAccess(_ ast.NodeID, fa ast.FieldAccess) bool {
+	switch target := a.ast.Node(fa.Target).Kind.(type) {
+	case ast.Ident:
+		if binding, ok := a.env.Lookup(fa.Target, target.Name, -1); ok {
+			if _, isMod := a.env.Type(binding.TypeID).Kind.(ModuleType); isMod {
+				return true
+			}
+		}
+		return false
+	case ast.FieldAccess:
+		return a.isModuleFieldAccess(fa.Target, target)
+	default:
+		return false
+	}
 }
 
 func (a *LifetimeCheck) analyzeAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar) {

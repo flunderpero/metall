@@ -190,8 +190,6 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		ast.SliceType,
 		ast.FunType,
 		ast.Range:
-	case ast.Path:
-		g.genPath(id)
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -589,6 +587,27 @@ func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 	targetType := g.typeOfNode(fieldAccess.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		targetType = g.env.Type(refTyp.Type)
+	}
+	if _, ok := targetType.Kind.(types.ModuleType); ok {
+		if name, ok := g.env.NamedFunRef(id); ok {
+			g.emitFunValue(id, name)
+			return
+		}
+		if b, ok := g.env.PathBinding(id); ok {
+			if symbol, ok := g.symbols[b.ID]; ok {
+				pathType := g.typeOfNode(id)
+				if g.isAggregateType(pathType.ID) {
+					g.setCode(id, symbol.Reg)
+					return
+				}
+				ptrreg := g.reg()
+				g.write("%s = load %s, ptr %s", ptrreg, symbol.Type, symbol.Reg)
+				g.setCode(id, ptrreg)
+				return
+			}
+		}
+		// Module member used as type reference (no codegen needed).
+		return
 	}
 	if _, ok := targetType.Kind.(types.SliceType); ok {
 		g.genSliceFieldAccess(id, fieldAccess)
@@ -1556,7 +1575,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	name := types.BuiltinName(ref)
 	switch name {
 	case "ffi::sizeof":
-		kind := base.Cast[ast.Path](g.ast.Node(call.Callee).Kind)
+		kind := base.Cast[ast.FieldAccess](g.ast.Node(call.Callee).Kind)
 		argTypeID := g.typeIDOfNode(kind.TypeArgs[0])
 		size := irTypeSize(g.env, argTypeID)
 		g.setCode(id, "%d", size)
@@ -1871,29 +1890,6 @@ func (g *IRFunGen) genIndirectCall(id ast.NodeID, call ast.Call, fun types.FunTy
 	}
 	sb.WriteString(")")
 	g.write(sb.String())
-}
-
-func (g *IRFunGen) genPath(id ast.NodeID) {
-	// Named function reference - emit fat pointer {wrapper, null}.
-	if name, ok := g.env.NamedFunRef(id); ok {
-		g.emitFunValue(id, name)
-		return
-	}
-	// Cross-module constant: look up via binding to find the correct global name.
-	if b, ok := g.env.PathBinding(id); ok {
-		if symbol, ok := g.symbols[b.ID]; ok {
-			pathType := g.typeOfNode(id)
-			if g.isAggregateType(pathType.ID) {
-				g.setCode(id, symbol.Reg)
-				return
-			}
-			ptrreg := g.reg()
-			g.write("%s = load %s, ptr %s", ptrreg, symbol.Type, symbol.Reg)
-			g.setCode(id, ptrreg)
-			return
-		}
-	}
-	// Path used as type reference (no codegen needed).
 }
 
 func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {

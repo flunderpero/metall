@@ -194,7 +194,6 @@ func TestLexer(t *testing.T) {
 		{"continue", `continue`, []want{{Continue, "", "1:1-1:8"}}},
 		{"return", "return", []want{{Return, "", "1:1-1:6"}}},
 		{"use", "use", []want{{Use, "", "1:1-1:3"}}},
-		{"coloncolon", "::", []want{{ColonColon, "", "1:1-1:2"}}},
 		{"colon", ":", []want{{Colon, "", "1:1"}}},
 		{"dot", ".", []want{{Dot, "", "1:1"}}},
 		{"dotdot", "..", []want{{DotDot, "", "1:1-1:2"}}},

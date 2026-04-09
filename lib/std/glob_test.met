@@ -1,8 +1,8 @@
-use std::test
-use std::glob
-use std::os
-use std::io
-use std::fs
+use std.test
+use std.glob
+use std.os
+use std.io
+use std.fs
 
 let paths = [
     "README.md",
@@ -47,23 +47,23 @@ shape Sut {
 }
 
 struct GitSut {
-    dir fs::Path
+    dir fs.Path
 }
 
 fun GitSut.new() !GitSut {
     let @local = Arena()
     let dir = { 
-        let mktemp = try os::shell_output(["mktemp", "-d"][..], @local) 
-        fs::Path.from_str(mktemp.trim())
+        let mktemp = try os.shell_output(["mktemp", "-d"][..], @local) 
+        fs.Path.from_str(mktemp.trim())
     }
-    try os::chdir(dir)
-    try os::shell_checked(["git", "init"][..], @local)
+    try os.chdir(dir)
+    try os.shell_checked(["git", "init"][..], @local)
 	-- Tell Git to treat paths as case-sensitive..
-    try os::shell_checked(["git", "config", "core.ignorecase", "false"][..], @local)
+    try os.shell_checked(["git", "config", "core.ignorecase", "false"][..], @local)
 	-- Tell Git to print unicode characters as-is.
-	try os::shell_checked(["git", "config", "core.quotepath", "false"][..], @local)
+	try os.shell_checked(["git", "config", "core.quotepath", "false"][..], @local)
     for i in 0..paths.len {
-        let full_path = dir.join(fs::Path.from_str(paths[i]), @local)
+        let full_path = dir.join(fs.Path.from_str(paths[i]), @local)
     }
     GitSut(dir)
 }
@@ -128,12 +128,12 @@ fun test_happy_path<S Sut>(sut S) !void {
 
 fun main() void {
     let @local = Arena()
-    let suite = test::Suite.new("match", @local)
+    let suite = test.Suite.new("match", @local)
     suite.test("pattern", fun() !void {
         let @local = Arena()
-        try test::eq("abc", Str.from_utf8_lossy(glob::Pattern.new("abc ").text, @local))
+        try test.eq("abc", Str.from_utf8_lossy(glob.Pattern.new("abc ").text, @local))
     })
-    let git_sut = try GitSut.new() else e { io::println("failed to create git_sut") return void }
+    let git_sut = try GitSut.new() else e { io.println("failed to create git_sut") return void }
     suite.test("happy_path", fun[&git_sut]() !void {
         try test_happy_path(git_sut)
     })

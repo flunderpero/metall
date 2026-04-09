@@ -1,30 +1,30 @@
-use std::test
-use std::ffi
-use std::fs
+use std.test
+use std.ffi
+use std.fs
 
 fun main() void {
     let @local = Arena()
 
-    let fun_ptr_suite = test::Suite.new("fun_ptr", @local)
+    let fun_ptr_suite = test.Suite.new("fun_ptr", @local)
     fun_ptr_suite.test("fun", fun() !void {
         let @local = Arena()
         fun hello() void {
             -- todo: Use a proper temporary file.
-            _ = fs::write_file(fs::Path.from_str("/tmp/ffi_test.met.file"), "hello".as_bytes())
+            _ = fs.write_file(fs.Path.from_str("/tmp/ffi_test.met.file"), "hello".as_bytes())
         }
-        let f = ffi::fun_ptr(hello)
+        let f = ffi.fun_ptr(hello)
         f.call()
-        let read = try fs::read_file(fs::Path.from_str("/tmp/ffi_test.met.file"), @local)
-        try test::eq("hello".as_bytes(), read) 
+        let read = try fs.read_file(fs.Path.from_str("/tmp/ffi_test.met.file"), @local)
+        try test.eq("hello".as_bytes(), read) 
     })
     fun_ptr_suite.test("closure", fun() !void {
         mut value = ""
         let hello = fun[&mut value]() void {
             value.* = "hello"
         }
-        let f = ffi::fun_ptr(hello)
+        let f = ffi.fun_ptr(hello)
         f.call()
-        try test::eq("hello", value)
+        try test.eq("hello", value)
     })
     _ = fun_ptr_suite.run()
 }

@@ -222,8 +222,6 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkAllocatorVar(nodeID, nodeKind, node.Span)
 	case ast.FieldAccess:
 		typeID, status = e.checkFieldAccess(nodeID, nodeKind)
-	case ast.Path:
-		typeID, status = e.checkPath(nodeID, nodeKind, node.Span)
 	case ast.Ident:
 		typeID, status = e.checkIdent(nodeID, nodeKind, node.Span)
 	case ast.Bool:
@@ -1068,6 +1066,9 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	if refTyp, ok := targetTyp.Kind.(RefType); ok {
 		targetTyp = e.env.Type(refTyp.Type)
 	}
+	if _, ok := targetTyp.Kind.(ModuleType); ok {
+		return e.checkModuleMemberAccess(nodeID, fieldAccess)
+	}
 	if _, ok := targetTyp.Kind.(SliceType); ok && fieldAccess.Field.Name == "len" {
 		return e.intTyp, TypeOK
 	}
@@ -1262,7 +1263,18 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 	}
 	var argNodes []ast.NodeID
 	fieldAccess, isFieldAccess := e.ast.Node(call.Callee).Kind.(ast.FieldAccess)
-	isMethod := e.env.isNamedFun(call.Callee) && isFieldAccess
+	// A method call is a named function accessed via field access where the
+	// target is a value (not a module or a type name like Foo or ffi.PtrMut).
+	isMethod := false
+	if e.env.isNamedFun(call.Callee) && isFieldAccess {
+		targetType := e.env.TypeOfNode(fieldAccess.Target)
+		switch targetType.Kind.(type) {
+		case ModuleType:
+			// Module function call, not a method.
+		default:
+			isMethod = !e.isTypeReference(fieldAccess.Target)
+		}
+	}
 	if isMethod {
 		argNodes = append(argNodes, fieldAccess.Target)
 		e.env.setMethodCallReceiver(callNodeID, fieldAccess.Target)
@@ -1933,26 +1945,11 @@ func (e *Engine) checkStructField(structField ast.StructField) (TypeID, TypeStat
 	return typeID, TypeOK
 }
 
-func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (TypeID, TypeStatus) {
-	if len(path.Segments) < 2 {
-		panic(base.Errorf("path must have at least 2 segments"))
-	}
-	if len(path.Segments) > 2 {
-		e.diag(span, "invalid module path")
-		return InvalidTypeID, TypeFailed
-	}
-	moduleName := path.Segments[0]
-	modBinding, ok := e.lookup(nodeID, moduleName, -1)
-	if !ok {
-		e.diag(span, "symbol not defined: %s", moduleName)
-		return InvalidTypeID, TypeFailed
-	}
-	if _, ok := e.env.Type(modBinding.TypeID).Kind.(ModuleType); !ok {
-		e.diag(span, "%s is not a module", moduleName)
-		return InvalidTypeID, TypeFailed
-	}
-	// Look up the member in the imported module's scope.
-	memberName := path.Segments[1]
+func (e *Engine) checkModuleMemberAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
+	span := e.ast.Node(nodeID).Span
+	targetIdent := base.Cast[ast.Ident](e.ast.Node(fieldAccess.Target).Kind)
+	moduleName := targetIdent.Name
+	memberName := fieldAccess.Field.Name
 	thisModuleNode, _ := e.moduleOf(nodeID)
 	importedModuleNodeID, ok := e.moduleResolution.Imports[thisModuleNode.ID][moduleName]
 	if !ok {
@@ -1964,17 +1961,7 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
 	}
-	// Method references like `lib::Point.sum` need the same bind-name resolution
-	// as local `Point.sum`, i.e. the struct name is resolved to its namespaced type name.
-	lookupName := memberName
-	if structName, methodName, ok := strings.Cut(memberName, "."); ok {
-		resolved, ok := e.resolveMethodBindName(mod.Decls[0], structName, methodName, span)
-		if !ok {
-			return InvalidTypeID, TypeFailed
-		}
-		lookupName = resolved
-	}
-	binding, ok := e.env.Lookup(mod.Decls[0], lookupName, -1)
+	binding, ok := e.env.Lookup(mod.Decls[0], memberName, -1)
 	if !ok {
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
@@ -1984,7 +1971,32 @@ func (e *Engine) checkPath(nodeID ast.NodeID, path ast.Path, span base.Span) (Ty
 		return InvalidTypeID, TypeFailed
 	}
 	e.env.pathBindings[nodeID] = binding
-	return e.resolveBinding(nodeID, binding, path.TypeArgs)
+	return e.resolveBinding(nodeID, binding, fieldAccess.TypeArgs)
+}
+
+// isTypeReference checks if an expression node refers to a type declaration
+// (e.g. `Foo` or `ffi.PtrMut`) rather than a value.
+func (e *Engine) isTypeReference(nodeID ast.NodeID) bool {
+	switch kind := e.ast.Node(nodeID).Kind.(type) {
+	case ast.Ident:
+		binding, ok := e.lookup(nodeID, kind.Name, -1)
+		if !ok {
+			return false
+		}
+		switch e.ast.Node(binding.Decl).Kind.(type) {
+		case ast.Struct, ast.Union, ast.Shape:
+			return true
+		}
+	case ast.FieldAccess:
+		// e.g. ffi.PtrMut — a module member that is a type.
+		if b, ok := e.env.PathBinding(nodeID); ok {
+			switch e.ast.Node(b.Decl).Kind.(type) {
+			case ast.Struct, ast.Union, ast.Shape:
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
@@ -2084,6 +2096,7 @@ func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Bind
 	return false
 }
 
+//nolint:funlen
 func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []ast.NodeID) (TypeID, TypeStatus) {
 	if cached, ok := e.env.cachedTypeInfo(binding.TypeID); ok && cached.Status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -2126,20 +2139,22 @@ func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []
 		}
 		if structType, ok := e.env.Type(binding.TypeID).Kind.(StructType); ok {
 			if structNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Struct); ok {
-				if len(typeArgs) > 0 || len(structNode.TypeParams) > 0 {
-					_ = structType
+				if len(typeArgs) > 0 {
 					return e.MaterializeNamedTypeRef(binding.TypeID, typeArgs, span)
 				}
-				e.registerStruct(structType, binding.Decl, binding.TypeID)
+				if len(structNode.TypeParams) == 0 {
+					e.registerStruct(structType, binding.Decl, binding.TypeID)
+				}
 			}
 		}
 		if unionType, ok := e.env.Type(binding.TypeID).Kind.(UnionType); ok {
 			if unionNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Union); ok {
-				if len(typeArgs) > 0 || len(unionNode.TypeParams) > 0 {
-					_ = unionType
+				if len(typeArgs) > 0 {
 					return e.MaterializeNamedTypeRef(binding.TypeID, typeArgs, span)
 				}
-				e.registerUnion(unionType, binding.Decl, binding.TypeID)
+				if len(unionNode.TypeParams) == 0 {
+					e.registerUnion(unionType, binding.Decl, binding.TypeID)
+				}
 			}
 		}
 	}

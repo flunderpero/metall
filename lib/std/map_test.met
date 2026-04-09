@@ -1,8 +1,8 @@
-use std::test
-use std::map
-use std::io
-use std::list
-use std::iter
+use std.test
+use std.map
+use std.io
+use std.list
+use std.iter
 
 -- A hash key type with a constant hash function.
 struct ConstantHash {
@@ -14,135 +14,135 @@ pub fun ConstantHash.fmt(c ConstantHash, sb &mut StrBuilder) void { sb.int(c.val
 
 fun main() void {
     let @local = Arena()
-    let suite = test::Suite.new("Map", @local)
+    let suite = test.Suite.new("Map", @local)
     suite.test("happy path", fun() !void {
         let @local = Arena()
-        let sut = map::Map.new<Int, Str>(4, @local)
-        try test::eq(0, sut.len)
-        try test::eq(4, sut.data.len)
-        try test::eq(false, sut.has(1))
+        let sut = map.Map.new<Int, Str>(4, @local)
+        try test.eq(0, sut.len)
+        try test.eq(4, sut.data.len)
+        try test.eq(false, sut.has(1))
 
         -- set
         sut.set(1, "hello")
-        try test::eq(1, sut.len)
-        try test::eq("hello", try sut.get(1) else { return Err("key not found") })
-        try test::eq(true, sut.has(1))
+        try test.eq(1, sut.len)
+        try test.eq("hello", try sut.get(1) else { return Err("key not found") })
+        try test.eq(true, sut.has(1))
 
         -- overwrite
         sut.set(1, "there")
-        try test::eq("there", try sut.get(1) else { return Err("key not found") })
-        try test::eq(1, sut.len)
+        try test.eq("there", try sut.get(1) else { return Err("key not found") })
+        try test.eq(1, sut.len)
 
         -- delete
-        try test::eq(true, sut.del(1))
-        try test::eq(false, sut.has(1))
-        try test::eq(Option<Str>(None()), sut.get(1))
-        try test::eq(0, sut.len)
-        try test::eq(false, sut.del(1))
-        try test::eq(Option<Str>(None()), sut.get(1))
-        try test::eq(0, sut.len)
+        try test.eq(true, sut.del(1))
+        try test.eq(false, sut.has(1))
+        try test.eq(Option<Str>(None()), sut.get(1))
+        try test.eq(0, sut.len)
+        try test.eq(false, sut.del(1))
+        try test.eq(Option<Str>(None()), sut.get(1))
+        try test.eq(0, sut.len)
     })
     suite.test("linear probing", fun() !void {
         let @local = Arena()
-        let sut = map::Map.new<ConstantHash, Str>(3, @local)
+        let sut = map.Map.new<ConstantHash, Str>(3, @local)
 
         sut.set(ConstantHash(1), "foo1")
-        try test::eq(1, sut.len)
-        try test::eq(3, sut.data.len)
-        try test::eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try test.eq(1, sut.len)
+        try test.eq(3, sut.data.len)
+        try test.eq(sut.get(ConstantHash(1)), Option("foo1"))
         -- should be stored in slot 1
-        try test::eq(Option(ConstantHash(1)), sut.data[1].key())
-        try test::eq<?Str>(sut.get(ConstantHash(123)), None())
+        try test.eq(Option(ConstantHash(1)), sut.data[1].key())
+        try test.eq<?Str>(sut.get(ConstantHash(123)), None())
 
         sut.set(ConstantHash(2), "foo2")
-        try test::eq(2, sut.len)
-        try test::eq(3, sut.data.len)
-        try test::eq(sut.get(ConstantHash(1)), Option("foo1"))
-        try test::eq(sut.get(ConstantHash(2)), Option("foo2"))
+        try test.eq(2, sut.len)
+        try test.eq(3, sut.data.len)
+        try test.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try test.eq(sut.get(ConstantHash(2)), Option("foo2"))
         -- should be stored in slot 2
-        try test::eq(Option(ConstantHash(2)), sut.data[2].key())
-        try test::eq<?Str>(sut.get(ConstantHash(123)), None())
+        try test.eq(Option(ConstantHash(2)), sut.data[2].key())
+        try test.eq<?Str>(sut.get(ConstantHash(123)), None())
 
         sut.set(ConstantHash(3), "foo3")
-        try test::eq(3, sut.len)
-        try test::gt_int(sut.data.len, 3)
-        try test::eq(sut.get(ConstantHash(1)), Option("foo1"))
-        try test::eq(sut.get(ConstantHash(2)), Option("foo2"))
-        try test::eq(sut.get(ConstantHash(3)), Option("foo3"))
+        try test.eq(3, sut.len)
+        try test.gt_int(sut.data.len, 3)
+        try test.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try test.eq(sut.get(ConstantHash(2)), Option("foo2"))
+        try test.eq(sut.get(ConstantHash(3)), Option("foo3"))
         -- should be stored in slot 3
-        try test::eq(Option(ConstantHash(3)), sut.data[3].key())
-        try test::eq<?Str>(sut.get(ConstantHash(123)), None())
+        try test.eq(Option(ConstantHash(3)), sut.data[3].key())
+        try test.eq<?Str>(sut.get(ConstantHash(123)), None())
 
         -- delete entry
-        try test::eq(true, sut.del(ConstantHash(2)))
-        try test::eq(2, sut.len)
-        try test::eq(true, sut.data[2].is_deleted())
-        try test::eq(false, sut.has(ConstantHash(2)))
-        try test::eq(sut.get(ConstantHash(1)), Option("foo1"))
-        try test::eq(sut.get(ConstantHash(2)), Option<Str>(None()))
-        try test::eq(sut.get(ConstantHash(3)), Option("foo3"))
+        try test.eq(true, sut.del(ConstantHash(2)))
+        try test.eq(2, sut.len)
+        try test.eq(true, sut.data[2].is_deleted())
+        try test.eq(false, sut.has(ConstantHash(2)))
+        try test.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try test.eq(sut.get(ConstantHash(2)), Option<Str>(None()))
+        try test.eq(sut.get(ConstantHash(3)), Option("foo3"))
 
         -- re-add same entry
         sut.set(ConstantHash(2), "foo2")
-        try test::eq(true, sut.has(ConstantHash(2)))
-        try test::eq(3, sut.len)
-        try test::eq(sut.get(ConstantHash(1)), Option("foo1"))
-        try test::eq(sut.get(ConstantHash(2)), Option("foo2"))
-        try test::eq(sut.get(ConstantHash(3)), Option("foo3"))
+        try test.eq(true, sut.has(ConstantHash(2)))
+        try test.eq(3, sut.len)
+        try test.eq(sut.get(ConstantHash(1)), Option("foo1"))
+        try test.eq(sut.get(ConstantHash(2)), Option("foo2"))
+        try test.eq(sut.get(ConstantHash(3)), Option("foo3"))
         -- should reuse slot 2
-        try test::eq(Option(ConstantHash(2)), sut.data[2].key())
-        try test::eq<?Str>(sut.get(ConstantHash(123)), None())
+        try test.eq(Option(ConstantHash(2)), sut.data[2].key())
+        try test.eq<?Str>(sut.get(ConstantHash(123)), None())
 
         -- delete the first and try to update the third
-        try test::eq(true, sut.del(ConstantHash(1)))
-        try test::eq(false, sut.has(ConstantHash(1)))
-        try test::eq(true, sut.data[1].is_deleted())
+        try test.eq(true, sut.del(ConstantHash(1)))
+        try test.eq(false, sut.has(ConstantHash(1)))
+        try test.eq(true, sut.data[1].is_deleted())
         sut.set(ConstantHash(3), "foo3.1")
         -- should not use the "delete tombstone" at index 1
-        try test::eq(true, sut.data[1].is_deleted())
+        try test.eq(true, sut.data[1].is_deleted())
         -- but overwrite the existing slot for key 3
-        try test::eq(Option(ConstantHash(3)), sut.data[3].key())
-        try test::eq(Option("foo3.1"), sut.get(ConstantHash(3)))
-        try test::eq(true, sut.has(ConstantHash(3)))
+        try test.eq(Option(ConstantHash(3)), sut.data[3].key())
+        try test.eq(Option("foo3.1"), sut.get(ConstantHash(3)))
+        try test.eq(true, sut.has(ConstantHash(3)))
     })
     suite.test("large map", fun() !void {
         let @local = Arena()
-        let sut = map::Map.new<Int, Int>(16, @local)
+        let sut = map.Map.new<Int, Int>(16, @local)
         let entries = 1000000
         for i in 0..entries {
             sut.set(i, i)
-            try test::eq(Option(i), sut.get(i))
+            try test.eq(Option(i), sut.get(i))
         }
         for i in 0..entries {
             if i % 2 == 0 {
-                try test::eq(true, sut.del(i))
-                try test::eq(false, sut.has(i))
+                try test.eq(true, sut.del(i))
+                try test.eq(false, sut.has(i))
             } else {
                 sut.set(i, i * 2)
-                try test::eq(Option(i * 2), sut.get(i))
+                try test.eq(Option(i * 2), sut.get(i))
             }
         }
     })
     suite.test("iter", fun() !void {
         let @local = Arena()
-        let m = map::Map.new<Int, Str>(16, @local)
+        let m = map.Map.new<Int, Str>(16, @local)
         m.set(1, "a")
         m.set(3, "c")
         m.set(2, "b")
         mut sut = m.iter()
-        let l = iter::pipe(sut).collect(32, @local)
-        l.sort_in_place(fun (a map::MapEntry<Int, Str>, b map::MapEntry<Int, Str>) Int {
+        let l = iter.pipe(sut).collect(32, @local)
+        l.sort_in_place(fun (a map.MapEntry<Int, Str>, b map.MapEntry<Int, Str>) Int {
             if a.key == b.key { return 0 }
             if a.key < b.key { return -1 }
             1
         })
-        try test::eq(3, l.len)
-        try test::eq(1, l[0].key)
-        try test::eq("a", l[0].value)
-        try test::eq(2, l[1].key)
-        try test::eq("b", l[1].value)
-        try test::eq(3, l[2].key)
-        try test::eq("c", l[2].value)
+        try test.eq(3, l.len)
+        try test.eq(1, l[0].key)
+        try test.eq("a", l[0].value)
+        try test.eq(2, l[1].key)
+        try test.eq("b", l[1].value)
+        try test.eq(3, l[2].key)
+        try test.eq("c", l[2].value)
     })
     _ = suite.run()
 }

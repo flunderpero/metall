@@ -19,7 +19,6 @@ const (
 	Caret
 	Case
 	Colon
-	ColonColon
 	Comma
 	Comment
 	Continue
@@ -102,7 +101,6 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Caret:                 "^",
 	Case:                  "<case>",
 	Colon:                 ":",
-	ColonColon:            "::",
 	Comma:                 ",",
 	Comment:               "<comment>",
 	Continue:              "<continue>",
@@ -519,9 +517,6 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		return Token{Kind: Dot, Value: "", Span: span}
 	case c == ':':
-		if idx < len(source.Content) && source.Content[idx] == ':' {
-			return Token{Kind: ColonColon, Value: "", Span: base.NewSpan(source, start, idx)}
-		}
 		return Token{Kind: Colon, Value: "", Span: span}
 	case c == '!':
 		if idx < len(source.Content) && source.Content[idx] == '=' {

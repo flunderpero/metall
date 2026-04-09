@@ -1001,6 +1001,7 @@ AllocatorVar(name=@myalloc,allocator=Arena)
 Call()
   callee=FieldAccess(field=new)
     target=Ident(name="@myalloc")
+    typeArgs=SimpleType(name="Foo")
   args=TypeConstruction()
     target=Ident(name="Foo")
 ```
@@ -1046,6 +1047,7 @@ Call()
   callee=FieldAccess(field=new)
     target=FieldAccess(field=@myalloc)
       target=Ident(name="x")
+    typeArgs=SimpleType(name="Foo")
   args=TypeConstruction()
     target=Ident(name="Foo")
     args=String(value="hello")
@@ -1061,6 +1063,7 @@ Call()
 Call()
   callee=FieldAccess(field=new_mut)
     target=Ident(name="@myalloc")
+    typeArgs=SimpleType(name="Foo")
   args=TypeConstruction()
     target=Ident(name="Foo")
 ```
@@ -1075,6 +1078,8 @@ Call()
 Call()
   callee=FieldAccess(field=make)
     target=Ident(name="@myalloc")
+    typeArgs=SliceType()
+      type=SimpleType(name="Int")
   args[0]=Ident(name="n")
   args[1]=Int(value=42)
 ```
@@ -1089,6 +1094,8 @@ Call()
 Call()
   callee=FieldAccess(field=make_uninit)
     target=Ident(name="@myalloc")
+    typeArgs=SliceType()
+      type=SimpleType(name="Int")
   args=Ident(name="n")
 ```
 
@@ -2055,13 +2062,14 @@ Fun(name="foo")
 **Constrained type param with path**
 
 ```metall
-fun foo<T lib::Showable>(t T) void { }
+fun foo<T lib.Showable>(t T) void { }
 ```
 
 ```ast
 Fun(name="foo")
   typeParams=TypeParam(name="T")
-    constraint=Path(segments=lib::Showable)
+    constraint=FieldAccess(field=Showable)
+      target=Ident(name="lib")
   params=FunParam(name="t")
     type=SimpleType(name="T")
   returnType=SimpleType(name="void")
@@ -2382,7 +2390,7 @@ test.met:1:31: else arm cannot have a guard condition
 **Use simple path**
 
 ```metall module
-use foo::bar
+use foo.bar
 ```
 
 ```ast
@@ -2393,7 +2401,7 @@ Module(fileName="test.met",name="test",main=true)
 **Use deep path**
 
 ```metall module
-use foo::bar::baz
+use foo.bar.baz
 ```
 
 ```ast
@@ -2404,7 +2412,7 @@ Module(fileName="test.met",name="test",main=true)
 **Use with alias**
 
 ```metall module
-use b = foo::bar
+use b = foo.bar
 ```
 
 ```ast
@@ -2415,7 +2423,7 @@ Module(fileName="test.met",name="test",main=true)
 **Use local import**
 
 ```metall module
-use local::foo::bar
+use local.foo.bar
 ```
 
 ```ast
@@ -2426,7 +2434,7 @@ Module(fileName="test.met",name="test",main=true)
 **Use local import with alias**
 
 ```metall module
-use b = local::foo::bar
+use b = local.foo.bar
 ```
 
 ```ast
@@ -2434,114 +2442,121 @@ Module(fileName="test.met",name="test",main=true)
   imports=Import(alias="b",path=local::foo::bar)
 ```
 
-**Path expression**
+**Dot expression (module member)**
 
 ```metall
-math::pow
+math.pow
 ```
 
 ```ast
-Path(segments=math::pow)
+FieldAccess(field=pow)
+  target=Ident(name="math")
 ```
 
-**Path expression call**
+**Dot expression call**
 
 ```metall
-math::pow(2, 5)
+math.pow(2, 5)
 ```
 
 ```ast
 Call()
-  callee=Path(segments=math::pow)
+  callee=FieldAccess(field=pow)
+    target=Ident(name="math")
   args[0]=Int(value=2)
   args[1]=Int(value=5)
 ```
 
-**Path expression with type ident**
+**Dot expression with type ident**
 
 ```metall
-lib::Point(1, 2)
+lib.Point(1, 2)
 ```
 
 ```ast
 TypeConstruction()
-  target=Path(segments=lib::Point)
+  target=FieldAccess(field=Point)
+    target=Ident(name="lib")
   args[0]=Int(value=1)
   args[1]=Int(value=2)
 ```
 
-**Path type construction with type args**
+**Dot type construction with type args**
 
 ```metall
-lib::Foo<Int>(42)
+lib.Foo<Int>(42)
 ```
 
 ```ast
 TypeConstruction()
-  target=Path(segments=lib::Foo)
-    typeArg=SimpleType(name="Int")
+  target=FieldAccess(field=Foo)
+    target=Ident(name="lib")
+    typeArgs=SimpleType(name="Int")
   args=Int(value=42)
 ```
 
-**Path type construction nested type args**
+**Dot type construction nested type args**
 
 ```metall
-lib::Foo<Bar<Int>>(42)
+lib.Foo<Bar<Int>>(42)
 ```
 
 ```ast
 TypeConstruction()
-  target=Path(segments=lib::Foo)
-    typeArg=SimpleType(name="Bar")
+  target=FieldAccess(field=Foo)
+    target=Ident(name="lib")
+    typeArgs=SimpleType(name="Bar")
       typeArgs=SimpleType(name="Int")
   args=Int(value=42)
 ```
 
-**Path call with type args**
+**Dot call with type args**
 
 ```metall
-lib::foo<Int>(42)
+lib.foo<Int>(42)
 ```
 
 ```ast
 Call()
-  callee=Path(segments=lib::foo)
-    typeArg=SimpleType(name="Int")
+  callee=FieldAccess(field=foo)
+    target=Ident(name="lib")
+    typeArgs=SimpleType(name="Int")
   args=Int(value=42)
 ```
 
-**Path in let binding**
+**Dot expression in let binding**
 
 ```metall
-let x = math::pow
+let x = math.pow
 ```
 
 ```ast
 Var(name="x")
-  expr=Path(segments=math::pow)
+  expr=FieldAccess(field=pow)
+    target=Ident(name="math")
 ```
 
 **Use in expression should fail**
 
 ```metall
-use foo::bar
+use foo.bar
 ```
 
 ```error
 test.met:1:1: unexpected token: expected start of an expression, got <use>
-    use foo::bar
+    use foo.bar
     ^^^
 ```
 
 **Use after decl should fail**
 
 ```metall module
-fun main() void {} use foo::bar
+fun main() void {} use foo.bar
 ```
 
 ```error
 test.met:1:20: unexpected token: <use>
-    fun main() void {} use foo::bar
+    fun main() void {} use foo.bar
                        ^^^
 ```
 

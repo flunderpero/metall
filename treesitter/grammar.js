@@ -52,7 +52,7 @@ module.exports = grammar({
       ),
 
     import_path: ($) =>
-      seq($.identifier, repeat(seq("::", $.identifier))),
+      seq($.identifier, repeat(seq(".", $.identifier))),
 
     // >>> Comments
     // Line comments: `-- ...`
@@ -271,7 +271,6 @@ module.exports = grammar({
 
         // Type-prefixed expressions.
         $.qualified_name,
-        $.path_expression,
         $.type_construction,
 
         // Bindings and assignment.
@@ -311,16 +310,6 @@ module.exports = grammar({
     qualified_name: ($) =>
       prec(PREC.POSTFIX, seq(
         $.type_identifier, ".", $.identifier,
-        optional($.type_arguments),
-      )),
-
-    // module::member or module::Type (method access like lib::Foo.bar
-    // is handled by field_access on the path_expression)
-    path_expression: ($) =>
-      prec.left(PREC.POSTFIX, seq(
-        field("module", $.identifier),
-        "::",
-        field("member", choice($.type_identifier, $.identifier)),
         optional($.type_arguments),
       )),
 
@@ -413,7 +402,7 @@ module.exports = grammar({
       prec.left(PREC.POSTFIX, seq(
         field("object", $._expression),
         ".",
-        field("field", choice($.identifier, $.allocator_identifier)),
+        field("field", choice($.identifier, $.type_identifier, $.allocator_identifier)),
       )),
 
     index_expression: ($) =>

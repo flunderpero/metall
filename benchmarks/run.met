@@ -1,8 +1,8 @@
 --- Run all benchmarks. ---
-use std::time
-use std::os
-use std::io
-use std::test
+use std.time
+use std.os
+use std.io
+use std.test
 
 let benchmarks = [
     Benchmark("iter", "fold", 90),
@@ -33,42 +33,42 @@ fun Benchmark.run(b Benchmark, recompile Bool, @a Arena) !Bool {
             "-opt", "fast", "-o", met_bin, b.group.concat(".met", @a)][..], @a)
     }
 
-    io::print("[")
-    io::print(b.group)
-    io::print("/")
-    io::print(b.name)
-    io::print("]\t")
+    io.print("[")
+    io.print(b.group)
+    io.print("/")
+    io.print(b.name)
+    io.print("]\t")
     if b.name.bytes_len() < 8 {
         -- todo: All the \t and this check here is a workaround for missing "width" modifiers in StrBuilder.
-        io::print("\t")
+        io.print("\t")
     }
-    io::print("Rust: ")
-    mut t0 = time::Instant.new()
+    io.print("Rust: ")
+    mut t0 = time.Instant.new()
     let rust_out = try run([rust_bin, b.name][..], @a)
     let rust_duration = t0.elapsed()
-    io::print(rust_duration)
+    io.print(rust_duration)
 
-    io::print("\tMetall: ")
-    t0 = time::Instant.new()
+    io.print("\tMetall: ")
+    t0 = time.Instant.new()
     let met_out = try run([met_bin, b.name][..], @a)
     let met_duration = t0.elapsed()
-    io::print(met_duration)
+    io.print(met_duration)
 
-    try test::eq(rust_out.trim(), met_out.trim(), "output differs")
+    try test.eq(rust_out.trim(), met_out.trim(), "output differs")
 
-    let percentage = rust_duration.to(time::nanosecond) * 100 / met_duration.to(time::nanosecond)
-    io::print("\t-> ")
-    io::print(percentage)
+    let percentage = rust_duration.to(time.nanosecond) * 100 / met_duration.to(time.nanosecond)
+    io.print("\t-> ")
+    io.print(percentage)
     if percentage < b.percentage {
-        io::println("%\t\x1b[31mFAILED\x1b[0m")
+        io.println("%\t\x1b[31mFAILED\x1b[0m")
         return false
     }
-    io::println("%\t\x1b[32mPASSED\x1b[0m")
+    io.println("%\t\x1b[32mPASSED\x1b[0m")
     true
 }
 
 fun run(cmd []Str, @a Arena) !Str {
-    let res = try os::shell(cmd , @a)
+    let res = try os.shell(cmd , @a)
     if res.status != 0 {
         let sb = StrBuilder.new(32, @a)
         sb.str("Rust compilation failed with exit code ")
@@ -88,18 +88,18 @@ fun main() !void {
     for i in 0..benchmarks.len {
         let b = benchmarks[i]
         -- todo: The `else` should not be needed, but the runtime does not print the error (correctly).
-        let ok = try b.run(not b.group.eq(last_group), @local) else e { io::println(e.msg) return e }
+        let ok = try b.run(not b.group.eq(last_group), @local) else e { io.println(e.msg) return e }
         if not ok {
             failed = failed + 1
         }
         last_group = b.group
     }
     if failed == 0 {
-        io::println("All benchmarks passed")
+        io.println("All benchmarks passed")
     } else {
-        io::print("\x1b[31m")
-        io::print(failed)
-        io::println(" benchmarks failed")
-        io::print("\x1b[0m")
+        io.print("\x1b[31m")
+        io.print(failed)
+        io.println(" benchmarks failed")
+        io.print("\x1b[0m")
     }
 }

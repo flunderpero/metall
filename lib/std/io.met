@@ -1,5 +1,5 @@
-use std::ffi
-use std::list
+use std.ffi
+use std.list
 
 pub shape Reader<T> {
     --- Read up to `buf.len` items into the give `buf` and returns a slice
@@ -24,29 +24,29 @@ pub shape ReaderCloser<T> {
 }
 
 pub struct Buffer<T> {
-    data &mut list::List<T>
+    data &mut list.List<T>
     read_pos Int
 }
 
 pub fun Buffer.new<T>(initial_capacity Int, @a Arena) &mut Buffer<T> {
-    let data = list::List.new<T>(initial_capacity, @a)
+    let data = list.List.new<T>(initial_capacity, @a)
     @a.new_mut(Buffer(data, 0))
 }
 
---- Implementation of `io::Writer`. ---
+--- Implementation of `io.Writer`. ---
 pub fun Buffer.write<T>(b &mut Buffer<T>, data []T) !Int {
     b.data.push_all(data)
     data.len
 }
 
---- Implementation of `io::Reader`. ---
+--- Implementation of `io.Reader`. ---
 pub fun Buffer.read<T>(b &mut Buffer<T>, buf []mut T) ![] mut T {
     let n = buf.set(b.data.as_slice()[b.read_pos..])
     b.read_pos = b.read_pos + n
     buf[0..n]
 }
 
---- Implementation of `io::Closer`. ---
+--- Implementation of `io.Closer`. ---
 pub fun Buffer.close<T>(b &mut Buffer<T>) !void {
     b.data.reset()
     b.read_pos = 0
@@ -76,7 +76,7 @@ pub fun read_all<T, RC ReaderCloser<T>>(r &mut RC, cap_ Int, @a Arena) ![] mut T
     res.copy(@a)
 }
 
-extern fun write(fd I32, buf ffi::Ptr<U8>, len Int) Int
+extern fun write(fd I32, buf ffi.Ptr<U8>, len Int) Int
 
 pub fun print<T HasFmt>(obj T) void {
     -- todo: We should be able to have a shortcut if is is Str.
@@ -84,7 +84,7 @@ pub fun print<T HasFmt>(obj T) void {
     let sb = StrBuilder.new(32, @a)
     obj.fmt(sb)
     let s = sb.as_str()
-    _ = unsafe write(1, ffi::slice_ptr(s.as_bytes()), s.bytes_len())
+    _ = unsafe write(1, ffi.slice_ptr(s.as_bytes()), s.bytes_len())
 }
 
 pub fun println<T HasFmt>(obj T) void {
@@ -94,5 +94,5 @@ pub fun println<T HasFmt>(obj T) void {
     obj.fmt(sb)
     sb.rune('\n')
     let s = sb.as_str()
-    _ = unsafe write(1, ffi::slice_ptr(s.as_bytes()), s.bytes_len())
+    _ = unsafe write(1, ffi.slice_ptr(s.as_bytes()), s.bytes_len())
 }

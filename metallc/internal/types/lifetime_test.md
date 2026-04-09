@@ -2124,8 +2124,8 @@ use lib
 
 fun main() void {
     mut x = 42
-    _ = lib::safe(&x)
-    _ = lib::leaky(&x)
+    _ = lib.safe(&x)
+    _ = lib.leaky(&x)
 }
 ```
 
@@ -2344,33 +2344,33 @@ test.met:6:21: reference escaping its allocation scope (via mutation of outer va
 **Ptr to stack variable escapes via return**
 
 ```metall module
-use std::ffi
+use std.ffi
 
-fun leak() ffi::Ptr<Int> {
+fun leak() ffi.Ptr<Int> {
     let x = 42
-    ffi::ref_ptr<Int>(&x)
+    ffi.ref_ptr<Int>(&x)
 }
 
 fun main() void { _ = leak() }
 ```
 
 ```error
-test.met:5:23: reference escaping its allocation scope (via block result)
+test.met:5:22: reference escaping its allocation scope (via block result)
         let x = 42
-        ffi::ref_ptr<Int>(&x)
-                          ^^
+        ffi.ref_ptr<Int>(&x)
+                         ^^
     }
 ```
 
 **Ptr.as_slice from arena-allocated memory escapes**
 
 ```metall module
-use std::ffi
+use std.ffi
 
 fun get_slice() []Int {
     let @a = Arena()
     let data = @a.slice_mut<Int>(3, 0)
-    let p = ffi::slice_ptr<Int>(data)
+    let p = ffi.slice_ptr<Int>(data)
     unsafe p.as_slice(3)
 }
 
@@ -2379,7 +2379,7 @@ fun main() void { _ = get_slice() }
 
 ```error
 test.met:7:12: reference escaping its allocation scope (via block result)
-        let p = ffi::slice_ptr<Int>(data)
+        let p = ffi.slice_ptr<Int>(data)
         unsafe p.as_slice(3)
                ^^^^^^^^^^^^^
     }
@@ -2388,9 +2388,9 @@ test.met:7:12: reference escaping its allocation scope (via block result)
 **Ptr from extern function has no lifetime (can escape)**
 
 ```metall module
-use std::ffi
+use std.ffi
 
-extern fun get_buf() ffi::Ptr<U8>
+extern fun get_buf() ffi.Ptr<U8>
 
 fun get_slice() []U8 {
     let p = unsafe get_buf()

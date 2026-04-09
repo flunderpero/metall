@@ -1,30 +1,30 @@
-use std::test
-use std::ffi
-use runtime::arena
+use std.test
+use std.ffi
+use runtime.arena
 
 let debug = false
 
 fun main() void {
     let @local = Arena()
-    let suite = test::Suite.new("Arena", @local)
+    let suite = test.Suite.new("Arena", @local)
 
     suite.test("arena_create sets up first page correctly", fun() !void {
         mut first_page_buf = [
             U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        let null = ffi::PtrMut.null<U8>()
-        mut a = arena::ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena::arena_create(&mut a, ffi::slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
 
-        mut first_page = ffi::slice_ptr_mut<U8>(first_page_buf[..])
-        try test::eq(
-            first_page.as_u64() + ffi::sizeof<ffi::Ptr<U8>>().to_u64_wrapping(), 
+        mut first_page = ffi.slice_ptr_mut<U8>(first_page_buf[..])
+        try test.eq(
+            first_page.as_u64() + ffi.sizeof<ffi.Ptr<U8>>().to_u64_wrapping(), 
             a.bump.as_u64(),
             "bump should be first_page + sizeof<Ptr>")
-        try test::eq(
+        try test.eq(
             first_page.as_u64() + 32, 
             a.page_end.as_u64(),
             "page_end should be 32 bytes beyond first_page")
-        try test::eq(
+        try test.eq(
             first_page.as_u64(),
             a.page_start.as_u64(),
             "page_start should be first_page")
@@ -33,88 +33,88 @@ fun main() void {
     suite.test("arena_alloc bumps pointer only if size fits in page", fun() !void {
         mut first_page_buf = [
             U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        let null = ffi::PtrMut.null<U8>()
-        mut a = arena::ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena::arena_create(&mut a, ffi::slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
 
         let bump_before = a.bump.as_u64()
-        let p = arena::arena_alloc(&mut a, 8)
-        try test::eq(bump_before, p.as_u64())
-        try test::eq(bump_before + 8, a.bump.as_u64())
+        let p = arena.arena_alloc(&mut a, 8)
+        try test.eq(bump_before, p.as_u64())
+        try test.eq(bump_before + 8, a.bump.as_u64())
     })
 
     suite.test("arena_alloc alignment", fun() !void {
         mut first_page_buf = [
             U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        let null = ffi::PtrMut.null<U8>()
-        mut a = arena::ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena::arena_create(&mut a, ffi::slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
 
         let bump_before = a.bump.as_u64()
-        let p = arena::arena_alloc(&mut a, 1)
-        try test::eq(bump_before, p.as_u64())
-        try test::eq(U64(8), a.bump.as_u64() - bump_before, "alignment")
+        let p = arena.arena_alloc(&mut a, 1)
+        try test.eq(bump_before, p.as_u64())
+        try test.eq(U64(8), a.bump.as_u64() - bump_before, "alignment")
     })
 
     suite.test("arena_alloc allocates new pages", fun() !void {
         mut first_page_buf = [
             U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        let null = ffi::PtrMut.null<U8>()
-        mut a = arena::ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena::arena_create(&mut a, ffi::slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 16384, debug)
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 16384, debug)
 
         -- Allocate more than fits into the first (stack) page. A new page should be allocated.
         let first_page = a.page_start.as_u64()
-        mut p = arena::arena_alloc(&mut a, 128)
-        try test::neq(a.page_start.as_u64(), first_page, "new page should have been allocated")
-        try test::ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
-        try test::eq(U64(4096), a.page_end.as_u64() - a.page_start.as_u64(), "page size")
+        mut p = arena.arena_alloc(&mut a, 128)
+        try test.neq(a.page_start.as_u64(), first_page, "new page should have been allocated")
+        try test.ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
+        try test.eq(U64(4096), a.page_end.as_u64() - a.page_start.as_u64(), "page size")
 
         let page2_start = a.page_start
         let page2_end = a.page_end
 
         -- Allocate some memory, should go to the newly created page.
-        p = arena::arena_alloc(&mut a, 1024)
-        try test::ok(page2_start.as_u64() <= p.as_u64() and p.as_u64() <= page2_end.as_u64(), "alloced in existing page")
+        p = arena.arena_alloc(&mut a, 1024)
+        try test.ok(page2_start.as_u64() <= p.as_u64() and p.as_u64() <= page2_end.as_u64(), "alloced in existing page")
 
         -- Allocate more memory than fits in the current page. A new page should be allocated.
-        p = arena::arena_alloc(&mut a, 3100)
-        try test::neq(a.page_start.as_u64(), page2_start.as_u64(), "new page should have been allocated")
-        try test::ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
-        try test::eq(U64(8192), a.page_end.as_u64() - a.page_start.as_u64(), "page size should be doubled")
+        p = arena.arena_alloc(&mut a, 3100)
+        try test.neq(a.page_start.as_u64(), page2_start.as_u64(), "new page should have been allocated")
+        try test.ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
+        try test.eq(U64(8192), a.page_end.as_u64() - a.page_start.as_u64(), "page size should be doubled")
 
         let page3_start = a.page_start
 
         -- Allocate another page.
-        p = arena::arena_alloc(&mut a, 9000)
-        try test::neq(a.page_start.as_u64(), page3_start.as_u64(), "new page should have been allocated")
-        try test::ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
-        try test::eq(U64(16384), a.page_end.as_u64() - a.page_start.as_u64(), "page size should be doubled")
+        p = arena.arena_alloc(&mut a, 9000)
+        try test.neq(a.page_start.as_u64(), page3_start.as_u64(), "new page should have been allocated")
+        try test.ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
+        try test.eq(U64(16384), a.page_end.as_u64() - a.page_start.as_u64(), "page size should be doubled")
 
         let page4_start = a.page_start
 
         -- Allocate another page - the page size should not increase anymore.
-        p = arena::arena_alloc(&mut a, 9000)
-        try test::neq(a.page_start.as_u64(), page4_start.as_u64(), "new page should have been allocated")
-        try test::ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
-        try test::eq(U64(16384), a.page_end.as_u64() - a.page_start.as_u64(), "page size should be doubled")
+        p = arena.arena_alloc(&mut a, 9000)
+        try test.neq(a.page_start.as_u64(), page4_start.as_u64(), "new page should have been allocated")
+        try test.ok(a.page_start.as_u64() <= p.as_u64() and p.as_u64() <= a.page_end.as_u64(), "alloced in correct page")
+        try test.eq(U64(16384), a.page_end.as_u64() - a.page_start.as_u64(), "page size should be doubled")
     })
 
     suite.test("arena_destroy frees overflow pages but not first page", fun() !void {
         mut first_page_buf = [
             U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        let null = ffi::PtrMut.null<U8>()
-        mut a = arena::ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena::arena_create(&mut a, ffi::slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
 
         let first_page = a.page_start.as_u64()
         -- Force overflow pages.
-        _ = arena::arena_alloc(&mut a, 128)
-        _ = arena::arena_alloc(&mut a, 8192)
-        _ = arena::arena_alloc(&mut a, 8192)
+        _ = arena.arena_alloc(&mut a, 128)
+        _ = arena.arena_alloc(&mut a, 8192)
+        _ = arena.arena_alloc(&mut a, 8192)
         -- Destroy should free the overflow pages without crashing.
-        let freed = arena::arena_destroy(&mut a)
-        try test::eq(3, freed)
+        let freed = arena.arena_destroy(&mut a)
+        try test.eq(3, freed)
     })
 
     _ = suite.run()

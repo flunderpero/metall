@@ -1,84 +1,84 @@
-use std::test
-use std::thread
-use std::time
-use std::iter
-use std::io
-use std::os
-use std::fs
+use std.test
+use std.thread
+use std.time
+use std.iter
+use std.io
+use std.os
+use std.fs
 
 let test_filename = "/tmp/thread_test.met.file"
 
 fun main() void {
     let @local = Arena()
 
-    let thread_suite = test::Suite.new("spawn", @local)
+    let thread_suite = test.Suite.new("spawn", @local)
     thread_suite.test("happy path", fun() !void {
         let @local = Arena()
         let captured = "hello"
-        let sut = try thread::spawn(@local, fun[captured]() Str {
+        let sut = try thread.spawn(@local, fun[captured]() Str {
             captured
         })
-        try test::eq("hello", try sut.join())
+        try test.eq("hello", try sut.join())
     })
     thread_suite.test("spawn with void fun", fun() !void {
         let @local = Arena()
-        -- todo: Use fs::rm(path) once it is there
-        try os::shell_checked(["rm", "-f", test_filename][..], @local)
+        -- todo: Use fs.rm(path) once it is there
+        try os.shell_checked(["rm", "-f", test_filename][..], @local)
         
-        let sut = try thread::spawn(@local, fun() void {
-            try fs::write_file(fs::Path.from_str(test_filename), "hello".as_bytes()) else { return void }
+        let sut = try thread.spawn(@local, fun() void {
+            try fs.write_file(fs.Path.from_str(test_filename), "hello".as_bytes()) else { return void }
         })
         try sut.join()
-        try test::eq("hello".as_bytes(), try fs::read_file(fs::Path.from_str(test_filename), @local))
+        try test.eq("hello".as_bytes(), try fs.read_file(fs.Path.from_str(test_filename), @local))
     })
     _ = thread_suite.run()
 
 
-    let tg_suite = test::Suite.new("ThreadGroup", @local)
+    let tg_suite = test.Suite.new("ThreadGroup", @local)
     tg_suite.test("happy path", fun() !void {
         let @local = Arena()
-        let sut = thread::ThreadGroup.new<Int>(@local)
+        let sut = thread.ThreadGroup.new<Int>(@local)
         try sut.spawn(fun() Int { 1337 })
         try sut.spawn(fun() Int { 42 })
         try sut.spawn(fun() Int { 137 })
-        mut res = iter::pipe(sut.join(@local).iter())
+        mut res = iter.pipe(sut.join(@local).iter())
             .map(fun(a Result<Int>) Int { try a else { return -1 } })
             .collect(16, @local)
         res.sort_in_place(Int.cmp)
-        try test::eq([42, 137, 1337][..], res)
+        try test.eq([42, 137, 1337][..], res)
     })
     _ = tg_suite.run()
 
-    let mutex_suite = test::Suite.new("Mutex", @local)
+    let mutex_suite = test.Suite.new("Mutex", @local)
     mutex_suite.test("with_lock", fun() !void {
         let @local = Arena()
-        let sut = thread::Mutex.new<Int>(0, @local)
-        let tg = thread::ThreadGroup.new<!void>(@local)
+        let sut = thread.Mutex.new<Int>(0, @local)
+        let tg = thread.ThreadGroup.new<!void>(@local)
         let thread_fun = fun[sut]() !void {
             for i in 0..100 {
                 try sut.with_lock(fun(v &mut Int) void {
                     v.* = v.* + 1 
                 })
-                time::sleep(time::microsecond)
+                time.sleep(time.microsecond)
             }
         }
         for i in 0..10 {
             try tg.spawn(thread_fun)
         }
         _ = tg.join(@local)
-        try test::eq(1000, try sut.lock_and_copy_value())
+        try test.eq(1000, try sut.lock_and_copy_value())
     })
     mutex_suite.test("with_try_lock", fun() !void {
         let @local = Arena()
-        let sut = thread::Mutex.new<Int>(0, @local)
-        let tg = thread::ThreadGroup.new<!void>(@local)
+        let sut = thread.Mutex.new<Int>(0, @local)
+        let tg = thread.ThreadGroup.new<!void>(@local)
         let thread_fun = fun[sut]() !void {
             for i in 0..100 {
                 -- todo: use an atomic counter to count the lock misses
                 _ = try sut.with_try_lock(fun(v &mut Int) void {
                     v.* = v.* + 1 
                 }) 
-                time::sleep(time::microsecond)
+                time.sleep(time.microsecond)
             }
         }
         for i in 0..10 {
@@ -86,7 +86,7 @@ fun main() void {
         }
         _ = tg.join(@local)
         -- We expect to have missed some locks.
-        try test::lt_int(try sut.lock_and_copy_value(), 1000)
+        try test.lt_int(try sut.lock_and_copy_value(), 1000)
     })
     _ = mutex_suite.run()
 }

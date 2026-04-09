@@ -1,4 +1,4 @@
-use std::list
+use std.list
 
 struct Skip {}
 
@@ -250,9 +250,9 @@ pub fun Pipeline.collect<A, I PipeIter<A>>(p Pipeline<A, I>, initial_capacity In
     slice[0..len]
 }
 
---- Collect all elements in the pipeline into a `list::List`. ---
-pub fun Pipeline.collect_list<A, I PipeIter<A>>(p Pipeline<A, I>, initial_capacity Int, @a Arena) &mut list::List<A> {
-    let l = list::List.new<A>(initial_capacity, @a)
+--- Collect all elements in the pipeline into a `list.List`. ---
+pub fun Pipeline.collect_list<A, I PipeIter<A>>(p Pipeline<A, I>, initial_capacity Int, @a Arena) &mut list.List<A> {
+    let l = list.List.new<A>(initial_capacity, @a)
     mut it = p.it
     for {
         match (&mut it).next() {

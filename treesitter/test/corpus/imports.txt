@@ -15,7 +15,7 @@ use lib
 nested import
 ================================================================================
 
-use std::collections::map
+use std.collections.map
 
 --------------------------------------------------------------------------------
 
@@ -30,7 +30,7 @@ use std::collections::map
 local import
 ================================================================================
 
-use local::util
+use local.util
 
 --------------------------------------------------------------------------------
 
@@ -44,7 +44,7 @@ use local::util
 aliased import
 ================================================================================
 
-use m = std::collections::map
+use m = std.collections.map
 
 --------------------------------------------------------------------------------
 
@@ -61,7 +61,7 @@ multiple imports
 ================================================================================
 
 use lib
-use local::util
+use local.util
 
 fun main() void {}
 
@@ -86,52 +86,7 @@ path function call
 ================================================================================
 
 fun main() void {
-  lib::get_lib()
-}
-
---------------------------------------------------------------------------------
-
-(source_file
-  (function_declaration
-    name: (function_name
-      (identifier))
-    return_type: (simple_type)
-    body: (block
-      (call_expression
-        callee: (path_expression
-          module: (identifier)
-          member: (identifier))))))
-
-================================================================================
-path struct literal
-================================================================================
-
-fun main() void {
-  lib::Point(1, 2)
-}
-
---------------------------------------------------------------------------------
-
-(source_file
-  (function_declaration
-    name: (function_name
-      (identifier))
-    return_type: (simple_type)
-    body: (block
-      (call_expression
-        callee: (path_expression
-          module: (identifier)
-          member: (type_identifier))
-        arguments: (argument_list
-          (integer_literal)
-          (integer_literal))))))
-
-================================================================================
-path method call via field access
-================================================================================
-
-fun main() void {
-  lib::Foo.bar(x)
+  lib.get_lib()
 }
 
 --------------------------------------------------------------------------------
@@ -144,9 +99,54 @@ fun main() void {
     body: (block
       (call_expression
         callee: (field_access
-          object: (path_expression
-            module: (identifier)
-            member: (type_identifier))
+          object: (identifier)
+          field: (identifier))))))
+
+================================================================================
+path struct literal
+================================================================================
+
+fun main() void {
+  lib.Point(1, 2)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (field_access
+          object: (identifier)
+          field: (type_identifier))
+        arguments: (argument_list
+          (integer_literal)
+          (integer_literal))))))
+
+================================================================================
+path method call via field access
+================================================================================
+
+fun main() void {
+  lib.Foo.bar(x)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (field_access
+          object: (field_access
+            object: (identifier)
+            field: (type_identifier))
           field: (identifier))
         arguments: (argument_list
           (identifier))))))

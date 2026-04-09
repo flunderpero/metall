@@ -1,239 +1,239 @@
-use std::test
-use std::debug
+use std.test
+use std.debug
 
 fun main() void {
     let @local = Arena()
 
-    let suite = test::Suite.new("Str", @local)
+    let suite = test.Suite.new("Str", @local)
     suite.test("concat", fun() !void {
         let @local = Arena()
-        try test::eq("hello there", "hello ".concat("there", @local))
+        try test.eq("hello there", "hello ".concat("there", @local))
     })
     suite.test("index", fun() !void {
-        try test::eq(0, "test".index("test"))
-        try test::eq(2, "test".index("st"))
-        try test::eq(-1, "test".index("a"))
-        try test::eq(-1, "test".index("test1"))
-        try test::eq(-1, "".index("test1"))
-        try test::eq(0, "".index(""))
+        try test.eq(0, "test".index("test"))
+        try test.eq(2, "test".index("st"))
+        try test.eq(-1, "test".index("a"))
+        try test.eq(-1, "test".index("test1"))
+        try test.eq(-1, "".index("test1"))
+        try test.eq(0, "".index(""))
     })
     suite.test("contains", fun() !void {
-        try test::ok("test".contains("test"))
-        try test::not_ok("test".contains("a"))
-        try test::not_ok("test".contains("test1"))
-        try test::ok("test".contains(""))
-        try test::not_ok("".contains("test"))
-        try test::ok("".contains(""))
+        try test.ok("test".contains("test"))
+        try test.not_ok("test".contains("a"))
+        try test.not_ok("test".contains("test1"))
+        try test.ok("test".contains(""))
+        try test.not_ok("".contains("test"))
+        try test.ok("".contains(""))
     })
     suite.test("hash", fun() !void {
-        try test::eq(U64(686710930086579414), "hello".hash())
-        try test::eq(U64(0), "".hash())
+        try test.eq(U64(686710930086579414), "hello".hash())
+        try test.eq(U64(0), "".hash())
     })
     suite.test("starts_with", fun() !void {
-        try test::ok("abc".starts_with("abc"))
-        try test::ok("abc".starts_with("ab"))
-        try test::ok("abc".starts_with("a"))
-        try test::ok("abc".starts_with(""))
-        try test::not_ok("abc".starts_with("abcd"))
-        try test::not_ok("abc".starts_with("abf"))
+        try test.ok("abc".starts_with("abc"))
+        try test.ok("abc".starts_with("ab"))
+        try test.ok("abc".starts_with("a"))
+        try test.ok("abc".starts_with(""))
+        try test.not_ok("abc".starts_with("abcd"))
+        try test.not_ok("abc".starts_with("abf"))
     })
     suite.test("ends_with", fun() !void {
-        try test::ok("abc".ends_with("abc"))
-        try test::ok("abc".ends_with("bc"))
-        try test::ok("abc".ends_with("c"))
-        try test::ok("abc".ends_with(""))
-        try test::ok("abc".ends_with(""))
-        try test::not_ok("abc".ends_with("0abc"))
-        try test::not_ok("abc".ends_with("abf"))
+        try test.ok("abc".ends_with("abc"))
+        try test.ok("abc".ends_with("bc"))
+        try test.ok("abc".ends_with("c"))
+        try test.ok("abc".ends_with(""))
+        try test.ok("abc".ends_with(""))
+        try test.not_ok("abc".ends_with("0abc"))
+        try test.not_ok("abc".ends_with("abf"))
     })
     suite.test("trim", fun() !void {
-        try test::eq("abc", " \n \r \t abc \r \n \t ".trim())
-        try test::eq("\n abc \r", " \n abc \r".trim([' '][..]))
+        try test.eq("abc", " \n \r \t abc \r \n \t ".trim())
+        try test.eq("\n abc \r", " \n abc \r".trim([' '][..]))
     })
     suite.test("iter", fun() !void {
         -- This is a test string with 1, 2, 3, and 4 byte utf8 sequences.
         let s = "AÄ€😀"
         mut iter = s.iter()
         let it = &mut iter
-        try test::eq(Option('A'), it.next())
-        try test::eq(Option('Ä'), it.next())
-        try test::eq(Option('€'), it.next())
-        try test::eq(Option('😀'), it.next())
-        try test::eq(Option<Rune>(None()), it.next())
+        try test.eq(Option('A'), it.next())
+        try test.eq(Option('Ä'), it.next())
+        try test.eq(Option('€'), it.next())
+        try test.eq(Option('😀'), it.next())
+        try test.eq(Option<Rune>(None()), it.next())
     })
     suite.test("iter_index", fun() !void {
         -- This is a test string with 1, 2, 3, and 4 byte utf8 sequences.
         let s = "AÄ€😀B"
         mut iter = s.iter_index()
         let it = &mut iter
-        try test::eq(Option(RuneIndex('A', 0)), it.next())
-        try test::eq(Option(RuneIndex('Ä', 1)), it.next())
-        try test::eq(Option(RuneIndex('€', 3)), it.next())
-        try test::eq(Option(RuneIndex('😀', 6)), it.next())
-        try test::eq(Option(RuneIndex('B', 10)), it.next())
-        try test::eq(Option<RuneIndex>(None()), it.next())
+        try test.eq(Option(RuneIndex('A', 0)), it.next())
+        try test.eq(Option(RuneIndex('Ä', 1)), it.next())
+        try test.eq(Option(RuneIndex('€', 3)), it.next())
+        try test.eq(Option(RuneIndex('😀', 6)), it.next())
+        try test.eq(Option(RuneIndex('B', 10)), it.next())
+        try test.eq(Option<RuneIndex>(None()), it.next())
     })
     suite.test("from_utf8_checked", fun() !void {
         let @local = Arena()
         -- valid: ascii
-        try test::eq(Result("ABC"), Str.from_utf8_checked([U8(65), 66, 67][..]))
+        try test.eq(Result("ABC"), Str.from_utf8_checked([U8(65), 66, 67][..]))
         -- valid: 2-byte
-        try test::eq(Result("ä"), Str.from_utf8_checked([U8(195), 164][..]))
+        try test.eq(Result("ä"), Str.from_utf8_checked([U8(195), 164][..]))
         -- valid: 3-byte
-        try test::eq(Result("€"), Str.from_utf8_checked([U8(226), 130, 172][..]))
+        try test.eq(Result("€"), Str.from_utf8_checked([U8(226), 130, 172][..]))
         -- valid: 4-byte
-        try test::eq(Result("𝄞"), Str.from_utf8_checked([U8(240), 157, 132, 158][..]))
+        try test.eq(Result("𝄞"), Str.from_utf8_checked([U8(240), 157, 132, 158][..]))
         -- valid: mixed
-        try test::eq(Result("Aä€𝄞"), Str.from_utf8_checked([U8(65), 195, 164, 226, 130, 172, 240, 157, 132, 158][..]))
+        try test.eq(Result("Aä€𝄞"), Str.from_utf8_checked([U8(65), 195, 164, 226, 130, 172, 240, 157, 132, 158][..]))
         -- empty is valid
         let empty []U8 = []
-        try test::eq(Result(""), Str.from_utf8_checked(empty))
+        try test.eq(Result(""), Str.from_utf8_checked(empty))
 
         -- bare continuation at start
-        try test::err(Str.from_utf8_checked([U8(128), 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(128), 65][..]), "invalid utf8 sequence")
         -- bare continuation in middle
-        try test::err(Str.from_utf8_checked([U8(65), 128, 66][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 128, 66][..]), "invalid utf8 sequence")
         -- bare continuation at end
-        try test::err(Str.from_utf8_checked([U8(65), 191][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 191][..]), "invalid utf8 sequence")
         -- multiple consecutive continuations
-        try test::err(Str.from_utf8_checked([U8(128), 191][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(128), 191][..]), "invalid utf8 sequence")
 
         -- invalid lead byte 248
-        try test::err(Str.from_utf8_checked([U8(248), 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(248), 65][..]), "invalid utf8 sequence")
         -- invalid lead byte 255
-        try test::err(Str.from_utf8_checked([U8(255)][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(255)][..]), "invalid utf8 sequence")
 
         -- truncated 2-byte: lead at end
-        try test::err(Str.from_utf8_checked([U8(65), 195][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 195][..]), "invalid utf8 sequence")
         -- truncated 2-byte: continuation replaced by ascii
-        try test::err(Str.from_utf8_checked([U8(195), 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(195), 65][..]), "invalid utf8 sequence")
         -- truncated 2-byte: continuation replaced by lead
-        try test::err(Str.from_utf8_checked([U8(226), 195, 164][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(226), 195, 164][..]), "invalid utf8 sequence")
 
         -- truncated 3-byte: no continuations
-        try test::err(Str.from_utf8_checked([U8(65), 226][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 226][..]), "invalid utf8 sequence")
         -- truncated 3-byte: one continuation then end
-        try test::err(Str.from_utf8_checked([U8(65), 226, 130][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 226, 130][..]), "invalid utf8 sequence")
         -- truncated 3-byte: second continuation replaced by ascii
-        try test::err(Str.from_utf8_checked([U8(226), 130, 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(226), 130, 65][..]), "invalid utf8 sequence")
 
         -- truncated 4-byte: no continuations
-        try test::err(Str.from_utf8_checked([U8(65), 240][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 240][..]), "invalid utf8 sequence")
         -- truncated 4-byte: one continuation
-        try test::err(Str.from_utf8_checked([U8(65), 240, 157][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 240, 157][..]), "invalid utf8 sequence")
         -- truncated 4-byte: two continuations
-        try test::err(Str.from_utf8_checked([U8(65), 240, 157, 132][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 240, 157, 132][..]), "invalid utf8 sequence")
         -- truncated 4-byte: third continuation replaced by ascii
-        try test::err(Str.from_utf8_checked([U8(240), 157, 132, 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(240), 157, 132, 65][..]), "invalid utf8 sequence")
 
         -- surrogate U+D800
-        try test::err(Str.from_utf8_checked([U8(237), 160, 128][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(237), 160, 128][..]), "invalid utf8 sequence")
         -- surrogate U+DFFF
-        try test::err(Str.from_utf8_checked([U8(237), 191, 191][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(237), 191, 191][..]), "invalid utf8 sequence")
         -- surrogate in middle, valid chars around it
-        try test::err(Str.from_utf8_checked([U8(65), 237, 160, 128, 66][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 237, 160, 128, 66][..]), "invalid utf8 sequence")
 
         -- overlong: U+0000 encoded as 2-byte [192, 128]
-        try test::err(Str.from_utf8_checked([U8(192), 128][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(192), 128][..]), "invalid utf8 sequence")
 
         -- above U+10FFFF: [244, 144, 128, 128]
-        try test::err(Str.from_utf8_checked([U8(244), 144, 128, 128][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(244), 144, 128, 128][..]), "invalid utf8 sequence")
     })
     suite.test("from_utf8_lossy", fun() !void {
         let @local = Arena()
         -- ascii
-        try test::eq("ABC", Str.from_utf8_lossy([U8(65), 66, 67][..], @local))
+        try test.eq("ABC", Str.from_utf8_lossy([U8(65), 66, 67][..], @local))
         -- 2-byte
-        try test::eq("ä", Str.from_utf8_lossy([U8(195), 164][..], @local))
+        try test.eq("ä", Str.from_utf8_lossy([U8(195), 164][..], @local))
         -- 3-byte
-        try test::eq("€", Str.from_utf8_lossy([U8(226), 130, 172][..], @local))
+        try test.eq("€", Str.from_utf8_lossy([U8(226), 130, 172][..], @local))
         -- 4-byte
-        try test::eq("𝄞", Str.from_utf8_lossy([U8(240), 157, 132, 158][..], @local))
+        try test.eq("𝄞", Str.from_utf8_lossy([U8(240), 157, 132, 158][..], @local))
         -- mixed
-        try test::eq("Aä€𝄞", Str.from_utf8_lossy([U8(65), 195, 164, 226, 130, 172, 240, 157, 132, 158][..], @local))
+        try test.eq("Aä€𝄞", Str.from_utf8_lossy([U8(65), 195, 164, 226, 130, 172, 240, 157, 132, 158][..], @local))
         -- empty is valid
         let empty []U8 = []
-        try test::eq("", Str.from_utf8_lossy(empty, @local))
+        try test.eq("", Str.from_utf8_lossy(empty, @local))
 
         -- bare continuation byte
-        try test::eq("\u{FFFD}A", Str.from_utf8_lossy([U8(128), 65][..], @local))
-        try test::eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 128, 66][..], @local))
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 128][..], @local))
+        try test.eq("\u{FFFD}A", Str.from_utf8_lossy([U8(128), 65][..], @local))
+        try test.eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 128, 66][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 128][..], @local))
 
         -- multiple consecutive: one replacement each
-        try test::eq("\u{FFFD}\u{FFFD}A", Str.from_utf8_lossy([U8(128), 191, 65][..], @local))
+        try test.eq("\u{FFFD}\u{FFFD}A", Str.from_utf8_lossy([U8(128), 191, 65][..], @local))
 
         -- invalid lead byte (248+)
-        try test::eq("\u{FFFD}A", Str.from_utf8_lossy([U8(248), 65][..], @local))
-        try test::eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 248, 66][..], @local))
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 248][..], @local))
+        try test.eq("\u{FFFD}A", Str.from_utf8_lossy([U8(248), 65][..], @local))
+        try test.eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 248, 66][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 248][..], @local))
 
         -- truncated 2-byte
         -- lead at end of input
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 195][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 195][..], @local))
         -- continuation replaced by ASCII (must not consume the A)
-        try test::eq("\u{FFFD}A", Str.from_utf8_lossy([U8(195), 65][..], @local))
+        try test.eq("\u{FFFD}A", Str.from_utf8_lossy([U8(195), 65][..], @local))
         -- continuation replaced by valid multi-byte lead (must not consume ä)
-        try test::eq("\u{FFFD}ä", Str.from_utf8_lossy([U8(226), 195, 164][..], @local))
+        try test.eq("\u{FFFD}ä", Str.from_utf8_lossy([U8(226), 195, 164][..], @local))
 
         -- truncated 3-byte
         -- no continuations before end
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 226][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 226][..], @local))
         -- one continuation then end of input
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 226, 130][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 226, 130][..], @local))
         -- second continuation replaced by ASCII
-        try test::eq("\u{FFFD}A", Str.from_utf8_lossy([U8(226), 130, 65][..], @local))
+        try test.eq("\u{FFFD}A", Str.from_utf8_lossy([U8(226), 130, 65][..], @local))
 
         -- truncated 4-byte
         -- no continuations before end
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 240][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 240][..], @local))
         -- one continuation then end
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 240, 157][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 240, 157][..], @local))
         -- two continuations then end
-        try test::eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 240, 157, 132][..], @local))
+        try test.eq("A\u{FFFD}", Str.from_utf8_lossy([U8(65), 240, 157, 132][..], @local))
         -- third continuation replaced by ASCII
-        try test::eq("\u{FFFD}A", Str.from_utf8_lossy([U8(240), 157, 132, 65][..], @local))
+        try test.eq("\u{FFFD}A", Str.from_utf8_lossy([U8(240), 157, 132, 65][..], @local))
 
         -- surrogate halves
         -- U+D800 = [237, 160, 128]
-        try test::eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 237, 160, 128, 66][..], @local))
+        try test.eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 237, 160, 128, 66][..], @local))
         -- U+DFFF = [237, 191, 191]
-        try test::eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 237, 191, 191, 66][..], @local))
+        try test.eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 237, 191, 191, 66][..], @local))
 
         -- valid sequences survive after recovery
-        try test::eq("\u{FFFD}ä\u{FFFD}€\u{FFFD}", Str.from_utf8_lossy([U8(128), 195, 164, 128, 226, 130, 172, 128][..], @local))
+        try test.eq("\u{FFFD}ä\u{FFFD}€\u{FFFD}", Str.from_utf8_lossy([U8(128), 195, 164, 128, 226, 130, 172, 128][..], @local))
 
         -- overlong: [192, 128] → one replacement, then nothing (128 is bare continuation, another replacement)
-        try test::eq("\u{FFFD}\u{FFFD}", Str.from_utf8_lossy([U8(192), 128][..], @local))
+        try test.eq("\u{FFFD}\u{FFFD}", Str.from_utf8_lossy([U8(192), 128][..], @local))
         -- overlong: [193, 191] → same
-        try test::eq("\u{FFFD}\u{FFFD}", Str.from_utf8_lossy([U8(193), 191][..], @local))
+        try test.eq("\u{FFFD}\u{FFFD}", Str.from_utf8_lossy([U8(193), 191][..], @local))
         -- overlong in middle, valid chars around it
-        try test::eq("A\u{FFFD}\u{FFFD}B", Str.from_utf8_lossy([U8(65), 192, 128, 66][..], @local))
+        try test.eq("A\u{FFFD}\u{FFFD}B", Str.from_utf8_lossy([U8(65), 192, 128, 66][..], @local))
 
         -- above U+10FFFF: [244, 144, 128, 128] → one replacement
-        try test::eq("\u{FFFD}", Str.from_utf8_lossy([U8(244), 144, 128, 128][..], @local))
+        try test.eq("\u{FFFD}", Str.from_utf8_lossy([U8(244), 144, 128, 128][..], @local))
         -- above U+10FFFF in middle
-        try test::eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 244, 144, 128, 128, 66][..], @local))
+        try test.eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 244, 144, 128, 128, 66][..], @local))
     })
     suite.test("split", fun() !void {
         mut it = "these are some words".split(" ")
-        try test::eq(Option("these"), (&mut it).next())
-        try test::eq(Option("are"), (&mut it).next())
-        try test::eq(Option("some"), (&mut it).next())
-        try test::eq(Option("words"), (&mut it).next())
-        try test::eq(Option<Str>(None()), (&mut it).next())
+        try test.eq(Option("these"), (&mut it).next())
+        try test.eq(Option("are"), (&mut it).next())
+        try test.eq(Option("some"), (&mut it).next())
+        try test.eq(Option("words"), (&mut it).next())
+        try test.eq(Option<Str>(None()), (&mut it).next())
 
         it = "".split(" ")
-        try test::eq(Option<Str>(None()), (&mut it).next())
+        try test.eq(Option<Str>(None()), (&mut it).next())
 
         it = "test".split("")
-        try test::eq(Option<Str>(None()), (&mut it).next(), "empty separator does not yield anything")
+        try test.eq(Option<Str>(None()), (&mut it).next(), "empty separator does not yield anything")
 
         it = "a b  ".split(" ")
-        try test::eq(Option("a"), (&mut it).next())
-        try test::eq(Option("b"), (&mut it).next())
-        try test::eq(Option(""), (&mut it).next())
-        try test::eq(Option<Str>(None()), (&mut it).next())
+        try test.eq(Option("a"), (&mut it).next())
+        try test.eq(Option("b"), (&mut it).next())
+        try test.eq(Option(""), (&mut it).next())
+        try test.eq(Option<Str>(None()), (&mut it).next())
     })
     _ = suite.run()
 }

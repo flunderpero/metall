@@ -131,11 +131,15 @@ func (e *Engine) expandMacrosInBlock(blockNodeID ast.NodeID, block *ast.Block) (
 
 func (e *Engine) isMacroCall(call ast.Call) (bool, ast.NodeID) {
 	calleeNode := e.ast.Node(call.Callee)
-	path, ok := calleeNode.Kind.(ast.Path)
-	if !ok || len(path.Segments) != 2 {
+	fieldAccess, ok := calleeNode.Kind.(ast.FieldAccess)
+	if !ok {
 		return false, 0
 	}
-	moduleName := path.Segments[0]
+	targetIdent, ok := e.ast.Node(fieldAccess.Target).Kind.(ast.Ident)
+	if !ok {
+		return false, 0
+	}
+	moduleName := targetIdent.Name
 	modBinding, ok := e.lookup(call.Callee, moduleName, -1)
 	if !ok {
 		return false, 0
@@ -160,7 +164,7 @@ func (e *Engine) expandMacroCall(
 	}
 	macroModule := base.Cast[ast.Module](e.ast.Node(macroModuleNodeID).Kind)
 	calleeNode := e.ast.Node(call.Callee)
-	funName := base.Cast[ast.Path](calleeNode.Kind).Segments[1]
+	funName := base.Cast[ast.FieldAccess](calleeNode.Kind).Field.Name
 	macroSource := e.macroModuleSource(macroModuleNodeID)
 	if macroSource == "" {
 		e.diag(span, "could not read macro module source")
@@ -217,11 +221,15 @@ func (e *Engine) renderMacroArg(argNode *ast.Node) (macros.MacroArg, bool) {
 
 func (e *Engine) renderCompTypeOf(call ast.Call, span base.Span) (macros.MacroArg, bool) {
 	calleeNode := e.ast.Node(call.Callee)
-	path, ok := calleeNode.Kind.(ast.Path)
-	if !ok || len(path.Segments) != 2 || path.Segments[1] != "type_of" {
+	fieldAccess, ok := calleeNode.Kind.(ast.FieldAccess)
+	if !ok || fieldAccess.Field.Name != "type_of" {
 		return macros.MacroArg{}, false
 	}
-	modBinding, ok := e.lookup(call.Callee, path.Segments[0], -1)
+	targetIdent, ok := e.ast.Node(fieldAccess.Target).Kind.(ast.Ident)
+	if !ok {
+		return macros.MacroArg{}, false
+	}
+	modBinding, ok := e.lookup(call.Callee, targetIdent.Name, -1)
 	if !ok {
 		return macros.MacroArg{}, false
 	}
@@ -229,11 +237,11 @@ func (e *Engine) renderCompTypeOf(call ast.Call, span base.Span) (macros.MacroAr
 	if !ok || modType.Name != "std::comp" {
 		return macros.MacroArg{}, false
 	}
-	if len(path.TypeArgs) != 1 {
+	if len(fieldAccess.TypeArgs) != 1 {
 		e.diag(span, "comp::type_of requires exactly one type argument")
 		return macros.MacroArg{}, false
 	}
-	typeID, status := e.Query(path.TypeArgs[0])
+	typeID, status := e.Query(fieldAccess.TypeArgs[0])
 	if status.Failed() {
 		return macros.MacroArg{}, false
 	}
@@ -267,21 +275,21 @@ func (r *compTypeRenderer) letTyped(typeName string, expr string) string {
 
 func (r *compTypeRenderer) render(typeID TypeID, span base.Span) (string, bool) {
 	if typeID == r.engine.strTyp {
-		return "comp::StrType()", true
+		return "comp.StrType()", true
 	}
 	if typeID == r.engine.boolTyp {
-		return "comp::BoolType()", true
+		return "comp.BoolType()", true
 	}
 	if typeID == r.engine.voidTyp {
-		return "comp::VoidType()", true
+		return "comp.VoidType()", true
 	}
 	if typeID == r.engine.neverTyp {
-		return "comp::NeverType()", true
+		return "comp.NeverType()", true
 	}
 	typ := r.engine.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
 	case IntType:
-		return fmt.Sprintf("comp::IntType(%q, %t, %d)", kind.Name, kind.Signed, kind.Bits), true
+		return fmt.Sprintf("comp.IntType(%q, %t, %d)", kind.Name, kind.Signed, kind.Bits), true
 	case StructType:
 		return r.renderStruct(kind, span)
 	case UnionType:
@@ -298,12 +306,12 @@ func (r *compTypeRenderer) renderStruct(kind StructType, span base.Span) (string
 		if !ok {
 			return "", false
 		}
-		val := r.letTyped("comp::Type", fExpr)
+		val := r.letTyped("comp.Type", fExpr)
 		ref := r.let(fmt.Sprintf("@a.new(%s)", val))
-		fields = append(fields, fmt.Sprintf("comp::Field(%q, %s, false)", f.Name, ref))
+		fields = append(fields, fmt.Sprintf("comp.Field(%q, %s, false)", f.Name, ref))
 	}
 	return fmt.Sprintf(
-		"comp::StructType(%q, [%s][..])", shortName(kind.Name), strings.Join(fields, ", "),
+		"comp.StructType(%q, [%s][..])", shortName(kind.Name), strings.Join(fields, ", "),
 	), true
 }
 
@@ -314,12 +322,12 @@ func (r *compTypeRenderer) renderUnion(kind UnionType, span base.Span) (string, 
 		if !ok {
 			return "", false
 		}
-		val := r.letTyped("comp::Type", vExpr)
+		val := r.letTyped("comp.Type", vExpr)
 		ref := r.let(fmt.Sprintf("@a.new(%s)", val))
 		variants = append(variants, ref)
 	}
 	return fmt.Sprintf(
-		"comp::UnionType(%q, [%s][..])", shortName(kind.Name), strings.Join(variants, ", "),
+		"comp.UnionType(%q, [%s][..])", shortName(kind.Name), strings.Join(variants, ", "),
 	), true
 }
 

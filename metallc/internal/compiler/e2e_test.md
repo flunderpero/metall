@@ -2967,12 +2967,12 @@ Telecaster
 **import local module**
 
 ```metall
-use local::e2e
+use local.e2e
 
 fun main() void {
-    e2e::say_hello()
+    e2e.say_hello()
 
-    let f = e2e::Foo(123)
+    let f = e2e.Foo(123)
     f.print()
 }
 ```
@@ -3851,13 +3851,13 @@ hi
 **multiple materializations of generic with inner struct**
 
 ```metall
-use std::ffi
+use std.ffi
 
 fun wrap<T>(val T) Int {
     struct W { inner T }
     let w = W(val)
     _ = w
-    ffi::sizeof<W>()
+    ffi.sizeof<W>()
 }
 
 fun main() void {
@@ -4514,9 +4514,9 @@ test.met:2:5: nope
 **simple macro**
 
 ```metall
-use local::hello_macro
+use local.hello_macro
 
-hello_macro::apply()
+hello_macro.apply()
 
 fun main() void {
     greet()
@@ -4530,9 +4530,9 @@ hello from macro
 **macro with argument**
 
 ```metall
-use local::repeat_macro
+use local.repeat_macro
 
-repeat_macro::apply(3)
+repeat_macro.apply(3)
 
 fun main() void {
     repeat()
@@ -4721,12 +4721,12 @@ true
 **module-level let imported from another module**
 
 ```metall
-use local::e2e
+use local.e2e
 
-let local_answer = e2e::the_answer + 1
+let local_answer = e2e.the_answer + 1
 
 fun main() void {
-    DebugIntern.print_int(e2e::the_answer)
+    DebugIntern.print_int(e2e.the_answer)
     DebugIntern.print_int(local_answer)
 }
 ```
@@ -4835,19 +4835,19 @@ test.met:2:5: something went wrong
 **fun_ptr and FunPtr.call**
 
 ```metall
-use std::ffi
+use std.ffi
 
 fun hello() void {
     DebugIntern.print_str("hello")
 }
 
 fun main() void {
-    let fp = ffi::fun_ptr(hello)
+    let fp = ffi.fun_ptr(hello)
     fp.call()
-    let fp2 = ffi::fun_ptr(fun() void { DebugIntern.print_str("lambda") })
+    let fp2 = ffi.fun_ptr(fun() void { DebugIntern.print_str("lambda") })
     fp2.call()
     let msg = "captured"
-    let fp3 = ffi::fun_ptr(fun[msg]() void { DebugIntern.print_str(msg) })
+    let fp3 = ffi.fun_ptr(fun[msg]() void { DebugIntern.print_str(msg) })
     fp3.call()
 }
 ```
@@ -4861,20 +4861,20 @@ captured
 **fun_ptr_alloc survives outside its creating scope**
 
 ```metall
-use std::ffi
+use std.ffi
 
 fun hello() void {
     DebugIntern.print_str("hello")
 }
 
-fun make_fun_ptr(@a Arena) ffi::FunPtr {
+fun make_fun_ptr(@a Arena) ffi.FunPtr {
     let msg = "from arena"
-    ffi::fun_ptr_alloc(@a, fun[msg]() void { DebugIntern.print_str(msg) })
+    ffi.fun_ptr_alloc(@a, fun[msg]() void { DebugIntern.print_str(msg) })
 }
 
 fun main() void {
     let @a = Arena()
-    let fp1 = ffi::fun_ptr_alloc(@a, hello)
+    let fp1 = ffi.fun_ptr_alloc(@a, hello)
     fp1.call()
     let fp2 = make_fun_ptr(@a)
     fp2.call()
@@ -4904,25 +4904,25 @@ fun main() void {
 **ffi sizeof and pointers**
 
 ```metall
-use std::ffi
+use std.ffi
 
 fun main() void {
-    DebugIntern.print_int(ffi::sizeof<U8>())
-    DebugIntern.print_int(ffi::sizeof<I32>())
-    DebugIntern.print_int(ffi::sizeof<Int>())
-    DebugIntern.print_int(ffi::sizeof<Bool>())
-    DebugIntern.print_int(ffi::sizeof<[]U8>())
-    DebugIntern.print_int(ffi::sizeof<Str>())
+    DebugIntern.print_int(ffi.sizeof<U8>())
+    DebugIntern.print_int(ffi.sizeof<I32>())
+    DebugIntern.print_int(ffi.sizeof<Int>())
+    DebugIntern.print_int(ffi.sizeof<Bool>())
+    DebugIntern.print_int(ffi.sizeof<[]U8>())
+    DebugIntern.print_int(ffi.sizeof<Str>())
     struct Pair { a Int b Int }
-    DebugIntern.print_int(ffi::sizeof<Pair>())
+    DebugIntern.print_int(ffi.sizeof<Pair>())
 
     let x = 42
-    let p = ffi::ref_ptr<Int>(&x)
-    DebugIntern.print_bool(ffi::sizeof<Int>() > 0)
+    let p = ffi.ref_ptr<Int>(&x)
+    DebugIntern.print_bool(ffi.sizeof<Int>() > 0)
 
     let text = [U8(65), 65, 65, 0][..]
-    let ptr = ffi::slice_ptr<U8>(text)
-    DebugIntern.print_bool(ffi::sizeof<ffi::Ptr<U8>>() > 0)
+    let ptr = ffi.slice_ptr<U8>(text)
+    DebugIntern.print_bool(ffi.sizeof<ffi.Ptr<U8>>() > 0)
 }
 ```
 
@@ -4941,10 +4941,10 @@ true
 **ffi sizeof void is zero**
 
 ```metall
-use std::ffi
+use std.ffi
 
 fun main() void {
-    DebugIntern.print_int(ffi::sizeof<void>())
+    DebugIntern.print_int(ffi.sizeof<void>())
 }
 ```
 
@@ -4955,11 +4955,11 @@ fun main() void {
 **ffi PtrMut write and read void**
 
 ```metall
-use std::ffi
+use std.ffi
 
 fun main() void {
     mut x = void
-    let p = ffi::ref_ptr_mut<void>(&mut x)
+    let p = ffi.ref_ptr_mut<void>(&mut x)
     unsafe p.write(void)
     let v = unsafe p.read()
     _ = v
@@ -4974,13 +4974,13 @@ ok
 **ffi strlen via slice_ptr**
 
 ```metall
-use std::ffi
+use std.ffi
 
-extern fun strlen(s ffi::Ptr<U8>) Int
+extern fun strlen(s ffi.Ptr<U8>) Int
 
 fun main() void {
     let text = [U8(65), 65, 65, 0][..]
-    let ptr = ffi::slice_ptr<U8>(text)
+    let ptr = ffi.slice_ptr<U8>(text)
     let len = unsafe strlen(ptr)
     DebugIntern.print_int(len)
 }
@@ -4993,12 +4993,12 @@ fun main() void {
 **call extern function from imported module and main module**
 
 ```metall
-use local::e2e_ffi
+use local.e2e_ffi
 
 extern fun abs(n I32) I32
 
 fun main() void {
-    let x = unsafe e2e_ffi::abs(I32(-7))
+    let x = unsafe e2e_ffi.abs(I32(-7))
     DebugIntern.print_int(x.to_int())
     let y = unsafe abs(I32(-42))
     DebugIntern.print_int(y.to_int())
@@ -5013,14 +5013,14 @@ fun main() void {
 **extern functions don't pollute the root ns**
 
 ```metall
-use local::e2e_ffi
+use local.e2e_ffi
 
 fun abs(n Int) Int {
     if n < 0 { n * -1 } else { n }
 }
 
 fun main() void {
-    let x = unsafe e2e_ffi::abs(I32(-7))
+    let x = unsafe e2e_ffi.abs(I32(-7))
     DebugIntern.print_int(x.to_int())
     let y = abs(-42)
     DebugIntern.print_int(y)
@@ -5035,19 +5035,19 @@ fun main() void {
 **ffi PtrMut.write**
 
 ```metall
-use std::ffi
+use std.ffi
 
 struct Pair { a Int b Int }
 
 fun main() void {
     mut x = 0
-    let p = ffi::ref_ptr_mut<Int>(&mut x)
+    let p = ffi.ref_ptr_mut<Int>(&mut x)
     unsafe p.write(42)
     DebugIntern.print_int(x)
 
     -- PtrMut.write copies the value; mutating the source doesn't affect the target.
     mut target = Pair(0, 0)
-    let tp = ffi::ref_ptr_mut<Pair>(&mut target)
+    let tp = ffi.ref_ptr_mut<Pair>(&mut target)
     mut source = Pair(1, 2)
     unsafe tp.write(source)
     source.a = 99
@@ -5066,24 +5066,24 @@ fun main() void {
 **ffi Ptr.read and PtrMut.read**
 
 ```metall
-use std::ffi
+use std.ffi
 
 struct Pair { a Int b Int }
 
 fun main() void {
     -- Ptr.read on immutable reference
     let x = 42
-    let p = ffi::ref_ptr<Int>(&x)
+    let p = ffi.ref_ptr<Int>(&x)
     DebugIntern.print_int(unsafe p.read())
 
     -- PtrMut.read on mutable reference
     mut y = 99
-    let pm = ffi::ref_ptr_mut<Int>(&mut y)
+    let pm = ffi.ref_ptr_mut<Int>(&mut y)
     DebugIntern.print_int(unsafe pm.read())
 
     -- read a struct through a pointer
     let pair = Pair(1, 2)
-    let pp = ffi::ref_ptr<Pair>(&pair)
+    let pp = ffi.ref_ptr<Pair>(&pair)
     let copy = unsafe pp.read()
     DebugIntern.print_int(copy.a)
     DebugIntern.print_int(copy.b)
@@ -5100,14 +5100,14 @@ fun main() void {
 **ffi pointer arithmetic on struct slice**
 
 ```metall
-use std::ffi
+use std.ffi
 
 struct Vec2 { x Int y Int }
 
 fun main() void {
     let @a = Arena()
     let data = @a.slice_mut<Vec2>(3, Vec2(0, 0))
-    let base = ffi::slice_ptr_mut<Vec2>(data)
+    let base = ffi.slice_ptr_mut<Vec2>(data)
 
     -- write all elements via pointer arithmetic
     unsafe base.offset(0).write(Vec2(10, 20))
@@ -5115,7 +5115,7 @@ fun main() void {
     unsafe base.offset(2).write(Vec2(50, 60))
 
     -- read all elements back via pointer arithmetic on immutable ptr
-    let rp = ffi::slice_ptr<Vec2>(data)
+    let rp = ffi.slice_ptr<Vec2>(data)
     let v0 = unsafe rp.offset(0).read()
     let v1 = unsafe rp.offset(1).read()
     let v2 = unsafe rp.offset(2).read()
@@ -5128,10 +5128,10 @@ fun main() void {
 
     -- also works on primitive types
     let ints = @a.slice_mut<Int>(2, 0)
-    let ip = ffi::slice_ptr_mut<Int>(ints)
+    let ip = ffi.slice_ptr_mut<Int>(ints)
     unsafe ip.offset(0).write(100)
     unsafe ip.offset(1).write(200)
-    let irp = ffi::slice_ptr<Int>(ints)
+    let irp = ffi.slice_ptr<Int>(ints)
     DebugIntern.print_int(unsafe irp.offset(0).read())
     DebugIntern.print_int(unsafe irp.offset(1).read())
 }
@@ -5151,18 +5151,18 @@ fun main() void {
 **ffi Ptr.as_slice and PtrMut.as_slice**
 
 ```metall
-use std::ffi
+use std.ffi
 
 fun main() void {
     let @a = Arena()
     let data = @a.slice_mut<Int>(3, 0)
 
     -- write via PtrMut, read back via as_slice
-    let wp = ffi::slice_ptr_mut<Int>(data)
+    let wp = ffi.slice_ptr_mut<Int>(data)
     unsafe wp.offset(0).write(10)
     unsafe wp.offset(1).write(20)
     unsafe wp.offset(2).write(30)
-    let rp = ffi::slice_ptr<Int>(data)
+    let rp = ffi.slice_ptr<Int>(data)
     let s = unsafe rp.as_slice(3)
     DebugIntern.print_int(s[0])
     DebugIntern.print_int(s[1])
@@ -5187,17 +5187,17 @@ fun main() void {
 **ffi is_null with C function returning null**
 
 ```metall
-use std::ffi
+use std.ffi
 
-extern fun fopen(path ffi::Ptr<U8>, mode ffi::Ptr<U8>) ffi::PtrMut<U8>
+extern fun fopen(path ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.PtrMut<U8>
 
 fun main() void {
-    let path = ffi::slice_ptr<U8>([U8(0)][..])
-    let mode = ffi::slice_ptr<U8>([U8(0)][..])
+    let path = ffi.slice_ptr<U8>([U8(0)][..])
+    let mode = ffi.slice_ptr<U8>([U8(0)][..])
     let fp = unsafe fopen(path, mode)
     DebugIntern.print_bool(fp.is_null())
     let x = 42
-    let p = ffi::ref_ptr<Int>(&x)
+    let p = ffi.ref_ptr<Int>(&x)
     DebugIntern.print_bool(p.is_null())
 }
 ```

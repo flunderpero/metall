@@ -1,10 +1,10 @@
-use std::test
-use std::list
+use std.test
+use std.list
 
 fun main() void {
     let @local = Arena()
 
-    let suite = test::Suite.new("StrBuilder", @local)
+    let suite = test.Suite.new("StrBuilder", @local)
     suite.test("u64", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
@@ -19,21 +19,21 @@ fun main() void {
         sut.u64(13370, 16)
         sut.str(" ")
         sut.u64(13370, 16, true)
-        try test::eq("13370 11010000111010 32072 13370 343a 343A", sut.as_str())
+        try test.eq("13370 11010000111010 32072 13370 343a 343A", sut.as_str())
 
         -- min_width
         sut.reset()
         sut.u64(1, 10, false, 1)
-        try test::eq("1", sut.as_str())
+        try test.eq("1", sut.as_str())
         sut.reset()
         sut.u64(1, 10, false, 2)
-        try test::eq("01", sut.as_str())
+        try test.eq("01", sut.as_str())
         sut.reset()
         sut.u64(123, 10, false, 5)
-        try test::eq("00123", sut.as_str())
+        try test.eq("00123", sut.as_str())
         sut.reset()
         sut.u64(23, 10, false, 5)
-        try test::eq("00023", sut.as_str())
+        try test.eq("00023", sut.as_str())
     })
     suite.test("int", fun() !void {
         let @local = Arena()
@@ -51,24 +51,24 @@ fun main() void {
         sut.int(13370, 16)
         sut.str(" ")
         sut.int(13370, 16, true)
-        try test::eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.as_str())
+        try test.eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.as_str())
 
         -- min_width
         sut.reset()
         sut.int(1, 10, false, 1)
-        try test::eq("1", sut.as_str())
+        try test.eq("1", sut.as_str())
         sut.reset()
         sut.int(1, 10, false, 2)
-        try test::eq("01", sut.as_str())
+        try test.eq("01", sut.as_str())
         sut.reset()
         sut.int(123, 10, false, 5)
-        try test::eq("00123", sut.as_str())
+        try test.eq("00123", sut.as_str())
         sut.reset()
         sut.int(23, 10, false, 5)
-        try test::eq("00023", sut.as_str())
+        try test.eq("00023", sut.as_str())
         sut.reset()
         sut.int(-123, 10, false, 5)
-        try test::eq("-0123", sut.as_str())
+        try test.eq("-0123", sut.as_str())
     })
     suite.test("slice", fun() !void {
         let @local = Arena()
@@ -76,21 +76,21 @@ fun main() void {
         let s = ["hello", "there", "again"][..]
 
         sut.slice(s, " ")
-        try test::eq("hello there again", sut.as_str())
+        try test.eq("hello there again", sut.as_str())
 
         sut.reset()
         sut.slice(s, ", ", 13)
-        try test::eq("hello, the...", sut.as_str())
+        try test.eq("hello, the...", sut.as_str())
 
         sut.reset()
         sut.slice(s, ", ", 3)
-        try test::eq("...", sut.as_str())
+        try test.eq("...", sut.as_str())
 
         -- Make sure we don't truncate the output in the middle of a rune.
         let u = ["hi", "😀😀", "ha"][..]
         sut.reset()
         sut.slice(u, " ", 13)
-        try test::eq("hi 😀...", sut.as_str())
+        try test.eq("hi 😀...", sut.as_str())
     })
     suite.test("rune", fun() !void {
         let @local = Arena()
@@ -99,52 +99,52 @@ fun main() void {
         sut.rune('Ä')
         sut.rune('€')
         sut.rune('😀')
-        try test::eq("AÄ€😀", sut.as_str())
+        try test.eq("AÄ€😀", sut.as_str())
     })
     suite.test("join", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
-        let l = list::List.new<Int>(32, @local)
+        let l = list.List.new<Int>(32, @local)
         l.push(1)
         l.push(2)
         l.push(3)
         mut it = l.iter()
         sut.join(&mut it, ", ")
-        try test::eq("1, 2, 3", sut.as_str())
+        try test.eq("1, 2, 3", sut.as_str())
     })
     suite.test("as_cstr", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         sut.str("hello")
         let cstr = sut.as_cstr()
-        try test::eq([U8('h'), 'e', 'l', 'l', 'o', 0][..], cstr) 
+        try test.eq([U8('h'), 'e', 'l', 'l', 'o', 0][..], cstr) 
         -- This is just a view, the underlying StrBuilder can change!
         sut.reset()
         sut.str("ga")
-        try test::eq([U8('g'), 'a', 'l', 'l', 'o', 0][..], cstr) 
+        try test.eq([U8('g'), 'a', 'l', 'l', 'o', 0][..], cstr) 
     })
     suite.test("as_str", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         sut.str("hello")
         let str = sut.as_str()
-        try test::eq("hello", str)
+        try test.eq("hello", str)
         -- This is just a view, the underlying StrBuilder can change!
         sut.reset()
         sut.str("ga")
-        try test::eq("gallo", str)
+        try test.eq("gallo", str)
     })
     suite.test("trim_right", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
         sut.str("hello \t \n \r")
         sut.trim_right()
-        try test::eq("hello", sut.as_str())
+        try test.eq("hello", sut.as_str())
 
         sut.reset()
         sut.str("hello!!?")
         sut.trim_right(['!', '?'][..])
-        try test::eq("hello", sut.as_str())
+        try test.eq("hello", sut.as_str())
     })
     _ = suite.run()
 }

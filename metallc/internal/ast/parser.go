@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
-	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -162,7 +160,7 @@ func (p *Parser) ParseImport() (NodeID, bool) {
 		}
 		segments = append(segments, segment.Value)
 		t, ok := p.mayPeek()
-		if !ok || t.Kind != token.ColonColon {
+		if !ok || t.Kind != token.Dot {
 			break
 		}
 		p.next()
@@ -689,7 +687,7 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 				expr = p.NewFieldAccess(expr, Name{next.Value, next.Span}, nil, span.Combine(p.span()))
 				continue
 			}
-			if next.Kind != token.Ident {
+			if next.Kind != token.Ident && next.Kind != token.TypeIdent {
 				p.diagnostic(next.Span, "unexpected token: expected <identifier> or *, got %s", next.Kind)
 				return ParseFailed, false
 			}
@@ -809,19 +807,11 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = return_
 	case token.Ident:
-		if next, ok := p.mayPeek1(); ok && next.Kind == token.ColonColon {
-			path, ok := p.ParsePath()
-			if !ok {
-				return ParseFailed, false
-			}
-			expr = path
-		} else {
-			ident, ok := p.ParseIdent()
-			if !ok {
-				return ParseFailed, false
-			}
-			expr = ident
+		ident, ok := p.ParseIdent()
+		if !ok {
+			return ParseFailed, false
 		}
+		expr = ident
 	case token.TypeIdent:
 		// Peek ahead: if the next token is `.`, this is a qualified name
 		// (e.g. `Foo.bar`), not a type construction.
@@ -1183,19 +1173,23 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 			p.next()
 			return p.NewSimpleType(Name{t.Value, span}, nil, span), true
 		}
-		if next, ok := p.mayPeek1(); ok && next.Kind == token.ColonColon {
-			path, ok := p.ParsePath()
+		if p.lookAheadConsume(token.Ident, token.Dot) {
+			// Module-qualified type: e.g. `io.Printer`, `ffi.Ptr<Int>`
+			typeIdent, ok := p.expect(token.TypeIdent)
 			if !ok {
 				return ParseFailed, false
 			}
-			pathNode := base.Cast[Path](p.AST.Node(path).Kind)
-			last := pathNode.Segments[len(pathNode.Segments)-1]
-			firstRune, _ := utf8.DecodeRuneInString(last)
-			if firstRune == utf8.RuneError || !unicode.IsUpper(firstRune) {
-				p.diagnostic(p.span(), "expected a type identifier, got %s", last)
+			typeArgs, ok := p.parseTypeArgs()
+			if !ok {
 				return ParseFailed, false
 			}
-			return path, true
+			target := p.NewIdent(t.Value, nil, t.Span)
+			return p.NewFieldAccess(
+				target,
+				Name{typeIdent.Value, typeIdent.Span},
+				typeArgs,
+				t.Span.Combine(p.span()),
+			), true
 		}
 		p.diagnostic(span, "unexpected token: expected <type identifier> or &, got %s", t.Kind)
 		return ParseFailed, false
@@ -1433,50 +1427,6 @@ func (p *Parser) ParseNumber() (NodeID, bool) {
 	return p.NewInt(n, p.span()), true
 }
 
-func (p *Parser) ParsePath() (NodeID, bool) {
-	segments := []string{}
-	var span base.Span
-	for {
-		segment, ok := p.expect(token.Ident)
-		if !ok {
-			return ParseFailed, false
-		}
-		if len(segments) == 0 {
-			span = segment.Span
-		}
-		segments = append(segments, segment.Value)
-		t, ok := p.mayPeek()
-		if !ok || t.Kind != token.ColonColon {
-			break
-		}
-		p.next()
-		t, ok = p.mustPeek()
-		if !ok {
-			return ParseFailed, false
-		}
-		if t.Kind == token.TypeIdent && len(segments) >= 1 {
-			p.next()
-			lastSegment := t.Value
-			// If followed by `.ident`, this is a method reference like `lib::Foo.bar`.
-			if dot, ok := p.mayPeek(); ok && dot.Kind == token.Dot {
-				p.next()
-				method, ok := p.expect(token.Ident)
-				if !ok {
-					return ParseFailed, false
-				}
-				lastSegment += "." + method.Value
-			}
-			segments = append(segments, lastSegment)
-			break
-		}
-	}
-	typeArgs, ok := p.parseTypeArgs()
-	if !ok {
-		return ParseFailed, false
-	}
-	return p.NewPath(segments, typeArgs, span.Combine(p.span())), true
-}
-
 func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {
 	if _, ok := p.expect(token.LBracketImmediate); !ok {
 		return ParseFailed, false
@@ -1696,15 +1646,13 @@ func (p *Parser) parseCaseBody() ([]NodeID, bool) {
 }
 
 func (p *Parser) isStructTarget(nodeID NodeID) bool {
-	path, ok := p.Node(nodeID).Kind.(Path)
-	if !ok {
+	switch kind := p.Node(nodeID).Kind.(type) {
+	case FieldAccess:
+		name := kind.Field.Name
+		return len(name) > 0 && unicode.IsUpper(rune(name[0]))
+	default:
 		return false
 	}
-	last := path.Segments[len(path.Segments)-1]
-	if strings.Contains(last, ".") {
-		return false
-	}
-	return len(last) > 0 && unicode.IsUpper(rune(last[0]))
 }
 
 func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
@@ -1747,11 +1695,14 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
 			c := p.NewSimpleType(Name{next.Value, next.Span}, typeArgs, next.Span.Combine(p.span()))
 			constraint = &c
 		} else if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
-			if next1, ok := p.mayPeek1(); ok && next1.Kind == token.ColonColon {
-				c, ok := p.ParsePath()
+			if p.lookAheadConsume(token.Ident, token.Dot) {
+				// Module-qualified constraint: e.g. `lib.Showable`
+				typeIdent, ok := p.expect(token.TypeIdent)
 				if !ok {
 					return nil, false
 				}
+				target := p.NewIdent(next.Value, nil, next.Span)
+				c := p.NewFieldAccess(target, Name{typeIdent.Value, typeIdent.Span}, nil, next.Span.Combine(p.span()))
 				constraint = &c
 			}
 		}

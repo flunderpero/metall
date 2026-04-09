@@ -45,7 +45,7 @@ func TestResolveModules(t *testing.T) {
 	}{
 		{
 			name:         "single import from include path",
-			src:          `use std::collections::map`,
+			src:          `use std.collections.map`,
 			files:        map[string]string{"lib/std/collections/map.met": `fun get() void {}`},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
@@ -54,7 +54,7 @@ func TestResolveModules(t *testing.T) {
 		},
 		{
 			name:         "aliased import",
-			src:          `use m = std::collections::map`,
+			src:          `use m = std.collections.map`,
 			files:        map[string]string{"lib/std/collections/map.met": `fun get() void {}`},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
@@ -63,7 +63,7 @@ func TestResolveModules(t *testing.T) {
 		},
 		{
 			name:         "local import",
-			src:          `use local::util`,
+			src:          `use local.util`,
 			files:        map[string]string{"/project/util.met": `fun helper() void {}`},
 			projectRoot:  "/project",
 			includePaths: nil,
@@ -72,7 +72,7 @@ func TestResolveModules(t *testing.T) {
 		},
 		{
 			name:         "local import with alias",
-			src:          `use u = local::util`,
+			src:          `use u = local.util`,
 			files:        map[string]string{"/project/util.met": `fun helper() void {}`},
 			projectRoot:  "/project",
 			includePaths: nil,
@@ -81,10 +81,10 @@ func TestResolveModules(t *testing.T) {
 		},
 		{
 			name: "two modules import same dependency",
-			src:  `use std::a use std::b`,
+			src:  `use std.a use std.b`,
 			files: map[string]string{
-				"lib/std/a.met":      `use std::shared`,
-				"lib/std/b.met":      `use std::shared`,
+				"lib/std/a.met":      `use std.shared`,
+				"lib/std/b.met":      `use std.shared`,
 				"lib/std/shared.met": `fun common() void {}`,
 			},
 			projectRoot:  "/project",
@@ -103,9 +103,9 @@ func TestResolveModules(t *testing.T) {
 		},
 		{
 			name: "transitive import",
-			src:  `use std::a`,
+			src:  `use std.a`,
 			files: map[string]string{
-				"lib/std/a.met": `use std::b fun foo() void {}`,
+				"lib/std/a.met": `use std.b fun foo() void {}`,
 				"lib/std/b.met": `fun bar() void {}`,
 			},
 			projectRoot:  "/project",
@@ -168,7 +168,7 @@ func TestResolveModulesErr(t *testing.T) {
 	}{
 		{
 			name:         "module not found",
-			src:          `use std::missing`,
+			src:          `use std.missing`,
 			files:        nil,
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
@@ -176,7 +176,7 @@ func TestResolveModulesErr(t *testing.T) {
 		},
 		{
 			name:         "local module not found",
-			src:          `use local::missing`,
+			src:          `use local.missing`,
 			files:        nil,
 			projectRoot:  "/project",
 			includePaths: nil,
@@ -184,7 +184,7 @@ func TestResolveModulesErr(t *testing.T) {
 		},
 		{
 			name:         "duplicate import",
-			src:          `use std::a use std::a`,
+			src:          `use std.a use std.a`,
 			files:        map[string]string{"lib/std/a.met": `fun foo() void {}`},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
@@ -192,7 +192,7 @@ func TestResolveModulesErr(t *testing.T) {
 		},
 		{
 			name: "duplicate import name",
-			src:  `use std::a use other::a`,
+			src:  `use std.a use other.a`,
 			files: map[string]string{
 				"lib/std/a.met":   `fun foo() void {}`,
 				"lib/other/a.met": `fun bar() void {}`,
@@ -203,10 +203,10 @@ func TestResolveModulesErr(t *testing.T) {
 		},
 		{
 			name: "circular import",
-			src:  `use std::a`,
+			src:  `use std.a`,
 			files: map[string]string{
-				"lib/std/a.met": `use std::b`,
-				"lib/std/b.met": `use std::a`,
+				"lib/std/a.met": `use std.b`,
+				"lib/std/b.met": `use std.a`,
 			},
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},

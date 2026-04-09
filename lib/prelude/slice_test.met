@@ -1,79 +1,79 @@
-use std::test
+use std.test
 
 fun main() void {
     let @local = Arena()
 
-    let suite = test::Suite.new("Slice", @local)
+    let suite = test.Suite.new("Slice", @local)
     suite.test("copy", fun() !void {
         let @local = Arena()
         mut arr = [1, 2, 3]
 
         let copy = arr[..].copy(@local)
-        try test::eq(arr[..], copy)
+        try test.eq(arr[..], copy)
 
         arr[0] = 2
-        try test::neq(arr[..], copy)
+        try test.neq(arr[..], copy)
 
         copy[0] = 2
-        try test::eq(arr[..], copy)
+        try test.eq(arr[..], copy)
     })
     suite.test("set", fun() !void {
         let @local = Arena()
         let dst = @local.slice_mut<Int>(5, 0)
         let src = [11, 12, 13][..]
-        try test::eq(3, dst.set(src))
-        try test::eq([11, 12, 13, 0, 0][..], dst)
+        try test.eq(3, dst.set(src))
+        try test.eq([11, 12, 13, 0, 0][..], dst)
 
         -- `src` is longer
-        try test::eq(2, dst[1..=2].set(src))
-        try test::eq([11, 11, 12, 0, 0][..], dst)
+        try test.eq(2, dst[1..=2].set(src))
+        try test.eq([11, 11, 12, 0, 0][..], dst)
     })
     suite.test("starts_with", fun() !void {
         let s = [1, 2, 3][..]
-        try test::ok(s.starts_with([1, 2][..]))
-        try test::ok(s.starts_with([99][1..]), "empty slice")
-        try test::not_ok(s.starts_with([1, 2, 4][..]))
-        try test::not_ok(s.starts_with([1, 2, 3, 4][..]))
+        try test.ok(s.starts_with([1, 2][..]))
+        try test.ok(s.starts_with([99][1..]), "empty slice")
+        try test.not_ok(s.starts_with([1, 2, 4][..]))
+        try test.not_ok(s.starts_with([1, 2, 3, 4][..]))
     })
     suite.test("ends_with", fun() !void {
         let s = [1, 2, 3][..]
-        try test::ok(s.ends_with([2, 3][..]))
-        try test::ok(s.ends_with([99][1..]), "empty slice")
-        try test::not_ok(s.ends_with([0, 2, 3][..]))
-        try test::not_ok(s.ends_with([0, 1, 2, 3][..]))
+        try test.ok(s.ends_with([2, 3][..]))
+        try test.ok(s.ends_with([99][1..]), "empty slice")
+        try test.not_ok(s.ends_with([0, 2, 3][..]))
+        try test.not_ok(s.ends_with([0, 1, 2, 3][..]))
     })
     suite.test("concat", fun() !void {
         let @local = Arena()
         let s = [1, 2][..].concat([[3, 4, 5][..], [6, 7, 8, 9][..]][..], @local)
-        try test::eq([1, 2, 3, 4, 5, 6, 7, 8, 9][..], s)
+        try test.eq([1, 2, 3, 4, 5, 6, 7, 8, 9][..], s)
     })
     suite.test("iter", fun() !void {
         mut it = [1, 2, 3][..].iter()
-        try test::eq(Option(1), (&mut it).next())
-        try test::eq(Option(2), (&mut it).next())
-        try test::eq(Option(3), (&mut it).next())
-        try test::eq(Option<Int>(None()), (&mut it).next())
+        try test.eq(Option(1), (&mut it).next())
+        try test.eq(Option(2), (&mut it).next())
+        try test.eq(Option(3), (&mut it).next())
+        try test.eq(Option<Int>(None()), (&mut it).next())
     })
     suite.test("utf8_trim_left", fun() !void {
         mut sut = "\n \r \thi".as_bytes()
-        try test::eq([U8('h'), 'i'][..], sut.utf8_trim_left())
+        try test.eq([U8('h'), 'i'][..], sut.utf8_trim_left())
 
         sut = "!!? hi".as_bytes()
-        try test::eq([U8(' '), 'h', 'i'][..], sut.utf8_trim_left(['!', '?'][..]))
+        try test.eq([U8(' '), 'h', 'i'][..], sut.utf8_trim_left(['!', '?'][..]))
     })
     suite.test("utf8_trim_right", fun() !void {
         mut sut = "hi \n \r \t".as_bytes()
-        try test::eq([U8('h'), 'i'][..], sut.utf8_trim_right())
+        try test.eq([U8('h'), 'i'][..], sut.utf8_trim_right())
 
         sut = "hi ?!!".as_bytes()
-        try test::eq([U8('h'), 'i', ' '][..], sut.utf8_trim_right(['!', '?'][..]))
+        try test.eq([U8('h'), 'i', ' '][..], sut.utf8_trim_right(['!', '?'][..]))
     })
     suite.test("sort_in_place", fun() !void {
         mut sut1 = [3, 2, 4, 1]
         mut sut = sut1[..]
         sut[0] = 3
         sut.sort_in_place(fun (a Int, b Int) Int { if a == b { return 0 } if a < b { return 0 - 1 } return 1 })
-        try test::eq([1, 2, 3, 4][..], sut)
+        try test.eq([1, 2, 3, 4][..], sut)
     })
     _ = suite.run()
 }

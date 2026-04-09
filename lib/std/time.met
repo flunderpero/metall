@@ -1,5 +1,5 @@
-use std::ffi
-use std::posix
+use std.ffi
+use std.posix
 
 pub let nanosecond = Duration(1)
 pub let microsecond = Duration(1000)
@@ -54,7 +54,7 @@ pub fun Duration.add(d Duration, i Int, unit Duration) Duration {
 
     This is usefule to build durations from the constants:
 
-        let d = time::second.times(5)
+        let d = time.second.times(5)
 ---
 pub fun Duration.times(d Duration, multiplier Int) Duration {
     Duration(d.nsec * multiplier)
@@ -134,9 +134,9 @@ pub fun sleep(d Duration) void {
     mut remaining = d.nsec
     for {
         let ts = TimeSpec(remaining / second.nsec, remaining % second.nsec)
-        let res = unsafe nanosleep(ffi::ref_ptr<TimeSpec>(&ts), ffi::PtrMut.null<TimeSpec>())
+        let res = unsafe nanosleep(ffi.ref_ptr<TimeSpec>(&ts), ffi.PtrMut.null<TimeSpec>())
         if res != 0 {
-            panic(posix::errno_str())
+            panic(posix.errno_str())
         }
         remaining = until - Instant.new().nsec
         if remaining <= 0 {
@@ -150,16 +150,16 @@ struct TimeSpec {
     nsec Int
 }
 
-extern fun clock_gettime(clock_id I32, ts ffi::PtrMut<TimeSpec>) I32
-extern fun nanosleep(req ffi::Ptr<TimeSpec>, remainder ffi::PtrMut<TimeSpec>) I32
+extern fun clock_gettime(clock_id I32, ts ffi.PtrMut<TimeSpec>) I32
+extern fun nanosleep(req ffi.Ptr<TimeSpec>, remainder ffi.PtrMut<TimeSpec>) I32
 
 let clock_id_realtime = I32(0)
 let clock_id_monotonic_raw = I32(4)
 
 fun call_clock_gettime(ts &mut TimeSpec, clock_id I32) void {
-    posix::reset_errno()
-    let res = unsafe clock_gettime(clock_id, ffi::ref_ptr_mut<TimeSpec>(ts))
+    posix.reset_errno()
+    let res = unsafe clock_gettime(clock_id, ffi.ref_ptr_mut<TimeSpec>(ts))
     if res != 0 {
-        panic(posix::errno_str())
+        panic(posix.errno_str())
     }
 }

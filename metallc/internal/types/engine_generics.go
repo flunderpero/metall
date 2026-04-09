@@ -1000,30 +1000,26 @@ func (e *Engine) resolveCallBinding(call ast.Call) (*Binding, bool) {
 	case ast.Ident:
 		binding, ok := e.lookup(call.Callee, kind.Name, -1)
 		return binding, ok && binding.Decl != 0
-	case ast.Path:
-		if len(kind.Segments) != 2 {
-			return nil, false
-		}
-		moduleName := kind.Segments[0]
-		modBinding, ok := e.lookup(call.Callee, moduleName, -1)
-		if !ok {
-			return nil, false
-		}
-		if _, ok := e.env.Type(modBinding.TypeID).Kind.(ModuleType); !ok {
-			return nil, false
-		}
-		thisModuleNode, _ := e.moduleOf(call.Callee)
-		importedModuleNodeID, ok := e.moduleResolution.Imports[thisModuleNode.ID][moduleName]
-		if !ok {
-			return nil, false
-		}
-		mod := base.Cast[ast.Module](e.ast.Node(importedModuleNodeID).Kind)
-		if len(mod.Decls) == 0 {
-			return nil, false
-		}
-		binding, ok := e.env.Lookup(mod.Decls[0], kind.Segments[1], -1)
-		return binding, ok
 	case ast.FieldAccess:
+		// Check if the target is a module (module member call): module.fun(...)
+		if ident, ok := e.ast.Node(kind.Target).Kind.(ast.Ident); ok {
+			modBinding, ok := e.lookup(call.Callee, ident.Name, -1)
+			if ok {
+				if _, isMod := e.env.Type(modBinding.TypeID).Kind.(ModuleType); isMod {
+					thisModuleNode, _ := e.moduleOf(call.Callee)
+					importedModuleNodeID, ok := e.moduleResolution.Imports[thisModuleNode.ID][ident.Name]
+					if !ok {
+						return nil, false
+					}
+					mod := base.Cast[ast.Module](e.ast.Node(importedModuleNodeID).Kind)
+					if len(mod.Decls) == 0 {
+						return nil, false
+					}
+					binding, ok := e.env.Lookup(mod.Decls[0], kind.Field.Name, -1)
+					return binding, ok
+				}
+			}
+		}
 		return e.resolveMethodCallBinding(call.Callee, kind)
 	default:
 		return nil, false
@@ -1033,10 +1029,6 @@ func (e *Engine) resolveCallBinding(call ast.Call) (*Binding, bool) {
 func (e *Engine) inferFunCallBinding(call ast.Call) (*Binding, bool) {
 	switch kind := e.ast.Node(call.Callee).Kind.(type) {
 	case ast.Ident:
-		if len(kind.TypeArgs) > 0 {
-			return nil, false
-		}
-	case ast.Path:
 		if len(kind.TypeArgs) > 0 {
 			return nil, false
 		}
@@ -1093,7 +1085,14 @@ func (e *Engine) InferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus
 	allArgNodeIDs := call.Args
 	fieldAccess, isFieldAccess := e.ast.Node(call.Callee).Kind.(ast.FieldAccess)
 	if isFieldAccess {
-		allArgNodeIDs = append([]ast.NodeID{fieldAccess.Target}, call.Args...)
+		targetTypeID, status := e.Query(fieldAccess.Target)
+		if status.Failed() {
+			return InvalidTypeID, TypeFailed, false
+		}
+		_, isModule := e.env.Type(targetTypeID).Kind.(ModuleType)
+		if !isModule && !e.isTypeReference(fieldAccess.Target) {
+			allArgNodeIDs = append([]ast.NodeID{fieldAccess.Target}, call.Args...)
+		}
 	}
 	if len(allArgNodeIDs) < len(genericFunType.Params) {
 		for i := len(allArgNodeIDs); i < len(funNode.Params); i++ {

@@ -26,7 +26,7 @@ fun apply(n Int, sb &mut StrBuilder, @a Arena) void {
 **macro module without macro functions**
 
 ```metall
-use local::no_macro_funs_macro
+use local.no_macro_funs_macro
 
 fun main() void {}
 ```
@@ -57,9 +57,9 @@ test.met:3:1: only macro calls are allowed at the top level
 **macro expansion failure**
 
 ```metall
-use local::hello_macro
+use local.hello_macro
 
-hello_macro::apply()
+hello_macro.apply()
 
 fun main() void {}
 ```
@@ -71,18 +71,18 @@ compilation failed
 ```error
 test.met:3:1: macro expansion failed: compilation failed
     
-    hello_macro::apply()
-    ^^^^^^^^^^^^^^^^^^^^
+    hello_macro.apply()
+    ^^^^^^^^^^^^^^^^^^^
 ```
 
 **non-literal macro argument**
 
 ```metall
-use local::param_macro
+use local.param_macro
 
 fun main() void {
     let x = 1
-    param_macro::apply(x)
+    param_macro.apply(x)
 }
 ```
 
@@ -90,19 +90,19 @@ fun main() void {
 ```
 
 ```error
-test.met:5:24: macro arguments must be compile-time constants
+test.met:5:23: macro arguments must be compile-time constants
         let x = 1
-        param_macro::apply(x)
-                           ^
+        param_macro.apply(x)
+                          ^
     }
 ```
 
 **macro expansion producing invalid code**
 
 ```metall
-use local::hello_macro
+use local.hello_macro
 
-hello_macro::apply()
+hello_macro.apply()
 
 fun main() void {}
 ```
@@ -122,9 +122,9 @@ local/hello_macro.met.expanded:1:6: unexpected token: <is>
 **macro expands function**
 
 ```metall
-use local::hello_macro
+use local.hello_macro
 
-hello_macro::apply()
+hello_macro.apply()
 
 fun main() void {
     greet()

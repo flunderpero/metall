@@ -1,45 +1,45 @@
-use std::ffi
-use std::posix
-use std::list
+use std.ffi
+use std.posix
+use std.list
 
 pub unsync struct Thread<T> {
     thread U64
-    result ffi::Ptr<T>
+    result ffi.Ptr<T>
 }
 
 pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
-    let res_bytes = unsafe @a.slice_uninit_mut<U8>(ffi::sizeof<T>())
-    let res_ptr = unsafe ffi::slice_ptr_mut<U8>(res_bytes).cast<T>()
+    let res_bytes = unsafe @a.slice_uninit_mut<U8>(ffi.sizeof<T>())
+    let res_ptr = unsafe ffi.slice_ptr_mut<U8>(res_bytes).cast<T>()
     let spawn_fun = fun[f, res_ptr]() void {
         let res = f()
-        let ptr = ffi::ref_ptr<T>(&res)
+        let ptr = ffi.ref_ptr<T>(&res)
         unsafe res_ptr.write(unsafe ptr.read())
     }
-    let fun_ptr = ffi::fun_ptr_alloc(@a, spawn_fun)
+    let fun_ptr = ffi.fun_ptr_alloc(@a, spawn_fun)
     mut thread U64 = 0
     let status = unsafe pthread_create(
-        ffi::ref_ptr_mut<U64>(&mut thread), ffi::Ptr.null<void>(), fun_ptr.fun_ptr, fun_ptr.data_ptr)
+        ffi.ref_ptr_mut<U64>(&mut thread), ffi.Ptr.null<void>(), fun_ptr.fun_ptr, fun_ptr.data_ptr)
     if status != 0 {
-        return Err(posix::strerror(status))
+        return Err(posix.strerror(status))
     }
     Thread<T>(thread, res_ptr.as_ptr())
 }
 
 pub fun Thread.join<T>(t Thread<T>) !T {
-    let status = unsafe pthread_join(t.thread, ffi::PtrMut.null<ffi::Ptr<void>>()) 
+    let status = unsafe pthread_join(t.thread, ffi.PtrMut.null<ffi.Ptr<void>>()) 
     if status != 0 {
-        return Err(posix::strerror(status))
+        return Err(posix.strerror(status))
     }
     unsafe t.result.read()
 }
 
 pub unsync struct ThreadGroup<T> {
     @a Arena
-    threads &mut list::List<Thread<T>>
+    threads &mut list.List<Thread<T>>
 }
 
 pub fun ThreadGroup.new<T>(@a Arena) &mut ThreadGroup<T> {
-    let l = list::List.new<Thread<T>>(16, @a)
+    let l = list.List.new<Thread<T>>(16, @a)
     @a.new_mut(ThreadGroup<T>(@a, l))
 }
 
@@ -62,19 +62,19 @@ pub fun ThreadGroup.join<T>(tg &mut ThreadGroup<T>, @a Arena) []!T {
 
     `lock_and_copy_value()` will acquire the lock and return a copy. ---
 pub sync struct Mutex<sync T> {
-    lock_ptr ffi::PtrMut<void>
+    lock_ptr ffi.PtrMut<void>
     value &mut T
 }
 
 pub fun Mutex.new<sync T>(value T, @a Arena) Mutex<T> {
     -- todo: The size of pthread_mutex_t is platform dependent.
     let lock = unsafe @a.slice_uninit_mut<U8>(64)
-    let lock_ptr = unsafe ffi::slice_ptr_mut<U8>(lock).cast<void>()
-    let res = unsafe pthread_mutex_init(lock_ptr, ffi::Ptr.null<void>())
+    let lock_ptr = unsafe ffi.slice_ptr_mut<U8>(lock).cast<void>()
+    let res = unsafe pthread_mutex_init(lock_ptr, ffi.Ptr.null<void>())
     if res != 0 {
         -- pthread_mutex_init always succeeds:
         -- https://man7.org/linux/man-pages/man3/pthread_mutex_lock.3.html 
-        panic(posix::strerror(res))
+        panic(posix.strerror(res))
     }
     let value_ref = @a.new_mut(value)
     Mutex<T>(lock_ptr, value_ref)
@@ -83,28 +83,28 @@ pub fun Mutex.new<sync T>(value T, @a Arena) Mutex<T> {
 pub fun Mutex.with_lock<sync T, sync E>(m Mutex<T>, f fun(noescape &mut T) E) !E {
     let res = unsafe pthread_mutex_lock(m.lock_ptr)
     if res != 0 {
-        return Err(posix::strerror(res))
+        return Err(posix.strerror(res))
     }
     let result = f(m.value)
     let res2 = unsafe pthread_mutex_unlock(m.lock_ptr)
     if res2 != 0 {
-        return Err(posix::strerror(res2))
+        return Err(posix.strerror(res2))
     }
     result
 }
 
 pub fun Mutex.with_try_lock<sync T, sync E>(m Mutex<T>, f fun(noescape &mut T) E) !?E {
     let res = unsafe pthread_mutex_trylock(m.lock_ptr)
-    if res == posix::ebusy {
+    if res == posix.ebusy {
         return Result<?E>(Option<E>(None()))
     }
     if res != 0 {
-        return Err(posix::strerror(res))
+        return Err(posix.strerror(res))
     }
     let result = f(m.value)
     let res2 = unsafe pthread_mutex_unlock(m.lock_ptr)
     if res2 != 0 {
-        return Err(posix::strerror(res2))
+        return Err(posix.strerror(res2))
     }
     Option(result)
 }
@@ -114,12 +114,12 @@ pub fun Mutex.lock_and_copy_value<sync T>(m Mutex<T>) !T {
     m.with_lock(fun(v &mut T) T { v.* })
 }
 
-extern fun pthread_mutex_init(mutex ffi::PtrMut<void>, attr ffi::Ptr<void>) I32
-extern fun pthread_mutex_lock(mutex ffi::PtrMut<void>) I32
-extern fun pthread_mutex_trylock(mutex ffi::PtrMut<void>) I32
-extern fun pthread_mutex_unlock(mutex ffi::PtrMut<void>) I32
-extern fun pthread_mutex_destroy(mutex ffi::PtrMut<void>) I32
+extern fun pthread_mutex_init(mutex ffi.PtrMut<void>, attr ffi.Ptr<void>) I32
+extern fun pthread_mutex_lock(mutex ffi.PtrMut<void>) I32
+extern fun pthread_mutex_trylock(mutex ffi.PtrMut<void>) I32
+extern fun pthread_mutex_unlock(mutex ffi.PtrMut<void>) I32
+extern fun pthread_mutex_destroy(mutex ffi.PtrMut<void>) I32
 extern fun pthread_create(
-    thread ffi::PtrMut<U64>, attr ffi::Ptr<void>, start ffi::Ptr<void>, arg ffi::Ptr<void>) I32
-extern fun pthread_join(thread U64, retval ffi::PtrMut<ffi::Ptr<void>>) I32
-extern fun pthread_exit(retval ffi::PtrMut<void>) void
+    thread ffi.PtrMut<U64>, attr ffi.Ptr<void>, start ffi.Ptr<void>, arg ffi.Ptr<void>) I32
+extern fun pthread_join(thread U64, retval ffi.PtrMut<ffi.Ptr<void>>) I32
+extern fun pthread_exit(retval ffi.PtrMut<void>) void

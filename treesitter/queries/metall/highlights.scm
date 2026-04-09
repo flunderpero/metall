@@ -102,12 +102,7 @@
 (import_declaration alias: (identifier) @variable)
 (import_path (identifier) @module)
 
-; >>> Path expressions (lib::foo, lib::Foo.bar)
-
-(path_expression "::" @punctuation.delimiter)
-(path_expression module: (identifier) @module)
-(path_expression member: (type_identifier) @type)
-(path_expression member: (identifier) @function)
+; >>> Module member access (lib.foo, lib.Foo.bar) — handled by field_access
 
 ; >>> Bindings
 
@@ -166,4 +161,4 @@
 ; >>> Punctuation
 
 ["(" ")" "{" "}" "[" "]" "<" ">"] @punctuation.bracket
-["," "." "::" ":"] @punctuation.delimiter
+["," "." ":"] @punctuation.delimiter

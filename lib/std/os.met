@@ -1,6 +1,6 @@
-use std::ffi
-use std::posix
-use std::fs
+use std.ffi
+use std.posix
+use std.fs
 
 pub struct RunResult {
     pub status Int
@@ -9,10 +9,10 @@ pub struct RunResult {
 
 let popen_mode = [U8('r'), 0][..]
 
-extern fun popen(filename ffi::Ptr<U8>, mode ffi::Ptr<U8>) ffi::Ptr<void>
-extern fun fread(buf ffi::PtrMut<U8>, sizeof Int, len Int, file ffi::Ptr<void>) Int
-extern fun pclose(file ffi::Ptr<void>) I32
-extern c_chdir = fun chdir(dir ffi::Ptr<U8>) I32
+extern fun popen(filename ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.Ptr<void>
+extern fun fread(buf ffi.PtrMut<U8>, sizeof Int, len Int, file ffi.Ptr<void>) Int
+extern fun pclose(file ffi.Ptr<void>) I32
+extern c_chdir = fun chdir(dir ffi.Ptr<U8>) I32
 
 --- Run a program in the system's shell to completion and capture its stdout/stderr.
 
@@ -24,33 +24,33 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
     let sb = StrBuilder.new(256, @local)
     sb.slice(cmd, " ")
     sb.str(" 2>&1")
-    posix::reset_errno()
+    posix.reset_errno()
     let f = unsafe popen(
-        ffi::slice_ptr(sb.as_cstr()),
-        ffi::slice_ptr(popen_mode),
+        ffi.slice_ptr(sb.as_cstr()),
+        ffi.slice_ptr(popen_mode),
     )
     if f.is_null() {
-        return Err(posix::errno_str())
+        return Err(posix.errno_str())
     }
     let out = StrBuilder.new(4096, @a)
     let buf = unsafe @a.slice_uninit_mut<U8>(4096)
-    let buf_ptr = ffi::slice_ptr_mut(buf)
+    let buf_ptr = ffi.slice_ptr_mut(buf)
     for {
-        posix::reset_errno()
+        posix.reset_errno()
         let bytes_read = unsafe fread(buf_ptr, 1, buf.len, f)
         if bytes_read <= 0 {
-            let errno = posix::errno()
+            let errno = posix.errno()
             if errno == 0 {
                 break
             }
-            return Err(posix::errno_str())
+            return Err(posix.errno_str())
         }
         out.utf8_lossy(buf[0..bytes_read])
     }
-    posix::reset_errno()
+    posix.reset_errno()
     let raw_status = unsafe pclose(f)
     if raw_status < 0 {
-        return Err(posix::errno_str())
+        return Err(posix.errno_str())
     }
     let status = ((raw_status >> 8) & 255).to_int()  -- WEXITSTATUS(raw_status)
     RunResult(status, out.as_str())
@@ -82,12 +82,12 @@ pub fun shell_checked(cmd []Str, @a Arena) !void {
 }
 
 --- Change the current working directory of this process. ---
-pub fun chdir(dir fs::Path) !void {
+pub fun chdir(dir fs.Path) !void {
     let @local = Arena()
-    posix::reset_errno()
-    let res = unsafe c_chdir(ffi::cstr(dir.as_bytes(), @local)) 
+    posix.reset_errno()
+    let res = unsafe c_chdir(ffi.cstr(dir.as_bytes(), @local)) 
     if res != 0 {
-        return Err(posix::errno_str())
+        return Err(posix.errno_str())
     }
 }
 

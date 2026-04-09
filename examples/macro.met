@@ -1,9 +1,9 @@
-use std::io
-use local::macro_macro
+use std.io
+use local.macro_macro
 
-macro_macro::apply("hello")
+macro_macro.apply("hello")
 
 fun main() void {
     let @local = Arena()
-    io::println(hello_from_macro(" there", @local))
+    io.println(hello_from_macro(" there", @local))
 }

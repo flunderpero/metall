@@ -20,7 +20,7 @@ let private_const = 99
 
 ```module.lib_test
 use lib
-pub fun test_internal() Int { lib::internal_helper() }
+pub fun test_internal() Int { lib.internal_helper() }
 ```
 
 ```module.generic
@@ -52,7 +52,7 @@ fun main() void {}
 **local import unused**
 
 ```metall
-use local::hello
+use local.hello
 fun main() void {}
 ```
 
@@ -60,14 +60,14 @@ fun main() void {}
 
 ```metall
 use lib
-fun main() void { _ = lib::get_lib() }
+fun main() void { _ = lib.get_lib() }
 ```
 
 **call imported function return type**
 
 ```metall
 use lib
-fun main() void { let x = lib::get_lib() }
+fun main() void { let x = lib.get_lib() }
 ```
 
 ```bindings
@@ -78,7 +78,8 @@ Module: scope01
     Block: scope03
       Var: scope04
         Call: scope04
-          Path: scope04
+          FieldAccess: scope04
+            Ident: scope04
 ---
 scope01:
 scope02:
@@ -94,7 +95,7 @@ fun01 = sync fun() void
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) _ = p.x _ = p.y }
+fun main() void { let p = lib.Point(1, 2) _ = p.x _ = p.y }
 ```
 
 ```bindings
@@ -105,7 +106,8 @@ Module: scope01
     Block: scope03
       Var: scope04
         TypeConstruction: scope04
-          Path: scope04
+          FieldAccess: scope04
+            Ident: scope04
           Int: scope04
           Int: scope04
       Assign: scope04
@@ -132,28 +134,28 @@ struct01 = Point { x Int, y Int }
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) _ = p.sum() }
+fun main() void { let p = lib.Point(1, 2) _ = p.sum() }
 ```
 
 **call method on imported struct via path**
 
 ```metall
 use lib
-fun main() void { let p = lib::Point(1, 2) _ = lib::Point.sum(p) }
+fun main() void { let p = lib.Point(1, 2) _ = lib.Point.sum(p) }
 ```
 
 **assign imported function to variable**
 
 ```metall
 use lib
-fun main() void { let f = lib::get_lib _ = f() }
+fun main() void { let f = lib.get_lib _ = f() }
 ```
 
 **local import call**
 
 ```metall
-use local::hello
-fun main() void { let s = hello::get_hello() }
+use local.hello
+fun main() void { let s = hello.get_hello() }
 ```
 
 ```bindings
@@ -164,7 +166,8 @@ Module: scope01
     Block: scope03
       Var: scope04
         Call: scope04
-          Path: scope04
+          FieldAccess: scope04
+            Ident: scope04
 ---
 scope01:
 scope02:
@@ -180,14 +183,14 @@ fun01 = sync fun() void
 
 ```metall
 use l = lib
-fun main() void { _ = l::get_lib() }
+fun main() void { _ = l.get_lib() }
 ```
 
 **generic function from import**
 
 ```metall
 use generic
-fun main() void { let x = generic::identity<Int>(42) }
+fun main() void { let x = generic.identity<Int>(42) }
 ```
 
 ```bindings
@@ -198,7 +201,8 @@ Module: scope01
     Block: scope03
       Var: scope04
         Call: scope04
-          Path: scope04
+          FieldAccess: scope04
+            Ident: scope04
             SimpleType: scope04
           Int: scope04
 ---
@@ -216,7 +220,7 @@ fun01 = sync fun() void
 
 ```metall
 use generic
-fun main() void { let x = generic::identity(42) }
+fun main() void { let x = generic.identity(42) }
 ```
 
 ```bindings
@@ -227,7 +231,8 @@ Module: scope01
     Block: scope03
       Var: scope04
         Call: scope04
-          Path: scope04
+          FieldAccess: scope04
+            Ident: scope04
           Int: scope04
 ---
 scope01:
@@ -245,7 +250,7 @@ fun01 = sync fun() void
 ```metall
 use generic
 fun main() void {
-    let p = generic::Pair<Int, Str>(1, "hi")
+    let p = generic.Pair<Int, Str>(1, "hi")
     _ = p.first
     _ = p.second
 }
@@ -259,7 +264,8 @@ Module: scope01
     Block: scope03
       Var: scope04
         TypeConstruction: scope04
-          Path: scope04
+          FieldAccess: scope04
+            Ident: scope04
             SimpleType: scope04
             SimpleType: scope04
           Int: scope04
@@ -298,7 +304,7 @@ pub fun Widget.show(w Widget) Int { w.value }
 
 fun main() void {
     let w = Widget(42)
-    let r = shapes::show_twice(w)
+    let r = shapes.show_twice(w)
 }
 ```
 
@@ -324,7 +330,8 @@ Module: scope01
           Int: scope07
       Var: scope07
         Call: scope07
-          Path: scope07
+          FieldAccess: scope07
+            Ident: scope07
           Ident: scope07
 ---
 scope01:
@@ -352,70 +359,70 @@ fun02    = sync fun(struct01) Int
 
 ```metall
 use lib
-fun main() void { lib::unknown() }
+fun main() void { lib.unknown() }
 ```
 
 ```error
 test.met:2:19: symbol not defined in lib: unknown
     use lib
-    fun main() void { lib::unknown() }
-                      ^^^^^^^^^^^^
+    fun main() void { lib.unknown() }
+                      ^^^^^^^^^^^
 ```
 
 **wrong arg type to imported function**
 
 ```metall
 use lib
-fun main() void { lib::get_lib("oops") }
+fun main() void { lib.get_lib("oops") }
 ```
 
 ```error
 test.met:2:19: argument count mismatch: expected 0, got 1
     use lib
-    fun main() void { lib::get_lib("oops") }
-                      ^^^^^^^^^^^^^^^^^^^^
+    fun main() void { lib.get_lib("oops") }
+                      ^^^^^^^^^^^^^^^^^^^
 ```
 
 **generic struct wrong type arg count**
 
 ```metall
 use generic
-fun main() void { generic::Pair<Int>(1) }
+fun main() void { generic.Pair<Int>(1) }
 ```
 
 ```error
 test.met:2:19: type argument count mismatch: expected 2, got 1
     use generic
-    fun main() void { generic::Pair<Int>(1) }
-                      ^^^^^^^^^^^^^^^^^^
+    fun main() void { generic.Pair<Int>(1) }
+                      ^^^^^^^^^^^^^^^^^
 ```
 
 **generic function wrong type arg count**
 
 ```metall
 use generic
-fun main() void { generic::identity<Int, Str>(42) }
+fun main() void { generic.identity<Int, Str>(42) }
 ```
 
 ```error
 test.met:2:19: type argument count mismatch: expected 1, got 2
     use generic
-    fun main() void { generic::identity<Int, Str>(42) }
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    fun main() void { generic.identity<Int, Str>(42) }
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
-**nested module access**
+**non-existent member on module**
 
 ```metall
 use lib
-fun main() void { lib::sub::foo() }
+fun main() void { lib.nope() }
 ```
 
 ```error
-test.met:2:19: invalid module path
+test.met:2:19: symbol not defined in lib: nope
     use lib
-    fun main() void { lib::sub::foo() }
-                      ^^^^^^^^^^^^^
+    fun main() void { lib.nope() }
+                      ^^^^^^^^
 ```
 
 **dot syntax on module**
@@ -426,10 +433,10 @@ fun main() void { lib.get_lib() }
 ```
 
 ```error
-test.met:2:19: cannot access field on non-struct type: lib
+test.met:2:19: return type mismatch: expected void, got Int
     use lib
     fun main() void { lib.get_lib() }
-                      ^^^
+                      ^^^^^^^^^^^^^
 ```
 
 ## Visibility
@@ -438,7 +445,7 @@ test.met:2:19: cannot access field on non-struct type: lib
 
 ```metall
 use lib_test
-fun main() void { _ = lib_test::test_internal() }
+fun main() void { _ = lib_test.test_internal() }
 ```
 
 ```error
@@ -448,14 +455,14 @@ fun main() void { _ = lib_test::test_internal() }
 
 ```metall
 use lib
-fun main() void { _ = lib::internal_helper() }
+fun main() void { _ = lib.internal_helper() }
 ```
 
 ```error
 test.met:2:23: lib::internal_helper is not public
     use lib
-    fun main() void { _ = lib::internal_helper() }
-                          ^^^^^^^^^^^^^^^^^^^^
+    fun main() void { _ = lib.internal_helper() }
+                          ^^^^^^^^^^^^^^^^^^^
 ```
 
 **non-pub field not accessible from outside module**
@@ -463,15 +470,15 @@ test.met:2:23: lib::internal_helper is not public
 ```metall
 use lib
 fun main() void {
-    let s = lib::Secret(1)
+    let s = lib.Secret(1)
 }
 ```
 
 ```error
 test.met:3:13: cannot construct lib.Secret from outside its module: field hidden is not public
     fun main() void {
-        let s = lib::Secret(1)
-                ^^^^^^^^^^^^^^
+        let s = lib.Secret(1)
+                ^^^^^^^^^^^^^
     }
 ```
 
@@ -479,7 +486,7 @@ test.met:3:13: cannot construct lib.Secret from outside its module: field hidden
 
 ```metall
 use lib
-fun main() void { _ = lib::public_const }
+fun main() void { _ = lib.public_const }
 ```
 
 ```error
@@ -489,14 +496,14 @@ fun main() void { _ = lib::public_const }
 
 ```metall
 use lib
-fun main() void { _ = lib::private_const }
+fun main() void { _ = lib.private_const }
 ```
 
 ```error
 test.met:2:23: lib::private_const is not public
     use lib
-    fun main() void { _ = lib::private_const }
-                          ^^^^^^^^^^^^^^^^^^
+    fun main() void { _ = lib.private_const }
+                          ^^^^^^^^^^^^^^^^^
 ```
 
 **can write through pub &mut field from outside module**
@@ -506,7 +513,7 @@ use lib
 
 fun main() void {
     mut x = 42
-    let h = lib::RefHolder(&mut x)
+    let h = lib.RefHolder(&mut x)
     h.r.* = 99
 }
 ```
@@ -522,7 +529,7 @@ use lib
 fun main() void {
     mut x = 42
     mut y = 99
-    mut h = lib::RefHolder(&mut x)
+    mut h = lib.RefHolder(&mut x)
     h.r = &mut y
 }
 ```
@@ -536,14 +543,14 @@ fun main() void {
 use lib
 
 fun main() void {
-    mut m = lib::make_mixed()
+    mut m = lib.make_mixed()
     m.internal = 99
 }
 ```
 
 ```error
 test.met:5:7: field lib.Mixed.internal is not public
-        mut m = lib::make_mixed()
+        mut m = lib.make_mixed()
         m.internal = 99
           ^^^^^^^^
     }

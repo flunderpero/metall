@@ -19,7 +19,7 @@ Metall is a memory-safe language that uses scoped arena allocators and
 automatic, scope-based lifetime analysis. No need for lifetime annotations.
 
 ```metall
-use std::io
+use std.io
 
 fun main() void {
     let @main = Arena()
@@ -30,12 +30,12 @@ fun main() void {
         -- We could not yield `i` from this block.
         let i = @inner.new<U64>(137)
         -- But we can pass it to functions. Yes, that's Zig-style deref.
-        io::println(i.*)
+        io.println(i.*)
         
         -- This allocation outlives the current scope up to scope of `@main`.
         @main.slice_mut(3, 65)
     }
-    io::println(bytes)
+    io.println(bytes)
 }
 ```
 
@@ -69,22 +69,22 @@ of that (cheap) stack page can be configured - the default is 1024 bytes.
 ## Control Flow
 
 ```metall
-use std::io
+use std.io
 
 fun control_flow(a Int) void {
 
     -- if/else:
     if a > 5 {
-        io::print("hello ")
+        io.print("hello ")
     } else {
-        io::print("no ")
+        io.print("no ")
     }
 
     -- There is no `else if`! Use `when`:
     when {
-        case a > 10: io::print("there ")
-        case a < 10: io::print("never ")
-        else: io::print("otherwise ")
+        case a > 10: io.print("there ")
+        case a < 10: io.print("never ")
+        else: io.print("otherwise ")
     }
 
     -- Sum types (tagged unions)
@@ -93,15 +93,15 @@ fun control_flow(a Int) void {
 
     -- `match` is _only_ a type discriminator.
     match foo {
-        case Str s: io::print(s)
-        case Int i if i < 10: io::print("small")
-        case Int i: io::print(i)
+        case Str s: io.print(s)
+        case Int i if i < 10: io.print("small")
+        case Int i: io.print(i)
         -- `match` has to be exhaustive, i.e. all possible variants of
         -- union type have to be included. In this case we either need
         -- a `case Bool` or `else`.
-        else b: io::print(b)
+        else b: io.print(b)
     }
-    io::println("!")
+    io.println("!")
 }
 
 fun main() void {

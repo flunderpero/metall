@@ -1,11 +1,11 @@
-use std::ffi
-use std::posix
-use std::io
+use std.ffi
+use std.posix
+use std.io
 
-extern fun fopen(filename ffi::Ptr<U8>, mode ffi::Ptr<U8>) ffi::PtrMut<void>
-extern fun fclose(file ffi::PtrMut<void>) I32
-extern fun fread(buf ffi::PtrMut<U8>, sizeof Int, len Int, file ffi::PtrMut<void>) Int
-extern fun fwrite(buf ffi::Ptr<U8>, sizeof Int, len Int, file ffi::PtrMut<void>) Int
+extern fun fopen(filename ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.PtrMut<void>
+extern fun fclose(file ffi.PtrMut<void>) I32
+extern fun fread(buf ffi.PtrMut<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
+extern fun fwrite(buf ffi.Ptr<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
 
 --- The default path delimiter `/`. ---
 let path_delim = [U8(47)][..]
@@ -53,7 +53,7 @@ pub fun Path.fmt(p Path, sb &mut StrBuilder) void {
 }
 
 pub unsync struct File {
-    file_ptr ffi::PtrMut<void>
+    file_ptr ffi.PtrMut<void>
     closed Bool
 }
 
@@ -87,10 +87,10 @@ pub fun File.open(path Path, mode Str, @a Arena) !&mut File {
     if not (mode.eq("r") or mode.eq("w") or mode.eq("a") or mode.eq("r+") or mode.eq("w+") or mode.eq("a+")) {
         return Err("invalid open mode")
     }
-    posix::reset_errno()
-    let file_ptr = unsafe fopen(ffi::cstr(path.raw, @local), ffi::cstr(mode.as_bytes(), @local))
+    posix.reset_errno()
+    let file_ptr = unsafe fopen(ffi.cstr(path.raw, @local), ffi.cstr(mode.as_bytes(), @local))
     if file_ptr.is_null() {
-        return Err(posix::errno_str())
+        return Err(posix.errno_str())
     }
     let file = @a.new_mut(File(file_ptr, false))
     file
@@ -100,10 +100,10 @@ pub fun File.write(f &mut File, data []U8) !Int {
     if f.closed {
         return Err("file is closed")
     }
-    posix::reset_errno()
-    let bytes_written = unsafe fwrite(ffi::slice_ptr(data), 1, data.len, f.file_ptr)
+    posix.reset_errno()
+    let bytes_written = unsafe fwrite(ffi.slice_ptr(data), 1, data.len, f.file_ptr)
     if bytes_written != data.len {
-        return Err(posix::errno_str())
+        return Err(posix.errno_str())
     }
     bytes_written
 }
@@ -115,14 +115,14 @@ pub fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
     if f.closed {
         return Err("file is closed")
     }
-    posix::reset_errno()
-    let bytes_read = unsafe fread(ffi::slice_ptr_mut(buf), 1, buf.len, f.file_ptr)
+    posix.reset_errno()
+    let bytes_read = unsafe fread(ffi.slice_ptr_mut(buf), 1, buf.len, f.file_ptr)
     if bytes_read < buf.len {
-        let errno = posix::errno()
+        let errno = posix.errno()
         if errno == 0 {
             return buf[0..bytes_read]
         }
-        return Err(posix::errno_str())
+        return Err(posix.errno_str())
     }
     buf[0..bytes_read]
 }
@@ -132,11 +132,11 @@ pub fun File.close(f &mut File) !void {
         -- is already closed
         return void
     }
-    posix::reset_errno()
+    posix.reset_errno()
     let res = unsafe fclose(f.file_ptr)
     f.closed = true
     if res != 0 {
-        return Err(posix::errno_str())
+        return Err(posix.errno_str())
     }
 }
 
@@ -154,8 +154,8 @@ pub fun write_file(path Path, data []U8) !void {
 --- Read the entire file. ---
 pub fun read_file(path Path, @a Arena) ![]mut U8 {
     let @local = Arena()
-    -- The file is closed by `io::read_all`.
+    -- The file is closed by `io.read_all`.
     let f = try File.open(path, "r", @local)
     -- todo: Add optimized path by stat-ing the file size before.
-    io::read_all(f, -1, @a)
+    io.read_all(f, -1, @a)
 }
