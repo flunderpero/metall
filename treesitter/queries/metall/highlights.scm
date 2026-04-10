@@ -8,6 +8,7 @@
   "use"
   "let"
   "pub"
+  "nocopy"
   "sync"
   "unsync"
   "if"

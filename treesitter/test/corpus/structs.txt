@@ -16,6 +16,21 @@ struct Foo {
     (struct_field name: (identifier) type: (simple_type (type_identifier)))))
 
 ================================================================================
+Nocopy struct
+================================================================================
+
+nocopy struct Handle {
+    id Int
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    name: (type_identifier)
+    (struct_field name: (identifier) type: (simple_type (type_identifier)))))
+
+================================================================================
 Struct with allocator field
 ================================================================================
 

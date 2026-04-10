@@ -198,6 +198,7 @@ type Struct struct {
 	TypeParams []NodeID
 	Fields     []NodeID
 	Pub        bool
+	Nocopy     bool
 	Sync       SyncMode
 	Builtin    bool
 	Extern     bool
@@ -229,6 +230,7 @@ type Union struct {
 	TypeParams []NodeID
 	Variants   []NodeID // Type nodes (SimpleType, RefType, etc.)
 	Pub        bool
+	Nocopy     bool
 	Sync       SyncMode
 }
 
@@ -633,7 +635,7 @@ func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, noescape 
 }
 
 func (a *AST) NewStruct(
-	name Name, typeParams []NodeID, fields []NodeID, pub bool, sync SyncMode, span base.Span,
+	name Name, typeParams []NodeID, fields []NodeID, pub bool, nocopy bool, sync SyncMode, span base.Span,
 ) NodeID {
 	return a.node(
 		Struct{
@@ -641,6 +643,7 @@ func (a *AST) NewStruct(
 			TypeParams: typeParams,
 			Fields:     fields,
 			Pub:        pub,
+			Nocopy:     nocopy,
 			Sync:       sync,
 			Builtin:    false,
 			Extern:     false,
@@ -664,10 +667,10 @@ func (a *AST) NewShape(
 }
 
 func (a *AST) NewUnion(
-	name Name, typeParams []NodeID, variants []NodeID, pub bool, sync SyncMode, span base.Span,
+	name Name, typeParams []NodeID, variants []NodeID, pub bool, nocopy bool, sync SyncMode, span base.Span,
 ) NodeID {
 	return a.node(
-		Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub, Sync: sync},
+		Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub, Nocopy: nocopy, Sync: sync},
 		span,
 	)
 }
@@ -1277,6 +1280,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Pub {
 			addAttr("pub", "true")
 		}
+		if kind.Nocopy {
+			addAttr("nocopy", "true")
+		}
 		if kind.Sync == SyncSync {
 			addAttr("sync", "true")
 		}
@@ -1316,6 +1322,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if kind.Pub {
 			addAttr("pub", "true")
+		}
+		if kind.Nocopy {
+			addAttr("nocopy", "true")
 		}
 		if kind.Sync == SyncSync {
 			addAttr("sync", "true")

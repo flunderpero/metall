@@ -666,6 +666,31 @@ Module(fileName="test.met",name="test",main=true)
       type=SimpleType(name="Bool")
 ```
 
+**Nocopy struct**
+
+```metall module
+pub nocopy struct Handle { id Int }
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Struct(name="Handle",pub=true,nocopy=true)
+    fields=StructField(name="id")
+      type=SimpleType(name="Int")
+```
+
+**Nocopy union**
+
+```metall
+nocopy union Resource = Int | Str
+```
+
+```ast
+Union(name="Resource",nocopy=true)
+  variants[0]=SimpleType(name="Int")
+  variants[1]=SimpleType(name="Str")
+```
+
 **Sync struct**
 
 ```metall module

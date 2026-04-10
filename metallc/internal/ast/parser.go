@@ -98,9 +98,7 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if fun, ok := p.ParseFun(); ok {
 				decls = append(decls, fun)
 			}
-		case p.lookAhead(token.Struct) || p.lookAhead(token.Pub, token.Struct) ||
-			p.lookAhead(token.Sync, token.Struct) || p.lookAhead(token.Pub, token.Sync, token.Struct) ||
-			p.lookAhead(token.Unsync, token.Struct) || p.lookAhead(token.Pub, token.Unsync, token.Struct):
+		case p.lookAheadTypeDecl(token.Struct):
 			if struct_, ok := p.ParseStruct(); ok {
 				decls = append(decls, struct_)
 			}
@@ -108,9 +106,7 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if shape, ok := p.ParseShape(); ok {
 				decls = append(decls, shape)
 			}
-		case p.lookAhead(token.Union) || p.lookAhead(token.Pub, token.Union) ||
-			p.lookAhead(token.Sync, token.Union) || p.lookAhead(token.Pub, token.Sync, token.Union) ||
-			p.lookAhead(token.Unsync, token.Union) || p.lookAhead(token.Pub, token.Unsync, token.Union):
+		case p.lookAheadTypeDecl(token.Union):
 			if union, ok := p.ParseUnion(); ok {
 				decls = append(decls, union)
 			}
@@ -327,6 +323,7 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 
 func (p *Parser) ParseStruct() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
+	nocopy := p.lookAheadConsume(token.Nocopy)
 	sync := p.parseSyncMode()
 	t, ok := p.expect(token.Struct)
 	if !ok {
@@ -355,7 +352,7 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if _, ok := p.expect(token.RCurly); !ok {
 		return ParseFailed, false
 	}
-	return p.NewStruct(name, typeParams, fields, pub, sync, t.Span.Combine(p.span())), true
+	return p.NewStruct(name, typeParams, fields, pub, nocopy, sync, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseShape() (NodeID, bool) {
@@ -409,6 +406,7 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 
 func (p *Parser) ParseUnion() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
+	nocopy := p.lookAheadConsume(token.Nocopy)
 	sync := p.parseSyncMode()
 	t, ok := p.expect(token.Union)
 	if !ok {
@@ -447,7 +445,7 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 		p.diagnostic(p.span(), "union requires at least 2 variants")
 		return ParseFailed, false
 	}
-	return p.NewUnion(name, typeParams, variants, pub, sync, t.Span.Combine(p.span())), true
+	return p.NewUnion(name, typeParams, variants, pub, nocopy, sync, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
@@ -745,6 +743,21 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = struct_
+	case token.Nocopy:
+		// nocopy can precede struct or union.
+		if p.lookAheadTypeDecl(token.Struct) {
+			struct_, ok := p.ParseStruct()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = struct_
+		} else {
+			union, ok := p.ParseUnion()
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = union
+		}
 	case token.Shape:
 		shape, ok := p.ParseShape()
 		if !ok {
@@ -1552,6 +1565,23 @@ func (p *Parser) parseFunLitParams() ([]NodeID, bool) {
 			return funParams, false
 		}
 	}
+}
+
+// lookAheadTypeDecl checks if the next tokens form a type declaration with
+// the given keyword (struct or union). Handles [pub] [nocopy] [sync|unsync].
+func (p *Parser) lookAheadTypeDecl(kw token.TokenKind) bool {
+	return p.lookAhead(kw) ||
+		p.lookAhead(token.Pub, kw) ||
+		p.lookAhead(token.Nocopy, kw) ||
+		p.lookAhead(token.Pub, token.Nocopy, kw) ||
+		p.lookAhead(token.Sync, kw) ||
+		p.lookAhead(token.Pub, token.Sync, kw) ||
+		p.lookAhead(token.Unsync, kw) ||
+		p.lookAhead(token.Pub, token.Unsync, kw) ||
+		p.lookAhead(token.Nocopy, token.Sync, kw) ||
+		p.lookAhead(token.Pub, token.Nocopy, token.Sync, kw) ||
+		p.lookAhead(token.Nocopy, token.Unsync, kw) ||
+		p.lookAhead(token.Pub, token.Nocopy, token.Unsync, kw)
 }
 
 func (p *Parser) parseSyncMode() SyncMode {

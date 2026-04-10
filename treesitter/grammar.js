@@ -189,6 +189,7 @@ module.exports = grammar({
     struct_declaration: ($) =>
       seq(
         optional("pub"),
+        optional("nocopy"),
         optional(choice("sync", "unsync")),
         "struct",
         field("name", $.type_identifier),
@@ -231,6 +232,7 @@ module.exports = grammar({
     union_declaration: ($) =>
       seq(
         optional("pub"),
+        optional("nocopy"),
         optional(choice("sync", "unsync")),
         "union",
         field("name", $.type_identifier),

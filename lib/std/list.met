@@ -1,5 +1,5 @@
 --- A re-allocating array list. ---
-pub struct List<T> {
+pub nocopy struct List<T> {
     pub len Int
     data []mut T 
     @a Arena
@@ -10,6 +10,7 @@ pub fun List.new<T>(initial_capacity Int, @a Arena) &mut List<T> {
     @a.new_mut(List(0, data, @a))
 }
 
+--- Copy the slice and return a list. ---
 pub fun List.from_slice<T>(slice []T, @a Arena) &mut List<T> {
     let data = unsafe @a.slice_uninit_mut<T>(slice.len)
     _ = data.set(slice)

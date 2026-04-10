@@ -1051,6 +1051,179 @@ fun foo() void {
 ```error
 ```
 
+## Nocopy
+
+**Nocopy struct construction is allowed**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let h = Handle(1)
+    _ = h
+}
+```
+
+```error
+```
+
+**Cannot copy nocopy value to another variable**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let h = Handle(1)
+    let h2 = h
+    _ = h2
+}
+```
+
+```error
+test.met:4:14: cannot copy value of nocopy type test.Handle
+        let h = Handle(1)
+        let h2 = h
+                 ^
+        _ = h2
+
+test.met:5:9: symbol not defined: h2
+        let h2 = h
+        _ = h2
+            ^^
+    }
+```
+
+**Cannot pass nocopy by value to function**
+
+```metall module
+nocopy struct Handle { id Int }
+fun take(h Handle) void { _ = h }
+fun foo() void {
+    let h = Handle(1)
+    take(h)
+}
+```
+
+```error
+test.met:5:10: cannot copy value of nocopy type test.Handle
+        let h = Handle(1)
+        take(h)
+             ^
+    }
+```
+
+**Can pass nocopy by reference**
+
+```metall module
+nocopy struct Handle { id Int }
+fun use_ref(h &Handle) Int { h.id }
+fun foo() void {
+    let h = Handle(1)
+    _ = use_ref(&h)
+}
+```
+
+```error
+```
+
+**Can receive nocopy from function call**
+
+```metall module
+nocopy struct Handle { id Int }
+fun make_handle() Handle { Handle(1) }
+fun foo() void {
+    let h = make_handle()
+    _ = h
+}
+```
+
+```error
+```
+
+**Reassign nocopy from construction is allowed**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    mut h = Handle(1)
+    h = Handle(2)
+    _ = h
+}
+```
+
+```error
+```
+
+**Cannot reassign nocopy from existing binding**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let a = Handle(1)
+    mut h = Handle(2)
+    h = a
+    _ = h
+}
+```
+
+```error
+test.met:5:9: cannot copy value of nocopy type test.Handle
+        mut h = Handle(2)
+        h = a
+            ^
+        _ = h
+```
+
+**Struct containing nocopy field is also nocopy**
+
+```metall module
+nocopy struct Handle { id Int }
+struct Wrapper { h Handle }
+fun foo() void {
+    let w = Wrapper(Handle(1))
+    let w2 = w
+    _ = w2
+}
+```
+
+```error
+test.met:5:14: cannot copy value of nocopy type test.Wrapper
+        let w = Wrapper(Handle(1))
+        let w2 = w
+                 ^
+        _ = w2
+
+test.met:6:9: symbol not defined: w2
+        let w2 = w
+        _ = w2
+            ^^
+    }
+```
+
+**Nocopy union variant makes whole union nocopy**
+
+```metall module
+nocopy struct Handle { id Int }
+union Resource = Handle | Int
+fun foo() void {
+    let r = Resource(1)
+    let r2 = r
+    _ = r2
+}
+```
+
+```error
+test.met:5:14: cannot copy value of nocopy type test.Resource
+        let r = Resource(1)
+        let r2 = r
+                 ^
+        _ = r2
+
+test.met:6:9: symbol not defined: r2
+        let r2 = r
+        _ = r2
+            ^^
+    }
+```
+
 ## Defer
 
 **Defer block is void**

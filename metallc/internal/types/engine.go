@@ -364,6 +364,94 @@ func (e *Engine) isSync(typeID TypeID) bool {
 	}
 }
 
+// isCopyable returns true if a value of the given type can be copied (assigned,
+// passed by value). A type is not copyable if it is explicitly marked `nocopy`
+// or if any of its fields (struct) or variants (union) are not copyable.
+func (e *Engine) isCopyable(typeID TypeID) bool {
+	typ := e.env.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case VoidType, NeverType, BoolType, IntType:
+		return true
+	case StructType:
+		declNode := e.env.DeclNode(typeID)
+		if declNode != 0 {
+			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Nocopy {
+				return false
+			}
+		}
+		for _, field := range kind.Fields {
+			if !e.isCopyable(field.Type) {
+				return false
+			}
+		}
+		return true
+	case UnionType:
+		declNode := e.env.DeclNode(typeID)
+		if declNode != 0 {
+			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Nocopy {
+				return false
+			}
+		}
+		for _, variant := range kind.Variants {
+			if !e.isCopyable(variant) {
+				return false
+			}
+		}
+		return true
+	case ArrayType:
+		return e.isCopyable(kind.Elem)
+	case RefType, SliceType, FunType, AllocatorType, TypeParamType, ShapeType:
+		return true
+	default:
+		panic(fmt.Sprintf("isCopyable: unknown type: %T", kind))
+	}
+}
+
+// isFreshValue returns true if the expression creates a new value rather than
+// reading from an existing binding (which would be a copy). Fresh values:
+// constructions, function calls, blocks/if/when/match whose result is fresh.
+func (e *Engine) isFreshValue(nodeID ast.NodeID) bool {
+	node := e.ast.Node(nodeID)
+	switch kind := node.Kind.(type) {
+	case ast.TypeConstruction:
+		return true
+	case ast.Call:
+		return true
+	case ast.AllocatorVar:
+		// @a.new(Struct{...}) is fresh; @a.new(existing_val) is a copy.
+		for _, arg := range kind.Args {
+			if _, ok := e.ast.Node(arg).Kind.(ast.TypeConstruction); ok {
+				return true
+			}
+		}
+		return false
+	case ast.Block:
+		if len(kind.Exprs) > 0 {
+			return e.isFreshValue(kind.Exprs[len(kind.Exprs)-1])
+		}
+		return true
+	case ast.If:
+		return e.isFreshValue(kind.Then) && (kind.Else == nil || e.isFreshValue(*kind.Else))
+	default:
+		return false
+	}
+}
+
+// checkNocopy verifies that a nocopy value is not being copied. It should be
+// called whenever a value is consumed (variable init, assignment, function arg).
+// Returns true if the usage is valid (either the type is copyable or the
+// expression produces a fresh value).
+func (e *Engine) checkNocopy(exprNodeID ast.NodeID, exprTypeID TypeID, span base.Span) bool {
+	if e.isCopyable(exprTypeID) {
+		return true
+	}
+	if e.isFreshValue(exprNodeID) {
+		return true
+	}
+	e.diag(span, "cannot copy value of nocopy type %s", e.env.TypeDisplay(exprTypeID))
+	return false
+}
+
 // isFunDeclSync determines if a function declaration produces a sync fun type.
 // A function is sync if all its parameters, return type, and captures are sync.
 // paramTypeIDs and retTypeID are the already-resolved types (needed because
@@ -423,6 +511,9 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 		e.diag(span, "type mismatch: expected %s, got %s",
 			e.env.TypeDisplay(lhsTypeID), e.env.TypeDisplay(rhsTypeID))
 		return InvalidTypeID, TypeDepFailed
+	}
+	if !e.checkNocopy(assign.RHS, rhsTypeID, e.ast.Node(assign.RHS).Span) {
+		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK
 }
@@ -1321,6 +1412,12 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 					argIndex+1, e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
 			}
 			return InvalidTypeID, TypeFailed
+		}
+		// By-value arguments to non-reference params are copies.
+		if _, isRef := e.env.Type(paramTypeID).Kind.(RefType); !isRef {
+			if !e.checkNocopy(argNodeID, argTypeID, e.ast.Node(argNodeID).Span) {
+				return InvalidTypeID, TypeFailed
+			}
 		}
 	}
 	calleeIsUnsafe := false
@@ -2470,6 +2567,9 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 	}
 	if !e.isInstantiable(exprTypeID) {
 		e.diag(span, "cannot assign expression of type '%s' to a variable", e.env.TypeDisplay(exprTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	if !e.checkNocopy(varNode.Expr, exprTypeID, e.ast.Node(varNode.Expr).Span) {
 		return InvalidTypeID, TypeFailed
 	}
 	bindTypeID := exprTypeID
