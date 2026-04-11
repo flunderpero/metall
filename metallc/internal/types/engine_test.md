@@ -9330,6 +9330,22 @@ test.met:1:119: type Foo does not satisfy shape S: method foo has signature fun(
                                                                                                                           ^^^^^^^^
 ```
 
+**Type-param argument with incompatible shape constraint**
+
+```metall module
+shape A { fun A.foo(a A) Int }
+shape B { fun B.bar(b B) Int }
+fun call_a<T A>(t T) Int { t.foo() }
+fun caller<U B>(u U) Int { call_a(u) }
+```
+
+```error
+test.met:4:28: type parameter U with constraint test.B does not satisfy shape test.A
+    fun call_a<T A>(t T) Int { t.foo() }
+    fun caller<U B>(u U) Int { call_a(u) }
+                               ^^^^^^^^^
+```
+
 **Method on unconstrained type param (module)**
 
 ```metall module

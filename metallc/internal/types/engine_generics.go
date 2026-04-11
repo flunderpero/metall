@@ -81,6 +81,67 @@ func (s *GenericSpec) Bindings(typeArgIDs []TypeID) map[TypeID]TypeID {
 	return bindings
 }
 
+// typeParamSatisfiesShape checks whether a type parameter argument satisfies a
+// shape constraint required by the callee. An unconstrained type parameter is
+// accepted here and any subsequent misuse is reported when the callee body is
+// instantiated. When the argument carries its own shape constraint, the
+// argument's shape must structurally cover the required constraint: every
+// method declared by the required shape must also be declared by the
+// argument's shape.
+func (e *Engine) typeParamSatisfiesShape(
+	argTPT TypeParamType, argTypeID, constraintTypeID TypeID, span base.Span,
+) bool {
+	if argTPT.Shape == nil {
+		return true
+	}
+	if *argTPT.Shape == constraintTypeID {
+		return true
+	}
+	if e.shapeCoversShape(*argTPT.Shape, constraintTypeID) {
+		return true
+	}
+	e.diag(span, "type parameter %s with constraint %s does not satisfy shape %s",
+		e.env.TypeDisplay(argTypeID),
+		e.env.TypeDisplay(*argTPT.Shape),
+		e.env.TypeDisplay(constraintTypeID))
+	return false
+}
+
+// shapeCoversShape returns true when every method declared in `required` is
+// also declared in `have`. This is a name-only check; signature compatibility
+// will be verified later when the callee body is materialized against the
+// concrete type that ultimately substitutes the type parameter.
+func (e *Engine) shapeCoversShape(have, required TypeID) bool {
+	haveDecl := e.env.DeclNode(typeIDOrigin(e.env, have))
+	reqDecl := e.env.DeclNode(typeIDOrigin(e.env, required))
+	if haveDecl == 0 || reqDecl == 0 {
+		return false
+	}
+	haveShape, ok := e.ast.Node(haveDecl).Kind.(ast.Shape)
+	if !ok {
+		return false
+	}
+	reqShape, ok := e.ast.Node(reqDecl).Kind.(ast.Shape)
+	if !ok {
+		return false
+	}
+	haveMethods := map[string]bool{}
+	for _, funDeclNodeID := range haveShape.Funs {
+		funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
+		if _, methodName, found := strings.Cut(funDecl.Name.Name, "."); found {
+			haveMethods[methodName] = true
+		}
+	}
+	for _, funDeclNodeID := range reqShape.Funs {
+		funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
+		_, methodName, _ := strings.Cut(funDecl.Name.Name, ".")
+		if !haveMethods[methodName] {
+			return false
+		}
+	}
+	return true
+}
+
 func (e *Engine) resolveTypeParamConstraint(constraintNode *ast.NodeID) (*TypeID, TypeStatus) {
 	if constraintNode == nil {
 		return nil, TypeOK
@@ -237,8 +298,11 @@ func (e *Engine) SolveGenericArgs(
 			if status.Failed() {
 				return nil, status
 			}
-			if _, isTypeParam := e.env.Type(argTypeID).Kind.(TypeParamType); !isTypeParam &&
-				!e.SatisfiesShape(argTypeID, constraintTypeID, scopeNodeID, span) {
+			if argTPT, isTypeParam := e.env.Type(argTypeID).Kind.(TypeParamType); isTypeParam {
+				if !e.typeParamSatisfiesShape(argTPT, argTypeID, constraintTypeID, span) {
+					return nil, TypeFailed
+				}
+			} else if !e.SatisfiesShape(argTypeID, constraintTypeID, scopeNodeID, span) {
 				return nil, TypeFailed
 			}
 		}
