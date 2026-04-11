@@ -357,7 +357,7 @@ func (e *Engine) isSync(typeID TypeID) bool {
 		return false
 	case FunType:
 		return typeID&syncFunFlag != 0
-	case RefType, SliceType, AllocatorType:
+	case RefType, SliceType, AllocatorType, ShapeType:
 		return false
 	default:
 		panic(fmt.Sprintf("unknown type: %T", kind))
@@ -1201,19 +1201,50 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 	if typeID, status, ok := e.resolveMethod(nodeID, fieldAccess, targetTyp); ok {
 		return typeID, status
 	}
-	switch targetTyp.Kind.(type) {
+	switch kind := targetTyp.Kind.(type) {
 	case StructType, UnionType, IntType, BoolType, AllocatorType, SliceType:
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
 	case TypeParamType:
-		e.diag(
-			fieldAccess.Field.Span,
-			"unconstrained type parameter has no fields or methods: %s", typeName,
-		)
+		e.diagTypeParamFieldAccess(kind, fieldAccess, typeName)
 	default:
 		targetSpan := e.ast.Node(fieldAccess.Target).Span
 		e.diag(targetSpan, "cannot access field on non-struct type: %s", typeName)
 	}
 	return InvalidTypeID, TypeFailed
+}
+
+func (e *Engine) diagTypeParamFieldAccess(
+	tpt TypeParamType, fieldAccess ast.FieldAccess, typeName string,
+) {
+	if tpt.Shape == nil {
+		e.diag(
+			fieldAccess.Field.Span,
+			"unconstrained type parameter has no fields or methods: %s", typeName,
+		)
+		return
+	}
+	shapeType := base.Cast[ShapeType](e.env.Type(*tpt.Shape).Kind)
+	names := make([]string, 0)
+	for _, f := range shapeType.Fields {
+		names = append(names, f.Name)
+	}
+	if shapeNodeID := e.env.DeclNode(*tpt.Shape); shapeNodeID != 0 {
+		if shapeNode, ok := e.ast.Node(shapeNodeID).Kind.(ast.Shape); ok {
+			for _, funDeclNodeID := range shapeNode.Funs {
+				funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
+				if _, methodName, found := strings.Cut(funDecl.Name.Name, "."); found {
+					names = append(names, methodName)
+				} else {
+					names = append(names, funDecl.Name.Name)
+				}
+			}
+		}
+	}
+	e.diag(
+		fieldAccess.Field.Span,
+		"shape %s (constraint on %s) has no member %s; available: %v",
+		e.env.TypeDisplay(*tpt.Shape), typeName, fieldAccess.Field.Name, names,
+	)
 }
 
 func (e *Engine) resolveMethod( //nolint:funlen

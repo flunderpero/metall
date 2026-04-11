@@ -81,6 +81,32 @@ func (s *GenericSpec) Bindings(typeArgIDs []TypeID) map[TypeID]TypeID {
 	return bindings
 }
 
+func (e *Engine) resolveTypeParamConstraint(constraintNode *ast.NodeID) (*TypeID, TypeStatus) {
+	if constraintNode == nil {
+		return nil, TypeOK
+	}
+	constraintTypeID, status := e.Query(*constraintNode)
+	if status.Failed() {
+		return nil, TypeDepFailed
+	}
+	shapeType, ok := e.env.Type(constraintTypeID).Kind.(ShapeType)
+	if !ok {
+		e.diag(e.ast.Node(*constraintNode).Span, "constraint must be a shape")
+		return nil, TypeFailed
+	}
+	shapeNodeID := e.env.DeclNode(constraintTypeID)
+	if shapeNodeID != 0 {
+		if shapeNode, ok := e.ast.Node(shapeNodeID).Kind.(ast.Shape); ok {
+			if len(shapeNode.TypeParams) > 0 && len(shapeType.TypeArgs) == 0 {
+				e.diag(e.ast.Node(*constraintNode).Span,
+					"shape %s requires type arguments", shapeType.DeclName)
+				return nil, TypeFailed
+			}
+		}
+	}
+	return &constraintTypeID, TypeOK
+}
+
 func (e *Engine) bindTypeParams(typeParamNodeIDs []ast.NodeID) TypeStatus {
 	seen := map[string]bool{}
 	for _, typeParamNodeID := range typeParamNodeIDs {
@@ -93,17 +119,9 @@ func (e *Engine) bindTypeParams(typeParamNodeIDs []ast.NodeID) TypeStatus {
 
 		typeParamID, ok := e.env.reg.typeParamTypes[typeParamNodeID]
 		if !ok {
-			var shapeID *TypeID
-			if typeParamNode.Constraint != nil {
-				constraintTypeID, status := e.Query(*typeParamNode.Constraint)
-				if status.Failed() {
-					return TypeDepFailed
-				}
-				if _, ok := e.env.Type(constraintTypeID).Kind.(ShapeType); !ok {
-					e.diag(e.ast.Node(*typeParamNode.Constraint).Span, "constraint must be a shape")
-					return TypeFailed
-				}
-				shapeID = &constraintTypeID
+			shapeID, status := e.resolveTypeParamConstraint(typeParamNode.Constraint)
+			if status.Failed() {
+				return status
 			}
 
 			var defaultID *TypeID
