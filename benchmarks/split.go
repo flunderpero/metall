@@ -6,15 +6,6 @@ import (
 	"os"
 )
 
-func hash(x uint64) uint64 {
-	x ^= x >> 30
-	x *= 0xbf58476d1ce4e5b9
-	x ^= x >> 27
-	x *= 0x94d049bb133111eb
-	x ^= x >> 31
-	return x
-}
-
 func isSpace(b byte) bool {
 	return b == ' ' || (b >= 9 && b <= 13)
 }
@@ -24,12 +15,12 @@ func main() {
 	if len(os.Args) > 1 {
 		mode = os.Args[1]
 	}
-	const N = 500_000_000
+	const N = 1_000_000_000
 	const NEEDLE byte = 7
 
 	data := make([]byte, N)
 	for i := 0; i < N; i++ {
-		data[i] = byte(hash(uint64(i)) & 0xff)
+		data[i] = byte(i & 0xff)
 	}
 
 	var seps int

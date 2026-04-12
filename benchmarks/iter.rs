@@ -9,8 +9,15 @@ fn hash(mut x: u64) -> u64 {
     x
 }
 
+fn n() -> u64 {
+    // We read N from the environment so LLVM cannot constant fold parts of the `hash`
+    // function. If N was constant, LLVM could "unfairly" optimize the iteration source
+    // and that is not what we want to test.
+    env::var("ITER_N").ok().and_then(|s| s.parse().ok()).unwrap_or(500_000_000)
+}
+
 fn pipeline() -> impl Iterator<Item = u64> {
-    (0..500_000_000u64)
+    (0..n())
         .map(|x| hash(x))
         .filter(|&x| x % 3 != 0)
         .map(|x| x.wrapping_mul(17).wrapping_add(42))

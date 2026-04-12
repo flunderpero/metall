@@ -4,13 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define BLACK_BOX(x) __asm__ volatile("" : "+r" (x))
-
 static inline uint64_t hash(uint64_t x) {
-    // This forces clang to not optimize the first part of the calculations away.
-    // It might feel like cheating by handcuffing C but we don't want to test how
-    // good clang can optimize the test-data.
-    BLACK_BOX(x);
     x ^= x >> 30;
     x *= 0xbf58476d1ce4e5b9ULL;
     x ^= x >> 27;
@@ -21,7 +15,11 @@ static inline uint64_t hash(uint64_t x) {
 
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "fold";
-    const uint64_t N = 500000000ULL;
+    // We read the N from the environment so LLVM cannot constant fold parts of the `hash`
+    // function. If N was constant, LLVM could "unfairly" optimize the iteration source
+    // and that is not what we want to test.
+    const char *env_n = getenv("ITER_N");
+    const uint64_t N = env_n ? strtoull(env_n, NULL, 10) : 500000000ULL;
 
     if (!strcmp(mode, "fold")) {
         uint64_t acc = 0;

@@ -3,23 +3,14 @@ use std.pattern
 use std.iter
 use std.os
 
-pub fun hash(x U64) U64 {
-    mut h = x ^ (x >> U64(30))
-    h = h *% U64(13787848793156543929) -- 0xbf58476d1ce4e5b9
-    h = h ^ (h >> U64(27))
-    h = h *% U64(10723151780598845931) -- 0x94d049bb133111eb
-    h = h ^ (h >> U64(31))
-    h
-}
-
 pub fun main() void {
     let args = os.args()
     let mode = if args.len > 1 { args[1] } else { "byte" }
     let @a = Arena()
-    let n = 500000000
+    let n = 1000000000
     mut init_data = unsafe @a.slice_uninit<U8>(n)
     for i in 0..n {
-        init_data[i] = (hash(i.to_u64_wrapping()) % 256).to_u8_wrapping()
+        init_data[i] = (i % 256).to_u8_wrapping()
     }
     let needle = [U8(7)][..]
 
@@ -28,7 +19,7 @@ pub fun main() void {
         -- todo: We need to convert from []mut U8 to []U8 because of a bug
         --       in method resolution.
         let data []U8 = init_data
-        let it = data.lsplit(pattern.index(needle))
+        let it = data.lsplit(needle)
         iter.pipe(it).count()
     case mode.eq("predicate"):
         let data []U8 = init_data

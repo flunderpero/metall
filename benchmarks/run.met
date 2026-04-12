@@ -8,13 +8,13 @@ let benchmarks = [
     Benchmark("iter", "fold", 100, 100, 320),
     Benchmark("iter", "count", 100, 100, 130),
     Benchmark("iter", "all", 250, 220, 280),
-    Benchmark("iter", "any", 100, 70, 300),
-    Benchmark("iter", "find", 100, 100, 350),
+    Benchmark("iter", "any", 100, 50, 300),
+    Benchmark("iter", "find", 100, 60, 350),
     Benchmark("iter", "take", 230, 85, 230),
     Benchmark("iter", "take_while", 80, 100, 100),
     Benchmark("iter", "collect", 95, 100, 150),
-    Benchmark("split", "byte", 95, 100, 100),
-    Benchmark("split", "predicate", 90, 80, 120),
+    Benchmark("split", "byte", 90, 55, 90),
+    Benchmark("split", "predicate", 85, 65, 120),
 ]
 
 struct Benchmark {

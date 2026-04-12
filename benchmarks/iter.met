@@ -29,11 +29,25 @@ pub fun hash(x U64) U64 {
     h
 }
 
-pub fun main() void {
+--- We read N from the args so LLVM cannot constant fold parts of the `hash`
+    function. If N was constant, LLVM could "unfairly" optimize the iteration source
+    and that is not what we want to test. ---
+fun n() U64 {
+    let args = os.args()
+    -- We don't really read it from the args, we should want to make sure this cannot
+    -- be optimized away and the compiler knows that it's 500000000.
+    if args.len > 10 { 
+        try U64.from_ascii_str(args[9].as_bytes()) else e { panic(e.msg) }
+    } else { 
+        U64(500000000)
+    }
+}
+
+pub fun main() !void {
     let args = os.args()
     let mode = if args.len > 1 { args[1] } else { "fold" }
 
-    let it = iter.pipe(range(U64(0), U64(500000000)))
+    let it = iter.pipe(range(U64(0), n()))
         .map(fun(x) { hash(x) })
         .filter(fun(x) { (x % 3) != 0 })
         .map(fun(x) { (x *% 17) +% 42 })
