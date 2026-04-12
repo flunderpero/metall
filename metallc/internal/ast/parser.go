@@ -224,30 +224,28 @@ func (p *Parser) ParseExternFun() (NodeID, bool) {
 	if _, ok := p.expect(token.Extern); !ok {
 		return ParseFailed, false
 	}
-	next, ok := p.mustPeek()
-	if !ok {
-		return ParseFailed, false
-	}
-	// Alias form: extern metall_name = fun c_name(...)
-	if next.Kind == token.Ident {
-		p.next()
-		alias := Name{next.Value, next.Span}
-		if _, ok := p.expect(token.Eq); !ok {
-			return ParseFailed, false
-		}
-		decl, startSpan, ok := p.parseFunDecl()
+
+	// Optional link name: extern("c_name") fun ...
+	var externName string
+	if p.lookAheadConsume(token.LParen) {
+		linkTok, ok := p.expect(token.String)
 		if !ok {
 			return ParseFailed, false
 		}
-		return p.NewExternFunDecl(alias, decl.Name.Name, decl.TypeParams, decl.Params, decl.ReturnType,
-			pub, startSpan.Combine(p.span())), true
+		externName = linkTok.Value
+		if _, ok := p.expect(token.RParen); !ok {
+			return ParseFailed, false
+		}
 	}
-	// Simple form: extern fun c_name(...)
+
 	decl, startSpan, ok := p.parseFunDecl()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewExternFunDecl(decl.Name, decl.Name.Name, decl.TypeParams, decl.Params, decl.ReturnType,
+	if externName == "" {
+		externName = decl.Name.Name
+	}
+	return p.NewExternFunDecl(decl.Name, externName, decl.TypeParams, decl.Params, decl.ReturnType,
 		pub, startSpan.Combine(p.span())), true
 }
 

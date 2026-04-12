@@ -14,16 +14,16 @@ extern fun abs(n Int) Int
     return_type: (simple_type (type_identifier))))
 
 ================================================================================
-Extern function with alias
+Extern function with link name
 ================================================================================
 
-extern my_chdir = fun chdir(path Int) Int
+extern("chdir") fun my_chdir(path Int) Int
 
 --------------------------------------------------------------------------------
 
 (source_file
   (extern_function_declaration
-    alias: (identifier)
+    link_name: (string_literal)
     name: (function_name (identifier))
     parameters: (parameter_list
       (parameter name: (identifier) type: (simple_type (type_identifier))))

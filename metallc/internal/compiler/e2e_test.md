@@ -5354,7 +5354,7 @@ false
 **extern function alias**
 
 ```metall
-extern my_abs = fun abs(n I32) I32
+extern("abs") fun my_abs(n I32) I32
 
 -- We can use abs as a name because the extern `abs` is aliased to `my_abs`.
 fun abs(n I32) I32 {

@@ -2811,10 +2811,10 @@ Module(fileName="test.met",name="test",main=true)
     returnType=SimpleType(name="Int")
 ```
 
-**Extern function with alias**
+**Extern function with link name**
 
 ```metall module
-extern my_chdir = fun chdir(path Int) Int
+extern("chdir") fun my_chdir(path Int) Int
 ```
 
 ```ast
