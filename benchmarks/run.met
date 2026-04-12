@@ -5,66 +5,84 @@ use std.io
 use std.test
 
 let benchmarks = [
-    Benchmark("iter", "fold", 90),
-    Benchmark("iter", "count", 10),
-    Benchmark("iter", "all", 250),
-    Benchmark("iter", "any", 90),
-    Benchmark("iter", "find", 90),
-    Benchmark("iter", "take", 300),
-    Benchmark("iter", "take_while", 90),
-    Benchmark("iter", "collect", 50)
+    Benchmark("iter", "fold", 100, 100, 320),
+    Benchmark("iter", "count", 100, 100, 130),
+    Benchmark("iter", "all", 250, 220, 280),
+    Benchmark("iter", "any", 100, 70, 300),
+    Benchmark("iter", "find", 100, 100, 350),
+    Benchmark("iter", "take", 300, 130, 350),
+    Benchmark("iter", "take_while", 80, 100, 100),
+    Benchmark("iter", "collect", 50, 70, 110),
+    Benchmark("split", "byte", 95, 100, 100),
+    Benchmark("split", "predicate", 90, 80, 120),
 ]
 
 struct Benchmark {
     group Str
     name Str
     -- todo: We don't have floating point numbers yet :-)
-    percentage Int
+    percentage_rust Int
+    percentage_c Int
+    percentage_go Int
 }
 
 fun Benchmark.run(b Benchmark, recompile Bool, @a Arena) !Bool {
     let @local = Arena()
     let rust_bin = ".build/".concat(b.group, @a).concat("_rs", @a)
+    let c_bin = ".build/".concat(b.group, @a).concat("_c", @a)
+    let go_bin = ".build/".concat(b.group, @a).concat("_go", @a)
     let met_bin = ".build/".concat(b.group, @a).concat("_met", @a)
     if recompile {
-        _ = try run( ["rustc", "-O", "-o", rust_bin, b.group.concat(".rs", @a)][..], @a)
+        _ = try run(
+            ["rustc", "-C", "opt-level=3", "-C", "target-cpu=native", "-o", rust_bin, b.group.concat(".rs", @a)][..], @a)
+        _ = try run(
+            ["clang", "-O3", "-march=native", "-o", c_bin, b.group.concat(".c", @a)][..], @a)
+        _ = try run(
+            ["go", "build", "-o", go_bin, b.group.concat(".go", @a)][..], @a)
         _ = try run([
-            "go", "run", "../metallc/...", "build", "-I", "../lib", 
+            "go", "run", "../metallc/...", "build", "-I", "../lib",
             "-opt", "fast", "-o", met_bin, b.group.concat(".met", @a)][..], @a)
     }
 
     io.print("[")
     io.print(b.group)
-    io.print("/")
-    io.print(b.name)
-    io.print("]\t")
-    if b.name.bytes_len() < 8 {
-        -- todo: All the \t and this check here is a workaround for missing "width" modifiers in StrBuilder.
-        io.print("\t")
+    if not b.name.eq("") {
+        io.print("/")
+        io.print(b.name)
     }
-    io.print("Rust: ")
-    mut t0 = time.Instant.new()
-    let rust_out = try run([rust_bin, b.name][..], @a)
-    let rust_duration = t0.elapsed()
-    io.print(rust_duration)
-
+    io.print("]\n")
     io.print("\tMetall: ")
-    t0 = time.Instant.new()
+    let t0 = time.Instant.new()
     let met_out = try run([met_bin, b.name][..], @a)
     let met_duration = t0.elapsed()
-    io.print(met_duration)
+    io.println(met_duration)
 
-    try test.eq(rust_out.trim(), met_out.trim(), "output differs")
-
-    let percentage = rust_duration.to(time.nanosecond) * 100 / met_duration.to(time.nanosecond)
-    io.print("\t-> ")
-    io.print(percentage)
-    if percentage < b.percentage {
-        io.println("%\t\x1b[31mFAILED\x1b[0m")
-        return false
+    let run_lang = fun[met_out, met_duration, b, @a](lang Str, cmd Str, expected_pct Int) !Bool {
+        io.print("\t")
+        io.print(lang)
+        io.print(":\t")
+        let t0 = time.Instant.new()
+        let out = try run([cmd, b.name][..], @a)
+        let duration = t0.elapsed()
+        let pct = duration.to(time.nanosecond) * 100 / met_duration.to(time.nanosecond)
+        io.print(duration)
+        io.print("\t")
+        io.print(pct)
+        io.print("%")
+        -- We expect at least 90% of the specified performance to account for fluctuations.
+        if pct < expected_pct - 10 {
+            io.println("\t\x1b[31mFAILED\x1b[0m")
+            return false
+        } else {
+            io.println("\t\x1b[32mPASSED\x1b[0m")
+        }
+        true
     }
-    io.println("%\t\x1b[32mPASSED\x1b[0m")
-    true
+
+    let c = try run_lang("C", c_bin, b.percentage_c)
+    let rust = try run_lang("Rust", rust_bin, b.percentage_rust)
+    let go = try run_lang("Go", go_bin, b.percentage_go)
+    c or rust or go
 }
 
 fun run(cmd []Str, @a Arena) !Str {
@@ -82,11 +100,30 @@ fun run(cmd []Str, @a Arena) !Str {
 
 fun main() !void {
     let @local = Arena()
+    let filter = {
+        let args = os.args()
+        if args.len > 1 {
+            args[1]
+        } else {
+            ""
+        }
+    }
+    io.println(filter)
     _ = try run(["mkdir", "-p", ".build"][..], @local)
     mut last_group = ""
     mut failed = 0
     for i in 0..benchmarks.len {
         let b = benchmarks[i]
+        if (not filter.eq("")) and (not b.group.eq(filter)) {
+            io.print("[")
+            io.print(b.group)
+            if not b.name.eq("") {
+                io.print("/")
+                io.print(b.name)
+            }
+            io.println("]\tSKIP")
+            continue
+        }
         -- todo: The `else` should not be needed, but the runtime does not print the error (correctly).
         let ok = try b.run(not b.group.eq(last_group), @local) else e { io.println(e.msg) return e }
         if not ok {

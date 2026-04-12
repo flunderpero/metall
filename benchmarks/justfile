@@ -1,2 +1,3 @@
-all:
-    go run ../metallc/... run -I ../lib run.met
+all args="":
+    go run ../metallc/... build -I ../lib --opt fast -o .build/run run.met
+    ./.build/run {{args}}
