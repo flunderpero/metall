@@ -2253,40 +2253,6 @@ Block: void
       Int: Int
 ```
 
-**When expression**
-
-```metall
-{
-    let x = false
-    let y = true
-    let z = when {
-        case x: 1
-        case y: 2
-        else: 3
-    }
-    z
-}
-```
-
-```types
-Block: Int
-  Var: void
-    Bool: Bool
-  Var: void
-    Bool: Bool
-  Var: void
-    When: Int
-      Ident: Bool
-      Block: Int
-        Int: Int
-      Ident: Bool
-      Block: Int
-        Int: Int
-      Block: Int
-        Int: Int
-  Ident: Int
-```
-
 **If with one branch return**
 
 ```metall
@@ -2433,6 +2399,190 @@ Fun: fun01
     Int: Int
 ---
 fun01 = sync fun(Int) Int
+```
+
+## When
+
+**When expression**
+
+```metall
+{
+    let x = false
+    let y = true
+    let z = when {
+        case x: 1
+        case y: 2
+        else: 3
+    }
+    z
+}
+```
+
+```types
+Block: Int
+  Var: void
+    Bool: Bool
+  Var: void
+    Bool: Bool
+  Var: void
+    When: Int
+      Ident: Bool
+      Block: Int
+        Int: Int
+      Ident: Bool
+      Block: Int
+        Int: Int
+      Block: Int
+        Int: Int
+  Ident: Int
+```
+
+**When without else**
+
+```metall
+{
+    let x = true
+    when {
+        case x: void
+    }
+}
+```
+
+```types
+Block: void
+  Var: void
+    Bool: Bool
+  When: void
+    Ident: Bool
+    Block: void
+      Ident: void
+```
+
+**When without else with non-void branch**
+
+```metall
+{
+    let x = true
+    when {
+        case x: 42
+    }
+}
+```
+
+```error
+test.met:4:17: when branch type mismatch: expected void, got Int
+        when {
+            case x: 42
+                    ^^
+        }
+```
+
+**When without else assigned to variable**
+
+```metall
+{
+    let x = true
+    let y = when {
+        case x: 42
+    }
+    y
+}
+```
+
+```error
+test.met:4:17: when branch type mismatch: expected void, got Int
+        let y = when {
+            case x: 42
+                    ^^
+        }
+
+test.met:6:5: symbol not defined: y
+        }
+        y
+        ^
+    }
+```
+
+**When without else as return value**
+
+```metall
+fun foo() Int {
+    when {
+        case true: 42
+    }
+}
+```
+
+```error
+test.met:3:20: when branch type mismatch: expected void, got Int
+        when {
+            case true: 42
+                       ^^
+        }
+```
+
+**When without else as function argument**
+
+```metall
+{
+    fun foo(x Int) Int { 42 }
+    foo(when { case true: 1 })
+}
+```
+
+```error
+test.met:3:27: when branch type mismatch: expected void, got Int
+        fun foo(x Int) Int { 42 }
+        foo(when { case true: 1 })
+                              ^
+    }
+```
+
+**When branches type mismatch**
+
+```metall
+{
+    let x = false
+    let y = true
+    when {
+        case x: 1
+        case y: "hello"
+        else: 3
+    }
+}
+```
+
+```error
+test.met:6:17: when branch type mismatch: expected Int, got Str
+            case x: 1
+            case y: "hello"
+                    ^^^^^^^
+            else: 3
+```
+
+**When unused with non-void converging type**
+
+```metall
+{
+    let x = false
+    when {
+        case x: 1
+        else: 2
+    }
+    42
+}
+```
+
+```error
+test.met:3:5: expression result of type Int is unused, assign to _ to discard
+        let x = false
+        when {
+        ^
+            case x: 1
+            else: 2
+        }
+        ^
+        42
 ```
 
 ## References
