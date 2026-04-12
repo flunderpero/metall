@@ -7,7 +7,7 @@ fun main() void {
     let suite = test.Suite.new("StrBuilder", @local)
     suite.test("u64", fun() !void {
         let @local = Arena()
-        let sut = StrBuilder.new(32, @local)
+        mut sut = StrBuilder.new(32, @local)
         sut.u64(13370)
         sut.str(" ")
         sut.u64(13370, 2)
@@ -22,22 +22,22 @@ fun main() void {
         try test.eq("13370 11010000111010 32072 13370 343a 343A", sut.as_str())
 
         -- min_width
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.u64(1, 10, false, 1)
         try test.eq("1", sut.as_str())
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.u64(1, 10, false, 2)
         try test.eq("01", sut.as_str())
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.u64(123, 10, false, 5)
         try test.eq("00123", sut.as_str())
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.u64(23, 10, false, 5)
         try test.eq("00023", sut.as_str())
     })
     suite.test("int", fun() !void {
         let @local = Arena()
-        let sut = StrBuilder.new(32, @local)
+        mut sut = StrBuilder.new(32, @local)
         sut.int(13370)
         sut.str(" ")
         sut.int(0 - 13370)
@@ -54,41 +54,41 @@ fun main() void {
         try test.eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.as_str())
 
         -- min_width
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.int(1, 10, false, 1)
         try test.eq("1", sut.as_str())
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.int(1, 10, false, 2)
         try test.eq("01", sut.as_str())
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.int(123, 10, false, 5)
         try test.eq("00123", sut.as_str())
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.int(23, 10, false, 5)
         try test.eq("00023", sut.as_str())
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.int(-123, 10, false, 5)
         try test.eq("-0123", sut.as_str())
     })
     suite.test("slice", fun() !void {
         let @local = Arena()
-        let sut = StrBuilder.new(32, @local)
+        mut sut = StrBuilder.new(32, @local)
         let s = ["hello", "there", "again"][..]
 
         sut.slice(s, " ")
         try test.eq("hello there again", sut.as_str())
 
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.slice(s, ", ", 13)
         try test.eq("hello, the...", sut.as_str())
 
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.slice(s, ", ", 3)
         try test.eq("...", sut.as_str())
 
         -- Make sure we don't truncate the output in the middle of a rune.
         let u = ["hi", "😀😀", "ha"][..]
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.slice(u, " ", 13)
         try test.eq("hi 😀...", sut.as_str())
     })
@@ -115,35 +115,29 @@ fun main() void {
     suite.test("as_cstr", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
+
         sut.str("hello")
         let cstr = sut.as_cstr()
         try test.eq([U8('h'), 'e', 'l', 'l', 'o', 0][..], cstr) 
-        -- This is just a view, the underlying StrBuilder can change!
-        sut.reset()
-        sut.str("ga")
-        try test.eq([U8('g'), 'a', 'l', 'l', 'o', 0][..], cstr) 
     })
     suite.test("as_str", fun() !void {
         let @local = Arena()
         let sut = StrBuilder.new(32, @local)
+
         sut.str("hello")
         let str = sut.as_str()
         try test.eq("hello", str)
-        -- This is just a view, the underlying StrBuilder can change!
-        sut.reset()
-        sut.str("ga")
-        try test.eq("gallo", str)
     })
-    suite.test("trim_right", fun() !void {
+    suite.test("rtrim", fun() !void {
         let @local = Arena()
-        let sut = StrBuilder.new(32, @local)
+        mut sut = StrBuilder.new(32, @local)
         sut.str("hello \t \n \r")
-        sut.trim_right()
+        sut.rtrim()
         try test.eq("hello", sut.as_str())
 
-        sut.reset()
+        sut = StrBuilder.new(32, @local)
         sut.str("hello!!?")
-        sut.trim_right(['!', '?'][..])
+        sut.rtrim(['!', '?'][..])
         try test.eq("hello", sut.as_str())
     })
     _ = suite.run()

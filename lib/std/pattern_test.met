@@ -1,0 +1,50 @@
+use std.test
+use std.pattern
+use std.list
+
+fun main() void {
+    let @local = Arena()
+
+    let suite = test.Suite.new("pattern", @local)
+    suite.test("index", fun() !void {
+        let sut = pattern.Index<U8>("aa".as_bytes())
+
+        try test.eq(Option(Range(3, 5)), sut.lfind_pattern("bb aa bb aa bb".as_bytes()))
+        try test.eq(Option(Range(9, 11)), sut.rfind_pattern("bb aa bb aa bb".as_bytes()))
+
+        try test.eq(Option(Range(0, 2)), sut.lfind_pattern("aa".as_bytes()), "exact match")
+        try test.eq(Option(Range(0, 2)), sut.rfind_pattern("aa".as_bytes()), "exact match")
+
+        let not_found = Option<Range<Int>>(None())
+        try test.eq(not_found, sut.lfind_pattern("bb cc dd".as_bytes()), "not found")
+        try test.eq(not_found, sut.rfind_pattern("bb cc dd".as_bytes()), "not found")
+
+        try test.eq(not_found, sut.lfind_pattern("".as_bytes()), "empty haystack")
+        try test.eq(not_found, sut.rfind_pattern("".as_bytes()), "empty haystack")
+
+        try test.eq(not_found, sut.lfind_pattern("a".as_bytes()), "needle longer than haystack")
+        try test.eq(not_found, sut.rfind_pattern("a".as_bytes()), "needle longer than haystack")
+
+        let empty = pattern.Index<U8>("".as_bytes())
+        try test.eq(not_found, sut.lfind_pattern("bb cc dd".as_bytes()), "empty needle")
+        try test.eq(not_found, sut.rfind_pattern("bb cc dd".as_bytes()), "empty needle")
+    })
+    suite.test("pred", fun() !void {
+        let sut = pattern.pred(fun(b U8) { b == 32})
+        try test.eq(Option(Range(2, 3)), sut.lfind_pattern("aa bb cc".as_bytes()))
+        try test.eq(Option(Range(5, 6)), sut.rfind_pattern("aa bb cc".as_bytes()))
+
+        let not_found = Option<Range<Int>>(None())
+        try test.eq(not_found, sut.lfind_pattern("aabb".as_bytes()))
+        try test.eq(not_found, sut.rfind_pattern("aabb".as_bytes()))
+    })
+    suite.test("rune_pred", fun() !void {
+        let sut = pattern.rune_pred(Rune.is_lower)
+        try test.eq(Option(Range(3, 4)), sut.lfind_pattern("BB aa".as_bytes()))
+
+        let not_found = Option<Range<Int>>(None())
+        try test.eq(not_found, sut.lfind_pattern("BB AA".as_bytes()))
+    })
+    _ = suite.run()
+
+}

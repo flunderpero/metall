@@ -1,0 +1,120 @@
+--- Left oriented pattern for slices and Str. ---
+pub shape LPattern<T> {
+    pub fun LPattern.lfind_pattern<T>(p LPattern, haystack T) ?Range<Int>
+}
+
+--- Right oriented pattern for slices and Str. ---
+pub shape RPattern<T> {
+    pub fun RPattern.rfind_pattern<T>(p RPattern, haystack T) ?Range<Int>
+}
+
+
+--- Find the index of a given needle slice from left or right. ---
+pub struct Index<T HasEq> {
+    needle []T
+}
+
+pub fun Index.lfind_pattern<T HasEq>(p Index<T>, haystack []T) ?Range<Int> {
+    let needle = p.needle
+    if needle.len == 0 {
+        return Range(0, 0)
+    }
+    if needle.len > haystack.len {
+        return None()
+    }
+    -- todo(perf): This is a highly naive implementation.
+    for i in 0..(haystack.len - needle.len + 1) {
+        mut found = true
+        for j in 0..needle.len {
+            if not haystack[i + j].eq(needle[j]) {
+                found = false
+                break
+            }
+        }
+        if found {
+            return Range(i, i + needle.len)
+        }
+    }
+    None()
+}
+
+pub fun Index.rfind_pattern<T HasEq>(p Index<T>, haystack []T) ?Range<Int> {
+    let needle = p.needle
+    if needle.len == 0 {
+        return Range(0, 0)
+    }
+    if needle.len > haystack.len {
+        return None()
+    }
+    -- todo(perf): This is a highly naive implementation.
+    mut i = haystack.len - needle.len
+    for i >= 0 {
+        mut found = true
+        for j in 0..needle.len {
+            if not haystack[i + j].eq(needle[j]) {
+                found = false
+                break
+            }
+        }
+        if found {
+            return Range(i, i + needle.len)
+        }
+        i = i - 1
+    }
+    None()
+}
+
+--- Find the index of a given needle slice from left or right. ---
+pub fun index<T HasEq>(needle []T) Index<T> {
+    Index(needle)
+}
+
+pub struct RunePred {
+    predicate fun(Rune) Bool
+}
+
+pub fun RunePred.lfind_pattern(p RunePred, haystack []U8) ?Range<Int> {
+    mut it = StrRuneIndexIter.new(haystack) 
+    for {
+        match (&mut it).next() {
+            case None: return None()
+            else next:
+                if p.predicate(next.rune) {
+                    return Range(next.index, it.index)
+                }
+        }
+    }
+    panic("unreachable")
+}
+
+pub fun rune_pred(predicate fun(Rune) Bool) RunePred {
+    RunePred(predicate)
+}
+
+pub struct Pred<T> {
+    predicate fun(T) Bool
+}
+
+pub fun Pred.lfind_pattern<T>(p Pred<T>, haystack []T) ?Range<Int> {
+    for i in 0..haystack.len {
+        if p.predicate(haystack[i]) {
+            return Range(i, i + 1)
+        }
+    }
+    None()
+}
+
+pub fun Pred.rfind_pattern<T>(p Pred<T>, haystack []T) ?Range<Int> {
+    mut i = haystack.len - 1
+    for i >= 0 {
+        if p.predicate(haystack[i]) {
+            return Range(i, i + 1)
+        }
+        i = i - 1
+    }
+    None()
+}
+
+pub fun pred<T>(predicate fun(T) Bool) Pred<T> {
+    Pred(predicate)
+}

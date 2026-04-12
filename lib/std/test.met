@@ -1,5 +1,4 @@
 --- A testing framework. ---
-
 use std.list
 use std.io
 
@@ -228,8 +227,8 @@ pub fun err<T>(obj !T, err_msg_contains Str, msg Str = "") !void {
     match obj {
         case Err e: 
             if not e.msg.contains(err_msg_contains) {
-        let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
+                let @local = Arena()
+                let sb = StrBuilder.new(32, @local)
                 sb.str("want error to contain '")
                 sb.str(err_msg_contains)
                 sb.str("', but got: ")

@@ -7,7 +7,7 @@ precommit:
     just lint
     just test
     just test-go safe
-    just test-stdlib fast
+    just test-lib fast
     just examples
 
 lint:
@@ -27,16 +27,16 @@ fmt:
 
 # Run all tests.
 #   opt: none, safe, fast - see `CompilerOpts`
-test opt="none": (test-go opt) (test-stdlib opt)
+test opt="none": (test-go opt) (test-lib opt)
 
 # Run Go tests.
 #   opt: none, safe, fast - run the E2E tests with this opt-level, see `CompilerOpts`
 test-go opt="none":
     {{ if opt != "" { "METALL_E2E_TEST_OPTLEVEL=" + opt } else { "" } }} go test ./metallc/... -count 1
 
-# Run stdlib tests.
+# Run lib tests.
 #   opt: none, safe, fast - see `CompilerOpts`
-test-stdlib opt="none":
+test-lib opt="none":
     #!/usr/bin/env bash
     set -uo pipefail
 

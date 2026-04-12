@@ -1,7 +1,13 @@
 use std.test
+use std.pattern
+use std.iter
 
 fun main() void {
     let @local = Arena()
+
+    fun collect<A, I Iter<A>>(it I, @a Arena) []A {
+        iter.pipe(it).collect(16, @a)
+    }
 
     let suite = test.Suite.new("Slice", @local)
     suite.test("copy", fun() !void {
@@ -54,19 +60,19 @@ fun main() void {
         try test.eq(Option(3), (&mut it).next())
         try test.eq(Option<Int>(None()), (&mut it).next())
     })
-    suite.test("utf8_trim_left", fun() !void {
+    suite.test("ltrim_utf8", fun() !void {
         mut sut = "\n \r \thi".as_bytes()
-        try test.eq([U8('h'), 'i'][..], sut.utf8_trim_left())
+        try test.eq([U8('h'), 'i'][..], sut.ltrim_utf8())
 
         sut = "!!? hi".as_bytes()
-        try test.eq([U8(' '), 'h', 'i'][..], sut.utf8_trim_left(['!', '?'][..]))
+        try test.eq([U8(' '), 'h', 'i'][..], sut.ltrim_utf8(['!', '?'][..]))
     })
-    suite.test("utf8_trim_right", fun() !void {
+    suite.test("rtrim_utf8", fun() !void {
         mut sut = "hi \n \r \t".as_bytes()
-        try test.eq([U8('h'), 'i'][..], sut.utf8_trim_right())
+        try test.eq([U8('h'), 'i'][..], sut.rtrim_utf8())
 
         sut = "hi ?!!".as_bytes()
-        try test.eq([U8('h'), 'i', ' '][..], sut.utf8_trim_right(['!', '?'][..]))
+        try test.eq([U8('h'), 'i', ' '][..], sut.rtrim_utf8(['!', '?'][..]))
     })
     suite.test("sort_in_place", fun() !void {
         mut sut1 = [3, 2, 4, 1]
@@ -74,6 +80,137 @@ fun main() void {
         sut[0] = 3
         sut.sort_in_place(fun (a Int, b Int) Int { if a == b { return 0 } if a < b { return 0 - 1 } return 1 })
         try test.eq([1, 2, 3, 4][..], sut)
+    })
+    suite.test("contains", fun() !void {
+        try test.ok("test".as_bytes().contains(pattern.index("test".as_bytes())))
+
+        -- Slice satisfies `LPattern`.
+        try test.not_ok("test".as_bytes().contains("a".as_bytes()))
+        try test.not_ok("test".as_bytes().contains("test1".as_bytes()))
+        try test.ok("test".as_bytes().contains("".as_bytes()))
+        try test.not_ok("".as_bytes().contains("test".as_bytes()))
+        try test.ok("".as_bytes().contains("".as_bytes()))
+    })
+    suite.test("lfind", fun() !void {
+        -- Test with explicit pattern (here: `pattern.index`)
+        try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".as_bytes().lfind(pattern.index("bb".as_bytes())))
+
+        -- From now on use `Slice` as the pattern because `Slice` satisfies `LPattern`.
+        let not_found = Option<Range<Int>>(None())
+        try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".as_bytes().lfind("bb".as_bytes()))
+        try test.eq(not_found, "aa bb aa".as_bytes().lfind("cc".as_bytes()))
+        try test.eq(not_found, "".as_bytes().lfind("aa".as_bytes()), "empty haystack")
+        try test.eq(Option(Range(0, 0)), "aa bb aa".as_bytes().lfind("".as_bytes()), "empty needle")
+
+        -- Test with `pred`.
+        try test.eq(Option(Range(2, 3)), "aa bb cc".as_bytes().lfind(pattern.pred(fun(b U8) { b == 32 })))
+    })
+    suite.test("rfind", fun() !void {
+        -- Test with explicit pattern (here: `pattern.index`)
+        try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".as_bytes().rfind(pattern.index("bb".as_bytes())))
+
+        -- From now on use `Slice` as the pattern because `Slice` satisfies `LPattern`.
+        let not_found = Option<Range<Int>>(None())
+        try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".as_bytes().rfind("bb".as_bytes()))
+        try test.eq(not_found, "aa bb aa".as_bytes().rfind("cc".as_bytes()))
+        try test.eq(not_found, "".rfind("aa".as_bytes()), "empty haystack")
+        try test.eq(Option(Range(0, 0)), "aa bb aa".as_bytes().rfind("".as_bytes()), "empty needle")
+
+        -- Test with `pred`.
+        try test.eq(Option(Range(5, 6)), "aa bb cc".as_bytes().rfind(pattern.pred(fun(b U8) { b == 32 })))
+    })
+    suite.test("lsplit", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        let it = "these are some words".as_bytes().lsplit(pattern.index(" ".as_bytes()))
+        try test.eq(
+            ["these".as_bytes(), "are".as_bytes(), "some".as_bytes(), "words".as_bytes()][..],
+            collect(it, @local))
+
+        -- From now on use `Slice` as the pattern because `Slice` satisfies `LPattern`.
+        try test.eq(
+            ["hello there".as_bytes()][..],
+            collect("hello there".as_bytes().lsplit(":"), @local),
+            "separator not found")
+        try test.eq(["".as_bytes()][..], collect("".as_bytes().lsplit(" ".as_bytes()), @local), "empty slice")
+        try test.eq(
+            ["t".as_bytes(), "e".as_bytes(), "s".as_bytes(), "t".as_bytes()][..],
+            collect("test".as_bytes().lsplit("".as_bytes()), @local),
+            "empty separator yields each element")
+        try test.eq(
+            ["a".as_bytes(), "b".as_bytes(), "".as_bytes()][..],
+            collect("a,b,".as_bytes().lsplit(",".as_bytes()), @local),
+            "empty splits are kept")
+        try test.eq([
+            "a".as_bytes(), "b".as_bytes(), "".as_bytes(), "".as_bytes()][..],
+            collect("a,b,,".as_bytes().lsplit(",".as_bytes()), @local),
+            "empty splits are kept")
+        try test.eq([
+            "these".as_bytes(), "are".as_bytes(), "some words".as_bytes()][..],
+            collect("these are some words".as_bytes().lsplit(" ".as_bytes(), 3), @local), "max_splits")
+    })
+    suite.test("rsplit", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        let it = "these are some words".as_bytes().rsplit(pattern.index(" ".as_bytes()))
+        try test.eq(["words".as_bytes(), "some".as_bytes(), "are".as_bytes(), "these".as_bytes()][..], collect(it, @local))
+
+        -- From now on use `Slice` as the pattern because `Slice` satisfies `RPattern`.
+        try test.eq(["hello there".as_bytes()][..], collect("hello there".as_bytes().rsplit(":"), @local), "separator not found")
+        try test.eq(["".as_bytes()][..], collect("".as_bytes().rsplit(" ".as_bytes()), @local), "empty slice")
+        try test.eq(
+            ["t".as_bytes(), "s".as_bytes(), "e".as_bytes(), "t".as_bytes()][..],
+            collect("test".as_bytes().rsplit("".as_bytes()), @local),
+            "empty separator yields each element")
+        try test.eq(
+            ["".as_bytes(), "b".as_bytes(), "a".as_bytes()][..],
+            collect("a,b,".as_bytes().rsplit(",".as_bytes()), @local),
+            "empty splits are kept")
+        try test.eq(
+            ["".as_bytes(), "".as_bytes(), "b".as_bytes(), "a".as_bytes(), "".as_bytes()][..],
+            collect(",a,b,,".as_bytes().rsplit(",".as_bytes()), @local),
+            "empty splits are kept")
+        try test.eq(
+            ["words".as_bytes(), "some".as_bytes(), "these are".as_bytes()][..],
+            collect("these are some words".as_bytes().rsplit(" ".as_bytes(), 3), @local),
+            "max_splits")
+    })
+    suite.test("lmatches", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        mut it = "hi collect hi slices hi".as_bytes().lmatches(pattern.index("hi".as_bytes()))
+        try test.eq(["hi".as_bytes(), "hi".as_bytes(), "hi".as_bytes()][..], collect(it, @local))
+
+        -- From now on use `Slice` as the pattern because `Slice` satisfies `LPattern`.
+        let empty [][]U8 = []
+        try test.eq(
+            empty,
+            collect("".as_bytes().lmatches("hi".as_bytes()), @local),
+            "empty slice does not match anything")
+        try test.eq(
+            empty,
+            collect("test".as_bytes().lmatches("".as_bytes()), @local),
+            "empty pattern does not match anything")
+    })
+    suite.test("rmatches", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        mut it = "hi collect hi slices hi".as_bytes().rmatches(pattern.index("hi".as_bytes()))
+        try test.eq(["hi".as_bytes(), "hi".as_bytes(), "hi".as_bytes()][..], collect(it, @local))
+
+        -- From now on use `Slice` as the pattern because `Slice` satisfies `RPattern`.
+        let empty [][]U8 = []
+        try test.eq(
+            empty, collect("".as_bytes().rmatches("hi".as_bytes()), @local),
+            "empty slice does not match anything")
+        try test.eq(
+            empty,
+            collect("test".as_bytes().rmatches("".as_bytes()), @local),
+            "empty pattern does not match anything")
     })
     _ = suite.run()
 }

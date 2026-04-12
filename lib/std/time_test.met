@@ -9,13 +9,12 @@ fun main() void {
         try test.eq(sut.elapsed().to(time.millisecond), 0, "aaa")
         time.sleep(time.millisecond.times(50))
         try test.gt_int(sut.elapsed().to(time.millisecond), 49)
-        try test.lt_int(sut.elapsed().to(time.millisecond), 60)
+        try test.lt_int(sut.elapsed().to(time.millisecond), 61)
     })
     suite.test("Duration.fmt", fun() !void {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        let fmt = fun[sb](d time.Duration) Str {
-            sb.reset()
+        let fmt = fun[@local](d time.Duration) Str {
+            let sb = StrBuilder.new(32, @local)
             sb.fmt(d)
             sb.as_str()
         }

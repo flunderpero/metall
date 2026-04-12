@@ -89,7 +89,7 @@ pub fun Duration.fmt(d Duration, sb &mut StrBuilder) void {
                 if rem != 0 {
                     sb.rune('.')
                     sb.int(rem, 10, false, fraction_width)
-                    sb.trim_right(['0'][..])
+                    sb.rtrim(['0'][..])
                 }
                 sb.str(units[i - 1])
                 return void
@@ -121,7 +121,7 @@ pub fun Duration.fmt(d Duration, sb &mut StrBuilder) void {
     if rem > 0 {
         sb.rune('.')
         sb.int(rem, 10, false, 9)
-        sb.trim_right(['0'][..])
+        sb.rtrim(['0'][..])
     }
     sb.rune('s')
 }

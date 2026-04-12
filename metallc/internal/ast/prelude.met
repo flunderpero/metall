@@ -25,6 +25,37 @@ pub shape Iter<T> {
     pub fun Iter.next(it &mut Iter) ?T
 }
 
+pub struct Range<T> {
+    pub start T
+    pub end T
+}
+
+pub fun Range.eq<T HasEq>(r Range<T>, other Range<T>) Bool {
+    r.start.eq(other.start) and r.end.eq(other.end)
+}
+
+pub fun Range.hash<T HasHash>(r Range<T>, other Range<T>) U64 {
+    r.start.hash() +% r.end.hash()
+}
+
+pub fun Range.fmt<T HasFmt>(r Range<T>, sb &mut StrBuilder) void {
+    sb.str("Range(")
+    sb.fmt(r.start)
+    sb.str(", ")
+    sb.fmt(r.end)
+    sb.str(")")
+}
+
+--- Left oriented pattern for slices and Str. ---
+shape LPattern<T> {
+    pub fun LPattern.lfind_pattern<T>(p LPattern, haystack T) ?Range<Int>
+}
+
+--- Right oriented pattern for slices and Str. ---
+shape RPattern<T> {
+    pub fun RPattern.rfind_pattern<T>(p RPattern, haystack T) ?Range<Int>
+}
+
 --- Replace an illegal unicode codepoint with the replacement character U+FFFD. 
     Valid codepoints range from U+0000 to U+10FFFF excluding the surrogate 
     codepoints U+D800 to U+DFFF. ---
@@ -80,6 +111,11 @@ pub fun Rune.to_bytes(r Rune) RuneUTF8 {
     }
 }
 
+--- Check whether the given byte marks the start of a unicode rune in utf8. ---
+pub fun Rune.is_valid_utf8(b U8) Bool {
+    (b & 192) != 128
+}
+
 -- todo: This currently only supports ASCII runes.
 pub fun Rune.is_whitespace(r Rune) Bool {
     r.is_ascii_whitespace()
@@ -111,7 +147,7 @@ pub fun Rune.is_alphanumeric(r Rune) Bool {
 }
 
 pub fun Rune.is_ascii_whitespace(r Rune) Bool {
-    r == ' ' or r == '\t' or r == '\n' or r == '\r' or r == '\x0C'
+    r == ' ' or (r >= 9 and r <= 13)
 }
 
 pub fun Rune.is_ascii_lower(r Rune) Bool {
@@ -151,9 +187,14 @@ pub fun RuneIndex.fmt(r RuneIndex, sb &mut StrBuilder) void {
     sb.str(")")
 }
 
-struct StrRuneIndexIter {
+pub struct StrRuneIndexIter {
     bytes []U8
-    index Int
+    pub index Int
+}
+
+--- Iterate over runes. If the input contains invalid utf8 sequences the iterator will panic. ---
+pub fun StrRuneIndexIter.new(utf8_bytes []U8) StrRuneIndexIter {
+    StrRuneIndexIter(utf8_bytes, 0)
 }
 
 --- Iterate over all runes (unicode code points) in the string
@@ -321,52 +362,6 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
     return valid
 }
 
-pub fun Str.eq(s Str, other Str) Bool {
-    if s.data.len != other.data.len {
-        return false
-    }
-    for i in 0..s.data.len {
-        if s.data[i] != other.data[i] {
-            return false
-        }
-    }
-    return true
-}
-
-pub fun Str.starts_with(s Str, other Str) Bool {
-    s.data.starts_with(other.data)
-}
-
-pub fun Str.ends_with(s Str, other Str) Bool {
-    s.data.ends_with(other.data)
-}
-
-pub fun Str.contains(s Str, other Str) Bool {
-    s.index(other) != -1
-}
-
---- Return the index of `other` in `s`.
-
-    -1 if `s` is not in `other`. ---
-pub fun Str.index(s Str, other Str) Int {
-    if s.data.len < other.data.len {
-        return -1
-    }
-    for i in 0..s.data.len - other.data.len + 1 {
-        mut found = true
-        for j in 0..other.data.len {
-            if s.data[i+j] != other.data[j] {
-                found = false
-                break
-            }
-        }
-        if found {
-            return i
-        }
-    }
-    -1
-}
-
 pub fun Str.concat(s Str, other Str, @a Arena) Str {
     let data = unsafe @a.slice_uninit_mut<U8>(s.data.len + other.data.len)
     for i in 0..s.data.len {
@@ -381,15 +376,81 @@ pub fun Str.concat(s Str, other Str, @a Arena) Str {
 let default_trim_runes = [' ', '\t', '\n', '\r'][..]
 
 pub fun Str.trim(s Str, runes []Rune = default_trim_runes) Str {
-    Str(s.data.utf8_trim_left(runes).utf8_trim_right(runes))
+    Str(s.data.ltrim_utf8(runes).rtrim_utf8(runes))
 }
 
-pub fun Str.trim_left(s Str, runes []Rune = default_trim_runes) Str {
-    Str(s.data.utf8_trim_left(runes))
+pub fun Str.ltrim(s Str, runes []Rune = default_trim_runes) Str {
+    Str(s.data.ltrim_utf8(runes))
 }
 
-pub fun Str.trim_right(s Str, runes [] Rune = default_trim_runes) Str {
-    Str(s.data.utf8_trim_right(runes))
+pub fun Str.rtrim(s Str, runes [] Rune = default_trim_runes) Str {
+    Str(s.data.rtrim_utf8(runes))
+}
+
+--- `Str` can be used as an `LPattern`. ---
+pub fun Str.lfind_pattern(needle Str, haystack []U8) ?Range<Int> {
+    needle.data.lfind_pattern(haystack)
+}
+
+--- `Str` can be used as an `RPattern`. ---
+pub fun Str.rfind_pattern(needle Str, haystack []U8) ?Range<Int> {
+    needle.data.rfind_pattern(haystack) 
+}
+
+--- Test whether the given index into the underlying utf8-byte-slice points
+    at a valid unicode codepeoint (rune). ---
+pub fun Str.is_valid_index(s Str, i Int) Bool {
+    if i >= s.data.len or i < 0 {
+        return false
+    }
+    Rune.is_valid_utf8(s.data[i])
+}
+
+--- Return a substring at the given byte position of the underlying utf8-byte-slice. 
+
+    Panic if the index does not point at the start of a rune. ---
+pub fun Str.substr(s Str, i Int) Str {
+    if not s.is_valid_index(i) {
+        panic("invalid utf8-byte-index")
+    }
+    Str(s.data[i..])
+}
+
+--- Find the first occasion of the given pattern in the underlying utf8 []U8 slice and return the start and
+    end index.
+
+    It is not guaranteed that the range returned points at a valid rune boundary - `s.is_valid_index()` would
+    return false. This only happens if the pattern itself does not respect utf8 encoding. ---
+pub fun Str.lfind<P LPattern<[]U8>>(s Str, pattern P) ?Range<Int> {
+    pattern.lfind_pattern(s.data)
+}
+
+--- Find the last occasion of the given pattern in the underlying utf8 []U8 slice and return the start and
+    end index.
+
+    It is not guaranteed that the range returned points at a valid rune boundary - `s.is_valid_index()` would
+    return false. This only happens if the pattern itself does not respect utf8 encoding. ---
+pub fun Str.rfind<P RPattern<[]U8>>(s Str, pattern P) ?Range<Int> {
+    pattern.rfind_pattern(s.data)
+}
+
+pub fun Str.contains<P LPattern<[]U8>>(s Str, pattern P) Bool {
+    match s.lfind(pattern) {
+        case None: false
+        else: true
+    }
+}
+
+pub fun Str.eq(s Str, other Str) Bool {
+    s.data.eq(other.data)
+}
+
+pub fun Str.starts_with(s Str, other Str) Bool {
+    s.data.starts_with(other.data)
+}
+
+pub fun Str.ends_with(s Str, other Str) Bool {
+    s.data.ends_with(other.data)
 }
 
 --- Return a slice to the underlying utf8 data. ---
@@ -406,28 +467,150 @@ pub fun Str.hash(s Str) U64 {
     state
 }
 
-pub struct StrSplitIter {
+pub struct StrLMatchesIter<P LPattern<[]U8>> {
     data []U8
-    sep Str
+    pattern P
 }
 
-pub fun StrSplitIter.next(it &mut StrSplitIter) ?Str {
-    if it.data.len == 0 or it.sep.is_empty() {
-        return None()
+pub fun StrLMatchesIter.next<P LPattern<[]U8>>(it &mut StrLMatchesIter<P>) ?Str {
+    match it.data.lfind(it.pattern) {
+    case None: None()
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern - it doesn't match anything.
+            return None()
+        }
+        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+            panic("invalid utf8 range")
+        }
+        let s = Str(it.data[range.start..range.end])
+        it.data = it.data[range.end..]
+        s
     }
-    mut i = Str(it.data).index(it.sep)
-    if i == -1 {
-        let res = Str(it.data)
-        it.data = it.data[0..0]
-        return res
-    }
-    let res = Str(it.data[0..i])
-    it.data = it.data[i + it.sep.bytes_len()..]
-    res
 }
 
-pub fun Str.split(s Str, sep Str) StrSplitIter {
-    StrSplitIter(s.data, sep)
+pub fun Str.lmatches<P LPattern<[]U8>>(s Str, pattern P) StrLMatchesIter<P> {
+    StrLMatchesIter(s.data, pattern)
+}
+
+pub struct StrRMatchesIter<P RPattern<[]U8>> {
+    data []U8
+    pattern P
+}
+
+pub fun StrRMatchesIter.next<P RPattern<[]U8>>(it &mut StrRMatchesIter<P>) ?Str {
+    match it.data.rfind(it.pattern) {
+    case None: None()
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern - it doesn't match anything.
+            return None()
+        }
+        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+            panic("invalid utf8 range")
+        }
+        let s = Str(it.data[range.start..range.end])
+        it.data = it.data[0..range.start]
+        s
+    }
+}
+
+pub fun Str.rmatches<P RPattern<[]U8>>(s Str, pattern P) StrRMatchesIter<P> {
+    StrRMatchesIter(s.data, pattern)
+}
+
+pub struct StrLSplitIter<P LPattern<[]U8>> {
+    data []U8
+    pattern P
+    consumed_last Bool
+    remaining Int
+}
+
+pub fun StrLSplitIter.next<P LPattern<[]U8>>(it &mut StrLSplitIter<P>) ?Str {
+    it.remaining = it.remaining - 1
+    when {
+    case it.remaining == 0: return Str(it.data)
+    case it.remaining < 0: return None()
+    }
+    match it.data.lfind(it.pattern) {
+    case None: 
+        if it.data.len > 0 or not it.consumed_last {
+            let s = Str(it.data)
+            it.data = []
+            it.consumed_last = true
+            s
+        } else { None() }
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern, yield the string rune by rune.
+            if it.data.len == 0 {
+                return None()
+            }
+            mut i = 1
+            for i < it.data.len and not Rune.is_valid_utf8(it.data[i]) { i = i + 1 }
+            let s = Str(it.data[0..i])
+            it.data = it.data[i..]
+            return s
+        }
+        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+            panic("invalid utf8 range")
+        }
+        let s = Str(it.data[0..range.start])
+        it.data = it.data[range.end..]
+        s
+    }
+}
+
+pub fun Str.lsplit<P LPattern<[]U8>>(s Str, pattern P, max_splits ?Int = None()) StrLSplitIter<P> {
+    -- todo: use Int.max
+    StrLSplitIter(s.data, pattern, false, max_splits.or_default(1000000000))
+}
+
+pub struct StrRSplitIter<P RPattern<[]U8>> {
+    data []U8
+    pattern P
+    consumed_last Bool
+    remaining Int
+}
+
+pub fun StrRSplitIter.next<P RPattern<[]U8>>(it &mut StrRSplitIter<P>) ?Str {
+    it.remaining = it.remaining - 1
+    when {
+        case it.remaining == 0: return Str(it.data)
+        case it.remaining < 0: return None()
+    }
+    match it.data.rfind(it.pattern) {
+    case None: 
+        if it.data.len > 0 or not it.consumed_last {
+            let s = Str(it.data)
+            it.data = []
+            it.consumed_last = true
+            s
+        } else { None() }
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern, yield the string rune by rune.
+            if it.data.len == 0 {
+                return None()
+            }
+            mut i = it.data.len - 1
+            for i >= 0 and not Rune.is_valid_utf8(it.data[i]) { i = i - 1 }
+            let s = Str(it.data[i..])
+            it.data = it.data[0..i]
+            return s
+        }
+        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+            panic("invalid utf8 range")
+        }
+        let s = Str(it.data[range.end..])
+        it.data = it.data[..range.start]
+        s
+    }
+}
+
+pub fun Str.rsplit<P RPattern<[]U8>>(s Str, pattern P, max_splits ?Int = None()) StrRSplitIter<P> {
+    -- todo: use Int.max
+    StrRSplitIter(s.data, pattern, false, max_splits.or_default(1000000000))
 }
 
 --- A convenient way to build strings. ---
@@ -440,14 +623,6 @@ pub struct StrBuilder {
 pub fun StrBuilder.new(capacity Int, @a Arena) &mut StrBuilder {
     let out = unsafe @a.slice_uninit_mut<U8>(capacity)
     @a.new_mut<StrBuilder>(StrBuilder(out, 0, @a))
-}
-
---- Reset the StrBuilder.
-
-    This will start overwriting the output buffer (`sb.out`).
-    It should be save because we never expose `StrBuilder.out`. ---
-pub fun StrBuilder.reset(sb &mut StrBuilder) void {
-    sb.len = 0
 }
 
 pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false, min_width Int = 0) void {
@@ -569,8 +744,8 @@ pub fun StrBuilder.space(sb &mut StrBuilder) void { sb.rune(' ') }
 pub fun StrBuilder.tab(sb &mut StrBuilder) void { sb.rune('\t' ) }
 
 --- Trim matching runes from the right. ---
-pub fun StrBuilder.trim_right(sb &mut StrBuilder, runes []Rune = default_trim_runes) void {
-    let out = sb.out[0..sb.len].utf8_trim_right(runes)
+pub fun StrBuilder.rtrim(sb &mut StrBuilder, runes []Rune = default_trim_runes) void {
+    let out = sb.out[0..sb.len].rtrim_utf8(runes)
     sb.len = out.len
 }
 
@@ -636,22 +811,16 @@ pub fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
     }
 }
 
---- Return a *view* to the underlying slice.
+--- Return a view to the underlying slice up to this point. 
 
-    The contents of the view can change when `StrBuilder.reset()` is called
-    to reuse the underlying slice. So be careful.
-    todo: No, this is dangerous! This function should be renamed to `to_str()`
-          and copy the underlying `StrBuilder.out` or remove `.reset()` from
-          StrBuilder. Or keep this method but force the StrBuider to allocate
-          a new `out` on the next usage.
-    ---
-pub fun StrBuilder.as_str(sb &StrBuilder) Str { Str(sb.out[0..sb.len]) }
+    Future changes are not reflected. ---
+pub fun StrBuilder.as_str(sb &StrBuilder) Str {
+    Str(sb.out[0..sb.len])
+}
 
---- Append '\0' to make it a valid C-style string and return a *view* to the underlying slice.
+--- Append '\0' to make it a valid C-style string and return a view to the underlying slice.
 
-    The contents of the view can change when `StrBuilder.reset()` is called
-    to reuse the underlying slice. This can be potentially dangerous if
-    you overwrite the trailing 0-byte after `StrBuilder.reset()`. ---
+    Future changes are not reflected. ---
 pub fun StrBuilder.as_cstr(sb &mut StrBuilder) []U8 {
     sb.byte_raw(0)
     sb.out[0..sb.len]
@@ -690,6 +859,201 @@ pub fun Slice.set<T>(dst []mut T, src []T) Int {
         i = i + 1
     }
     i
+}
+
+--- `Slice` can be used as an `LPattern`. ---
+pub fun Slice.lfind_pattern<T HasEq>(needle []T, haystack []T) ?Range<Int> {
+    if needle.len == 0 {
+        return Range(0, 0)
+    }
+    if needle.len > haystack.len {
+        return None()
+    }
+    -- todo(perf): This is a highly naive implementation.
+    for i in 0..(haystack.len - needle.len + 1) {
+        mut found = true
+        for j in 0..needle.len {
+            if not haystack[i+j].eq(needle[j]) {
+                found = false
+                break
+            }
+        }
+        if found {
+            return Range(i, i+needle.len)
+        }
+    }
+    None()
+}
+
+--- `Slice` can be used as an `RPattern`. ---
+pub fun Slice.rfind_pattern<T HasEq>(needle []T, haystack []T) ?Range<Int> {
+    if needle.len == 0 {
+        return Range(0, 0)
+    }
+    if needle.len > haystack.len {
+        return None()
+    }
+    -- todo(perf): This is a highly naive implementation.
+    mut i = haystack.len - needle.len
+    for i >= 0 {
+        mut found = true
+        for j in 0..needle.len {
+            if not haystack[i + j].eq(needle[j]) {
+                found = false
+                break
+            }
+        }
+        if found {
+            return Range(i, i + needle.len)
+        }
+        i = i - 1
+    }
+    None()
+}
+
+pub fun Slice.lfind<T, P LPattern<[]T>>(s []T, pattern P) ?Range<Int> {
+    pattern.lfind_pattern(s)
+}
+
+pub fun Slice.rfind<T, P RPattern<[]T>>(s []T, pattern P) ?Range<Int> {
+    pattern.rfind_pattern(s)
+}
+
+pub fun Slice.contains<T, P LPattern<[]T>>(s []T pattern P) Bool {
+    match s.lfind(pattern) {
+        case None: false
+        else: true
+    }
+}
+
+pub struct SliceLMatchesIter<T, P LPattern<[]T>> {
+    data []T
+    pattern P
+}
+
+pub fun SliceLMatchesIter.next<T, P LPattern<[]T>>(it &mut SliceLMatchesIter<T, P>) ?[]T {
+    match it.data.lfind(it.pattern) {
+    case None: None()
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern - it doesn't match anything.
+            return None()
+        }
+        let s = it.data[range.start..range.end]
+        it.data = it.data[range.end..]
+        s
+    }
+}
+
+pub fun Slice.lmatches<T, P LPattern<[]T>>(s []T, pattern P) SliceLMatchesIter<T, P> {
+    SliceLMatchesIter(s , pattern)
+}
+
+pub struct SliceRMatchesIter<T, P RPattern<[]T>> {
+    data []T
+    pattern P
+}
+
+pub fun SliceRMatchesIter.next<T, P RPattern<[]T>>(it &mut SliceRMatchesIter<T, P>) ?[]T {
+    match it.data.rfind(it.pattern) {
+    case None: None()
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern - it doesn't match anything.
+            return None()
+        }
+        let s = it.data[range.start..range.end]
+        it.data = it.data[..range.start]
+        s
+    }
+}
+
+pub fun Slice.rmatches<T, P RPattern<[]T>>(s []T, pattern P) SliceRMatchesIter<T, P> {
+    SliceRMatchesIter(s , pattern)
+}
+
+pub struct SliceLSplitIter<T, P LPattern<[]T>> {
+    data []T
+    pattern P
+    consumed_last Bool
+    remaining Int
+}
+
+pub fun SliceLSplitIter.next<T, P LPattern<[]T>>(it &mut SliceLSplitIter<T, P>) ?[]T {
+    it.remaining = it.remaining - 1
+    when {
+        case it.remaining == 0: return it.data
+        case it.remaining < 0: return None()
+    }
+    match it.data.lfind(it.pattern) {
+    case None: 
+        if it.data.len > 0 or not it.consumed_last {
+            let s = it.data
+            it.data = []
+            it.consumed_last = true
+            s
+        } else { None() }
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern, yield the slice element by element.
+            if it.data.len == 0 {
+                return None()
+            }
+            let s = it.data[0..1]
+            it.data = it.data[1..]
+            return s
+        }
+        let s = it.data[0..range.start]
+        it.data = it.data[range.end..]
+        s
+    }
+}
+
+pub fun Slice.lsplit<T, P LPattern<[]T>>(s []T, pattern P, max_splits ?Int = None()) SliceLSplitIter<T, P> {
+    -- todo: use Int.max
+    SliceLSplitIter(s, pattern, false, max_splits.or_default(1000000000))
+}
+
+pub struct SliceRSplitIter<T, P RPattern<[]T>> {
+    data []T
+    pattern P
+    consumed_last Bool
+    remaining Int
+}
+
+pub fun SliceRSplitIter.next<T, P RPattern<[]T>>(it &mut SliceRSplitIter<T, P>) ?[]T {
+    it.remaining = it.remaining - 1
+    when {
+        case it.remaining == 0: return it.data
+        case it.remaining < 0: return None()
+    }
+    match it.data.rfind(it.pattern) {
+    case None: 
+        if it.data.len > 0 or not it.consumed_last {
+            let s = it.data
+            it.data = []
+            it.consumed_last = true
+            s
+        } else { None() }
+    else range:
+        if range.start == 0 and range.end == 0 {
+            -- This is an empty pattern, yield the slice element by element.
+            if it.data.len == 0 {
+                return None()
+            }
+            let s = it.data[it.data.len - 1..]
+            it.data = it.data[0..it.data.len - 1]
+            return s
+        }
+        let s = it.data[range.end..]
+        it.data = it.data[..range.start]
+        s
+    }
+}
+
+pub fun Slice.rsplit<T, P RPattern<[]T>>(s []T, pattern P, max_splits ?Int = None()) SliceRSplitIter<T, P> {
+    -- todo: use Int.max
+    SliceRSplitIter(s, pattern, false, max_splits.or_default(1000000000))
 }
 
 pub fun Slice.starts_with<T HasEq>(s []T, other []T) Bool {
@@ -781,7 +1145,7 @@ pub fun Slice.sort_in_place<T>(s []mut T, cmp fun(T, T) Int) void {
 
 --- Treat the slice of U8 as utf8-encoded and return a sub-slice starting at the first
     rune that is not in the list of runes to trim. ---
-pub fun Slice.utf8_trim_left(s []U8, runes []Rune = [' ', '\t', '\n', '\r'][..]) []U8 {
+pub fun Slice.ltrim_utf8(s []U8, runes []Rune = [' ', '\t', '\n', '\r'][..]) []U8 {
     -- First, convert the runes to byte slices.
     -- We can afford this precomputation, because everything will
     -- fit into the first page of the arena allocator which lives on the stack.
@@ -809,7 +1173,7 @@ pub fun Slice.utf8_trim_left(s []U8, runes []Rune = [' ', '\t', '\n', '\r'][..])
 
 --- Treat the slice of U8 as utf8-encoded and return a sub-slice starting at 0 and ending a 
     the first rune that is not in the list of runes to trim. ---
-pub fun Slice.utf8_trim_right(s []U8, runes [] Rune = [' ', '\t', '\n', '\r'][..]) []U8 {
+pub fun Slice.rtrim_utf8(s []U8, runes [] Rune = [' ', '\t', '\n', '\r'][..]) []U8 {
     -- First, convert the runes to byte slices.
     -- We can afford this precomputation, because everything will
     -- fit into the first page of the arena allocator which lives on the stack.
@@ -900,6 +1264,24 @@ pub fun Option.hash<T HasHash>(o Option<T>) U64 {
         case None n: n.hash()
         else t: t.hash()
     }
+}
+
+pub fun Option.is_none<T>(o Option<T>) Bool {
+    match o {
+        case None: true
+        else: false
+    }
+}
+
+pub fun Option.is_some<T>(o Option<T>) Bool {
+    match o {
+        case None: false
+        else: true
+    }
+}
+
+pub fun Option.or_default<T>(o Option<T>, default T) T {
+    try o else { return default }
 }
 
 --- An error type. You are free to use anything as error. ---

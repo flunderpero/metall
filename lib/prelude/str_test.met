@@ -1,29 +1,19 @@
 use std.test
 use std.debug
+use std.pattern
+use std.iter
 
 fun main() void {
     let @local = Arena()
+
+    fun collect<A, I Iter<A>>(it I, @a Arena) []A {
+        iter.pipe(it).collect(16, @a)
+    }
 
     let suite = test.Suite.new("Str", @local)
     suite.test("concat", fun() !void {
         let @local = Arena()
         try test.eq("hello there", "hello ".concat("there", @local))
-    })
-    suite.test("index", fun() !void {
-        try test.eq(0, "test".index("test"))
-        try test.eq(2, "test".index("st"))
-        try test.eq(-1, "test".index("a"))
-        try test.eq(-1, "test".index("test1"))
-        try test.eq(-1, "".index("test1"))
-        try test.eq(0, "".index(""))
-    })
-    suite.test("contains", fun() !void {
-        try test.ok("test".contains("test"))
-        try test.not_ok("test".contains("a"))
-        try test.not_ok("test".contains("test1"))
-        try test.ok("test".contains(""))
-        try test.not_ok("".contains("test"))
-        try test.ok("".contains(""))
     })
     suite.test("hash", fun() !void {
         try test.eq(U64(686710930086579414), "hello".hash())
@@ -215,25 +205,125 @@ fun main() void {
         -- above U+10FFFF in middle
         try test.eq("A\u{FFFD}B", Str.from_utf8_lossy([U8(65), 244, 144, 128, 128, 66][..], @local))
     })
-    suite.test("split", fun() !void {
-        mut it = "these are some words".split(" ")
-        try test.eq(Option("these"), (&mut it).next())
-        try test.eq(Option("are"), (&mut it).next())
-        try test.eq(Option("some"), (&mut it).next())
-        try test.eq(Option("words"), (&mut it).next())
-        try test.eq(Option<Str>(None()), (&mut it).next())
+    suite.test("is_valid_index", fun() !void {
+        -- ascii
+        try test.eq(true, "ABC".is_valid_index(0))
+        try test.eq(false, "".is_valid_index(0), "empty string")
+        try test.eq(false, "ABC".is_valid_index(5), "out of bounds")
+        try test.eq(false, "ABC".is_valid_index(-1), "out of bounds")
+        -- 2-byte
+        try test.eq(true, "_ä_".is_valid_index(0))
+        try test.eq(true, "_ä_".is_valid_index(1))
+        try test.eq(false, "_ä_".is_valid_index(2))
+        try test.eq(true, "_ä_".is_valid_index(3))
+        -- 3-byte
+        try test.eq(true, "_€_".is_valid_index(0))
+        try test.eq(true, "_€_".is_valid_index(1))
+        try test.eq(false, "_€_".is_valid_index(2))
+        try test.eq(false, "_€_".is_valid_index(3))
+        try test.eq(true, "_€_".is_valid_index(4))
+        -- 4-byte
+        try test.eq(true, "_𝄞_".is_valid_index(0))
+        try test.eq(true, "_𝄞_".is_valid_index(1))
+        try test.eq(false, "_𝄞_".is_valid_index(2))
+        try test.eq(false, "_𝄞_".is_valid_index(3))
+        try test.eq(false, "_𝄞_".is_valid_index(4))
+        try test.eq(true, "_𝄞_".is_valid_index(5))
+    })
+    suite.test("contains", fun() !void {
+        try test.ok("test".contains(pattern.index("test".as_bytes())))
 
-        it = "".split(" ")
-        try test.eq(Option<Str>(None()), (&mut it).next())
+        -- Str satisfies `LPattern`.
+        try test.not_ok("test".contains("a"))
+        try test.not_ok("test".contains("test1"))
+        try test.ok("test".contains(""))
+        try test.not_ok("".contains("test"))
+        try test.ok("".contains(""))
+    })
+    suite.test("lfind", fun() !void {
+        -- Test with explicit pattern (here: `pattern.index`)
+        try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".lfind(pattern.index("bb".as_bytes())))
 
-        it = "test".split("")
-        try test.eq(Option<Str>(None()), (&mut it).next(), "empty separator does not yield anything")
+        -- From now on use `Str` as the pattern because `Str` satisfies `LPattern`.
+        let not_found = Option<Range<Int>>(None())
+        try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".lfind("bb"))
+        try test.eq(not_found, "aa bb aa".lfind("cc"))
+        try test.eq(not_found, "".lfind("aa"), "empty haystack")
+        try test.eq(Option(Range(0, 0)), "aa bb aa".lfind(""), "empty needle")
 
-        it = "a b  ".split(" ")
-        try test.eq(Option("a"), (&mut it).next())
-        try test.eq(Option("b"), (&mut it).next())
-        try test.eq(Option(""), (&mut it).next())
-        try test.eq(Option<Str>(None()), (&mut it).next())
+        -- Test with `rune_pred`.
+        try test.eq(Option(Range(3, 4)), "AA bb".lfind(pattern.rune_pred(Rune.is_lower)))
+    })
+    suite.test("rfind", fun() !void {
+        -- Test with explicit pattern (here: `pattern.index`)
+        try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".rfind(pattern.index("bb".as_bytes())))
+
+        -- From now on use `Str` as the pattern because `Str` satisfies `LPattern`.
+        let not_found = Option<Range<Int>>(None())
+        try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".rfind("bb"))
+        try test.eq(not_found, "aa bb aa".rfind("cc"))
+        try test.eq(not_found, "".rfind("aa"), "empty haystack")
+        try test.eq(Option(Range(0, 0)), "aa bb aa".rfind(""), "empty needle")
+    })
+    suite.test("lsplit", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        let it = "these are some words".lsplit(pattern.index(" ".as_bytes()))
+        try test.eq(["these", "are", "some", "words"][..], collect(it, @local))
+
+        -- From now on use `Str` as the pattern because `Str` satisfies `LPattern`.
+        try test.eq(["hello there"][..], collect("hello there".lsplit(":"), @local), "separator not found")
+        try test.eq([""][..], collect("".lsplit(" "), @local), "empty string")
+        try test.eq(["t", "ä", "€", "𝄞"][..], collect("tä€𝄞".lsplit(""), @local), "empty separator yields each rune")
+        try test.eq(["a", "b", ""][..], collect("a,b,".lsplit(","), @local), "empty splits are kept")
+        try test.eq(["a", "b", "", ""][..], collect("a,b,,".lsplit(","), @local), "empty splits are kept")
+        try test.eq(
+            ["these", "are", "some words"][..],
+            collect("these are some words".lsplit(" ", 3), @local),
+            "max_splits")
+    })
+    suite.test("rsplit", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        let it = "these are some words".rsplit(pattern.index(" ".as_bytes()))
+        try test.eq(["words", "some", "are", "these"][..], collect(it, @local))
+
+        -- From now on use `Str` as the pattern because `Str` satisfies `RPattern`.
+        try test.eq(["hello there"][..], collect("hello there".rsplit(":"), @local), "separator not found")
+        try test.eq([""][..], collect("".rsplit(" "), @local), "empty string")
+        try test.eq(["𝄞", "€", "ä", "t"][..], collect("tä€𝄞".rsplit(""), @local), "empty separator yields each rune")
+        try test.eq(["", "b", "a"][..], collect("a,b,".rsplit(","), @local), "empty splits are kept")
+        try test.eq(["", "", "b", "a", ""][..], collect(",a,b,,".rsplit(","), @local), "empty splits are kept")
+        try test.eq(
+            ["words", "some", "these are"][..],
+            collect("these are some words".rsplit(" ", 3), @local),
+            "max_splits")
+    })
+    suite.test("lmatches", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        mut it = "hi collect hi strings hi".lmatches(pattern.index("hi".as_bytes()))
+        try test.eq(["hi", "hi", "hi"][..], collect(it, @local))
+
+        -- From now on use `Str` as the pattern because `Str` satisfies `LPattern`.
+        let empty []Str = []
+        try test.eq(empty, collect("".lmatches("hi"), @local), "empty string does not match anything")
+        try test.eq(empty, collect("test".lmatches(""), @local), "empty pattern does not match anything")
+    })
+    suite.test("rmatches", fun() !void {
+        let @local = Arena()
+
+        -- Test with explicit pattern (here: `pattern.index`)
+        mut it = "hi collect hi strings hi".rmatches(pattern.index("hi".as_bytes()))
+        try test.eq(["hi", "hi", "hi"][..], collect(it, @local))
+
+        -- From now on use `Str` as the pattern because `Str` satisfies `RPattern`.
+        let empty []Str = []
+        try test.eq(empty, collect("".rmatches("hi"), @local), "empty string does not match anything")
+        try test.eq(empty, collect("test".rmatches(""), @local), "empty pattern does not match anything")
     })
     _ = suite.run()
 }
