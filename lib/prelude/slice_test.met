@@ -25,7 +25,7 @@ fun main() void {
     })
     suite.test("set", fun() !void {
         let @local = Arena()
-        let dst = @local.slice_mut<Int>(5, 0)
+        let dst = @local.slice<Int>(5, 0)
         let src = [11, 12, 13][..]
         try test.eq(3, dst.set(src))
         try test.eq([11, 12, 13, 0, 0][..], dst)

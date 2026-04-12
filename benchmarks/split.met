@@ -17,7 +17,7 @@ pub fun main() void {
     let mode = if args.len > 1 { args[1] } else { "byte" }
     let @a = Arena()
     let n = 500000000
-    mut init_data = unsafe @a.slice_uninit_mut<U8>(n)
+    mut init_data = unsafe @a.slice_uninit<U8>(n)
     for i in 0..n {
         init_data[i] = (hash(i.to_u64_wrapping()) % 256).to_u8_wrapping()
     }

@@ -48,7 +48,7 @@ fn main() {
             println!("collect: {}", r.len());
         }
         "take" => {
-            let r = pipeline().take(400_000_000).fold(0u64, |acc, x| acc.wrapping_add(x));
+            let r = pipeline().take(100_000_000).fold(0u64, |acc, x| acc.wrapping_add(x));
             println!("take: {}", r);
         }
         "take_while" => {

@@ -1130,52 +1130,6 @@ Call()
     args=String(value="hello")
 ```
 
-**Heap alloc mut struct**
-
-```metall
-@myalloc.new_mut<Foo>(Foo())
-```
-
-```ast
-Call()
-  callee=FieldAccess(field=new_mut)
-    target=Ident(name="@myalloc")
-    typeArgs=SimpleType(name="Foo")
-  args=TypeConstruction()
-    target=Ident(name="Foo")
-```
-
-**Make slice**
-
-```metall
-@myalloc.make<[]Int>(n, 42)
-```
-
-```ast
-Call()
-  callee=FieldAccess(field=make)
-    target=Ident(name="@myalloc")
-    typeArgs=SliceType()
-      type=SimpleType(name="Int")
-  args[0]=Ident(name="n")
-  args[1]=Int(value=42)
-```
-
-**Make uninit slice**
-
-```metall
-@myalloc.make_uninit<[]Int>(n)
-```
-
-```ast
-Call()
-  callee=FieldAccess(field=make_uninit)
-    target=Ident(name="@myalloc")
-    typeArgs=SliceType()
-      type=SimpleType(name="Int")
-  args=Ident(name="n")
-```
-
 **Mut allocator var should fail**
 
 ```metall

@@ -497,7 +497,7 @@ func (g *IRFunGen) genArenaSlice(id ast.NodeID, call ast.Call, fa ast.FieldAcces
 	lenReg := g.lookupCode(call.Args[0])
 	g.write("%s_size = mul i64 %d, %s", reg, elemSize, lenReg)
 	g.write("%s_data = call ptr @runtime$arena.arena_alloc(ptr %s, i64 %s_size)", reg, allocReg, reg)
-	if len(call.Args) == 2 { // slice/slice_mut have a default value arg; slice_uninit variants don't
+	if len(call.Args) == 2 { // slice has a default value arg; slice_uninit doesn't
 		g.Gen(call.Args[1])
 		valReg := g.lookupCode(call.Args[1])
 		g.genInitializeMemory(fmt.Sprintf("%s_data", reg), irTyp, valReg, sliceType.Elem, lenReg, nil)
@@ -507,6 +507,53 @@ func (g *IRFunGen) genArenaSlice(id ast.NodeID, call ast.Call, fa ast.FieldAcces
 	g.write("store ptr %s_data, ptr %s_ptr_field", reg, reg)
 	g.write("%s_len_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", reg, reg)
 	g.write("store i64 %s, ptr %s_len_field", lenReg, reg)
+	g.setCode(id, reg)
+}
+
+func (g *IRFunGen) genArenaGrow(id ast.NodeID, call ast.Call, fa ast.FieldAccess) {
+	// Args: s []T, new_len Int[, default T]
+	g.Gen(fa.Target)
+	allocReg := g.lookupCode(fa.Target)
+	sliceType := base.Cast[types.SliceType](g.typeOfNode(id).Kind)
+	reg := g.reg()
+	irTyp := g.irType(sliceType.Elem)
+	elemSize := irTypeSize(g.env, sliceType.Elem)
+
+	// Load old slice data ptr and length.
+	g.Gen(call.Args[0])
+	sliceReg := g.lookupCode(call.Args[0])
+	g.write("%s_old_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", reg, sliceReg)
+	g.write("%s_old_ptr = load ptr, ptr %s_old_ptr_field", reg, reg)
+	g.write("%s_old_len_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", reg, sliceReg)
+	g.write("%s_old_len = load i64, ptr %s_old_len_field", reg, reg)
+	g.write("%s_old_size = mul i64 %d, %s_old_len", reg, elemSize, reg)
+
+	// Compute new size in bytes.
+	g.Gen(call.Args[1])
+	newLenReg := g.lookupCode(call.Args[1])
+	g.write("%s_new_size = mul i64 %d, %s", reg, elemSize, newLenReg)
+
+	// Call arena_realloc.
+	g.write("%s_data = call ptr @runtime$arena.arena_realloc(ptr %s, ptr %s_old_ptr, i64 %s_old_size, i64 %s_new_size)",
+		reg, allocReg, reg, reg, reg)
+
+	// Initialize only the new elements [old_len..new_len) with default if provided.
+	if len(call.Args) == 3 { // grow has a default value arg; grow_uninit doesn't
+		g.Gen(call.Args[2])
+		valReg := g.lookupCode(call.Args[2])
+		fillCountReg := g.reg()
+		g.write("%s = sub i64 %s, %s_old_len", fillCountReg, newLenReg, reg)
+		fillStartReg := g.reg()
+		g.write("%s = getelementptr %s, ptr %s_data, i64 %s_old_len", fillStartReg, irTyp, reg, reg)
+		g.genInitializeMemory(fillStartReg, irTyp, valReg, sliceType.Elem, fillCountReg, nil)
+	}
+
+	// Build result slice {ptr, i64}.
+	g.writeAlloca(reg, "{ptr, i64}")
+	g.write("%s_ptr_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", reg, reg)
+	g.write("store ptr %s_data, ptr %s_ptr_field", reg, reg)
+	g.write("%s_len_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", reg, reg)
+	g.write("store i64 %s, ptr %s_len_field", newLenReg, reg)
 	g.setCode(id, reg)
 }
 
@@ -1555,9 +1602,11 @@ func (g *IRFunGen) arenaAllocMethod(call ast.Call) (string, ast.FieldAccess, boo
 		return "", ast.FieldAccess{}, false
 	}
 	for _, method := range []string{
-		"Arena.new_mut", "Arena.new",
-		"Arena.slice_uninit_mut", "Arena.slice_uninit",
-		"Arena.slice_mut", "Arena.slice",
+		"Arena.new",
+		"Arena.slice_uninit",
+		"Arena.slice",
+		"Arena.grow_uninit",
+		"Arena.grow",
 	} {
 		if strings.HasPrefix(name, method) {
 			fa := base.Cast[ast.FieldAccess](g.ast.Node(call.Callee).Kind)
@@ -1749,8 +1798,10 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	}
 	if method, fa, ok := g.arenaAllocMethod(call); ok {
 		switch method {
-		case "Arena.new", "Arena.new_mut":
+		case "Arena.new":
 			g.genArenaNew(id, call, fa)
+		case "Arena.grow", "Arena.grow_uninit":
+			g.genArenaGrow(id, call, fa)
 		default:
 			g.genArenaSlice(id, call, fa)
 		}

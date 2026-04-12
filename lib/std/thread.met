@@ -8,7 +8,7 @@ pub unsync struct Thread<T> {
 }
 
 pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
-    let res_bytes = unsafe @a.slice_uninit_mut<U8>(ffi.sizeof<T>())
+    let res_bytes = unsafe @a.slice_uninit<U8>(ffi.sizeof<T>())
     let res_ptr = unsafe ffi.slice_ptr_mut<U8>(res_bytes).cast<T>()
     let spawn_fun = fun[f, res_ptr]() void {
         let res = f()
@@ -40,7 +40,7 @@ pub unsync struct ThreadGroup<T> {
 
 pub fun ThreadGroup.new<T>(@a Arena) &mut ThreadGroup<T> {
     let l = list.List.new<Thread<T>>(16, @a)
-    @a.new_mut(ThreadGroup<T>(@a, l))
+    @a.new(ThreadGroup<T>(@a, l))
 }
 
 pub fun ThreadGroup.spawn<T>(tg &mut ThreadGroup<T>, f sync fun() T) !void {
@@ -50,7 +50,7 @@ pub fun ThreadGroup.spawn<T>(tg &mut ThreadGroup<T>, f sync fun() T) !void {
 
 --- Join all threads in this thread group and return all results. ---
 pub fun ThreadGroup.join<T>(tg &mut ThreadGroup<T>, @a Arena) []!T {
-    let results = unsafe @a.slice_uninit_mut<!T>(tg.threads.len)
+    let results = unsafe @a.slice_uninit<!T>(tg.threads.len)
     for i in 0..tg.threads.len {
         results[i] = tg.threads.get(i).join()
     }
@@ -68,7 +68,7 @@ pub sync struct Mutex<sync T> {
 
 pub fun Mutex.new<sync T>(value T, @a Arena) Mutex<T> {
     -- todo: The size of pthread_mutex_t is platform dependent.
-    let lock = unsafe @a.slice_uninit_mut<U8>(64)
+    let lock = unsafe @a.slice_uninit<U8>(64)
     let lock_ptr = unsafe ffi.slice_ptr_mut<U8>(lock).cast<void>()
     let res = unsafe pthread_mutex_init(lock_ptr, ffi.Ptr.null<void>())
     if res != 0 {
@@ -76,7 +76,7 @@ pub fun Mutex.new<sync T>(value T, @a Arena) Mutex<T> {
         -- https://man7.org/linux/man-pages/man3/pthread_mutex_lock.3.html 
         panic(posix.strerror(res))
     }
-    let value_ref = @a.new_mut(value)
+    let value_ref = @a.new(value)
     Mutex<T>(lock_ptr, value_ref)
 }
 

@@ -6,7 +6,7 @@ pub struct Set<T map.Key> {
 
 pub fun Set.new<T map.Key>(capacity Int, @a Arena) &mut Set<T> {
     let m = map.Map.new<T, Bool>(capacity, @a)
-    @a.new_mut(Set<T>(m))
+    @a.new(Set<T>(m))
 }
 
 pub fun Set.len<T map.Key>(s &Set<T>) Int {

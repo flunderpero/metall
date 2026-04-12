@@ -92,7 +92,7 @@ pub fun File.open(path Path, mode Str, @a Arena) !&mut File {
     if file_ptr.is_null() {
         return Err(posix.errno_str())
     }
-    let file = @a.new_mut(File(file_ptr, false))
+    let file = @a.new(File(file_ptr, false))
     file
 }
 

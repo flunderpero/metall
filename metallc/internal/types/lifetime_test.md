@@ -750,16 +750,16 @@ test.met:11:9: reference escaping its allocation scope (via block result)
     let @a = Arena()
     let x = {
         let local = 123
-        @a.slice_mut<Wrapper>(3, Wrapper(&local))
+        @a.slice<Wrapper>(3, Wrapper(&local))
     }
 }
 ```
 
 ```error
-test.met:6:42: reference escaping its allocation scope (via block result)
+test.met:6:38: reference escaping its allocation scope (via block result)
             let local = 123
-            @a.slice_mut<Wrapper>(3, Wrapper(&local))
-                                             ^^^^^^
+            @a.slice<Wrapper>(3, Wrapper(&local))
+                                         ^^^^^^
         }
 ```
 
@@ -791,16 +791,16 @@ test.met:6:38: reference escaping its allocation scope (via block result)
     let @a = Arena()
     let x = {
         let local = 123
-        @a.slice_mut<&Int>(3, &local)
+        @a.slice<&Int>(3, &local)
     }
 }
 ```
 
 ```error
-test.met:5:31: reference escaping its allocation scope (via block result)
+test.met:5:27: reference escaping its allocation scope (via block result)
             let local = 123
-            @a.slice_mut<&Int>(3, &local)
-                                  ^^^^^^
+            @a.slice<&Int>(3, &local)
+                              ^^^^^^
         }
 ```
 
@@ -1344,7 +1344,7 @@ test.met:9:17: reference escaping its allocation scope (via mutation of outer va
     fun foo(a &mut Foo, b &Int) void { a.one = b }
     let @myalloc = Arena()
     mut x = 1
-    let y = @myalloc.new_mut<Foo>(Foo(&mut x))
+    let y = @myalloc.new<Foo>(Foo(&mut x))
     {
         mut z = 99
         foo(y, &z)
@@ -2143,10 +2143,10 @@ lib/lib.met:4:5: reference escaping its allocation scope (via block result)
 {
     struct W { data []Int }
     fun alloc_ints(@a Arena, n Int, default Int) []mut Int {
-        @a.slice_mut<Int>(n, default)
+        @a.slice<Int>(n, default)
     }
     fun alloc_ws(@a Arena, n Int, default W) []mut W {
-        @a.slice_mut<W>(n, default)
+        @a.slice<W>(n, default)
     }
     fun process(items []Int) void {
         let @a = Arena()
@@ -2387,7 +2387,7 @@ use std.ffi
 
 fun get_slice() []Int {
     let @a = Arena()
-    let data = @a.slice_mut<Int>(3, 0)
+    let data = @a.slice<Int>(3, 0)
     let p = ffi.slice_ptr<Int>(data)
     unsafe p.as_slice(3)
 }

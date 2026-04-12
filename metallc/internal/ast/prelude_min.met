@@ -13,12 +13,11 @@ pub struct Never_ {}
 --- A placeholder type for the builtin `Arena` type. ---
 pub struct Arena_ {}
 
-pub fun Arena.new<T>(self Arena, value T) &T { value }
-pub fun Arena.new_mut<T>(self Arena, value T) &mut T { value }
-pub fun Arena.slice<T>(self Arena, len Int, default T) []T { default }
-pub fun Arena.slice_mut<T>(self Arena, len Int, default T) []mut T { default }
-pub unsafe fun Arena.slice_uninit<T>(self Arena, len Int) []T { len }
-pub unsafe fun Arena.slice_uninit_mut<T>(self Arena, len Int) []mut T { len }
+pub fun Arena.new<T>(self Arena, value T) &mut T {}
+pub fun Arena.slice<T>(self Arena, len Int, default T) []mut T {}
+pub unsafe fun Arena.slice_uninit<T>(self Arena, len Int) []mut T {}
+pub fun Arena.grow<T>(self Arena, s []T, new_len Int, default T) []mut T {}
+pub unsafe fun Arena.grow_uninit<T>(self Arena, s []T, new_len Int) []mut T {}
 
 --- A placeholder type for the builtin `Bool` type. ---
 pub struct Bool_ {}
@@ -26,93 +25,93 @@ pub struct Bool_ {}
 --- A placeholder type for the builtin `I8` type. ---
 pub struct I8_ {}
 
-pub fun I8.to_i16(self I8) I16 { return 1 }
-pub fun I8.to_i32(self I8) I32 { return 1 }
-pub fun I8.to_int(self I8) Int { return 1 }
-pub fun I8.to_u8_wrapping(self I8) U8 { return 1 }
-pub fun I8.to_u16_wrapping(self I8) U16 { return 1 }
-pub fun I8.to_u32_wrapping(self I8) U32 { return 1 }
-pub fun I8.to_u64_wrapping(self I8) U64 { return 1 }
+pub fun I8.to_i16(self I8) I16 {}
+pub fun I8.to_i32(self I8) I32 {}
+pub fun I8.to_int(self I8) Int {}
+pub fun I8.to_u8_wrapping(self I8) U8 {}
+pub fun I8.to_u16_wrapping(self I8) U16 {}
+pub fun I8.to_u32_wrapping(self I8) U32 {}
+pub fun I8.to_u64_wrapping(self I8) U64 {}
 
 --- A placeholder type for the builtin `I16` type. ---
 pub struct I16_ {}
 
-pub fun I16.to_i32(self I16) I32 { return 1 }
-pub fun I16.to_int(self I16) Int { return 1 }
-pub fun I16.to_i8_wrapping(self I16) I8 { return 1 }
-pub fun I16.to_u8_wrapping(self I16) U8 { return 1 }
-pub fun I16.to_u16_wrapping(self I16) U16 { return 1 }
-pub fun I16.to_u32_wrapping(self I16) U32 { return 1 }
-pub fun I16.to_u64_wrapping(self I16) U64 { return 1 }
+pub fun I16.to_i32(self I16) I32 {}
+pub fun I16.to_int(self I16) Int {}
+pub fun I16.to_i8_wrapping(self I16) I8 {}
+pub fun I16.to_u8_wrapping(self I16) U8 {}
+pub fun I16.to_u16_wrapping(self I16) U16 {}
+pub fun I16.to_u32_wrapping(self I16) U32 {}
+pub fun I16.to_u64_wrapping(self I16) U64 {}
 
 --- A placeholder type for the builtin `I32` type. ---
 pub struct I32_ {}
 
-pub fun I32.to_int(self I32) Int { return 1 }
-pub fun I32.to_i8_wrapping(self I32) I8 { return 1 }
-pub fun I32.to_i16_wrapping(self I32) I16 { return 1 }
-pub fun I32.to_u8_wrapping(self I32) U8 { return 1 }
-pub fun I32.to_u16_wrapping(self I32) U16 { return 1 }
-pub fun I32.to_u32_wrapping(self I32) U32 { return 1 }
-pub fun I32.to_u64_wrapping(self I32) U64 { return 1 }
+pub fun I32.to_int(self I32) Int {}
+pub fun I32.to_i8_wrapping(self I32) I8 {}
+pub fun I32.to_i16_wrapping(self I32) I16 {}
+pub fun I32.to_u8_wrapping(self I32) U8 {}
+pub fun I32.to_u16_wrapping(self I32) U16 {}
+pub fun I32.to_u32_wrapping(self I32) U32 {}
+pub fun I32.to_u64_wrapping(self I32) U64 {}
 
 --- A placeholder type for the builtin `Int` type. ---
 pub struct Int_ {}
 
-pub fun Int.to_i8_wrapping(self Int) I8 { return 1 }
-pub fun Int.to_i16_wrapping(self Int) I16 { return 1 }
-pub fun Int.to_i32_wrapping(self Int) I32 { return 1 }
-pub fun Int.to_u8_wrapping(self Int) U8 { return 1 }
-pub fun Int.to_u16_wrapping(self Int) U16 { return 1 }
-pub fun Int.to_u32_wrapping(self Int) U32 { return 1 }
-pub fun Int.to_u64_wrapping(self Int) U64 { return 1 }
+pub fun Int.to_i8_wrapping(self Int) I8 {}
+pub fun Int.to_i16_wrapping(self Int) I16 {}
+pub fun Int.to_i32_wrapping(self Int) I32 {}
+pub fun Int.to_u8_wrapping(self Int) U8 {}
+pub fun Int.to_u16_wrapping(self Int) U16 {}
+pub fun Int.to_u32_wrapping(self Int) U32 {}
+pub fun Int.to_u64_wrapping(self Int) U64 {}
 
 --- A placeholder type for the builtin `U8` type. ---
 pub struct U8_ {}
 
-pub fun U8.to_u16(self U8) U16 { return 1 }
-pub fun U8.to_u32(self U8) U32 { return 1 }
-pub fun U8.to_u64(self U8) U64 { return 1 }
-pub fun U8.to_i16(self U8) I16 { return 1 }
-pub fun U8.to_i32(self U8) I32 { return 1 }
-pub fun U8.to_int(self U8) Int { return 1 }
-pub fun U8.to_i8_wrapping(self U8) I8 { return 1 }
+pub fun U8.to_u16(self U8) U16 {}
+pub fun U8.to_u32(self U8) U32 {}
+pub fun U8.to_u64(self U8) U64 {}
+pub fun U8.to_i16(self U8) I16 {}
+pub fun U8.to_i32(self U8) I32 {}
+pub fun U8.to_int(self U8) Int {}
+pub fun U8.to_i8_wrapping(self U8) I8 {}
 
 --- A placeholder type for the builtin `U16` type. ---
 pub struct U16_ {}
 
-pub fun U16.to_u32(self U16) U32 { return 1 }
-pub fun U16.to_u64(self U16) U64 { return 1 }
-pub fun U16.to_i32(self U16) I32 { return 1 }
-pub fun U16.to_int(self U16) Int { return 1 }
-pub fun U16.to_u8_wrapping(self U16) U8 { return 1 }
-pub fun U16.to_i16_wrapping(self U16) I16 { return 1 }
-pub fun U16.to_i8_wrapping(self U16) I8 { return 1 }
+pub fun U16.to_u32(self U16) U32 {}
+pub fun U16.to_u64(self U16) U64 {}
+pub fun U16.to_i32(self U16) I32 {}
+pub fun U16.to_int(self U16) Int {}
+pub fun U16.to_u8_wrapping(self U16) U8 {}
+pub fun U16.to_i16_wrapping(self U16) I16 {}
+pub fun U16.to_i8_wrapping(self U16) I8 {}
 
 --- A placeholder type for the builtin `U32` type. ---
 pub struct U32_ {}
 
-pub fun U32.to_u64(self U32) U64 { return 1 }
-pub fun U32.to_int(self U32) Int { return 1 }
-pub fun U32.to_u8_wrapping(self U32) U8 { return 1 }
-pub fun U32.to_u16_wrapping(self U32) U16 { return 1 }
-pub fun U32.to_i32_wrapping(self U32) I32 { return 1 }
-pub fun U32.to_i16_wrapping(self U32) I16 { return 1 }
-pub fun U32.to_i8_wrapping(self U32) I8 { return 1 }
+pub fun U32.to_u64(self U32) U64 {}
+pub fun U32.to_int(self U32) Int {}
+pub fun U32.to_u8_wrapping(self U32) U8 {}
+pub fun U32.to_u16_wrapping(self U32) U16 {}
+pub fun U32.to_i32_wrapping(self U32) I32 {}
+pub fun U32.to_i16_wrapping(self U32) I16 {}
+pub fun U32.to_i8_wrapping(self U32) I8 {}
 
 --- A placeholder type for the builtin `U64` type. ---
 pub struct U64_ {}
 
-pub fun U64.to_u8_wrapping(self U64) U8 { return 1 }
-pub fun U64.to_u16_wrapping(self U64) U16 { return 1 }
-pub fun U64.to_u32_wrapping(self U64) U32 { return 1 }
-pub fun U64.to_int_wrapping(self U64) Int { return 1 }
-pub fun U64.to_i32_wrapping(self U64) I32 { return 1 }
+pub fun U64.to_u8_wrapping(self U64) U8 {}
+pub fun U64.to_u16_wrapping(self U64) U16 {}
+pub fun U64.to_u32_wrapping(self U64) U32 {}
+pub fun U64.to_int_wrapping(self U64) Int {}
+pub fun U64.to_i32_wrapping(self U64) I32 {}
 
 --- A placeholder type for the builtin `Rune` type. ---
 pub struct Rune_ {}
 
-pub fun Rune.to_u32(r Rune) U32 { 0 }
+pub fun Rune.to_u32(r Rune) U32 {}
 
 --- A placeholder type for the builtin `Str` type. ---
 pub sync struct Str_ { data []U8 }

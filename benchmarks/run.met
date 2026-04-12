@@ -10,9 +10,9 @@ let benchmarks = [
     Benchmark("iter", "all", 250, 220, 280),
     Benchmark("iter", "any", 100, 70, 300),
     Benchmark("iter", "find", 100, 100, 350),
-    Benchmark("iter", "take", 300, 130, 350),
+    Benchmark("iter", "take", 230, 85, 230),
     Benchmark("iter", "take_while", 80, 100, 100),
-    Benchmark("iter", "collect", 50, 70, 110),
+    Benchmark("iter", "collect", 95, 100, 150),
     Benchmark("split", "byte", 95, 100, 100),
     Benchmark("split", "predicate", 90, 80, 120),
 ]
@@ -63,6 +63,15 @@ fun Benchmark.run(b Benchmark, recompile Bool, @a Arena) !Bool {
         io.print(":\t")
         let t0 = time.Instant.new()
         let out = try run([cmd, b.name][..], @a)
+        if not out.eq(met_out) {
+            io.println("\toutput differs:")
+            io.print("\texpected:\t")
+            io.println(met_out)
+            io.print("\tgot:\t")
+            io.println(out)
+            io.println("\t\x1b[31mFAILED\x1b[0m")
+            return false
+        }
         let duration = t0.elapsed()
         let pct = duration.to(time.nanosecond) * 100 / met_duration.to(time.nanosecond)
         io.print(duration)
@@ -108,13 +117,13 @@ fun main() !void {
             ""
         }
     }
-    io.println(filter)
     _ = try run(["mkdir", "-p", ".build"][..], @local)
     mut last_group = ""
     mut failed = 0
     for i in 0..benchmarks.len {
         let b = benchmarks[i]
-        if (not filter.eq("")) and (not b.group.eq(filter)) {
+        let name = if b.name.eq("") { b.group } else { b.group.concat("/", @local).concat(b.name, @local) }
+        if not name.starts_with(filter) {
             io.print("[")
             io.print(b.group)
             if not b.name.eq("") {

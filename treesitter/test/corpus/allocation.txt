@@ -1,10 +1,10 @@
 ================================================================================
-Arena new and new_mut
+Arena new
 ================================================================================
 
 fun f(@a Arena) void {
     @a.new<Foo>(Foo(1))
-    @a.new_mut<Foo>(Foo())
+    @a.new<Foo>(Foo())
 }
 
 --------------------------------------------------------------------------------
@@ -36,28 +36,6 @@ Arena slice with default
 ================================================================================
 
 fun f(@a Arena) void { @a.slice<Int>(10, 0) }
-
---------------------------------------------------------------------------------
-
-(source_file
-  (function_declaration
-    name: (function_name (identifier))
-    parameters: (parameter_list
-      (parameter name: (allocator_identifier) type: (simple_type (type_identifier))))
-    return_type: (simple_type)
-    body: (block
-      (call_expression
-        callee: (field_access
-          object: (allocator_identifier)
-          field: (identifier))
-        type_arguments: (type_arguments (simple_type (type_identifier)))
-        arguments: (argument_list (integer_literal) (integer_literal))))))
-
-================================================================================
-Arena slice_mut with default
-================================================================================
-
-fun f(@a Arena) void { @a.slice_mut<Int>(10, 0) }
 
 --------------------------------------------------------------------------------
 

@@ -39,15 +39,22 @@ struct ArenaAllocator {
 }
 
 extern fun malloc(size Int) ffi.PtrMut<U8>
+extern fun realloc(p ffi.PtrMut<U8>, size Int) ffi.PtrMut<U8>
 extern fun free(p ffi.PtrMut<U8>) void
 extern fun arena_debug_print(msg ffi.Ptr<U8>, i1 U64, i2 Int, i3 Int) I32
+-- extern fun llvm.memcpy.inline.p0.p0.i64(dst ffi.PtrMut<U8>, src ffi.Ptr<U8>, n Int, volatile Bool) void
+extern fun memcpy(dst ffi.PtrMut<U8>, src ffi.PtrMut<U8>, n Int) void
 
 let debug_create = [
     U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'c', 'r', 'e', 'a', 't', 'e', '\n', 0][..]
 let debug_alloc = [
     U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'a', 'l', 'l', 'o', 'c', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+let debug_realloc = [
+    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'r', 'e', 'a', 'l', 'l', 'o', 'c', ' ', 'o', 'l', 'd', '_', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', ',', ' ', 'n', 'e', 'w', '_', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u',  '\n', 0][..]
 let debug_alloc_page = [
     U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'a', 'l', 'l', 'o', 'c', '_', 'p', 'a', 'g', 'e', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', ' ', 'p', 'r', 'e', 'v', '_', 'f', 'r', 'e', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+let debug_realloc_page = [
+    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'r', 'e', 'a', 'l', 'l', 'o', 'c', '_', 'p', 'a', 'g', 'e', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', ' ', 'i', 'n', '_', 'p', 'l', 'a', 'c', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
 let debug_destroy = [
     U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'd', 'e', 's', 't', 'r', 'o', 'y', ' ', 'p', 'a', 'g', 'e', 's', '=', '%', 'l', 'l', 'u', '\n', 0][..]
 
@@ -118,6 +125,49 @@ fun arena_alloc(a &mut ArenaAllocator, requested_size Int) ffi.PtrMut<U8> {
     init_page(a, page_ptr, page_size)
     let result = a.bump
     a.bump = a.bump.offset(size)
+    result
+}
+
+fun arena_realloc(a &mut ArenaAllocator, p ffi.PtrMut<U8>, old_size Int, new_size Int) ffi.PtrMut<U8> {
+    if new_size <= old_size {
+        panic("realloc can only grow: new_size must be greater than old_size")
+    }
+    let old_size = (old_size + 7) & (~7)
+    let new_size = (new_size + 7) & (~7)
+    if a.debug_enabled {
+        debug(a, debug_realloc, old_size, new_size)
+    }
+    -- Is this the last allocation in the current page?
+    let result = if p.as_u64() + old_size.to_u64_wrapping() != a.bump.as_u64() {
+        -- No, it isn't. Allocate the regular way first.
+        arena_alloc(a, new_size)
+    } else {
+        -- It is the last allocation in the current page.
+        -- Is there enough room to just bump?
+        if a.bump.as_u64() + (new_size - old_size).to_u64_wrapping() <= a.page_end.as_u64() {
+            -- Yes, then just bump.
+            a.bump = a.bump.offset(new_size - old_size)
+            return p
+        } 
+        -- No, we need to allocate.
+        -- Is `p` the only thing that lives in this page?
+        if p.as_u64() == a.page_start.as_u64() + ffi.sizeof<ffi.Ptr<U8>>().to_u64_wrapping() {
+            -- Yes, we can use realloc.
+            let page_size = new_size + ffi.sizeof<ffi.Ptr<U8>>()
+            let page_ptr = unsafe realloc(a.page_start, page_size)
+            if a.debug_enabled {
+                debug(a, debug_realloc_page, page_size, if page_ptr.as_u64() == a.page_start.as_u64() { 1 } else { 0 })
+            }
+            a.page_start = page_ptr
+            a.page_end = page_ptr.offset(page_size)
+            a.bump = page_ptr.offset(page_size)
+            return page_ptr.offset(ffi.sizeof<ffi.Ptr<U8>>())
+        } 
+        -- No, allocate the regular way.
+        arena_alloc(a, new_size)
+    }
+    -- Copy the data.
+    unsafe memcpy(result, p, old_size)
     result
 }
 

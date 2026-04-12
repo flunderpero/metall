@@ -2917,7 +2917,7 @@ struct01 = Foo { one &Int }
 ```metall
 {
     let @a = Arena()
-    let buf = unsafe @a.slice_uninit_mut<Int>(8)
+    let buf = unsafe @a.slice_uninit<Int>(8)
     fun foo(x [][]Int) Int { 1 }
     foo([buf][..])
 }
@@ -3127,23 +3127,23 @@ scope01:
 ```
 
 ```types
-Block: &struct01
+Block: &mut struct01
   AllocatorVar: void
   Struct: struct01
     StructField: ?
       SimpleType: ?
   Var: void
-    Call: &struct01
+    Call: &mut struct01
       FieldAccess: fun01
         Ident: Arena
         SimpleType: struct01
       TypeConstruction: struct01
         Ident: struct01
         String: Str
-  Ident: &struct01
+  Ident: &mut struct01
 ---
 struct01 = Foo { one Str }
-fun01    = fun(Arena, struct01) &struct01
+fun01    = fun(Arena, struct01) &mut struct01
 ```
 
 **Pass alloc to fun**
@@ -3170,7 +3170,7 @@ fun01 = fun(Arena) void
 **Heap alloc mut struct**
 
 ```metall
-{ let @a = Arena() struct Bar{one Str} @a.new_mut<Bar>(Bar("hello")) }
+{ let @a = Arena() struct Bar{one Str} @a.new<Bar>(Bar("hello")) }
 ```
 
 ```types
@@ -3194,7 +3194,7 @@ fun01    = fun(Arena, struct01) &mut struct01
 **Make uninit slice**
 
 ```metall
-{ let @a = Arena() unsafe @a.slice_uninit_mut<Int>(5) }
+{ let @a = Arena() unsafe @a.slice_uninit<Int>(5) }
 ```
 
 ```types
@@ -3249,7 +3249,7 @@ Block: void
       Ident: struct02
       Ident: Arena
   Var: void
-    Call: &struct01
+    Call: &mut struct01
       FieldAccess: fun01
         FieldAccess: Arena
           Ident: struct02
@@ -3260,25 +3260,25 @@ Block: void
 ---
 struct01 = Foo { one Str }
 struct02 = Bar { @myalloc Arena }
-fun01    = fun(Arena, struct01) &struct01
+fun01    = fun(Arena, struct01) &mut struct01
 ```
 
-**Make uninit immutable slice**
+**Make uninit slice**
 
 ```metall
 { let @myalloc = Arena() unsafe @myalloc.slice_uninit<Int>(5) }
 ```
 
 ```types
-Block: []Int
+Block: []mut Int
   AllocatorVar: void
-  Call: []Int
+  Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
       SimpleType: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Make slice with default**
@@ -3288,16 +3288,16 @@ fun01 = fun(Arena, Int) []Int
 ```
 
 ```types
-Block: []Int
+Block: []mut Int
   AllocatorVar: void
-  Call: []Int
+  Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
       SimpleType: Int
     Int: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int, Int) []Int
+fun01 = fun(Arena, Int, Int) []mut Int
 ```
 
 **Make slice**
@@ -3307,15 +3307,15 @@ fun01 = fun(Arena, Int, Int) []Int
 ```
 
 ```types
-Block: []Int
+Block: []mut Int
   AllocatorVar: void
-  Call: []Int
+  Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
       SimpleType: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Make slice default**
@@ -3325,16 +3325,16 @@ fun01 = fun(Arena, Int) []Int
 ```
 
 ```types
-Block: []Int
+Block: []mut Int
   AllocatorVar: void
-  Call: []Int
+  Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
       SimpleType: Int
     Int: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int, Int) []Int
+fun01 = fun(Arena, Int, Int) []mut Int
 ```
 
 **Make uninit Int slice**
@@ -3347,13 +3347,13 @@ fun01 = fun(Arena, Int, Int) []Int
 Block: void
   AllocatorVar: void
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
       Int: Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Make uninit safe struct slice**
@@ -3371,14 +3371,14 @@ Block: void
       SimpleType: ?
   AllocatorVar: void
   Var: void
-    Call: []struct01
+    Call: []mut struct01
       FieldAccess: fun01
         Ident: Arena
         SimpleType: struct01
       Int: Int
 ---
 struct01 = Foo { one Int, two Int }
-fun01    = fun(Arena, Int) []struct01
+fun01    = fun(Arena, Int) []mut struct01
 ```
 
 **Make slice Bool with default**
@@ -3391,14 +3391,14 @@ fun01    = fun(Arena, Int) []struct01
 Block: void
   AllocatorVar: void
   Var: void
-    Call: []Bool
+    Call: []mut Bool
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Bool
       Int: Int
       Bool: Bool
 ---
-fun01 = fun(Arena, Int, Bool) []Bool
+fun01 = fun(Arena, Int, Bool) []mut Bool
 ```
 
 ## Arrays and Slices
@@ -3607,22 +3607,22 @@ Block: Int
 Block: Int
   AllocatorVar: void
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
       Int: Int
   Index: Int
-    Ident: []Int
+    Ident: []mut Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Slice index write**
 
 ```metall
-{ let @myalloc = Arena() let x = unsafe @myalloc.slice_uninit_mut<Int>(3) x[1] = 5 }
+{ let @myalloc = Arena() let x = unsafe @myalloc.slice_uninit<Int>(3) x[1] = 5 }
 ```
 
 ```types
@@ -3653,15 +3653,15 @@ fun01 = fun(Arena, Int) []mut Int
 Block: Int
   AllocatorVar: void
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
       Int: Int
   FieldAccess: Int
-    Ident: []Int
+    Ident: []mut Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Slice as fun param**
@@ -3683,17 +3683,17 @@ Block: Int
         Ident: []Int
         Int: Int
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun02
         Ident: Arena
         SimpleType: Int
       Int: Int
   Call: Int
     Ident: fun01
-    Ident: []Int
+    Ident: []mut Int
 ---
 fun01 = fun([]Int) Int
-fun02 = fun(Arena, Int) []Int
+fun02 = fun(Arena, Int) []mut Int
 ```
 
 **Slice as fun param and return**
@@ -3714,17 +3714,17 @@ Block: []Int
     Block: []Int
       Ident: []Int
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun02
         Ident: Arena
         SimpleType: Int
       Int: Int
   Call: []Int
     Ident: fun01
-    Ident: []Int
+    Ident: []mut Int
 ---
 fun01 = fun([]Int) []Int
-fun02 = fun(Arena, Int) []Int
+fun02 = fun(Arena, Int) []mut Int
 ```
 
 **Struct with slice field**
@@ -3741,7 +3741,7 @@ Block: Int
       SliceType: ?
         SimpleType: ?
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
@@ -3749,14 +3749,14 @@ Block: Int
   Var: void
     TypeConstruction: struct01
       Ident: struct01
-      Ident: []Int
+      Ident: []mut Int
   Index: Int
     FieldAccess: []Int
       Ident: struct01
     Int: Int
 ---
 struct01 = Foo { one []Int }
-fun01    = fun(Arena, Int) []Int
+fun01    = fun(Arena, Int) []mut Int
 ```
 
 **Ref to slice**
@@ -3766,18 +3766,18 @@ fun01    = fun(Arena, Int) []Int
 ```
 
 ```types
-Block: &[]Int
+Block: &[]mut Int
   AllocatorVar: void
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
       Int: Int
-  Ref: &[]Int
-    Ident: []Int
+  Ref: &[]mut Int
+    Ident: []mut Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Slice index through ref**
@@ -3790,19 +3790,19 @@ fun01 = fun(Arena, Int) []Int
 Block: Int
   AllocatorVar: void
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
       Int: Int
   Var: void
-    Ref: &[]Int
-      Ident: []Int
+    Ref: &[]mut Int
+      Ident: []mut Int
   Index: Int
-    Ident: &[]Int
+    Ident: &[]mut Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Slice len through ref**
@@ -3815,24 +3815,24 @@ fun01 = fun(Arena, Int) []Int
 Block: Int
   AllocatorVar: void
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
       Int: Int
   Var: void
-    Ref: &[]Int
-      Ident: []Int
+    Ref: &[]mut Int
+      Ident: []mut Int
   FieldAccess: Int
-    Ident: &[]Int
+    Ident: &[]mut Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Mut ref slice index write**
 
 ```metall
-{ let @a = Arena() mut x = unsafe @a.slice_uninit_mut<Int>(3) let y = &mut x y[0] = 42 }
+{ let @a = Arena() mut x = unsafe @a.slice_uninit<Int>(3) let y = &mut x y[0] = 42 }
 ```
 
 ```types
@@ -3859,7 +3859,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Make mut slice**
 
 ```metall
-{ let @a = Arena() unsafe @a.slice_uninit_mut<Int>(5) }
+{ let @a = Arena() unsafe @a.slice_uninit<Int>(5) }
 ```
 
 ```types
@@ -3877,7 +3877,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Mut slice assignable to immutable**
 
 ```metall
-{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = unsafe @a.slice_uninit_mut<Int>(3) foo(x) }
+{ let @a = Arena() fun foo(s []Int) Int { s[0] } let x = unsafe @a.slice_uninit<Int>(3) foo(x) }
 ```
 
 ```types
@@ -3909,7 +3909,7 @@ fun02 = fun(Arena, Int) []mut Int
 **Mut slice index write no mut binding**
 
 ```metall
-{ let @a = Arena() let x = unsafe @a.slice_uninit_mut<Int>(3) x[0] = 5 }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x[0] = 5 }
 ```
 
 ```types
@@ -3953,7 +3953,7 @@ Block: []mut Int
 **Subslice mut slice**
 
 ```metall
-{ let @a = Arena() let x = unsafe @a.slice_uninit_mut<Int>(5) x[1..3] }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(5) x[1..3] }
 ```
 
 ```types
@@ -3977,7 +3977,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Subslice mut slice through mut ref**
 
 ```metall
-{ let @a = Arena() mut x = unsafe @a.slice_uninit_mut<Int>(5) let y = &mut x y[1..3] }
+{ let @a = Arena() mut x = unsafe @a.slice_uninit<Int>(5) let y = &mut x y[1..3] }
 ```
 
 ```types
@@ -4004,7 +4004,7 @@ fun01 = fun(Arena, Int) []mut Int
 **Subslice mut slice through immutable ref**
 
 ```metall
-{ let @a = Arena() let x = unsafe @a.slice_uninit_mut<Int>(5) let y = &x y[1..3] }
+{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(5) let y = &x y[1..3] }
 ```
 
 ```types
@@ -4026,30 +4026,6 @@ Block: []Int
       Int: Int
 ---
 fun01 = fun(Arena, Int) []mut Int
-```
-
-**Subslice slice**
-
-```metall
-{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(5) x[1..3] }
-```
-
-```types
-Block: []Int
-  AllocatorVar: void
-  Var: void
-    Call: []Int
-      FieldAccess: fun01
-        Ident: Arena
-        SimpleType: Int
-      Int: Int
-  SubSlice: []Int
-    Ident: []Int
-    Range: void
-      Int: Int
-      Int: Int
----
-fun01 = fun(Arena, Int) []Int
 ```
 
 **Subslice through ref**
@@ -4085,7 +4061,7 @@ Block: []Int
 Block: void
   AllocatorVar: void
   Var: void
-    Call: [][]Int
+    Call: []mut []Int
       FieldAccess: fun01
         Ident: Arena
         SliceType: []Int
@@ -4093,7 +4069,7 @@ Block: void
       Int: Int
       EmptySlice: []Int
 ---
-fun01 = fun(Arena, Int, []Int) [][]Int
+fun01 = fun(Arena, Int, []Int) []mut []Int
 ```
 
 **Empty slice in assignment**
@@ -4106,16 +4082,16 @@ fun01 = fun(Arena, Int, []Int) [][]Int
 Block: void
   AllocatorVar: void
   Var: void
-    Call: []Int
+    Call: []mut Int
       FieldAccess: fun01
         Ident: Arena
         SimpleType: Int
       Int: Int
   Assign: void
-    Ident: []Int
-    EmptySlice: []Int
+    Ident: []mut Int
+    EmptySlice: []mut Int
 ---
-fun01 = fun(Arena, Int) []Int
+fun01 = fun(Arena, Int) []mut Int
 ```
 
 **Empty slice as fun arg**
@@ -4168,7 +4144,7 @@ struct01 = Foo { items []Int }
 Block: void
   AllocatorVar: void
   Var: void
-    Call: [][]Int
+    Call: []mut []Int
       FieldAccess: fun01
         Ident: Arena
         SliceType: []Int
@@ -4176,7 +4152,7 @@ Block: void
       Int: Int
       EmptySlice: []Int
 ---
-fun01 = fun(Arena, Int, []Int) [][]Int
+fun01 = fun(Arena, Int, []Int) []mut []Int
 ```
 
 **Multidimensional array type**
@@ -5898,7 +5874,7 @@ Block: Int
           Ident: &struct03
   AllocatorVar: void
   Var: void
-    Call: []Str
+    Call: []mut Str
       FieldAccess: fun04
         Ident: Arena
         SimpleType: Str
@@ -5908,7 +5884,7 @@ Block: Int
     TypeConstruction: struct04
       Ident: struct04
         SimpleType: Str
-      Ident: []Str
+      Ident: []mut Str
   Call: Int
     Ident: fun05
       SimpleType: Str
@@ -5921,7 +5897,7 @@ fun01    = fun(&struct02) Int
 struct03 = Bag<V> { items []V }
 fun02    = fun(&struct03) Int
 fun03    = fun(&struct03) Int
-fun04    = fun(Arena, Int, Str) []Str
+fun04    = fun(Arena, Int, Str) []mut Str
 struct04 = Bag<Str> { items []Str }
 fun05    = fun(&struct04) Int
 ```
@@ -8862,7 +8838,7 @@ test.met:1:3: continue statement outside of loop
 ```
 
 ```error
-test.met:1:61: unknown field: []Int.foo
+test.met:1:61: unknown field: []mut Int.foo
     { let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x.foo }
                                                                 ^^^
 ```
@@ -8937,42 +8913,6 @@ let x = []
 test.met:1:9: cannot infer type of empty slice []
     let x = []
             ^^
-```
-
-**Write to immutable slice element**
-
-```metall
-{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x[0] = 5 }
-```
-
-```error
-test.met:1:59: cannot assign to element of immutable array or slice
-    { let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) x[0] = 5 }
-                                                              ^^^^
-```
-
-**Write through mut ref to immutable slice**
-
-```metall
-{ let @a = Arena() mut x = unsafe @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }
-```
-
-```error
-test.met:1:74: cannot assign to element of immutable array or slice
-    { let @a = Arena() mut x = unsafe @a.slice_uninit<Int>(3) let y = &mut x y[0] = 5 }
-                                                                             ^^^^
-```
-
-**Immutable slice not assignable to mut slice param**
-
-```metall
-{ let @a = Arena() fun foo(s []mut Int) void {} let x = unsafe @a.slice_uninit<Int>(3) foo(x) }
-```
-
-```error
-test.met:1:92: type mismatch at argument 1: expected []mut Int, got []Int
-    { let @a = Arena() fun foo(s []mut Int) void {} let x = unsafe @a.slice_uninit<Int>(3) foo(x) }
-                                                                                               ^
 ```
 
 **Mut binding of array literal subslice is mutable**

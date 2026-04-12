@@ -228,7 +228,7 @@ pub fun Pipeline.fold<A, B, I PipeIter<A>>(p Pipeline<A, I>, initial B, f fun(B,
 
 --- Collect all elements in the pipeline into a slice. ---
 pub fun Pipeline.collect<A, I PipeIter<A>>(p Pipeline<A, I>, initial_capacity Int, @a Arena) []mut A {
-    mut slice = unsafe @a.slice_uninit_mut<A>(initial_capacity)
+    mut slice = unsafe @a.slice_uninit<A>(initial_capacity)
     mut slice_len = slice.len
     mut len = 0
     mut it = p.it
@@ -238,9 +238,7 @@ pub fun Pipeline.collect<A, I PipeIter<A>>(p Pipeline<A, I>, initial_capacity In
             case Skip: 
             else v: 
                 if len == slice_len {
-                    mut new = unsafe @a.slice_uninit_mut<A>(slice.len * 2) 
-                    _ = new.set(slice)
-                    slice = new
+                    slice = unsafe @a.grow_uninit<A>(slice, slice.len * 2) 
                     slice_len = slice.len
                 }
                 slice[len] = v

@@ -117,5 +117,82 @@ fun main() void {
         try test.eq(3, freed)
     })
 
+    suite.test("arena_realloc bumps if ptr is last and page has room", fun() !void {
+        mut first_page_buf = [
+            U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+
+        let bump_before = a.bump.as_u64()
+        let p = arena.arena_alloc(&mut a, 5)
+        write(p, 5)
+
+        let p2 = arena.arena_realloc(&mut a, p, 5, 12)
+        try test.eq(p.as_u64(), p2.as_u64(), "should have been just bumped")
+        try test.eq(bump_before + 16, a.bump.as_u64())
+        try verify(p2, 5)
+    })
+
+    suite.test("arena_realloc allocates in same if ptr is not last and page has room", fun() !void {
+        -- We use the smallest first page possible so that we know that our first allocation will
+        -- create a page on the heap (malloc) and we can build our test expectations on that.
+        mut first_page_buf = [U8(0), 0, 0, 0, 0, 0, 0, 0]
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+
+        let p = arena.arena_alloc(&mut a, 8)
+        write(p, 8)
+
+        -- Allocate again, so `p` isn't last in page anymore.
+        _ = arena.arena_alloc(&mut a, 8)
+
+        let bump_before = a.bump.as_u64()
+        let p2 = arena.arena_realloc(&mut a, p, 8, 16)
+        try test.eq(p.as_u64() + 16, p2.as_u64(), "should have allocated in the same page")
+        try test.eq(bump_before + 16, a.bump.as_u64())
+        try verify(p2, 8)
+    })
+
+    suite.test("arena_realloc tries to realloc if ptr is the only alloc in the page and new_size is too large", fun() !void {
+        -- We use the smallest first page possible so that we know that our first allocation will
+        -- create a page on the heap (malloc) and we can build our test expectations on that.
+        mut first_page_buf = [U8(0), 0, 0, 0, 0, 0, 0, 0]
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 32, 32, debug)
+
+        let p = arena.arena_alloc(&mut a, 16)
+        write(p, 16)
+
+        let p2 = arena.arena_realloc(&mut a, p, 16, 48)
+        try verify(p2, 16)
+
+        -- Verify that bump and page_end account for the prev-page pointer.
+        let expected_page_size = 48 + ffi.sizeof<ffi.Ptr<U8>>()
+        try test.eq(a.page_end.as_u64(), a.page_start.as_u64() + expected_page_size.to_u64_wrapping())
+        try test.eq(a.bump.as_u64(), a.page_end.as_u64(), "bump should equal page_end since object fills the page")
+    })
+
     _ = suite.run()
+}
+
+fun write(p ffi.PtrMut<U8>, n Int) void {
+    mut p = p
+    for i in 0..n {
+        unsafe p.write(i.to_u8_wrapping())
+        p = p.offset(1)
+    }
+}
+
+fun verify(p ffi.PtrMut<U8>, n Int) !void {
+    mut p = p
+    for i in 0..n {
+        let read = unsafe p.read()
+        if read != i.to_u8_wrapping() {
+            return Err("unexpected byte")
+        }
+        p = p.offset(1)
+    }
 }

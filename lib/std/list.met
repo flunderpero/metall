@@ -6,15 +6,15 @@ pub nocopy struct List<T> {
 }
 
 pub fun List.new<T>(initial_capacity Int, @a Arena) &mut List<T> {
-    let data = unsafe @a.slice_uninit_mut<T>(initial_capacity)
-    @a.new_mut(List(0, data, @a))
+    let data = unsafe @a.slice_uninit<T>(initial_capacity)
+    @a.new(List(0, data, @a))
 }
 
 --- Copy the slice and return a list. ---
 pub fun List.from_slice<T>(slice []T, @a Arena) &mut List<T> {
-    let data = unsafe @a.slice_uninit_mut<T>(slice.len)
+    let data = unsafe @a.slice_uninit<T>(slice.len)
     _ = data.set(slice)
-    @a.new_mut(List(slice.len, data, @a))
+    @a.new(List(slice.len, data, @a))
 }
 
 --- Add an element to the list.
@@ -22,11 +22,7 @@ pub fun List.from_slice<T>(slice []T, @a Arena) &mut List<T> {
     This might allocate and copy the existing data. 
     All references to elements point to stale data afterwards. ---
 pub fun List.push<T>(l &mut List<T>, v T) void {
-    if l.len == l.data.len {
-        let new_data = unsafe l.@a.slice_uninit_mut<T>(l.len * 2)
-        _ = new_data.set(l.data)
-        l.data = new_data
-    }
+    l.ensure_capacity(1)
     l.data[l.len] = v
     l.len = l.len + 1
 }
@@ -44,10 +40,8 @@ pub fun List.push_all<T>(l &mut List<T>, v []T) void {
 
 --- Make sure the list has room for `cap` elements. ---
 pub fun List.ensure_capacity<T>(l &mut List<T>, cap Int) void {
-    if l.len + cap >= l.data.len {
-        let new_data = unsafe l.@a.slice_uninit_mut<T>(l.len + cap)
-        _ = new_data.set(l.data)
-        l.data = new_data
+    if l.len + cap > l.data.len {
+        l.data = unsafe l.@a.grow_uninit<T>(l.data, l.len + cap)
     }
 }
 

@@ -14,7 +14,7 @@ pub struct Suite {
 }
 
 pub fun Suite.new(name Str, @a Arena) &mut Suite {
-    @a.new_mut<Suite>(Suite(name, false, list.List.new<Test>(32, @a)))
+    @a.new<Suite>(Suite(name, false, list.List.new<Test>(32, @a)))
 }
 
 pub struct SuiteResult {

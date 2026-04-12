@@ -161,7 +161,7 @@ pub fun FunPtr.call(f FunPtr) void {
 
 --- Take the given byte array and convert it to a C-style 0-terminated string. ---
 pub fun cstr(b []U8, @a Arena) Ptr<U8> {
-    mut s = unsafe @a.slice_uninit_mut<U8>(b.len + 1)
+    mut s = unsafe @a.slice_uninit<U8>(b.len + 1)
     -- We don't use `s.set(b)` to not depend on the full prelude.
     for i in 0..b.len {
         s[i] = b[i]
@@ -172,7 +172,7 @@ pub fun cstr(b []U8, @a Arena) Ptr<U8> {
 
 --- Take the given byte array and convert it to a mutable C-style 0-terminated string. ---
 pub fun cstr_mut(b []U8, @a Arena) PtrMut<U8> {
-    mut s = unsafe @a.slice_uninit_mut<U8>(b.len + 1)
+    mut s = unsafe @a.slice_uninit<U8>(b.len + 1)
     -- We don't use `s.set(b)` to not depend on the full prelude.
     for i in 0..b.len {
         s[i] = b[i]

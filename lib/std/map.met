@@ -40,8 +40,8 @@ pub struct Map<K Key, V> {
 
 pub fun Map.new<K Key, V>(capacity Int, @a Arena) &mut Map<K, V> {
     if capacity <= 0 { panic("invalid capacity (<= 0)")}
-    let data = @a.slice_mut<MapSlot<K, V>>(capacity, false)
-    @a.new_mut(Map<K, V>(data, 0, @a))
+    let data = @a.slice<MapSlot<K, V>>(capacity, false)
+    @a.new(Map<K, V>(data, 0, @a))
 }
 
 pub fun Map.set<K Key, V>(m &mut Map<K, V>, key K, value V) void {
@@ -119,7 +119,7 @@ pub fun Map.del<K Key, V>(m &mut Map<K, V>, key K) Bool {
 }
 
 pub fun Map.grow<K Key, V>(m &mut Map<K, V>, capacity Int) void {
-    let new_data = m.@a.slice_mut<MapSlot<K, V>>(capacity, false)
+    let new_data = m.@a.slice<MapSlot<K, V>>(capacity, false)
     for i in 0..m.data.len {
         match m.data[i] {
         case Bool:

@@ -276,7 +276,7 @@ pub fun Str.is_empty(s Str) Bool {
 --- Replace illegal utf8 sequences with the replacement character U+FFFD. ---
 pub fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
     let replacement_rune = [U8(239), 191, 189][..]
-	mut copy = unsafe @a.slice_uninit_mut<U8>(data.len)
+	mut copy = unsafe @a.slice_uninit<U8>(data.len)
     mut copy_index = 0
     mut index = 0
 	for index < data.len {
@@ -285,7 +285,7 @@ pub fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
         let bytes = if valid { data[sequence_start..index] } else { replacement_rune }
         for i in 0..bytes.len {
             if copy_index == copy.len {
-                mut copy2 = unsafe @a.slice_uninit_mut<U8>(copy.len + 32)
+                mut copy2 = unsafe @a.slice_uninit<U8>(copy.len + 32)
                 for c in 0..copy.len {
                     copy2[c] = copy[c]
                 }
@@ -363,7 +363,7 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
 }
 
 pub fun Str.concat(s Str, other Str, @a Arena) Str {
-    let data = unsafe @a.slice_uninit_mut<U8>(s.data.len + other.data.len)
+    let data = unsafe @a.slice_uninit<U8>(s.data.len + other.data.len)
     for i in 0..s.data.len {
         data[i] = s.data[i]
     }
@@ -621,8 +621,8 @@ pub struct StrBuilder {
 }
 
 pub fun StrBuilder.new(capacity Int, @a Arena) &mut StrBuilder {
-    let out = unsafe @a.slice_uninit_mut<U8>(capacity)
-    @a.new_mut<StrBuilder>(StrBuilder(out, 0, @a))
+    let out = unsafe @a.slice_uninit<U8>(capacity)
+    @a.new<StrBuilder>(StrBuilder(out, 0, @a))
 }
 
 pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false, min_width Int = 0) void {
@@ -805,9 +805,7 @@ pub fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep 
 
 pub fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
     if sb.out.len - sb.len < capacity {
-        let new_out = unsafe sb.@a.slice_uninit_mut<U8>((sb.len + capacity) * 2)
-        _ = new_out.set(sb.out)
-        sb.out = new_out
+        sb.out = unsafe sb.@a.grow_uninit<U8>(sb.out, (sb.len + capacity) * 2)
     }
 }
 
@@ -844,7 +842,7 @@ fun StrBuilder.byte_raw(sb &mut StrBuilder, b U8) void {
 }
 
 pub fun Slice.copy<T>(s []T, @a Arena) []mut T {
-    let c = unsafe @a.slice_uninit_mut<T>(s.len)
+    let c = unsafe @a.slice_uninit<T>(s.len)
     _ = c.set(s)
     c
 }
@@ -1086,7 +1084,7 @@ pub fun Slice.concat<T>(first []T, others [][]T, @a Arena) []mut T {
     for i in 0..others.len {
         len = len + others[i].len
     }
-    mut new = unsafe @a.slice_uninit_mut<T>(len)
+    mut new = unsafe @a.slice_uninit<T>(len)
     _ = new.set(first)
     mut out = first.len
     for i in 0..others.len {
@@ -1150,7 +1148,7 @@ pub fun Slice.ltrim_utf8(s []U8, runes []Rune = [' ', '\t', '\n', '\r'][..]) []U
     -- We can afford this precomputation, because everything will
     -- fit into the first page of the arena allocator which lives on the stack.
     let @local = Arena()
-    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
+    let rbs = unsafe @local.slice_uninit<RuneUTF8>(runes.len)
     for i in 0..runes.len {
         rbs[i] = runes[i].to_bytes()
     }
@@ -1178,7 +1176,7 @@ pub fun Slice.rtrim_utf8(s []U8, runes [] Rune = [' ', '\t', '\n', '\r'][..]) []
     -- We can afford this precomputation, because everything will
     -- fit into the first page of the arena allocator which lives on the stack.
     let @local = Arena()
-    let rbs = unsafe @local.slice_uninit_mut<RuneUTF8>(runes.len)
+    let rbs = unsafe @local.slice_uninit<RuneUTF8>(runes.len)
     for i in 0..runes.len {
         rbs[i] = runes[i].to_bytes()
     }

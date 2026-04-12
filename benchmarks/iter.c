@@ -36,6 +36,8 @@ int main(int argc, char **argv) {
         for (uint64_t i = 0; i < N; i++) {
             uint64_t h = hash(i);
             if (h % 3 == 0) continue;
+            // This is eliminated by LLVM anyway.
+            // uint64_t y = h * 17 + 42;
             cnt++;
         }
         printf("count: %llu\n", (unsigned long long)cnt);
@@ -71,7 +73,7 @@ int main(int argc, char **argv) {
         if (have) printf("find: %llu\n", (unsigned long long)found);
         else printf("find: None\n");
     } else if (!strcmp(mode, "take")) {
-        const uint64_t TAKE = 400000000ULL;
+        const uint64_t TAKE = 100000000ULL;
         uint64_t acc = 0;
         uint64_t produced = 0;
         for (uint64_t i = 0; i < N && produced < TAKE; i++) {

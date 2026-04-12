@@ -66,7 +66,7 @@ pub fun main() void {
         let result = it.collect(1024, @a)
         io.println(result.len)
     case mode.eq("take"):
-        let result = it.fold(U64(0), fun(acc, x) { acc +% x })
+        let result = it.take(100000000).fold(U64(0), fun(acc, x) { acc +% x })
         io.println(result)
     case mode.eq("take_while"):
         let threshold = (hash(U64(499999990)) *% 17) +% 42

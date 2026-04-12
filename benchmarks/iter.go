@@ -94,7 +94,7 @@ func main() {
 			fmt.Println("find: None")
 		}
 	case "take":
-		const TAKE uint64 = 400_000_000
+		const TAKE uint64 = 100_000_000
 		var acc uint64
 		var produced uint64
 		for i := uint64(0); i < N && produced < TAKE; i++ {

@@ -70,7 +70,7 @@ double-free.
 ```metall
 fun test() void {
     let @a = Arena()
-    _ = @a.slice_mut<U8>(1000000, U8(0))
+    _ = @a.slice<U8>(1000000, U8(0))
     mut i = 0
     for i < 1 {
         i = i + 1
@@ -95,7 +95,7 @@ ok
 ```metall
 fun test() void {
     let @a = Arena()
-    _ = @a.slice_mut<U8>(1000000, U8(0))
+    _ = @a.slice<U8>(1000000, U8(0))
     for i in 0..3 {
         if true {
             continue

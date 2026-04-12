@@ -33,7 +33,7 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
         return Err(posix.errno_str())
     }
     let out = StrBuilder.new(4096, @a)
-    let buf = unsafe @a.slice_uninit_mut<U8>(4096)
+    let buf = unsafe @a.slice_uninit<U8>(4096)
     let buf_ptr = ffi.slice_ptr_mut(buf)
     for {
         posix.reset_errno()

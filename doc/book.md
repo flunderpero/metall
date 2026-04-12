@@ -33,7 +33,7 @@ fun main() void {
         io.println(i.*)
         
         -- This allocation outlives the current scope up to scope of `@main`.
-        @main.slice_mut(3, 65)
+        @main.slice(3, 65)
     }
     io.println(bytes)
 }
@@ -128,3 +128,10 @@ Everything in Metall is immutable by default.
 ## Optionals
 
 ## Modules
+
+## TODO's
+
+Things to document:
+
+- Union autwrap wraps into the first matching variant. In general, there is no ambiguity because variants - like all types - are nominally typed.
+  The only thing to watch out for would be mutability: `union Foo = &Int | &mut Int` would wrap a `&mut Int` into `&Int` because it comes first.

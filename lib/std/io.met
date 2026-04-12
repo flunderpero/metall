@@ -30,7 +30,7 @@ pub struct Buffer<T> {
 
 pub fun Buffer.new<T>(initial_capacity Int, @a Arena) &mut Buffer<T> {
     let data = list.List.new<T>(initial_capacity, @a)
-    @a.new_mut(Buffer(data, 0))
+    @a.new(Buffer(data, 0))
 }
 
 --- Implementation of `io.Writer`. ---
@@ -59,7 +59,7 @@ pub fun read_all<T, RC ReaderCloser<T>>(r &mut RC, cap_ Int, @a Arena) ![] mut T
     -- todo: Use Int.max
     let cap = if cap_ < 0 { 100000000000 } else { cap_ }
     let @local = Arena()
-    let buf = unsafe @local.slice_uninit_mut<T>(4096)
+    let buf = unsafe @local.slice_uninit<T>(4096)
     mut res []mut T = []
 
     for {
