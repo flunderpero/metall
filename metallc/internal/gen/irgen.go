@@ -1850,13 +1850,18 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		return
 	}
 	sb := strings.Builder{}
+	funName, _ := g.env.NamedFunRef(call.Callee)
 	isRetAggregate := g.isAggregateType(fun.Return)
+	retIR := g.irReturnType(fun.Return)
 	var resReg string
-	if isRetAggregate {
+	switch {
+	case isRetAggregate:
 		resReg = g.reg()
 		g.writeAlloca(resReg, g.irType(fun.Return))
 		g.setCode(id, resReg)
-	} else {
+	case retIR == "void":
+		g.setCode(id, voidValue)
+	default:
 		reg := g.reg()
 		sb.WriteString(reg + " = ")
 		g.setCode(id, reg)
@@ -1865,9 +1870,8 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 	if isRetAggregate {
 		sb.WriteString("void")
 	} else {
-		sb.WriteString(g.irType(fun.Return))
+		sb.WriteString(retIR)
 	}
-	funName, _ := g.env.NamedFunRef(call.Callee)
 	fmt.Fprintf(&sb, " @%s", irName(funName))
 	sb.WriteString("(")
 	hasArg := false
@@ -2331,6 +2335,20 @@ func (g *IRFunGen) irType(typeID types.TypeID) string {
 	return irType(g.env, typeID)
 }
 
+// irReturnType returns the LLVM IR type for a function return type.
+// Unlike irType, this maps void to "void" (not "{}") since LLVM
+// requires `call void` and `declare void` for void-returning functions.
+func (g *IRFunGen) irReturnType(typeID types.TypeID) string {
+	return irReturnType(g.env, typeID)
+}
+
+func irReturnType(env *types.TypeEnv, typeID types.TypeID) string {
+	if _, ok := env.Type(typeID).Kind.(types.VoidType); ok {
+		return "void"
+	}
+	return irType(env, typeID)
+}
+
 func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
 	typ := g.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
@@ -2621,7 +2639,7 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 		emitted[name] = true
 		funTypeID := env.TypeOfNode(nodeID).ID
 		funType := base.Cast[types.FunType](env.Type(funTypeID).Kind)
-		retIR := irType(env, funType.Return)
+		retIR := irReturnType(env, funType.Return)
 		params := strings.Builder{}
 		for i, paramTypeID := range funType.Params {
 			if i > 0 {

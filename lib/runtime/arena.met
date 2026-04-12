@@ -42,8 +42,7 @@ extern fun malloc(size Int) ffi.PtrMut<U8>
 extern fun realloc(p ffi.PtrMut<U8>, size Int) ffi.PtrMut<U8>
 extern fun free(p ffi.PtrMut<U8>) void
 extern fun arena_debug_print(msg ffi.Ptr<U8>, i1 U64, i2 Int, i3 Int) I32
--- extern fun llvm.memcpy.inline.p0.p0.i64(dst ffi.PtrMut<U8>, src ffi.Ptr<U8>, n Int, volatile Bool) void
-extern fun memcpy(dst ffi.PtrMut<U8>, src ffi.PtrMut<U8>, n Int) void
+extern("llvm.memcpy.inline.p0.p0.i64") fun memcpy(dst ffi.PtrMut<U8>, src ffi.Ptr<U8>, n Int, volatile Bool) void
 
 let debug_create = [
     U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'c', 'r', 'e', 'a', 't', 'e', '\n', 0][..]
@@ -167,7 +166,7 @@ fun arena_realloc(a &mut ArenaAllocator, p ffi.PtrMut<U8>, old_size Int, new_siz
         arena_alloc(a, new_size)
     }
     -- Copy the data.
-    unsafe memcpy(result, p, old_size)
+    unsafe memcpy(result, p.as_ptr(), old_size, false)
     result
 }
 
