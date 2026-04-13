@@ -939,7 +939,11 @@ func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, sp
 			return InvalidTypeID, TypeFailed
 		}
 	}
-	return e.env.buildArrayType(elemTyp, int64(len(array.Elems)), nodeID, span), TypeOK
+	typeID := e.env.buildArrayType(elemTyp, int64(len(array.Elems)), nodeID, span)
+	if !e.env.containsMutablePart(typeID) {
+		e.env.constArrays[nodeID] = true
+	}
+	return typeID, TypeOK
 }
 
 func (e *Engine) checkEmptySlice(span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {

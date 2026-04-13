@@ -253,9 +253,9 @@ func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 	}
 	arrTyp := base.Cast[types.ArrayType](g.typeOfNode(id).Kind)
 	arrIRType := g.irTypeOfNode(id)
-	if g.constInit {
-		// Module-level constants: emit array as a global so subslices
-		// pointing into it remain valid after the init function returns.
+	if g.constInit || g.env.IsConstArray(id) {
+		// Emit array as a global so subslices pointing into it remain
+		// valid after the enclosing function/init returns.
 		cid := g.constCounter
 		g.constCounter++
 		globalName := fmt.Sprintf("@__const_arr_%d", cid)

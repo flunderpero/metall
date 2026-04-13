@@ -105,6 +105,7 @@ type TypeEnv struct {
 	methodCallReceiver map[ast.NodeID]ast.NodeID
 	callDefaults       map[ast.NodeID][]ast.NodeID // callNodeID → default arg NodeIDs to append
 	unionWraps         map[ast.NodeID]unionWrap
+	constArrays        map[ast.NodeID]bool // array literals with all-constant elements
 }
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
@@ -132,6 +133,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
+		constArrays:        map[ast.NodeID]bool{},
 	}
 }
 
@@ -150,6 +152,7 @@ func (e *TypeEnv) NewChildEnv() *TypeEnv {
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
+		constArrays:        map[ast.NodeID]bool{},
 	}
 }
 
@@ -364,6 +367,18 @@ func (e *TypeEnv) UnionWrap(nodeID ast.NodeID) (TypeID, int, bool) {
 		return e.parent.UnionWrap(nodeID)
 	}
 	return 0, 0, false
+}
+
+// IsConstArray reports whether the given array literal node contains only
+// constant elements and can be emitted as a global constant.
+func (e *TypeEnv) IsConstArray(nodeID ast.NodeID) bool {
+	if v, ok := e.constArrays[nodeID]; ok {
+		return v
+	}
+	if e.parent != nil {
+		return e.parent.IsConstArray(nodeID)
+	}
+	return false
 }
 
 func (e *TypeEnv) FunDeclNode(id ast.NodeID) (ast.NodeID, bool) {

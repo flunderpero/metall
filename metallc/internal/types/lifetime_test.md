@@ -939,6 +939,17 @@ test.met:4:18: reference escaping its allocation scope (via block result)
             z
 ```
 
+**constant array literal subslice can be returned**
+
+```metall
+fun foo() []U8 {
+    [U8(1), 2, 3][..]
+}
+```
+
+```error
+```
+
 **valid array literal ref**
 
 ```metall
