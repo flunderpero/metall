@@ -631,15 +631,17 @@ func (g *IRFunGen) genStructConstructionFields(id ast.NodeID, lit ast.TypeConstr
 }
 
 func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	// Check for named function references first - this handles both module-level
+	// functions (e.g. `mod.fun`) and type-namespaced methods (e.g. `mod.Type.method`).
+	if name, ok := g.env.NamedFunRef(id); ok {
+		g.emitFunValue(id, name)
+		return
+	}
 	targetType := g.typeOfNode(fieldAccess.Target)
 	if refTyp, ok := targetType.Kind.(types.RefType); ok {
 		targetType = g.env.Type(refTyp.Type)
 	}
 	if _, ok := targetType.Kind.(types.ModuleType); ok {
-		if name, ok := g.env.NamedFunRef(id); ok {
-			g.emitFunValue(id, name)
-			return
-		}
 		if b, ok := g.env.PathBinding(id); ok {
 			if symbol, ok := g.symbols[b.ID]; ok {
 				pathType := g.typeOfNode(id)

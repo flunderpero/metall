@@ -4880,6 +4880,25 @@ fun main() void {
 43
 ```
 
+**type-namespaced method as function value**
+
+```metall
+use local.e2e
+
+fun apply(f fun(e2e.Foo) void, x e2e.Foo) void {
+    f(x)
+}
+
+fun main() void {
+    let f = e2e.Foo(42)
+    apply(e2e.Foo.print, f)
+}
+```
+
+```output
+42
+```
+
 ## Unsafe
 
 **unsafe uninit slice of ref type**
