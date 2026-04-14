@@ -1624,8 +1624,16 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	name := types.BuiltinName(ref)
 	switch name {
 	case "ffi::sizeof":
-		kind := base.Cast[ast.FieldAccess](g.ast.Node(call.Callee).Kind)
-		argTypeID := g.typeIDOfNode(kind.TypeArgs[0])
+		var typeArgs []ast.NodeID
+		switch kind := g.ast.Node(call.Callee).Kind.(type) {
+		case ast.FieldAccess:
+			typeArgs = kind.TypeArgs
+		case ast.Ident:
+			typeArgs = kind.TypeArgs
+		default:
+			panic(fmt.Sprintf("unexpected callee kind for sizeof: %T", g.ast.Node(call.Callee).Kind))
+		}
+		argTypeID := g.typeIDOfNode(typeArgs[0])
 		size := irTypeSize(g.env, argTypeID)
 		g.setCode(id, "%d", size)
 		return true
