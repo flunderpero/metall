@@ -1,5 +1,7 @@
 use std.test
 use std.fs
+use std.os
+use std.iter
 
 fun main() void {
     let @local = Arena()
@@ -19,6 +21,65 @@ fun main() void {
         try test.eq(
             fs.Path.from_str("dir/file.txt"),
             fs.Path.from_str("dir/").join(fs.Path.from_str("/file.txt"), @local), "both have /")
+    })
+    path_suite.test("base", fun() !void {
+        -- Standard files
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("/dir/file.txt").base())
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("dir/file.txt").base())
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("/file.txt").base())
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("file.txt").base())
+
+        -- Deep nesting
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("/var/log/app/file.txt").base())
+
+        -- Trailing slashes (POSIX standard is to strip them before calculating base)
+        try test.eq(fs.Path.from_str("subdir"), fs.Path.from_str("/dir/subdir/").base())
+        try test.eq(fs.Path.from_str("subdir"), fs.Path.from_str("dir/subdir/").base())
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("file.txt/").base())
+        try test.eq(fs.Path.from_str("subdir"), fs.Path.from_str("/dir/subdir///").base())
+
+        -- Multiple slashes
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("/dir//file.txt").base())
+        try test.eq(fs.Path.from_str("file.txt"), fs.Path.from_str("//dir//file.txt").base())
+
+        -- Edge cases (Root, Empty, Dots)
+        try test.eq(fs.Path.from_str("/"), fs.Path.from_str("/").base())
+        try test.eq(fs.Path.from_str("/"), fs.Path.from_str("//").base())
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str("").base())
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str(".").base())
+        try test.eq(fs.Path.from_str(".."), fs.Path.from_str("..").base())
+        try test.eq(fs.Path.from_str(".."), fs.Path.from_str("/dir/..").base())
+    })
+    path_suite.test("dir", fun() !void {
+        -- Standard directories
+        try test.eq(fs.Path.from_str("/dir"), fs.Path.from_str("/dir/file.txt").dir())
+        try test.eq(fs.Path.from_str("dir"), fs.Path.from_str("dir/file.txt").dir())
+        try test.eq(fs.Path.from_str("/"), fs.Path.from_str("/file.txt").dir())
+
+        -- Deep nesting
+        try test.eq(fs.Path.from_str("/var/log/app"), fs.Path.from_str("/var/log/app/file.txt").dir())
+
+        -- No directory component (Standard systems behavior is to return ".")
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str("file.txt").dir())
+
+        -- Trailing slashes (Should return the parent of the directory the trailing slash implies)
+        try test.eq(fs.Path.from_str("/dir"), fs.Path.from_str("/dir/subdir/").dir())
+        try test.eq(fs.Path.from_str("dir"), fs.Path.from_str("dir/subdir/").dir())
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str("file.txt/").dir())
+        try test.eq(fs.Path.from_str("/dir"), fs.Path.from_str("/dir/subdir///").dir())
+
+        -- Multiple slashes (Should collapse consecutive slashes in the returned directory)
+        try test.eq(fs.Path.from_str("/dir"), fs.Path.from_str("/dir//file.txt").dir())
+        try test.eq(fs.Path.from_str("/"), fs.Path.from_str("//file.txt").dir())
+
+        -- Edge cases (Root, Empty, Dots)
+        try test.eq(fs.Path.from_str("/"), fs.Path.from_str("/").dir())
+        try test.eq(fs.Path.from_str("/"), fs.Path.from_str("//").dir())
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str("").dir())
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str(".").dir())
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str("..").dir())
+        try test.eq(fs.Path.from_str("/dir"), fs.Path.from_str("/dir/..").dir())
+        try test.eq(fs.Path.from_str("."), fs.Path.from_str("").dir())
     })
     _ = path_suite.run()
 
@@ -57,5 +118,52 @@ fun main() void {
         let read = try fs.read_file(path, @local)
         try test.eq(content, read)
     })
+    file_suite.test("read_file and write_file large file", fun() !void {
+        let @local = Arena()
+        let content = @local.slice<U8>(65000, 0)
+        for i in 0..content.len {
+            content[i] = (i % 255).to_u8_wrapping()
+        }
+        let path = fs.Path.from_str("/tmp/io_test.met.file")
+
+        try fs.write_file(path, content)
+        let read = try fs.read_file(path, @local)
+        try test.eq(content, read)
+    })
     _ = file_suite.run()
+
+    let read_dir_suite = test.Suite.new("read_dir", @local)
+    read_dir_suite.test("happy path", fun[@local]() !void {
+        let dir = { 
+            let mktemp = try os.shell_output(["mktemp", "-d"][..], @local) 
+            fs.Path.from_str(mktemp.trim())
+        }
+        -- todo: Once we figured out how the relationship between Str and []U8 look like
+        --       (i.e. does Str "auto decay" to []U8?) we should optimize this monster.
+        try os.shell_checked(
+            ["touch", Str.from_utf8_lossy(dir.join(fs.Path.from_str("a.txt"), @local).as_bytes(), @local),][..],
+            @local)
+        try os.shell_checked(
+            ["touch", Str.from_utf8_lossy(dir.join(fs.Path.from_str("b.txt"), @local).as_bytes(), @local),][..],
+            @local)
+        try os.shell_checked(
+            ["mkdir", Str.from_utf8_lossy(dir.join(fs.Path.from_str("dir"), @local).as_bytes(), @local),][..],
+            @local)
+        let it = try fs.read_dir(dir, @local)
+        defer {it.close()}
+        mut files = iter.pipe(it).map(
+            fun(a) fs.DirEntry { try a else {return fs.DirEntry(fs.Path.from_str(""), 0) }}).collect(16, @local)
+        files.sort_in_place(fs.DirEntry.cmp)
+        try test.eq(
+            [
+                fs.DirEntry(fs.Path.from_str("a.txt"), fs.dt_regular),
+                fs.DirEntry(fs.Path.from_str("b.txt"), fs.dt_regular),
+                fs.DirEntry(fs.Path.from_str("dir"), fs.dt_dir)
+            ][..],
+            files)
+    })
+    read_dir_suite.test("dir not found", fun[@local]() !void {
+        try test.err(fs.read_dir(fs.Path.from_str("does not exist at all"), @local), "No such file or director")
+    })
+    _= read_dir_suite.run()
 }

@@ -60,6 +60,12 @@ fun main() void {
         try test.eq(Option(3), (&mut it).next())
         try test.eq(Option<Int>(None()), (&mut it).next())
     })
+    suite.test("ltrim", fun() !void {
+        try test.eq("hi ".as_bytes(), " ,. hi ".as_bytes().ltrim([U8(' '), ',', '.'][..]))
+    })
+    suite.test("rtrim", fun() !void {
+        try test.eq(" hi".as_bytes(), " hi ,. ".as_bytes().rtrim([U8(' '), ',', '.'][..]))
+    })
     suite.test("ltrim_utf8", fun() !void {
         mut sut = "\n \r \thi".as_bytes()
         try test.eq([U8('h'), 'i'][..], sut.ltrim_utf8())
@@ -149,6 +155,14 @@ fun main() void {
         try test.eq([
             "these".as_bytes(), "are".as_bytes(), "some words".as_bytes()][..],
             collect("these are some words".as_bytes().lsplit(" ".as_bytes(), 3), @local), "max_splits")
+        try test.eq(
+            ["word".as_bytes()][..],
+            collect("word".as_bytes().lsplit("/".as_bytes(), 2), @local),
+            "max_splits more than splits")
+        try test.eq(
+            ["".as_bytes(), "word".as_bytes()][..],
+            collect("/word".as_bytes().lsplit("/".as_bytes(), 2), @local),
+            "max_splits exactly than splits, but with empty part")
     })
     suite.test("rsplit", fun() !void {
         let @local = Arena()
@@ -176,6 +190,14 @@ fun main() void {
             ["words".as_bytes(), "some".as_bytes(), "these are".as_bytes()][..],
             collect("these are some words".as_bytes().rsplit(" ".as_bytes(), 3), @local),
             "max_splits")
+        try test.eq(
+            ["word".as_bytes()][..],
+            collect("word".as_bytes().rsplit("/".as_bytes(), 2), @local),
+            "max_splits more than splits")
+        try test.eq(
+            ["word".as_bytes(), "".as_bytes()][..],
+            collect("/word".as_bytes().rsplit("/".as_bytes(), 2), @local),
+            "max_splits exactly than splits, but with empty part")
     })
     suite.test("lmatches", fun() !void {
         let @local = Arena()

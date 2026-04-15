@@ -27,4 +27,26 @@ fun main() void {
         try test.eq("hello", value)
     })
     _ = fun_ptr_suite.run()
+
+    let memcopy_suite = test.Suite.new("memcopy", @local)
+    memcopy_suite.test("happy path", fun() !void {
+        struct Point<T> {
+            x T
+            y T
+        }
+        let a = Point(1, 2)
+        mut b = Point(99, 99)
+        unsafe ffi.memcopy(ffi.ref_ptr_mut<Point<Int>>(&mut b), ffi.ref_ptr<Point<Int>>(&a), 1)
+        try test.eq(1, a.x)
+        try test.eq(2, a.y)
+    })
+    memcopy_suite.test("slice", fun() !void {
+        let a = [1, 2, 3, 4, 5][..]
+        mut b = [0, 0, 0, 0, 0][..]
+        unsafe ffi.memcopy(ffi.slice_ptr_mut<Int>(b), ffi.slice_ptr<Int>(a), 2)
+        try test.eq([1, 2, 0, 0, 0][..], b)
+        unsafe ffi.memcopy(ffi.slice_ptr_mut<Int>(b), ffi.slice_ptr<Int>(a), 5)
+        try test.eq([1, 2, 3, 4, 5][..], b)
+    })
+    _ = memcopy_suite.run()
 }

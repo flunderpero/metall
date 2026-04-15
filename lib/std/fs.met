@@ -1,14 +1,12 @@
+-- todo: Actually, we want a Zig-like API.
 use std.ffi
 use std.posix
 use std.io
 
-extern fun fopen(filename ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.PtrMut<void>
-extern fun fclose(file ffi.PtrMut<void>) I32
-extern fun fread(buf ffi.PtrMut<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
-extern fun fwrite(buf ffi.Ptr<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
-
---- The default path delimiter `/`. ---
-let path_delim = [U8(47)][..]
+--- The default path delimiter. ---
+let path_separator = [U8('/')][..]
+let dot = [U8('.')][..]
+let dotdot = [U8('.'), '.'][..]
 
 pub struct Path {
     raw []U8
@@ -22,28 +20,84 @@ pub fun Path.from_str(s Str) Path {
     Path(s.as_bytes())
 }
 
+pub fun Path.new(raw []U8) Path {
+    Path(raw)
+}
+
 --- Join two paths.
 
     This is a strictly lexicographic join and not a Posix path join
     where `"parent".join("/absolute/path")` would yield `"/absolute/path"`. ---
 pub fun Path.join(parent Path, child Path, @a Arena) Path {
     let p =
-        if parent.raw.ends_with(path_delim) {
-            parent.raw[0..parent.raw.len-path_delim.len]
+        if parent.raw.ends_with(path_separator) {
+            parent.raw[0..parent.raw.len-path_separator.len]
         } else {
             parent.raw
         }
     let c =
-        if child.raw.starts_with(path_delim) {
-            child.raw[path_delim.len..]
+        if child.raw.starts_with(path_separator) {
+            child.raw[path_separator.len..]
         } else {
             child.raw
         }
-    Path(p.concat([path_delim, c][..], @a))
+    Path(p.concat([path_separator, c][..], @a))
+}
+
+--- Return the directory part of a path. The directory part is everything up to the last
+    path separator. ---
+pub fun Path.dir(p Path) Path {
+    if p.raw.len == 0 {
+        return Path(dot)
+    }
+    mut it = p.raw.rtrim(path_separator).rsplit(path_separator, 2)
+
+    -- First match is the base - ignore it. If nothing matched, return the path unchanged.
+    _ = try (&mut it).next() else { return p }
+
+    -- Second match is the dir part. 
+    -- If it is empty, it is either the root - i.e. `p` is something like `/` or `//`) - 
+    -- or the current dir if only a base name was given, e.g. `file.txt`.
+    let dir = try (&mut it).next() else {
+        if p.raw.starts_with(path_separator) {
+            return Path(path_separator)
+        }
+        return Path(dot)
+    }
+    if dir.len == 0 {
+        -- The last split is empty - this must have been a leading `/`.
+        return Path(path_separator)
+    }
+    -- Remove trailing `/` to compensate for `dir////file.txt`.
+    let trimmed_dir = dir.rtrim(path_separator)
+    if trimmed_dir.len == 0 {
+        -- Nothing else left, then it must be the root `/`.
+        return Path(path_separator)
+    }
+    return Path(trimmed_dir)
+}
+
+--- Return the base part of a path. The base part is everything after the last
+    path separator. ---
+pub fun Path.base(p Path) Path {
+    if p.raw.len == 0 {
+        return Path(dot)
+    }
+    mut it = p.raw.rtrim(path_separator).rsplit(path_separator, 2)
+    let base = try (&mut it).next() else { return p }
+    if base.len == 0 {
+        -- The last split is empty - this must have been a `/` or `//` etc.
+        return Path(path_separator)
+    }
+    Path(base)
 }
 
 pub fun Path.eq(p Path, other Path) Bool {
     p.raw.eq(other.raw)
+}
+
+pub fun Path.cmp(p Path, other Path) Int {
+    p.raw.cmp(other.raw)
 }
 
 pub fun Path.fmt(p Path, sb &mut StrBuilder) void {
@@ -159,3 +213,105 @@ pub fun read_file(path Path, @a Arena) ![]mut U8 {
     -- todo: Add optimized path by stat-ing the file size before.
     io.read_all(f, -1, @a)
 }
+
+pub struct DirEntry {
+    pub name Path
+    pub type U8 -- todo: Once we have enums, use an enum.
+}
+
+pub fun DirEntry.fmt(d DirEntry, sb &mut StrBuilder) void {
+    sb.str("DirEntry{name=")
+    sb.fmt(d.name)
+    sb.str(", type=")
+    sb.u8(d.type)
+    sb.str("}")
+}
+
+pub fun DirEntry.eq(d DirEntry, other DirEntry) Bool {
+    d.name.eq(other.name) and d.type.eq(other.type)
+}
+
+pub fun DirEntry.cmp(d DirEntry, other DirEntry) Int {
+    let res = d.name.cmp(other.name)
+    if res == 0 {
+        return d.type.cmp(other.type)
+    }
+    res
+}
+
+pub struct ReadDirIter {
+    dir ffi.Ptr<void>
+    closed &mut Bool
+    @a Arena
+}
+
+pub fun ReadDirIter.close(it ReadDirIter) void {
+    if it.closed.* {
+        return void
+    } 
+    _ = unsafe closedir(it.dir)
+    it.closed.* = true
+}
+
+pub fun ReadDirIter.next(it &mut ReadDirIter) ?!DirEntry {
+    if it.closed.* {
+        return Result<DirEntry>(Err("read_dir iterator already closed"))
+    }
+    posix.reset_errno()
+    let entry_ptr = unsafe readdir(it.dir)
+    if entry_ptr.is_null() {
+        it.*.close()        
+        if posix.errno() == 0 {
+            return None()
+        }
+        return Result<DirEntry>(Err(posix.errno_str()))
+    }
+    let entry = unsafe entry_ptr.read()
+    let name = unsafe it.@a.slice_uninit<U8>(entry.namlen.to_int())
+    _ = name.set(entry.name[0..entry.namlen.to_int()])
+    if name.eq(dot) or name.eq(dotdot) {
+        return it.next()
+    }
+    Result(DirEntry(Path(name), entry.type))
+}
+
+--- Read the entries of the given directory. ---
+pub fun read_dir(path Path, @a Arena) !ReadDirIter {
+    let @local = Arena()
+    posix.reset_errno()
+    let dir = unsafe opendir(ffi.cstr(path.raw, @local))
+    if dir.is_null() {
+        return Err(posix.errno_str())
+    }
+    let closed = @a.new(false)
+    ReadDirIter(dir, closed, @a)
+}
+
+pub let dt_unknown U8 = 0
+pub let dt_fifo U8 = 1
+pub let dt_chr U8 = 2
+pub let dt_dir U8 = 4
+pub let dt_block U8 = 6
+pub let dt_regular U8 = 8
+pub let dt_link U8 = 10
+pub let dt_socket U8 = 12
+pub let dt_wht U8 = 14
+
+-- todo: This is specific to Darwin.
+struct Dirent {
+    ino U64
+    seekoff U64
+    reclen U16
+    namlen U16
+    type U8
+    name [1024]U8
+}
+
+extern fun opendir(name ffi.Ptr<U8>) ffi.Ptr<void>
+extern fun readdir(dirp ffi.Ptr<void>) ffi.Ptr<Dirent>
+extern fun closedir(dirp ffi.Ptr<void>) I32
+
+extern fun fopen(filename ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.PtrMut<void>
+extern fun fclose(file ffi.PtrMut<void>) I32
+extern fun fread(buf ffi.PtrMut<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
+extern fun fwrite(buf ffi.Ptr<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int

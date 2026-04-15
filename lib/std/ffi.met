@@ -180,3 +180,13 @@ pub fun cstr_mut(b []U8, @a Arena) PtrMut<U8> {
     s[s.len - 1] = 0
     slice_ptr_mut<U8>(s)
 }
+
+--- Copy `n * sizeof<T>()` bytes from `src` to `dst`. ---
+pub unsafe fun memcopy<T>(dst PtrMut<T>, src Ptr<T>, n Int) void {
+    let n = n * sizeof<T>()
+    let dst = unsafe dst.cast<U8>()
+    let src = unsafe src.cast<U8>()
+    unsafe memcpy(dst, src, n, false)
+}
+
+extern("llvm.memcpy.inline.p0.p0.i64") fun memcpy(dst PtrMut<U8>, src Ptr<U8>, n Int, volatile Bool) void

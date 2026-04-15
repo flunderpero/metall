@@ -527,11 +527,6 @@ pub struct StrLSplitIter<P LPattern<[]U8>> {
 }
 
 pub fun StrLSplitIter.next<P LPattern<[]U8>>(it &mut StrLSplitIter<P>) ?Str {
-    it.remaining = it.remaining - 1
-    when {
-    case it.remaining == 0: return Str(it.data)
-    case it.remaining < 0: return None()
-    }
     match it.data.lfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -541,6 +536,11 @@ pub fun StrLSplitIter.next<P LPattern<[]U8>>(it &mut StrLSplitIter<P>) ?Str {
             s
         } else { None() }
     else range:
+        it.remaining = it.remaining - 1
+        when {
+            case it.remaining == 0: return Str(it.data)
+            case it.remaining < 0: return None()
+        }
         if range.start == 0 and range.end == 0 {
             -- This is an empty pattern, yield the string rune by rune.
             if it.data.len == 0 {
@@ -574,11 +574,6 @@ pub struct StrRSplitIter<P RPattern<[]U8>> {
 }
 
 pub fun StrRSplitIter.next<P RPattern<[]U8>>(it &mut StrRSplitIter<P>) ?Str {
-    it.remaining = it.remaining - 1
-    when {
-        case it.remaining == 0: return Str(it.data)
-        case it.remaining < 0: return None()
-    }
     match it.data.rfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -588,6 +583,11 @@ pub fun StrRSplitIter.next<P RPattern<[]U8>>(it &mut StrRSplitIter<P>) ?Str {
             s
         } else { None() }
     else range:
+        it.remaining = it.remaining - 1
+        when {
+            case it.remaining == 0: return Str(it.data)
+            case it.remaining < 0: return None()
+        }
         if range.start == 0 and range.end == 0 {
             -- This is an empty pattern, yield the string rune by rune.
             if it.data.len == 0 {
@@ -978,11 +978,6 @@ pub struct SliceLSplitIter<T, P LPattern<[]T>> {
 }
 
 pub fun SliceLSplitIter.next<T, P LPattern<[]T>>(it &mut SliceLSplitIter<T, P>) ?[]T {
-    it.remaining = it.remaining - 1
-    when {
-        case it.remaining == 0: return it.data
-        case it.remaining < 0: return None()
-    }
     match it.data.lfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -992,6 +987,11 @@ pub fun SliceLSplitIter.next<T, P LPattern<[]T>>(it &mut SliceLSplitIter<T, P>) 
             s
         } else { None() }
     else range:
+        it.remaining = it.remaining - 1
+        when {
+            case it.remaining == 0: return it.data
+            case it.remaining < 0: return None()
+        }
         if range.start == 0 and range.end == 0 {
             -- This is an empty pattern, yield the slice element by element.
             if it.data.len == 0 {
@@ -1020,11 +1020,6 @@ pub struct SliceRSplitIter<T, P RPattern<[]T>> {
 }
 
 pub fun SliceRSplitIter.next<T, P RPattern<[]T>>(it &mut SliceRSplitIter<T, P>) ?[]T {
-    it.remaining = it.remaining - 1
-    when {
-        case it.remaining == 0: return it.data
-        case it.remaining < 0: return None()
-    }
     match it.data.rfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -1034,6 +1029,11 @@ pub fun SliceRSplitIter.next<T, P RPattern<[]T>>(it &mut SliceRSplitIter<T, P>) 
             s
         } else { None() }
     else range:
+        it.remaining = it.remaining - 1
+        when {
+            case it.remaining == 0: return it.data
+            case it.remaining < 0: return None()
+        }
         if range.start == 0 and range.end == 0 {
             -- This is an empty pattern, yield the slice element by element.
             if it.data.len == 0 {
@@ -1139,6 +1139,58 @@ pub fun Slice.sort_in_place<T>(s []mut T, cmp fun(T, T) Int) void {
         qs(s, p + 1, hi, cmp)
     }
     qs(s, 0, s.len - 1, cmp)
+}
+
+pub fun Slice.cmp<T HasCmp>(s []T, other []T) Int {
+    when {
+        case s.len > other.len: return -1
+        case s.len < other.len: return 1
+    }
+    for i in 0..s.len {
+        let res = s[i].cmp(other[i])
+        if res != 0 {
+            return res
+        }
+    }
+    0
+}
+
+--- Return a sub-slice starting at the first index that is not one of the given elements. ---
+pub fun Slice.ltrim<T HasEq>(s []T, elems []T) []T {
+    mut i = 0
+    for i < s.len {
+        mut found = false
+        for j in 0..elems.len {
+            if s[i].eq(elems[j]) {
+                found = true
+                break
+            }
+        }
+        if not found {
+            break
+        }
+        i = i + 1
+    }
+    s[i..]
+}
+
+--- Return a sub-slice ending at the first index from the right that is not one of the given elements. ---
+pub fun Slice.rtrim<T HasEq>(s []T, elems []T) []T {
+    mut i = s.len - 1
+    for i >= 0 {
+        mut found = false
+        for j in 0..elems.len {
+            if s[i].eq(elems[j]) {
+                found = true
+                break
+            }
+        }
+        if not found {
+            break
+        }
+        i = i - 1
+    }
+    s[..=i]
 }
 
 --- Treat the slice of U8 as utf8-encoded and return a sub-slice starting at the first

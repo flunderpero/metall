@@ -32,12 +32,13 @@ fun main() !void {
     let read_all_suite = test.Suite.new("read_all", @local)
     read_all_suite.test("happy path", fun() !void {
         let @local = Arena()
-        let sut = io.Buffer.new<Int>(32, @local)
-        for i in 0..10000 {
+        let n = 100000
+        let sut = io.Buffer.new<Int>(n * 5, @local)
+        for i in 0..n {
             _ = try sut.write([i, i * 2, i * 3, i * 4, i * 5][..])
         }
         let read = try io.read_all(sut, -1, @local)
-        try test.eq(10000 * 5, read.len)
+        try test.eq(n * 5, read.len)
     })
     read_all_suite.test("capped", fun() !void {
         let @local = Arena()

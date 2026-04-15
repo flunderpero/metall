@@ -282,6 +282,14 @@ fun main() void {
             ["these", "are", "some words"][..],
             collect("these are some words".lsplit(" ", 3), @local),
             "max_splits")
+        try test.eq(
+            ["word"][..],
+            collect("word".lsplit("/", 2), @local),
+            "max_splits more than splits")
+        try test.eq(
+            ["", "word"][..],
+            collect("/word".lsplit("/", 2), @local),
+            "max_splits exactly than splits, but with empty part")
     })
     suite.test("rsplit", fun() !void {
         let @local = Arena()
@@ -300,6 +308,14 @@ fun main() void {
             ["words", "some", "these are"][..],
             collect("these are some words".rsplit(" ", 3), @local),
             "max_splits")
+        try test.eq(
+            ["word"][..],
+            collect("word".rsplit("/", 2), @local),
+            "max_splits more than splits")
+        try test.eq(
+            ["word", ""][..],
+            collect("/word".rsplit("/", 2), @local),
+            "max_splits exactly than splits, but with empty part")
     })
     suite.test("lmatches", fun() !void {
         let @local = Arena()

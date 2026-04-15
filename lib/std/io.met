@@ -60,7 +60,7 @@ pub fun read_all<T, RC ReaderCloser<T>>(r &mut RC, cap_ Int, @a Arena) ![] mut T
     let cap = if cap_ < 0 { 100000000000 } else { cap_ }
     let @local = Arena()
     let buf = unsafe @local.slice_uninit<T>(4096)
-    mut res []mut T = []
+    mut res = unsafe @local.slice_uninit<T>(0)
 
     for {
         let to_read = if res.len + buf.len > cap { cap - res.len } else { buf.len }
@@ -71,7 +71,8 @@ pub fun read_all<T, RC ReaderCloser<T>>(r &mut RC, cap_ Int, @a Arena) ![] mut T
         if read.len == 0 {
             break 
         }
-        res = res.concat([read][..], @local)
+        res = unsafe @local.grow_uninit<T>(res, res.len + read.len)
+        _ = res[res.len - read.len..].set(read)
     }
     res.copy(@a)
 }
