@@ -95,6 +95,7 @@ type FunType struct {
 	ReturnType     NodeID
 	Sync           SyncMode
 	NoescapeParams []bool
+	NoescapeReturn bool
 }
 
 func (FunType) isKind() {}
@@ -148,16 +149,17 @@ type FunParam struct {
 func (FunParam) isKind() {}
 
 type FunDecl struct {
-	Name       Name
-	ExternName string // C symbol name. Only set when Extern is true.
-	TypeParams []NodeID
-	Params     []NodeID
-	ReturnType NodeID
-	Pub        bool
-	Builtin    bool
-	Extern     bool
-	Unsafe     bool
-	Sync       SyncMode
+	Name           Name
+	ExternName     string // C symbol name. Only set when Extern is true.
+	TypeParams     []NodeID
+	Params         []NodeID
+	ReturnType     NodeID
+	Pub            bool
+	Builtin        bool
+	Extern         bool
+	Unsafe         bool
+	Sync           SyncMode
+	NoescapeReturn bool
 }
 
 func (FunDecl) isKind() {}
@@ -581,43 +583,46 @@ func (a *AST) NewImport(alias *Name, segments []string, span base.Span) NodeID {
 
 func (a *AST) NewFunDecl(
 	name Name, typeParams []NodeID, params []NodeID, returnType NodeID,
-	pub bool, extern bool, unsafe bool, span base.Span,
+	pub bool, extern bool, unsafe bool, noescapeReturn bool, span base.Span,
 ) NodeID {
 	return a.node(
 		FunDecl{
 			Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
 			Pub: pub, Builtin: false, Extern: extern, Unsafe: unsafe, Sync: SyncNone,
+			NoescapeReturn: noescapeReturn,
 		}, span)
 }
 
 func (a *AST) NewExternFunDecl(
 	name Name, externName string, typeParams []NodeID, params []NodeID, returnType NodeID,
-	pub bool, span base.Span,
+	pub bool, noescapeReturn bool, span base.Span,
 ) NodeID {
 	return a.node(
 		FunDecl{
 			Name: name, ExternName: externName, TypeParams: typeParams, Params: params, ReturnType: returnType,
 			Pub: pub, Builtin: false, Extern: true, Unsafe: true, Sync: SyncNone,
+			NoescapeReturn: noescapeReturn,
 		}, span)
 }
 
 func (a *AST) NewFun(
 	name Name, typeParams []NodeID, params []NodeID, returnType NodeID, block NodeID,
-	pub bool, unsafe bool, sync SyncMode, span base.Span,
+	pub bool, unsafe bool, noescapeReturn bool, sync SyncMode, span base.Span,
 ) NodeID {
 	return a.node(
 		Fun{
 			FunDecl: FunDecl{
-				Name:       name,
-				ExternName: name.Name,
-				TypeParams: typeParams,
-				Params:     params,
-				ReturnType: returnType,
-				Pub:        pub,
-				Builtin:    false,
-				Extern:     false,
-				Unsafe:     unsafe,
-				Sync:       sync,
+				Name:           name,
+				ExternName:     name.Name,
+				TypeParams:     typeParams,
+				Params:         params,
+				ReturnType:     returnType,
+				Pub:            pub,
+				Builtin:        false,
+				Extern:         false,
+				Unsafe:         unsafe,
+				Sync:           sync,
+				NoescapeReturn: noescapeReturn,
 			},
 			Captures: nil,
 			Block:    block,
@@ -720,10 +725,17 @@ func (a *AST) NewFunType(
 	returnType NodeID,
 	sync SyncMode,
 	noescapeParams []bool,
+	noescapeReturn bool,
 	span base.Span,
 ) NodeID {
 	return a.node(
-		FunType{ParamTypes: paramTypes, ReturnType: returnType, Sync: sync, NoescapeParams: noescapeParams},
+		FunType{
+			ParamTypes:     paramTypes,
+			ReturnType:     returnType,
+			Sync:           sync,
+			NoescapeParams: noescapeParams,
+			NoescapeReturn: noescapeReturn,
+		},
 		span,
 	)
 }
@@ -1178,6 +1190,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Extern && kind.ExternName != kind.Name.Name {
 			addAttr("externName", fmt.Sprintf("%q", kind.ExternName))
 		}
+		if kind.NoescapeReturn {
+			addAttr("noescapeReturn", "true")
+		}
 		if !children {
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
@@ -1198,6 +1213,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 		if kind.Sync == SyncUnsync {
 			addAttr("unsync", "true")
+		}
+		if kind.NoescapeReturn {
+			addAttr("noescapeReturn", "true")
 		}
 		if !children {
 			if len(kind.Captures) > 0 {
@@ -1267,6 +1285,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 		if slices.Contains(kind.NoescapeParams, true) {
 			addAttr("noescape", fmt.Sprintf("%v", kind.NoescapeParams))
+		}
+		if kind.NoescapeReturn {
+			addAttr("noescapeReturn", "true")
 		}
 		if !children {
 			addAttr("paramTypes", nodeIDList(kind.ParamTypes))

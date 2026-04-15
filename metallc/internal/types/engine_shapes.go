@@ -368,6 +368,7 @@ func (e *Engine) CheckShapeFunDecl(funDecl ast.FunDecl) (TypeID, TypeStatus) {
 		Macro:          false,
 		Sync:           false,
 		NoescapeParams: make([]bool, len(paramTypeIDs)),
+		NoescapeReturn: false,
 	}
 	return e.env.newType(funType, 0, base.Span{}, TypeOK), TypeOK
 }

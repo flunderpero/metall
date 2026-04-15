@@ -142,6 +142,7 @@ module.exports = grammar({
         field("name", $.function_name),
         optional(field("type_parameters", $.type_parameters)),
         "(", field("parameters", optional($.parameter_list)), ")",
+        optional("noescape"),
         field("return_type", $._type),
         field("body", $.block),
       ),
@@ -154,6 +155,7 @@ module.exports = grammar({
         field("name", $.function_name),
         optional(field("type_parameters", $.type_parameters)),
         "(", field("parameters", optional($.parameter_list)), ")",
+        optional("noescape"),
         field("return_type", $._type),
       ),
 
@@ -213,6 +215,7 @@ module.exports = grammar({
         field("name", $.function_name),
         optional(field("type_parameters", $.type_parameters)),
         "(", field("parameters", optional($.parameter_list)), ")",
+        optional("noescape"),
         field("return_type", $._type),
       ),
 
@@ -521,7 +524,7 @@ module.exports = grammar({
         "fun",
         optional(field("captures", $.capture_list)),
         "(", field("parameters", optional($.function_literal_parameter_list)), ")",
-        optional(field("return_type", $._type)),
+        optional(seq(optional("noescape"), field("return_type", $._type))),
         field("body", $.block),
       ),
 

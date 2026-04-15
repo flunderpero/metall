@@ -1834,6 +1834,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		Macro:          false,
 		Sync:           isSync,
 		NoescapeParams: noescapeParams,
+		NoescapeReturn: fun.NoescapeReturn,
 	}
 	funTypeID := e.env.buildFunType(funTyp, node.ID, node.Span)
 	bindName := fun.Name.Name
@@ -2060,6 +2061,7 @@ func (e *Engine) checkInferredFunLit( //nolint:funlen
 		tmpFunType := FunType{
 			Params: paramTypeIDs, Return: retTypeID,
 			Macro: false, Sync: false, NoescapeParams: noescapeParams,
+			NoescapeReturn: funNode.NoescapeReturn,
 		}
 		tmpFunTypeID := e.env.buildFunType(tmpFunType, 0, node.Span)
 		e.funStack = append(e.funStack, tmpFunTypeID)
@@ -2102,6 +2104,7 @@ func (e *Engine) checkInferredFunLit( //nolint:funlen
 	funType := FunType{
 		Params: paramTypeIDs, Return: retTypeID,
 		Macro: false, Sync: isSync, NoescapeParams: noescapeParams,
+		NoescapeReturn: funNode.NoescapeReturn,
 	}
 	funTypeID := e.env.buildFunType(funType, funNodeID, node.Span)
 	e.updateCachedType(node, funTypeID, TypeOK)
@@ -2205,6 +2208,7 @@ func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.
 		Macro:          false,
 		Sync:           funType.Sync == ast.SyncSync,
 		NoescapeParams: funType.NoescapeParams,
+		NoescapeReturn: funType.NoescapeReturn,
 	}
 	return e.env.buildFunType(funTyp, nodeID, span), TypeOK
 }

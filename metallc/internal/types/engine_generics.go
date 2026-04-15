@@ -409,6 +409,7 @@ func (e *Engine) RewriteFunType(funType FunType, bindings map[TypeID]TypeID) (Fu
 		Macro:          funType.Macro,
 		Sync:           funType.Sync,
 		NoescapeParams: funType.NoescapeParams,
+		NoescapeReturn: funType.NoescapeReturn,
 	}
 	changed := false
 	for i, paramTypeID := range funType.Params {
@@ -1409,6 +1410,7 @@ func (e *Engine) RewriteCallable(
 		Macro:          false,
 		Sync:           false,
 		NoescapeParams: make([]bool, len(paramTypeIDs)),
+		NoescapeReturn: false,
 	}
 	if len(bindings) == 0 {
 		return funType, TypeOK

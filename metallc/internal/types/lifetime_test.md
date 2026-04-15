@@ -2790,3 +2790,102 @@ test.met:7:11: noescape parameter "param 0" must not escape through the return v
 
 ```error
 ```
+
+## Noescape return references
+
+**noescape return via struct: without noescape is ok**
+
+```metall
+{
+    struct Holder { r &Int }
+    fun get_ref(h &Holder) &Int { h.r }
+    fun caller(h &Holder) &Int {
+        get_ref(h)
+    }
+}
+```
+
+```error
+```
+
+**noescape return via struct: escape through return rejected**
+
+```metall
+{
+    struct Holder { r &Int }
+    fun get_ref(h &Holder) noescape &Int { h.r }
+    fun caller(h &Holder) &Int {
+        get_ref(h)
+    }
+}
+```
+
+```error
+test.met:5:9: reference escaping its allocation scope (via block result)
+        fun caller(h &Holder) &Int {
+            get_ref(h)
+            ^^^^^^^^^^
+        }
+```
+
+**noescape return via closure: without noescape is ok**
+
+```metall
+{
+    fun use_fn(f fun() &Int) &Int {
+        f()
+    }
+}
+```
+
+```error
+```
+
+**noescape return via closure: escape through return rejected**
+
+```metall
+{
+    fun use_fn(f fun() noescape &Int) &Int {
+        f()
+    }
+}
+```
+
+```error
+test.met:3:9: reference escaping its allocation scope (via block result)
+        fun use_fn(f fun() noescape &Int) &Int {
+            f()
+            ^^^
+        }
+```
+
+**noescape return: non-noescape function rejected for noescape return fun-type**
+
+```metall
+{
+    fun get(x &Int) &Int { x }
+    fun apply(f fun(&Int) noescape &Int) void {}
+    apply(get)
+}
+```
+
+```error
+test.met:4:11: function does not return noescape
+        fun apply(f fun(&Int) noescape &Int) void {}
+        apply(get)
+              ^^^
+    }
+```
+
+**noescape return: noescape function accepted for noescape return fun-type**
+
+```metall
+{
+    fun get(x &Int) noescape &Int { x }
+    fun apply(f fun(&Int) noescape &Int) void {}
+    apply(get)
+}
+```
+
+```error
+```

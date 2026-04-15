@@ -202,11 +202,12 @@ func (p *Parser) ParseFunType() (NodeID, bool) {
 	if _, ok := p.expect(token.RParen); !ok {
 		return ParseFailed, false
 	}
+	noescapeReturn := p.lookAheadConsume(token.Noescape)
 	returnTyp, ok := p.ParseType()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFunType(params, returnTyp, sync, noescapeParams, span.Combine(p.span())), ok
+	return p.NewFunType(params, returnTyp, sync, noescapeParams, noescapeReturn, span.Combine(p.span())), ok
 }
 
 func (p *Parser) ParseFunDecl() (NodeID, bool) {
@@ -216,7 +217,7 @@ func (p *Parser) ParseFunDecl() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewFunDecl(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType,
-		pub, false, false, startSpan.Combine(p.span())), true
+		pub, false, false, decl.NoescapeReturn, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseExternFun() (NodeID, bool) {
@@ -246,7 +247,7 @@ func (p *Parser) ParseExternFun() (NodeID, bool) {
 		externName = decl.Name.Name
 	}
 	return p.NewExternFunDecl(decl.Name, externName, decl.TypeParams, decl.Params, decl.ReturnType,
-		pub, startSpan.Combine(p.span())), true
+		pub, decl.NoescapeReturn, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFun() (NodeID, bool) {
@@ -262,7 +263,7 @@ func (p *Parser) ParseFun() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewFun(decl.Name, decl.TypeParams, decl.Params, decl.ReturnType, block,
-		pub, unsafe, sync, startSpan.Combine(p.span())), true
+		pub, unsafe, decl.NoescapeReturn, sync, startSpan.Combine(p.span())), true
 }
 
 func (p *Parser) ParseReturn() (NodeID, bool) {
@@ -1890,6 +1891,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	if !ok {
 		return FunDecl{}, base.Span{}, false
 	}
+	noescapeReturn := p.lookAheadConsume(token.Noescape)
 	returnType, ok := p.ParseType()
 	if !ok {
 		return FunDecl{}, base.Span{}, false
@@ -1897,6 +1899,7 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	return FunDecl{
 		Name: name, ExternName: "", TypeParams: typeParams, Params: params, ReturnType: returnType,
 		Pub: false, Builtin: false, Extern: false, Unsafe: false, Sync: SyncNone,
+		NoescapeReturn: noescapeReturn,
 	}, t.Span, true
 }
 
@@ -1952,7 +1955,9 @@ func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 	// Return type is optional for function literals. If the next token starts
 	// a block, the return type will be inferred from context.
 	returnType := InferredType
+	noescapeReturn := false
 	if peek, peekOK := p.mayPeek(); peekOK && peek.Kind != token.LCurly {
+		noescapeReturn = p.lookAheadConsume(token.Noescape)
 		parsed, ok := p.ParseType()
 		if !ok {
 			return ParseFailed, false
@@ -1966,7 +1971,7 @@ func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 	span := t.Span.Combine(p.span())
 	name := fmt.Sprintf("__fun_lit_%d", p.nextFunLitID)
 	p.nextFunLitID++
-	funID := p.NewFun(Name{name, span}, nil, params, returnType, body, false, false, sync, span)
+	funID := p.NewFun(Name{name, span}, nil, params, returnType, body, false, false, noescapeReturn, sync, span)
 	if len(captures) > 0 {
 		node := p.Node(funID)
 		fun, _ := node.Kind.(Fun)

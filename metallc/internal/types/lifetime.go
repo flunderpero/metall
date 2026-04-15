@@ -594,6 +594,11 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 		}
 		a.mergeIntoTarget(nodeID, args[targetIdx], srcFlow)
 	}
+	// If the callee returns noescape, the result must not escape the caller's scope.
+	if calleeFun.NoescapeReturn {
+		ss := a.scopeState(nodeID)
+		result.Taints = result.Taints.Merge(TaintSet{ss.ScopeTaint})
+	}
 	a.flows[nodeID] = result
 	a.debug(1, nodeID, "analyzeCall: %s", result)
 }
@@ -631,7 +636,12 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 	}
 	funType := base.Cast[FunType](a.env.TypeOfNode(call.Callee).Kind)
 	if a.typeContainsRefOrAlloc(funType.Return) {
-		a.flows[nodeID] = allArgs
+		result := allArgs
+		if funType.NoescapeReturn {
+			ss := a.scopeState(nodeID)
+			result.Taints = result.Taints.Merge(TaintSet{ss.ScopeTaint})
+		}
+		a.flows[nodeID] = result
 	}
 	for _, arg := range args {
 		if ref, ok := a.env.TypeOfNode(arg).Kind.(RefType); ok && ref.Mut {
@@ -1313,16 +1323,21 @@ func (a *LifetimeCheck) checkNoescapeEffects(
 }
 
 // checkNoescapeValueAssignment checks if targetTypeID is a function type with
-// noescape params, and if so verifies the function value at valueNodeID respects
-// the noescape contract. Called from call args, struct construction, var bindings,
-// and assignments.
+// noescape params or noescape return, and if so verifies the function value at
+// valueNodeID respects the noescape contract. Called from call args, struct
+// construction, var bindings, and assignments.
 func (a *LifetimeCheck) checkNoescapeValueAssignment(valueNodeID ast.NodeID, targetTypeID TypeID) {
 	targetType := a.env.Type(targetTypeID)
 	targetFun, ok := targetType.Kind.(FunType)
-	if !ok || !slices.Contains(targetFun.NoescapeParams, true) {
+	if !ok {
 		return
 	}
-	a.checkNoescapeAssignment(valueNodeID, targetFun)
+	if slices.Contains(targetFun.NoescapeParams, true) {
+		a.checkNoescapeAssignment(valueNodeID, targetFun)
+	}
+	if targetFun.NoescapeReturn {
+		a.checkNoescapeReturnAssignment(valueNodeID)
+	}
 }
 
 // checkNoescapeAssignment verifies that a concrete function assigned to a
@@ -1360,6 +1375,22 @@ func (a *LifetimeCheck) checkNoescapeAssignment(argNodeID ast.NodeID, targetFun 
 			continue
 		}
 		a.checkNoescapeEffects(span, fmt.Sprintf("param %d", i), i, targetFun, effects)
+	}
+}
+
+// checkNoescapeReturnAssignment verifies that a concrete function assigned to a
+// function type with noescape return also has noescape return.
+func (a *LifetimeCheck) checkNoescapeReturnAssignment(argNodeID ast.NodeID) {
+	argType := a.env.TypeOfNode(argNodeID)
+	if argType == nil {
+		return
+	}
+	argFun, ok := argType.Kind.(FunType)
+	if !ok {
+		return
+	}
+	if !argFun.NoescapeReturn {
+		a.diag(a.ast.Node(argNodeID).Span, "function does not return noescape")
 	}
 }
 

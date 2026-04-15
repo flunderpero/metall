@@ -303,6 +303,9 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 			sb.WriteString(e.TypeDisplay(paramTypeID))
 		}
 		sb.WriteString(") ")
+		if kind.NoescapeReturn {
+			sb.WriteString("noescape ")
+		}
 		sb.WriteString(e.TypeDisplay(kind.Return))
 		return sb.String()
 	case StructType:
@@ -640,5 +643,13 @@ func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 }
 
 func funTypeCacheKey(typ FunType) string {
-	return fmt.Sprintf("fun:%v:%v:%v:%v:%v", typ.Params, typ.Return, typ.Macro, typ.Sync, typ.NoescapeParams)
+	return fmt.Sprintf(
+		"fun:%v:%v:%v:%v:%v:%v",
+		typ.Params,
+		typ.Return,
+		typ.Macro,
+		typ.Sync,
+		typ.NoescapeParams,
+		typ.NoescapeReturn,
+	)
 }

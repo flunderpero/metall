@@ -67,6 +67,7 @@ type FunType struct {
 	Macro          bool
 	Sync           bool
 	NoescapeParams []bool // nil if no params are noescape
+	NoescapeReturn bool
 }
 
 func (f FunType) IsNoescape(paramIdx int) bool {

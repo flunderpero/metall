@@ -63,6 +63,7 @@ func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
 		Macro:          true,
 		Sync:           false,
 		NoescapeParams: make([]bool, len(paramTypeIDs)),
+		NoescapeReturn: false,
 	}
 	funTypeID := e.env.newType(funTyp, node.ID, node.Span, TypeOK)
 	scope := e.scopeGraph.NodeScope(node.ID)

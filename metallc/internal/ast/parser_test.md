@@ -2978,3 +2978,36 @@ Fun(name="apply")
   returnType=SimpleType(name="void")
   block=Block()
 ```
+
+**noescape return**
+
+```metall
+fun foo(x &Int) noescape &Int { x }
+```
+
+```ast
+Fun(name="foo",noescapeReturn=true)
+  params=FunParam(name="x")
+    type=RefType()
+      type=SimpleType(name="Int")
+  returnType=RefType()
+    type=SimpleType(name="Int")
+  block=Block()
+    exprs=Ident(name="x")
+```
+
+**noescape return in function type**
+
+```metall
+fun apply(f fun() noescape &Int) void {}
+```
+
+```ast
+Fun(name="apply")
+  params=FunParam(name="f")
+    type=FunType(noescapeReturn=true)
+      returnType=RefType()
+        type=SimpleType(name="Int")
+  returnType=SimpleType(name="void")
+  block=Block()
+```
