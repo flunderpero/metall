@@ -12,6 +12,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/comptime"
 	"github.com/flunderpero/metall/metallc/internal/gen"
 	"github.com/flunderpero/metall/metallc/internal/macros"
 	"github.com/flunderpero/metall/metallc/internal/modules"
@@ -22,6 +23,7 @@ import (
 type CompileListener interface {
 	OnLex(tokens []token.Token) bool
 	OnParse(a *ast.AST, fileID ast.NodeID, diagnostics base.Diagnostics) bool
+	OnCompTime(a *ast.AST, diagnostics base.Diagnostics) bool
 	OnTypeCheck(engine *types.Engine, diagnostics base.Diagnostics) bool
 	OnLifetimeCheck(lifetime *types.LifetimeCheck, diagnostics base.Diagnostics) bool
 	OnIRGen(ir string) bool
@@ -76,6 +78,7 @@ const DefaultLLVMPasses = "mem2reg,sroa,instcombine,simplifycfg"
 type CompileOpts struct {
 	ProjectRoot         string
 	IncludePaths        []string
+	Tags                []string
 	Listener            CompileListener
 	PrintTiming         bool
 	Output              string
@@ -127,26 +130,26 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	parser := ast.NewParser(tokens, ast.NewAST(1))
 	fileID, _ := parser.ParseModule()
-	var moduleResolution *modules.ModuleResolution
-	var runtimeModuleID ast.NodeID
 	parseDiagnostics := parser.Diagnostics
-	if len(parseDiagnostics) == 0 {
-		var diags base.Diagnostics
-		runtimeModuleID, diags = addRuntimeModule(parser.AST, opts)
-		if len(diags) > 0 {
-			parseDiagnostics = append(parseDiagnostics, diags...)
-		} else {
-			var moduleDiags base.Diagnostics
-			moduleResolution, moduleDiags = resolveModules(parser.AST, opts)
-			parseDiagnostics = append(parseDiagnostics, moduleDiags...)
-		}
-	}
 	timingListener.OnParse(parser.AST, fileID, parseDiagnostics)
 	if listener != nil && !listener.OnParse(parser.AST, fileID, parseDiagnostics) {
 		return ErrAbort
 	}
 	if len(parseDiagnostics) > 0 {
 		return parseDiagnostics
+	}
+	runtimeModuleID, postParseDiags := addRuntimeModule(parser.AST, opts)
+	if len(postParseDiags) > 0 {
+		return postParseDiags
+	}
+	compTimeEnv := buildCompTimeEnv(targetTriple, opts.Tags)
+	moduleResolution, moduleDiags := resolveModules(parser.AST, opts, compTimeEnv)
+	timingListener.OnCompTime(parser.AST, moduleDiags)
+	if listener != nil && !listener.OnCompTime(parser.AST, moduleDiags) {
+		return ErrAbort
+	}
+	if len(moduleDiags) > 0 {
+		return moduleDiags
 	}
 	preludeAST, _ := ast.PreludeAST(opts.MinimalPrelude)
 	engine := types.NewEngine(parser.AST, preludeAST, moduleResolution, newMacroExpander(ctx, opts))
@@ -348,6 +351,11 @@ func (l *TimingListener) OnParse(_ *ast.AST, _ ast.NodeID, _ base.Diagnostics) b
 	return true
 }
 
+func (l *TimingListener) OnCompTime(_ *ast.AST, _ base.Diagnostics) bool {
+	l.record("comptime")
+	return true
+}
+
 func (l *TimingListener) OnTypeCheck(_ *types.Engine, _ base.Diagnostics) bool {
 	l.record("typecheck")
 	return true
@@ -451,9 +459,11 @@ func addRuntimeModule(a *ast.AST, opts CompileOpts) (ast.NodeID, base.Diagnostic
 }
 
 func resolveModules(
-	a *ast.AST, opts CompileOpts,
+	a *ast.AST, opts CompileOpts, compTimeEnv comptime.Env,
 ) (*modules.ModuleResolution, base.Diagnostics) {
-	res, diags := modules.ResolveModules(a, opts.ProjectRoot, opts.IncludePaths, os.ReadFile)
+	res, diags := modules.ResolveModules(
+		a, opts.ProjectRoot, opts.IncludePaths, compTimeEnv, os.ReadFile,
+	)
 	if len(diags) > 0 {
 		return nil, diags
 	}
@@ -494,6 +504,42 @@ func newMacroExpander(ctx context.Context, opts CompileOpts) types.MacroExpander
 		}
 		return output, nil
 	}
+}
+
+func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
+	// Parse target triple: <arch>-<vendor>-<os> or <arch>-<vendor>-<os>-<env>
+	parts := strings.SplitN(targetTriple, "-", 4)
+	arch := ""
+	osName := ""
+	if len(parts) >= 1 {
+		arch = parts[0]
+	}
+	if len(parts) >= 3 {
+		osName = parts[2]
+	}
+
+	env := comptime.Env{
+		"os": {
+			"darwin":  osName == "darwin" || strings.HasPrefix(osName, "macosx"),
+			"linux":   osName == "linux",
+			"windows": osName == "windows" || strings.HasPrefix(osName, "win32"),
+			"wasm":    osName == "wasi" || osName == "emscripten" || arch == "wasm64",
+		},
+		"arch": {
+			"aarch64": arch == "aarch64" || arch == "arm64",
+			"x86_64":  arch == "x86_64",
+			"wasm64":  arch == "wasm64",
+		},
+		"endian": {
+			"little": true, // All currently supported targets are little-endian.
+			"big":    false,
+		},
+		"tag": {},
+	}
+	for _, t := range tags {
+		env["tag"][t] = true
+	}
+	return env
 }
 
 func run_cmd(ctx context.Context, cmdline []string) error {

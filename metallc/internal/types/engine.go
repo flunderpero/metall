@@ -1541,8 +1541,11 @@ func (e *Engine) bindImports(nodeID ast.NodeID, module ast.Module) TypeStatus {
 			return TypeDepFailed
 		}
 		var importNodeID ast.NodeID
-		for _, id := range module.Imports {
-			imp := base.Cast[ast.Import](e.ast.Node(id).Kind)
+		for _, id := range module.Decls {
+			imp, ok := e.ast.Node(id).Kind.(ast.Import)
+			if !ok {
+				continue
+			}
 			isAlias := imp.Alias != nil && imp.Alias.Name == name
 			if isAlias || imp.Segments[len(imp.Segments)-1] == name {
 				importNodeID = id
@@ -1609,8 +1612,9 @@ func (e *Engine) checkModule( //nolint:funlen
 		}
 	}
 	for _, declNodeID := range module.Decls {
-		if _, ok := e.ast.Node(declNodeID).Kind.(ast.Var); ok {
-			continue // Already processed above.
+		switch e.ast.Node(declNodeID).Kind.(type) {
+		case ast.Var, ast.Import:
+			continue
 		}
 		_, status := e.Query(declNodeID)
 		if status.Failed() {

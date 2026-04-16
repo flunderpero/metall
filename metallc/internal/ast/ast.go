@@ -56,7 +56,6 @@ type Module struct {
 	FileName string
 	Name     string
 	Main     bool
-	Imports  []NodeID
 	Decls    []NodeID
 }
 
@@ -171,6 +170,13 @@ const (
 	CaptureByRef
 	CaptureByMutRef
 )
+
+type CompIf struct {
+	Cond NodeID
+	Body []NodeID
+}
+
+func (CompIf) isKind() {}
 
 type Capture struct {
 	Name Name
@@ -568,11 +574,10 @@ func (a *AST) NewModule(
 	fileName string,
 	name string,
 	main bool,
-	imports []NodeID,
 	decls []NodeID,
 	span base.Span,
 ) NodeID {
-	node := a.node(Module{FileName: fileName, Name: name, Main: main, Imports: imports, Decls: decls}, span)
+	node := a.node(Module{FileName: fileName, Name: name, Main: main, Decls: decls}, span)
 	a.Roots = append(a.Roots, node)
 	return node
 }
@@ -629,6 +634,10 @@ func (a *AST) NewFun(
 		},
 		span,
 	)
+}
+
+func (a *AST) NewCompIf(cond NodeID, body []NodeID, span base.Span) NodeID {
+	return a.node(CompIf{Cond: cond, Body: body}, span)
 }
 
 func (a *AST) NewCapture(name Name, mode CaptureMode, span base.Span) NodeID {
@@ -784,6 +793,25 @@ func (a *AST) Iter(f func(NodeID) bool) {
 	}
 }
 
+// DeleteNode removes the node with the given id and every descendant from the
+// AST. References from parent nodes are unlinked: optional positions (slice
+// element, nilable pointer) are cleared; required positions (e.g. If.Then,
+// MatchArm.Body, Binary.LHS) cause a panic.
+func (a *AST) DeleteNode(id NodeID) {
+	for parentID, parent := range a.nodes {
+		if parentID == id {
+			continue
+		}
+		a.unlinkChild(parent, id)
+	}
+	var del func(NodeID)
+	del = func(nid NodeID) {
+		a.Walk(nid, del)
+		delete(a.nodes, nid)
+	}
+	del(id)
+}
+
 // FindNode recursively searches the subtree rooted at `root` for a node whose
 // Kind matches type T. Returns the first matching NodeID, or 0 and false.
 func FindNode[T Kind](a *AST, root NodeID) (NodeID, bool) {
@@ -826,9 +854,6 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Expr)
 	case Import:
 	case Module:
-		for i := range len(kind.Imports) {
-			f(kind.Imports[i])
-		}
 		for i := range len(kind.Decls) {
 			f(kind.Decls[i])
 		}
@@ -994,6 +1019,11 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Target)
 	case RefType:
 		f(kind.Type)
+	case CompIf:
+		f(kind.Cond)
+		for _, id := range kind.Body {
+			f(id)
+		}
 	case TryPattern:
 	case Capture:
 	default:
@@ -1172,14 +1202,8 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		addAttr("name", fmt.Sprintf("%q", kind.Name))
 		addAttr("main", fmt.Sprintf("%t", kind.Main))
 		if !children {
-			if len(kind.Imports) > 0 {
-				addAttr("imports", nodeIDList(kind.Imports))
-			}
 			addAttr("decls", nodeIDList(kind.Decls))
 		} else {
-			if len(kind.Imports) > 0 {
-				addChild("imports", kind.Imports...)
-			}
 			addChild("decls", kind.Decls...)
 		}
 	case FunDecl:
@@ -1529,6 +1553,14 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 				addChild("typeArgs", kind.TypeArgs...)
 			}
 		}
+	case CompIf:
+		if !children {
+			addAttr("cond", nodeIDKind(kind.Cond))
+			addAttr("body", blockExprList(kind.Body))
+		} else {
+			addChild("cond", kind.Cond)
+			addChild("body", kind.Body...)
+		}
 	case TryPattern:
 	case Ref:
 		if kind.Mut {
@@ -1574,6 +1606,192 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocyclo
+	required := func(id NodeID) {
+		if id == childID {
+			panic(base.Errorf("cannot delete node %s: required child of %s (%T)",
+				childID, parent.ID, parent.Kind))
+		}
+	}
+	removeFromSlice := func(s []NodeID) []NodeID {
+		for i := len(s) - 1; i >= 0; i-- {
+			if s[i] == childID {
+				s = slices.Delete(s, i, i+1)
+			}
+		}
+		return s
+	}
+	switch k := parent.Kind.(type) {
+	case Assign:
+		required(k.LHS)
+		required(k.RHS)
+	case Binary:
+		required(k.LHS)
+		required(k.RHS)
+	case Unary:
+		required(k.Expr)
+	case Call:
+		required(k.Callee)
+		k.Args = removeFromSlice(k.Args)
+		parent.Kind = k
+	case Deref:
+		required(k.Expr)
+	case If:
+		required(k.Cond)
+		required(k.Then)
+		if k.Else != nil && *k.Else == childID {
+			k.Else = nil
+			parent.Kind = k
+		}
+	case For:
+		required(k.Body)
+		if k.Cond != nil && *k.Cond == childID {
+			k.Cond = nil
+			parent.Kind = k
+		}
+	case Match:
+		required(k.Expr)
+		for i, arm := range k.Arms {
+			required(arm.Pattern)
+			required(arm.Body)
+			if arm.Guard != nil && *arm.Guard == childID {
+				arm.Guard = nil
+				k.Arms[i] = arm
+				parent.Kind = k
+			}
+		}
+		if k.Else != nil {
+			required(k.Else.Body)
+		}
+	case When:
+		for _, c := range k.Cases {
+			required(c.Cond)
+			required(c.Body)
+		}
+		if k.Else != nil && *k.Else == childID {
+			k.Else = nil
+			parent.Kind = k
+		}
+	case Block:
+		k.Exprs = removeFromSlice(k.Exprs)
+		parent.Kind = k
+	case Module:
+		k.Decls = removeFromSlice(k.Decls)
+		parent.Kind = k
+	case FunDecl:
+		required(k.ReturnType)
+		k.TypeParams = removeFromSlice(k.TypeParams)
+		k.Params = removeFromSlice(k.Params)
+		parent.Kind = k
+	case Fun:
+		required(k.Block)
+		if k.ReturnType != InferredType {
+			required(k.ReturnType)
+		}
+		k.Captures = removeFromSlice(k.Captures)
+		k.TypeParams = removeFromSlice(k.TypeParams)
+		k.Params = removeFromSlice(k.Params)
+		parent.Kind = k
+	case FunType:
+		required(k.ReturnType)
+		k.ParamTypes = removeFromSlice(k.ParamTypes)
+		parent.Kind = k
+	case FunParam:
+		if k.Type != InferredType {
+			required(k.Type)
+		}
+		if k.Default != nil && *k.Default == childID {
+			k.Default = nil
+			parent.Kind = k
+		}
+	case Struct:
+		k.TypeParams = removeFromSlice(k.TypeParams)
+		k.Fields = removeFromSlice(k.Fields)
+		parent.Kind = k
+	case Shape:
+		k.TypeParams = removeFromSlice(k.TypeParams)
+		k.Fields = removeFromSlice(k.Fields)
+		k.Funs = removeFromSlice(k.Funs)
+		parent.Kind = k
+	case Union:
+		k.TypeParams = removeFromSlice(k.TypeParams)
+		k.Variants = removeFromSlice(k.Variants)
+		parent.Kind = k
+	case TypeParam:
+		if k.Constraint != nil && *k.Constraint == childID {
+			k.Constraint = nil
+			parent.Kind = k
+		}
+		if k.Default != nil && *k.Default == childID {
+			k.Default = nil
+			parent.Kind = k
+		}
+	case StructField:
+		required(k.Type)
+	case FieldAccess:
+		required(k.Target)
+		k.TypeArgs = removeFromSlice(k.TypeArgs)
+		parent.Kind = k
+	case TypeConstruction:
+		required(k.Target)
+		k.Args = removeFromSlice(k.Args)
+		parent.Kind = k
+	case AllocatorVar:
+		k.Args = removeFromSlice(k.Args)
+		parent.Kind = k
+	case ArrayType:
+		required(k.Elem)
+	case SliceType:
+		required(k.Elem)
+	case ArrayLiteral:
+		k.Elems = removeFromSlice(k.Elems)
+		parent.Kind = k
+	case Index:
+		required(k.Target)
+		required(k.Index)
+	case SubSlice:
+		required(k.Target)
+		required(k.Range)
+	case Range:
+		if k.Lo != nil && *k.Lo == childID {
+			k.Lo = nil
+			parent.Kind = k
+		}
+		if k.Hi != nil && *k.Hi == childID {
+			k.Hi = nil
+			parent.Kind = k
+		}
+	case Return:
+		required(k.Expr)
+	case Defer:
+		required(k.Block)
+	case Ident:
+		k.TypeArgs = removeFromSlice(k.TypeArgs)
+		parent.Kind = k
+	case Var:
+		required(k.Expr)
+		if k.Type != nil && *k.Type == childID {
+			k.Type = nil
+			parent.Kind = k
+		}
+	case SimpleType:
+		k.TypeArgs = removeFromSlice(k.TypeArgs)
+		parent.Kind = k
+	case Ref:
+		required(k.Target)
+	case RefType:
+		required(k.Type)
+	case CompIf:
+		required(k.Cond)
+		k.Body = removeFromSlice(k.Body)
+		parent.Kind = k
+	case Import, Break, Continue, EmptySlice, TryPattern, Capture, Int, Bool, String, RuneLiteral:
+		// no NodeID children
+	default:
+		panic(base.Errorf("unlinkChild: unknown node kind %T", k))
+	}
 }
 
 func (a *AST) node(kind Kind, span base.Span) NodeID {

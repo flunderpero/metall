@@ -40,7 +40,53 @@ module.exports = grammar({
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
     _declaration: ($) =>
-      choice($.function_declaration, $.extern_function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding),
+      choice($.function_declaration, $.extern_function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding, $.compile_if_declaration),
+
+    // >>> Conditional compilation
+
+    compile_if_declaration: ($) =>
+      seq(
+        "#", token.immediate("if"),
+        field("condition", $._compile_condition),
+        repeat(choice($.import_declaration, $._declaration)),
+        "#", token.immediate("end"),
+      ),
+
+    compile_if_expression: ($) =>
+      seq(
+        "#", token.immediate("if"),
+        field("condition", $._compile_condition),
+        repeat($._expression),
+        "#", token.immediate("end"),
+      ),
+
+    _compile_condition: ($) =>
+      choice(
+        $.compile_condition_flag,
+        $.compile_condition_not,
+        $.compile_condition_and,
+        $.compile_condition_or,
+      ),
+
+    compile_condition_flag: ($) =>
+      seq(field("category", $.identifier), ".", field("key", $.identifier)),
+
+    compile_condition_not: ($) =>
+      seq("not", field("operand", $._compile_condition)),
+
+    compile_condition_and: ($) =>
+      prec.left(PREC.AND, seq(
+        field("left", $._compile_condition),
+        "and",
+        field("right", $._compile_condition),
+      )),
+
+    compile_condition_or: ($) =>
+      prec.left(PREC.OR, seq(
+        field("left", $._compile_condition),
+        "or",
+        field("right", $._compile_condition),
+      )),
 
     // >>> Imports
 
@@ -286,6 +332,9 @@ module.exports = grammar({
 
         // Function literal / closure.
         $.function_literal,
+
+        // Conditional compilation.
+        $.compile_if_expression,
 
         // Control flow.
         $.if_expression,

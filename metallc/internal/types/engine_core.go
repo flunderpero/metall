@@ -110,7 +110,7 @@ func (c *EngineCore) registerConst(nodeID ast.NodeID, name string, typeID TypeID
 
 // preludeModule is a synthetic module for prelude nodes (which have no Module AST parent).
 var preludeModule = ast.Module{ //nolint:gochecknoglobals
-	FileName: "prelude", Name: "prelude", Main: false, Imports: nil, Decls: nil,
+	FileName: "prelude", Name: "prelude", Main: false, Decls: nil,
 }
 
 var preludeModuleNode = &ast.Node{ //nolint:gochecknoglobals

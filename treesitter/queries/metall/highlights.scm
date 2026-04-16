@@ -94,6 +94,12 @@
 
 (union_declaration name: (type_identifier) @type.definition)
 
+; >>> Conditional compilation — placed after the generic identifier/keyword
+; fallbacks so the `#if ... #end` overrides win (tree-sitter picks the
+; last-declared matching capture). The entire directive (`#`, `if`/`end`,
+; and the whole condition) reads as a comment so `#if ...` blocks visually
+; recede like preprocessor noise.
+
 ; >>> Qualified names (Foo.bar)
 
 (qualified_name (type_identifier) @type)
@@ -165,3 +171,17 @@
 
 ["(" ")" "{" "}" "[" "]" "<" ">"] @punctuation.bracket
 ["," "." ":"] @punctuation.delimiter
+
+; >>> Conditional compilation overrides (last so they win)
+
+(compile_if_declaration "#" @comment)
+(compile_if_declaration "if" @comment)
+(compile_if_declaration "end" @comment)
+(compile_if_expression "#" @comment)
+(compile_if_expression "if" @comment)
+(compile_if_expression "end" @comment)
+(compile_condition_flag (identifier) @comment)
+(compile_condition_flag "." @comment)
+(compile_condition_not "not" @comment)
+(compile_condition_and "and" @comment)
+(compile_condition_or "or" @comment)

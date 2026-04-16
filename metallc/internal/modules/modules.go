@@ -6,6 +6,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/comptime"
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
@@ -22,13 +23,15 @@ type moduleResolver struct {
 	projectRoot  string
 	includePaths []string
 	ast          *ast.AST
+	compTimeEnv  comptime.Env
 	resolution   ModuleResolution
 	modulesByFQN map[string]ast.NodeID
 	resolving    map[string]bool
 }
 
 func ResolveModules(
-	a *ast.AST, projectRoot string, includePaths []string, readFile ReadFileFn,
+	a *ast.AST, projectRoot string, includePaths []string,
+	compTimeEnv comptime.Env, readFile ReadFileFn,
 ) (*ModuleResolution, base.Diagnostics) {
 	m := moduleResolver{
 		diagnostics:  base.Diagnostics{},
@@ -36,6 +39,7 @@ func ResolveModules(
 		projectRoot:  projectRoot,
 		includePaths: includePaths,
 		ast:          a,
+		compTimeEnv:  compTimeEnv,
 		resolution: ModuleResolution{
 			AST:     a,
 			Imports: make(map[ast.NodeID]map[string]ast.NodeID),
@@ -58,18 +62,29 @@ func ResolveModules(
 }
 
 func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
-	mod := base.Cast[ast.Module](m.ast.Node(moduleID).Kind)
 	if _, ok := m.resolution.Imports[moduleID]; ok {
 		return
 	}
+	// Rewrite `#if` blocks before scanning Decls: a `use` inside an
+	// unresolved CompIf is invisible to this loop and would leave nested
+	// modules (and their own CompIfs) unloaded/unresolved, which later
+	// trips the type checker.
+	if diags := comptime.ResolveModule(m.ast, moduleID, m.compTimeEnv); len(diags) > 0 {
+		m.diagnostics = append(m.diagnostics, diags...)
+		return
+	}
+	mod := base.Cast[ast.Module](m.ast.Node(moduleID).Kind)
 	m.resolving[mod.Name] = true
 	defer delete(m.resolving, mod.Name)
 	importMap := make(map[string]ast.NodeID)
 	m.resolution.Imports[moduleID] = importMap
 	seen := make(map[string]bool)
-	for _, importNodeID := range mod.Imports {
+	for _, importNodeID := range mod.Decls {
 		importNode := m.ast.Node(importNodeID)
-		imp := base.Cast[ast.Import](importNode.Kind)
+		imp, ok := importNode.Kind.(ast.Import)
+		if !ok {
+			continue
+		}
 		fqn := strings.Join(imp.Segments, "::")
 		if seen[fqn] {
 			m.diag(importNode.Span, "duplicate import: %s", fqn)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/comptime"
 	"github.com/flunderpero/metall/metallc/internal/modules"
 	mdtest "github.com/flunderpero/metall/metallc/internal/test"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -64,7 +65,7 @@ func runModuleTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 		}
 		return []byte(content), nil
 	}
-	moduleResolution, diags := modules.ResolveModules(a, "local", []string{"lib"}, readFile)
+	moduleResolution, diags := modules.ResolveModules(a, "local", []string{"lib"}, comptime.Env{}, readFile)
 	assert.Equal(0, len(diags), "module resolution failed:\n%s", diags)
 
 	preludeAST, _ := ast.PreludeAST(true)

@@ -5392,3 +5392,114 @@ fun main() void {
 42
 137
 ```
+
+## Conditional Compilation
+
+**compile-if active on matching tag**
+
+```metall tag:my_feature
+#if tag.my_feature
+fun main() void { DebugIntern.print_str("active") }
+#end
+```
+
+```output
+active
+```
+
+**compile-if inactive skips body**
+
+```metall
+fun main() void {
+    DebugIntern.print_str("before")
+    #if tag.nope
+    DebugIntern.print_str("hidden")
+    #end
+    DebugIntern.print_str("after")
+}
+```
+
+```output
+before
+after
+```
+
+**compile-if with endian condition**
+
+```metall
+fun main() void {
+    -- All platforms are little endian.
+    #if endian.little
+    DebugIntern.print_str("unix")
+    #end
+}
+```
+
+```output
+unix
+```
+
+**compile-if inactive body can have type errors**
+
+```metall
+fun main() void {
+    #if tag.nope
+    let x Int = "type error is fine here because this is inactive"
+    #end
+    DebugIntern.print_str("ok")
+}
+```
+
+```output
+ok
+```
+
+**compile-if error on unknown key**
+
+```metall
+fun main() void {
+    #if os.darwim
+    let x = 1
+    #end
+}
+```
+
+```error
+test.met:2:12: unknown key "darwim" in category "os" (available: darwin, linux, wasm, windows)
+    fun main() void {
+        #if os.darwim
+               ^^^^^^
+        let x = 1
+```
+
+**compile-if with not**
+
+```metall tag:my_tag
+fun main() void {
+    #if not tag.other
+    DebugIntern.print_str("not other")
+    #end
+}
+```
+
+```output
+not other
+```
+
+**compile-if active with compile error reports error**
+
+```metall tag:active
+#if tag.active
+fun main() void {
+    let x Int = "this is a type error"
+}
+#end
+```
+
+```error
+test.met:3:17: type mismatch: expected Int, got Str
+    fun main() void {
+        let x Int = "this is a type error"
+                    ^^^^^^^^^^^^^^^^^^^^^^
+    }
+```

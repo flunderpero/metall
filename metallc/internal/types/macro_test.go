@@ -7,6 +7,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/comptime"
 	"github.com/flunderpero/metall/metallc/internal/macros"
 	"github.com/flunderpero/metall/metallc/internal/modules"
 	mdtest "github.com/flunderpero/metall/metallc/internal/test"
@@ -59,7 +60,7 @@ func runMacroTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[stri
 		}
 		return []byte(content), nil
 	}
-	moduleResolution, diags := modules.ResolveModules(a, "local", []string{}, readFile)
+	moduleResolution, diags := modules.ResolveModules(a, "local", []string{}, comptime.Env{}, readFile)
 	assert.Equal(0, len(diags), "module resolution failed:\n%s", diags)
 
 	var expander MacroExpander

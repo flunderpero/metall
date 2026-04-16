@@ -38,6 +38,8 @@ const (
 	Gt
 	Gte
 	GtGt
+	HashEnd
+	HashIf
 	Ident
 	If
 	In
@@ -121,6 +123,8 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Gte:                   ">=",
 	GtGt:                  ">>",
 	Fun:                   "<fun>",
+	HashEnd:               "#end",
+	HashIf:                "#if",
 	Ident:                 "<identifier>",
 	If:                    "<if>",
 	In:                    "<in>",
@@ -553,6 +557,26 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		span.End = idx - 1
 		return Token{Kind: Whitespace, Value: string(value), Span: span}
+	case c == '#':
+		value := []rune{}
+		for idx < len(source.Content) {
+			c := source.Content[idx]
+			if !unicode.IsLetter(c) {
+				break
+			}
+			idx += 1
+			value = append(value, c)
+		}
+		span.End = idx - 1
+		word := string(value)
+		switch word {
+		case "if":
+			return Token{Kind: HashIf, Value: "", Span: span}
+		case "end":
+			return Token{Kind: HashEnd, Value: "", Span: span}
+		default:
+			return Token{Kind: Error, Value: fmt.Sprintf("unknown directive: #%s", word), Span: span}
+		}
 	case unicode.IsLetter(c), c == '@', c == '_':
 		value := []rune{c}
 		for idx < len(source.Content) {

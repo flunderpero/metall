@@ -339,3 +339,37 @@ fun main() void {
 ```output
 true
 ```
+
+## Conditional Compilation
+
+**conditional import with matching tag**
+
+```metall tag:use_io
+#if tag.use_io
+use std.io
+#end
+
+fun main() void {
+    io.println("imported")
+}
+```
+
+```output
+imported
+```
+
+**conditional import with non-matching tag skips import**
+
+```metall
+#if tag.nope
+use std.io
+#end
+
+fun main() void {
+    DebugIntern.print_str("no import")
+}
+```
+
+```output
+no import
+```

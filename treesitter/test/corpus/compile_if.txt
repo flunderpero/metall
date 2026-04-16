@@ -1,0 +1,144 @@
+================================================================================
+Compile-if at module level
+================================================================================
+
+#if os.darwin
+fun f() void {}
+#end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (compile_if_declaration
+    condition: (compile_condition_flag
+      category: (identifier)
+      key: (identifier))
+    (function_declaration
+      name: (function_name (identifier))
+      return_type: (simple_type)
+      body: (block))))
+
+================================================================================
+Compile-if with boolean logic
+================================================================================
+
+#if os.darwin and not arch.x86_64
+fun f() void {}
+#end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (compile_if_declaration
+    condition: (compile_condition_and
+      left: (compile_condition_flag
+        category: (identifier)
+        key: (identifier))
+      right: (compile_condition_not
+        operand: (compile_condition_flag
+          category: (identifier)
+          key: (identifier))))
+    (function_declaration
+      name: (function_name (identifier))
+      return_type: (simple_type)
+      body: (block))))
+
+================================================================================
+Compile-if with or
+================================================================================
+
+#if os.darwin or os.linux
+fun f() void {}
+#end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (compile_if_declaration
+    condition: (compile_condition_or
+      left: (compile_condition_flag
+        category: (identifier)
+        key: (identifier))
+      right: (compile_condition_flag
+        category: (identifier)
+        key: (identifier)))
+    (function_declaration
+      name: (function_name (identifier))
+      return_type: (simple_type)
+      body: (block))))
+
+================================================================================
+Compile-if inside block
+================================================================================
+
+fun f() void {
+  #if tag.debug
+  let x = 1
+  #end
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (compile_if_expression
+        condition: (compile_condition_flag
+          category: (identifier)
+          key: (identifier))
+        (let_binding
+          name: (identifier)
+          value: (integer_literal))))))
+
+================================================================================
+Compile-if with multiple declarations
+================================================================================
+
+#if tag.feature
+fun a() void {}
+fun b() void {}
+#end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (compile_if_declaration
+    condition: (compile_condition_flag
+      category: (identifier)
+      key: (identifier))
+    (function_declaration
+      name: (function_name (identifier))
+      return_type: (simple_type)
+      body: (block))
+    (function_declaration
+      name: (function_name (identifier))
+      return_type: (simple_type)
+      body: (block))))
+
+================================================================================
+Compile-if containing an import
+================================================================================
+
+use std.ffi
+#if not os.wasm
+use std.posix
+#end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_declaration
+    path: (import_path
+      (identifier)
+      (identifier)))
+  (compile_if_declaration
+    condition: (compile_condition_not
+      operand: (compile_condition_flag
+        category: (identifier)
+        key: (identifier)))
+    (import_declaration
+      path: (import_path
+        (identifier)
+        (identifier)))))

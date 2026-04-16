@@ -110,9 +110,18 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 		llvmPasses = "verify," + DefaultLLVMPasses
 	}
 
+	// Extract compile-time tags from test case tags (tag:xxx).
+	var compileTags []string
+	for _, tag := range tc.Tags {
+		if ct, ok := strings.CutPrefix(tag, "tag:"); ok {
+			compileTags = append(compileTags, ct)
+		}
+	}
+
 	opts := CompileOpts{ //nolint:exhaustruct
 		ProjectRoot:      projectDir,
 		IncludePaths:     []string{"../../../lib"},
+		Tags:             compileTags,
 		Output:           outputPath,
 		OptLevel:         optLevel,
 		KeepIR:           true,

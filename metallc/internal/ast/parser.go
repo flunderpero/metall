@@ -59,23 +59,11 @@ func NewParser(tokens []token.Token, a *AST) *Parser {
 func (p *Parser) ParseModule() (NodeID, bool) {
 	span := p.span()
 	source := span.Source
-	var imports []NodeID
-	for {
-		t, ok := p.mayPeek()
-		if !ok || t.Kind != token.Use {
-			break
-		}
-		imp, ok := p.ParseImport()
-		if !ok {
-			return ParseFailed, false
-		}
-		imports = append(imports, imp)
-	}
 	decls, ok := p.ParseDecls()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewModule(source.FileName, source.Module, source.Main, imports, decls, span.Combine(p.span())), true
+	return p.NewModule(source.FileName, source.Module, source.Main, decls, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseDecls() ([]NodeID, bool) {
@@ -83,7 +71,7 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 	result := true
 	for {
 		t, ok := p.mayPeek()
-		if !ok {
+		if !ok || t.Kind == token.HashEnd {
 			return decls, result
 		}
 		switch {
@@ -117,6 +105,14 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 		case p.lookAhead(token.Let) || p.lookAhead(token.Pub, token.Let):
 			if v, ok := p.ParseVar(); ok {
 				decls = append(decls, v)
+			}
+		case t.Kind == token.Use:
+			if imp, ok := p.ParseImport(); ok {
+				decls = append(decls, imp)
+			}
+		case t.Kind == token.HashIf:
+			if compIf, ok := p.parseCompIf(p.ParseDecls); ok {
+				decls = append(decls, compIf)
 			}
 		case t.Kind == token.Ident:
 			if expr, ok := p.ParseExpr(0); ok {
@@ -511,21 +507,34 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	span := t.Span
-	exprs := []NodeID{}
-	for {
-		t, ok := p.mustPeek()
-		if !ok {
-			break
+	// parseBody reads expressions until `}` or `#end` (without consuming
+	// either). It's recursive to handle nested `#if`s within blocks.
+	var parseBody func() ([]NodeID, bool)
+	parseBody = func() ([]NodeID, bool) {
+		exprs := []NodeID{}
+		for {
+			t, ok := p.mayPeek()
+			if !ok || t.Kind == token.RCurly || t.Kind == token.HashEnd {
+				return exprs, true
+			}
+			var expr NodeID
+			if t.Kind == token.HashIf {
+				expr, ok = p.parseCompIf(parseBody)
+			} else {
+				expr, ok = p.ParseExpr(0)
+			}
+			if !ok {
+				return nil, false
+			}
+			exprs = append(exprs, expr)
 		}
-		if t.Kind == token.RCurly {
-			p.next()
-			break
-		}
-		expr, ok := p.ParseExpr(0)
-		if !ok {
-			return ParseFailed, false
-		}
-		exprs = append(exprs, expr)
+	}
+	exprs, ok := parseBody()
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.RCurly); !ok {
+		return ParseFailed, false
 	}
 	return p.NewBlock(exprs, span.Combine(p.span())), true
 }
@@ -1982,6 +1991,26 @@ func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 	return p.NewBlock([]NodeID{funID, ident}, span), true
 }
 
+func (p *Parser) parseCompIf(parseBody func() ([]NodeID, bool)) (NodeID, bool) {
+	t, ok := p.expect(token.HashIf)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	cond, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false
+	}
+	body, ok := parseBody()
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.HashEnd); !ok {
+		return ParseFailed, false
+	}
+	return p.NewCompIf(cond, body, span.Combine(p.span())), true
+}
+
 func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {
 	p.Diagnostics = append(p.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
@@ -2064,7 +2093,7 @@ func (p *Parser) mustPeek() (*token.Token, bool) {
 func (p *Parser) expect(kind token.TokenKind) (*token.Token, bool) {
 	t, ok := p.next()
 	if !ok {
-		p.diagnostic(p.span(), "unexpected end of file")
+		// `next()` already emitted the EOF diagnostic; don't duplicate it.
 		return nil, false
 	}
 	if t.Kind != kind {

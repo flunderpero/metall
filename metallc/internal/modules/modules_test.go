@@ -130,7 +130,7 @@ func TestResolveModules(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a, mainID := parseModule(tt.src, "main", true)
-			res, diags := ResolveModules(a, tt.projectRoot, tt.includePaths, memFS(tt.files))
+			res, diags := ResolveModules(a, tt.projectRoot, tt.includePaths, nil, memFS(tt.files))
 			assert.Equal(0, len(diags), "diagnostics: %s", diags)
 			mainImports := res.Imports[mainID]
 			assert.Equal(len(tt.wantImports), len(mainImports), "import count")
@@ -229,7 +229,7 @@ func TestResolveModulesErr(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a, _ := parseModule(tt.src, "main", true)
-			_, diags := ResolveModules(a, tt.projectRoot, tt.includePaths, memFS(tt.files))
+			_, diags := ResolveModules(a, tt.projectRoot, tt.includePaths, nil, memFS(tt.files))
 			assert.Equal(len(tt.want), len(diags), "diagnostic count: %s", diags)
 			for i, want := range tt.want {
 				if i < len(diags) {

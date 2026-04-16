@@ -1370,9 +1370,6 @@ x[1..2
 test.met:1:6: unexpected end of file
     x[1..2
          ^
-test.met:1:6: unexpected end of file
-    x[1..2
-         ^
 ```
 
 ## Operators
@@ -2426,7 +2423,7 @@ use foo.bar
 
 ```ast
 Module(fileName="test.met",name="test",main=true)
-  imports=Import(path=foo::bar)
+  decls=Import(path=foo::bar)
 ```
 
 **Use deep path**
@@ -2437,7 +2434,7 @@ use foo.bar.baz
 
 ```ast
 Module(fileName="test.met",name="test",main=true)
-  imports=Import(path=foo::bar::baz)
+  decls=Import(path=foo::bar::baz)
 ```
 
 **Use with alias**
@@ -2448,7 +2445,7 @@ use b = foo.bar
 
 ```ast
 Module(fileName="test.met",name="test",main=true)
-  imports=Import(alias="b",path=foo::bar)
+  decls=Import(alias="b",path=foo::bar)
 ```
 
 **Use local import**
@@ -2459,7 +2456,7 @@ use local.foo.bar
 
 ```ast
 Module(fileName="test.met",name="test",main=true)
-  imports=Import(path=local::foo::bar)
+  decls=Import(path=local::foo::bar)
 ```
 
 **Use local import with alias**
@@ -2470,7 +2467,7 @@ use b = local.foo.bar
 
 ```ast
 Module(fileName="test.met",name="test",main=true)
-  imports=Import(alias="b",path=local::foo::bar)
+  decls=Import(alias="b",path=local::foo::bar)
 ```
 
 **Dot expression (module member)**
@@ -2577,18 +2574,6 @@ use foo.bar
 test.met:1:1: unexpected token: expected start of an expression, got <use>
     use foo.bar
     ^^^
-```
-
-**Use after decl should fail**
-
-```metall module
-fun main() void {} use foo.bar
-```
-
-```error
-test.met:1:20: unexpected token: <use>
-    fun main() void {} use foo.bar
-                       ^^^
 ```
 
 **Match else not confused with if-else**
@@ -3010,4 +2995,103 @@ Fun(name="apply")
         type=SimpleType(name="Int")
   returnType=SimpleType(name="void")
   block=Block()
+```
+
+## Conditional Compilation
+
+**simple compile-if at module level**
+
+```metall module
+#if os.darwin
+fun foo() void {}
+#end
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=CompIf()
+    cond=FieldAccess(field=darwin)
+      target=Ident(name="os")
+    body=Fun(name="foo")
+      returnType=SimpleType(name="void")
+      block=Block()
+```
+
+**compile-if with boolean logic**
+
+```metall module
+#if os.darwin and not arch.x86_64
+let x = 1
+#end
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=CompIf()
+    cond=Binary(op=and)
+      lhs=FieldAccess(field=darwin)
+        target=Ident(name="os")
+      rhs=Unary(op=not)
+        expr=FieldAccess(field=x86_64)
+          target=Ident(name="arch")
+    body=Var(name="x")
+      expr=Int(value=1)
+```
+
+**compile-if with or**
+
+```metall module
+#if os.darwin or os.linux
+let x = 1
+#end
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=CompIf()
+    cond=Binary(op=or)
+      lhs=FieldAccess(field=darwin)
+        target=Ident(name="os")
+      rhs=FieldAccess(field=linux)
+        target=Ident(name="os")
+    body=Var(name="x")
+      expr=Int(value=1)
+```
+
+**compile-if in block**
+
+```metall
+{
+  let a = 1
+  #if tag.debug
+  let b = 2
+  #end
+  a
+}
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="a")
+    expr=Int(value=1)
+  exprs[1]=CompIf()
+    cond=FieldAccess(field=debug)
+      target=Ident(name="tag")
+    body=Var(name="b")
+      expr=Int(value=2)
+  exprs[2]=Ident(name="a")
+```
+
+**compile-if missing #end**
+
+```metall module
+#if os.darwin
+let x = 1
+```
+
+```error
+test.met:2:9: unexpected end of file
+    #if os.darwin
+    let x = 1
+            ^
 ```

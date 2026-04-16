@@ -58,9 +58,18 @@ Usage:
 	}
 }
 
+type tagFlags []string
+
+func (f *tagFlags) String() string { return fmt.Sprintf("%v", *f) }
+func (f *tagFlags) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
 func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
 	opts := compiler.CompileOpts{}.WithDefaults()
 	var includes includeFlags
+	var tags tagFlags
 	flags := flag.NewFlagSet(command, flag.ExitOnError)
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: metallc %s [flags] <file.met>\n\n", command)
@@ -68,6 +77,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
 	}
 	flags.StringVar(&opts.Output, "o", "", "output binary path (build default: ./<name>)")
 	flags.Var(&includes, "I", "add include path (repeatable)")
+	flags.Var(&tags, "tag", "add compile-time tag (repeatable)")
 	flags.BoolVar(&opts.PrintTiming, "timing", false, "print compilation timing")
 	flags.BoolVar(&opts.KeepIR, "keep-ir", false, "keep intermediate .ll files next to the output")
 	flags.Func("opt", "optimization mode: none, safe, fast", func(s string) error {
@@ -106,6 +116,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
 	}
 	opts.ProjectRoot = filepath.Dir(fileName)
 	opts.IncludePaths = includes
+	opts.Tags = tags
 	opts.LLVMPasses = compiler.DefaultLLVMPasses
 	src, err := os.ReadFile(fileName)
 	if err != nil {
