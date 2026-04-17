@@ -16,6 +16,12 @@ const voidValue = "zeroinitializer"
 //go:embed builtins.ll
 var builtinsIR string
 
+//go:embed builtins_posix.ll
+var builtinsPosixIR string
+
+//go:embed builtins_wasm.ll
+var builtinsWasmIR string
+
 type CodeWriter struct {
 	indent int
 	sb     strings.Builder
@@ -735,10 +741,12 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	}
 	if isMain {
 		signatureIRTyp = "i32"
-		if params.Len() > 0 {
-			params.WriteString(", ")
+		if !g.opts.Target.IsWasm() {
+			if params.Len() > 0 {
+				params.WriteString(", ")
+			}
+			params.WriteString("i32 %argc, ptr %argv")
 		}
-		params.WriteString("i32 %argc, ptr %argv")
 	} else if isRetAggregate {
 		signatureIRTyp = "void"
 		if params.Len() > 0 {
@@ -826,7 +834,13 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		}
 	}
 	if isMain {
-		g.write("call void @__os_args_init(i32 %argc, ptr %argv)")
+		if g.opts.Target.IsWasm() {
+			// Seed the bump allocator before __const_init runs: const
+			// initializers may allocate (via arena -> malloc).
+			g.write("call {} @runtime$wasmalloc.init(ptr @__heap_base)")
+		} else {
+			g.write("call void @__os_args_init(i32 %argc, ptr %argv)")
+		}
 		g.write("call void @__const_init()")
 	}
 	// Record where to insert entry-block allocas that are collected during
@@ -2619,6 +2633,7 @@ type IROpts struct {
 	ArenaStackBufSize       int
 	ArenaPageMinSize        int
 	ArenaPageMaxSize        int
+	Target                  Target
 }
 
 func (g *IRGen) genExternDecls(funs []types.FunWork) {
@@ -2626,16 +2641,27 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 		return
 	}
 	env := funs[0].Env
+	// Symbols already declared or defined by builtins_{posix,wasm}.ll;
+	// re-emitting a declare here would collide (LLVM 22 rejects dupes).
+	// Keep this list in sync with the top-level symbols in those files.
 	emitted := map[string]bool{
-		// These are already declared in `builtins.ll`:
-		"putchar":           true,
-		"puts":              true,
-		"printf":            true,
-		"fflush":            true,
 		"write":             true,
 		"arena_debug_print": true,
-		"strlen":            true,
-		"malloc":            true,
+	}
+	if g.opts.Target.IsWasm() {
+		emitted["fflush"] = true
+		emitted["__wasmalloc_bump_get"] = true
+		emitted["__wasmalloc_bump_set"] = true
+		emitted["runtime$wasmalloc.malloc"] = true
+		emitted["runtime$wasmalloc.realloc"] = true
+		emitted["runtime$wasmalloc.free"] = true
+	} else {
+		emitted["printf"] = true
+		emitted["fflush"] = true
+		emitted["strlen"] = true
+		emitted["malloc"] = true
+		emitted["realloc"] = true
+		emitted["free"] = true
 	}
 	g.ast.Iter(func(nodeID ast.NodeID) bool {
 		funDecl, ok := g.ast.Node(nodeID).Kind.(ast.FunDecl)
@@ -2753,6 +2779,11 @@ func GenIR(
 	g.write("; Global constants.")
 	g.write("")
 	g.sb.WriteString(g.constGlobals.String())
+	if opts.Target.IsWasm() {
+		g.write(builtinsWasmIR)
+	} else {
+		g.write(builtinsPosixIR)
+	}
 	g.write(builtinsIR)
 	for _, bits := range []int{8, 16, 32, 64} {
 		irType := fmt.Sprintf("i%d", bits)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -68,6 +69,10 @@ func ParseOptLevel(s string) (OptLevel, error) {
 	}
 }
 
+const LLVMVersion = "22.1.3"
+
+const LocalLLVMDir = ".llvm/" + LLVMVersion
+
 // LLVM optimization passes (https://llvm.org/docs/Passes.html):
 //   - mem2reg: Promote alloca'd scalars to SSA registers.
 //   - sroa: Scalar Replacement of Aggregates — decompose struct/array allocas into individual scalars.
@@ -91,6 +96,7 @@ type CompileOpts struct {
 	ArenaPageMinSize    int
 	ArenaPageMaxSize    int
 	MinimalPrelude      bool
+	Target              gen.Target
 	PrintTypesDebug     bool
 	PrintBindingsDebug  bool
 	DebugTypeCheck      bool
@@ -112,11 +118,11 @@ func (o CompileOpts) WithDefaults() CompileOpts {
 
 func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error { //nolint:funlen
 	opts = opts.WithDefaults()
-	llvmHome := os.Getenv("LLVM_HOME")
-	if llvmHome == "" {
-		return base.Errorf("LLVM_HOME not set")
+	llvmHome, err := findLLVMHome()
+	if err != nil {
+		return err
 	}
-	targetDataLayout, targetTriple, err := queryTargetInfo(ctx, llvmHome)
+	targetDataLayout, targetTriple, err := queryTargetInfo(ctx, llvmHome, opts.Target)
 	if err != nil {
 		return err
 	}
@@ -138,7 +144,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(parseDiagnostics) > 0 {
 		return parseDiagnostics
 	}
-	runtimeModuleID, postParseDiags := addRuntimeModule(parser.AST, opts)
+	runtimeModuleIDs, postParseDiags := addRuntimeModules(parser.AST, opts)
 	if len(postParseDiags) > 0 {
 		return postParseDiags
 	}
@@ -157,7 +163,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		engine.SetDebug(base.NewStdoutDebug("types"))
 	}
 	engine.Query(fileID)
-	engine.Query(runtimeModuleID)
+	for _, id := range runtimeModuleIDs {
+		engine.Query(id)
+	}
 	timingListener.OnTypeCheck(engine, engine.Diagnostics())
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
 		return ErrAbort
@@ -196,6 +204,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 			ArenaStackBufSize:       opts.ArenaStackBufSize,
 			ArenaPageMinSize:        opts.ArenaPageMinSize,
 			ArenaPageMaxSize:        opts.ArenaPageMaxSize,
+			Target:                  opts.Target,
 		},
 	)
 	if err != nil {
@@ -240,7 +249,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		cmdline = append(cmdline, "-passes="+opts.LLVMPasses)
 	}
 	cmdline = append(cmdline, unopt_ll, "-o", opt_ll)
-	if err := run_cmd(ctx, cmdline); err != nil {
+	if err := run_cmd(ctx, cmdline, os.Environ()); err != nil {
 		return base.WrapErrorf(err, "failed to generate optimized IR")
 	}
 	timingListener.OnOptimizeIR()
@@ -250,7 +259,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 
 	// Produce optimized bitcode (.bc)
 	cmdline = []string{llvmHome + "/bin/opt", opt_ll, "-o", bc}
-	if err := run_cmd(ctx, cmdline); err != nil {
+	if err := run_cmd(ctx, cmdline, os.Environ()); err != nil {
 		return base.WrapErrorf(err, "failed to generate bitcode")
 	}
 
@@ -259,10 +268,33 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if opts.OptLevel != OptLevelNone {
 		cmdline = append(cmdline, "-O3")
 	}
-	if opts.AddressSanitizer {
+	if opts.Target == gen.TargetWasm64 {
+		cmdline = append(cmdline,
+			"--target=wasm64",
+			"-nostdlib",
+			"-Wl,--no-entry",
+			"-Wl,--export=main",
+			"-Wl,--export=memory",
+			"-Wl,--allow-undefined",
+		)
+	} else if runtime.GOOS == "darwin" {
+		// Bundled LLVM has no macOS SDK; point it at Command Line Tools.
+		sdk, err := exec.CommandContext(ctx, "xcrun", "--show-sdk-path").Output()
+		if err != nil {
+			return base.WrapErrorf(err, "failed to locate macOS SDK via xcrun")
+		}
+		cmdline = append(cmdline, "-isysroot", strings.TrimSpace(string(sdk)))
+	}
+	if opts.AddressSanitizer && opts.Target != gen.TargetWasm64 {
 		cmdline = append(cmdline, "-fsanitize=address")
 	}
-	if err := run_cmd(ctx, cmdline); err != nil {
+	cmdEnv := os.Environ()
+	if opts.Target == gen.TargetWasm64 {
+		// Put our llvmHome/bin on PATH so clang picks up the matching wasm-ld.
+		llvmBin := filepath.Join(llvmHome, "bin")
+		cmdEnv = append(cmdEnv, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	}
+	if err := run_cmd(ctx, cmdline, cmdEnv); err != nil {
 		return base.WrapErrorf(err, "failed to compile with clang")
 	}
 	timingListener.OnLink()
@@ -294,7 +326,17 @@ func CompileAndRun(
 	if err != nil {
 		return 0, "", err
 	}
-	cmd := exec.CommandContext(ctx, runOpts.Output) //nolint:gosec
+	var cmd *exec.Cmd
+	if opts.Target == gen.TargetWasm64 {
+		cmdline, cleanup, hErr := wasmRunCommand(runOpts.Output)
+		if hErr != nil {
+			return 0, "", hErr
+		}
+		defer cleanup()
+		cmd = exec.CommandContext(ctx, cmdline[0], cmdline[1:]...) //nolint:gosec
+	} else {
+		cmd = exec.CommandContext(ctx, runOpts.Output) //nolint:gosec
+	}
 	if opts.AddressSanitizer {
 		cmd.Env = append(os.Environ(), "ASAN_OPTIONS=detect_stack_use_after_return=1")
 	}
@@ -416,9 +458,16 @@ func (l *TimingListener) record(name string) {
 	l.last = now
 }
 
-func queryTargetInfo(ctx context.Context, llvmHome string) (dataLayout, triple string, err error) {
+func queryTargetInfo(
+	ctx context.Context, llvmHome string, target gen.Target,
+) (dataLayout, triple string, err error) {
 	clang := filepath.Join(llvmHome, "bin", "clang")
-	cmd := exec.CommandContext(ctx, clang, "-xc", "-S", "-emit-llvm", "-o", "-", "-")
+	args := []string{"-xc", "-S", "-emit-llvm", "-o", "-"}
+	if target == gen.TargetWasm64 {
+		args = append(args, "--target=wasm64")
+	}
+	args = append(args, "-")
+	cmd := exec.CommandContext(ctx, clang, args...)
 	cmd.Stdin = strings.NewReader("")
 	out, err := cmd.Output()
 	if err != nil {
@@ -439,14 +488,39 @@ func queryTargetInfo(ctx context.Context, llvmHome string) (dataLayout, triple s
 	return dataLayout, triple, nil
 }
 
-func addRuntimeModule(a *ast.AST, opts CompileOpts) (ast.NodeID, base.Diagnostics) {
+func addRuntimeModules(a *ast.AST, opts CompileOpts) ([]ast.NodeID, base.Diagnostics) {
+	files := []struct{ rel, module string }{
+		{filepath.Join("runtime", "arena.met"), "runtime::arena"},
+	}
+	if opts.Target.IsWasm() {
+		// Provides malloc/realloc/free that arena.met aliases via extern.
+		files = append(files, struct{ rel, module string }{
+			filepath.Join("runtime", "wasmalloc.met"), "runtime::wasmalloc",
+		})
+	}
+	var ids []ast.NodeID
+	for _, f := range files {
+		id, diags := loadRuntimeFile(a, opts, f.rel, f.module)
+		if len(diags) > 0 {
+			return nil, diags
+		}
+		if id != 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+func loadRuntimeFile(
+	a *ast.AST, opts CompileOpts, relPath, moduleName string,
+) (ast.NodeID, base.Diagnostics) {
 	for _, includePath := range opts.IncludePaths {
-		path := filepath.Join(includePath, "runtime", "arena.met")
+		path := filepath.Join(includePath, relPath)
 		content, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
-		source := base.NewSource(path, "runtime::arena", false, []rune(string(content)))
+		source := base.NewSource(path, moduleName, false, []rune(string(content)))
 		tokens := token.Lex(source)
 		runtimeParser := ast.NewParser(tokens, a)
 		moduleID, _ := runtimeParser.ParseModule()
@@ -523,11 +597,12 @@ func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
 			"darwin":  osName == "darwin" || strings.HasPrefix(osName, "macosx"),
 			"linux":   osName == "linux",
 			"windows": osName == "windows" || strings.HasPrefix(osName, "win32"),
-			"wasm":    osName == "wasi" || osName == "emscripten" || arch == "wasm64",
+			"wasm":    osName == "wasi" || osName == "emscripten" || strings.HasPrefix(arch, "wasm"),
 		},
 		"arch": {
 			"aarch64": arch == "aarch64" || arch == "arm64",
 			"x86_64":  arch == "x86_64",
+			"wasm32":  arch == "wasm32",
 			"wasm64":  arch == "wasm64",
 		},
 		"endian": {
@@ -542,8 +617,74 @@ func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
 	return env
 }
 
-func run_cmd(ctx context.Context, cmdline []string) error {
+// findLLVMHome walks up from cwd looking for `.llvm/<LLVMVersion>/bin/clang`
+// (the layout `just install-llvm` produces).
+func findLLVMHome() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", base.WrapErrorf(err, "get cwd")
+	}
+	for dir := cwd; ; {
+		candidate := filepath.Join(dir, LocalLLVMDir)
+		if _, err := os.Stat(filepath.Join(candidate, "bin", "clang")); err == nil {
+			return candidate, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", base.Errorf(
+				"no LLVM found at ./%s walking up from %s (run `just install-llvm`)",
+				LocalLLVMDir, cwd,
+			)
+		}
+		dir = parent
+	}
+}
+
+// wasmRunCommand writes the embedded JS harness to a temp file and
+// returns the node invocation that dynamically imports it and runs the
+// wasm module at wasmPath. The cleanup func deletes the temp dir.
+func wasmRunCommand(wasmPath string) ([]string, func(), error) {
+	absWasm, err := filepath.Abs(wasmPath)
+	if err != nil {
+		return nil, func() {}, base.WrapErrorf(err, "abs wasm path")
+	}
+	tmpDir, err := os.MkdirTemp("", "metallc-wasm-run-*")
+	if err != nil {
+		return nil, func() {}, base.WrapErrorf(err, "temp dir for wasm harness")
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+	harnessPath := filepath.Join(tmpDir, "wasm_harness.mjs")
+	if err := os.WriteFile(harnessPath, []byte(gen.WasmHarnessJS()), 0o600); err != nil {
+		cleanup()
+		return nil, func() {}, base.WrapErrorf(err, "write wasm harness")
+	}
+	harnessURL := "file://" + harnessPath
+	// Provide an improved `write` function when run with `node`. (The default impl has to
+	// work around console.log always adding newlines.)
+	runOpts := `{ write: (fd, text) => (fd === 2 ? process.stderr : process.stdout).write(text) }`
+	if os.Getenv("METALL_WASM_RUN_USE_DEFAULT_WRITE") != "" {
+		runOpts = `{}`
+	}
+	script := fmt.Sprintf(
+		`
+			import("node:fs").then(fs =>
+				import(%q).then(m =>
+					m.runMetall(fs.readFileSync(%q), %s)
+				)
+			).then(c => {
+				if (c !== 0) {
+					process.exit(c)
+				}
+			})
+		`,
+		harnessURL, absWasm, runOpts,
+	)
+	return []string{"node", "--input-type=module", "-e", script}, cleanup, nil
+}
+
+func run_cmd(ctx context.Context, cmdline []string, env []string) error {
 	cmd := exec.CommandContext(ctx, cmdline[0], cmdline[1:]...) //nolint:gosec
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return base.WrapErrorf(err, "command failed\n%s\n%s", strings.Join(cmdline, " "), string(out))

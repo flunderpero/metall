@@ -1,14 +1,22 @@
 _host_arch := `uname -m`
 host_arch := if _host_arch == "x86_64" { "amd64" } else if _host_arch == "aarch64" { "arm64" } else { _host_arch }
 
+llvm_version := "22.1.3"
+_llvm_os := if os() == "macos" { "macOS" } else if os() == "linux" { "Linux" } else { error("unsupported OS: " + os()) }
+_llvm_arch := if arch() == "aarch64" { "ARM64" } else if arch() == "x86_64" { "X64" } else { error("unsupported arch: " + arch()) }
+_llvm_name := "LLVM-" + llvm_version + "-" + _llvm_os + "-" + _llvm_arch
+llvm_dir := justfile_directory() + "/.llvm/" + llvm_version
+
 precommit:
     just go-mod
     just fmt
     just lint
     just test
     just test-go safe
+    just test-go safe wasm64
     just test-lib fast
     just examples
+    just examples wasm64
 
 lint:
     go tool golangci-lint run ./metallc/...
@@ -30,9 +38,10 @@ fmt:
 test opt="none": (test-go opt) (test-lib opt)
 
 # Run Go tests.
-#   opt: none, safe, fast - run the E2E tests with this opt-level, see `CompilerOpts`
-test-go opt="none":
-    {{ if opt != "" { "METALL_E2E_TEST_OPTLEVEL=" + opt } else { "" } }} go test ./metallc/... -count 1
+#   opt:    none, safe, fast - run the E2E tests with this opt-level, see `CompilerOpts`
+#   target: native, wasm64 - run the E2E tests for this target
+test-go opt="none" target="native":
+    {{ if opt != "" { "METALL_E2E_TEST_OPTLEVEL=" + opt } else { "" } }} {{ if target != "" { "METALL_E2E_TEST_TARGET=" + target } else { "" } }} go test ./metallc/... -count 1
 
 # Run lib tests.
 #   opt: none, safe, fast - see `CompilerOpts`
@@ -61,15 +70,16 @@ test-lib opt="none":
 benchmarks *args:
     just -f benchmarks/justfile {{args}}
 
-examples:
+# Run all examples/*.met (except *_macro.met).
+#   target: native, wasm64 - run the examples for this target
+examples target="native":
     #!/usr/bin/env bash
     set -euo pipefail
 
     for file in examples/*.met; do
-        if [[ "$file" != *_macro.met ]]; then
-            echo ">>> $file"
-            go run ./metallc/... run "$file"
-        fi
+        if [[ "$file" == *_macro.met ]]; then continue; fi
+        echo ">>> $file ({{target}})"
+        go run ./metallc/... run --target {{target}} "$file"
     done
 
 test-linux arch=host_arch:
@@ -107,6 +117,43 @@ test-linux arch=host_arch:
         -v "$PWD/.build/tests:/tests:ro" \
         "$image" \
         sh -c 'for t in /tests/*; do echo "=== ${t##*/}"; "$t" -test.count=1 || exit 1; done'
+
+# Download a prebuilt LLVM (clang + lld / wasm-ld) for the current
+# platform into ./.llvm/<version>.
+install-llvm:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Keep compiler.go's LLVMVersion and this llvm_version in sync.
+    if ! grep -q 'LLVMVersion = "{{llvm_version}}"' metallc/internal/compiler/compiler.go; then
+        echo "error: LLVMVersion in metallc/internal/compiler/compiler.go" >&2
+        echo "       does not match llvm_version={{llvm_version}} in justfile" >&2
+        exit 1
+    fi
+    dest="{{llvm_dir}}"
+    if [ -x "$dest/bin/clang" ] && [ -x "$dest/bin/wasm-ld" ]; then
+        echo "LLVM already installed at $dest"
+    else
+        tarball="{{_llvm_name}}.tar.xz"
+        url="https://github.com/llvm/llvm-project/releases/download/llvmorg-{{llvm_version}}/$tarball"
+        mkdir -p "$(dirname "$dest")"
+        archive="$(dirname "$dest")/$tarball"
+        if [ ! -f "$archive" ]; then
+            echo "Downloading $url"
+            curl -fL --progress-bar "$url" -o "$archive.part"
+            mv "$archive.part" "$archive"
+        fi
+        echo "Extracting $archive"
+        tar -xJf "$archive" -C "$(dirname "$dest")"
+        rm -f "$archive"
+        # Flatten the platform-specific dir so the path stays just
+        # `.llvm/<version>/` regardless of host.
+        rm -rf "$dest"
+        mv "$(dirname "$dest")/{{_llvm_name}}" "$dest"
+    fi
+
+# Print the LLVM path `install-llvm` provisions (whether or not it exists yet).
+llvm-path:
+    @echo {{llvm_dir}}
 
 go-mod:
     cd metallc && go mod tidy

@@ -1604,9 +1604,14 @@ func (e *Engine) checkModule( //nolint:funlen
 	}
 	MarkBuiltins(e.ast, module)
 	e.forwardDeclareFuns(module.Decls)
+	// Eagerly register every fun in runtime modules: generated IR calls into
+	// them by mangled name (e.g. @runtime$arena.arena_alloc) without Metall
+	// ever `use`-ing them, so the default lazy registration would miss them.
 	for _, declNodeID := range module.Decls {
 		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok {
-			if fun.Name.Name == "main" || module.Name == "runtime::arena" {
+			if fun.Name.Name == "main" ||
+				module.Name == "runtime::arena" ||
+				module.Name == "runtime::wasmalloc" {
 				e.registerFun(declNodeID)
 			}
 		}

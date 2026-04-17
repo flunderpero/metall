@@ -38,24 +38,49 @@ struct ArenaAllocator {
     debug_enabled Bool
 }
 
+#if os.wasm
+
+extern("runtime$wasmalloc.malloc") fun malloc(size Int) ffi.PtrMut<U8>
+extern("runtime$wasmalloc.realloc") fun realloc(p ffi.PtrMut<U8>, size Int) ffi.PtrMut<U8>
+extern("runtime$wasmalloc.free") fun free(p ffi.PtrMut<U8>) void
+
+#end
+#if not os.wasm
+
 extern fun malloc(size Int) ffi.PtrMut<U8>
 extern fun realloc(p ffi.PtrMut<U8>, size Int) ffi.PtrMut<U8>
 extern fun free(p ffi.PtrMut<U8>) void
-extern fun arena_debug_print(msg ffi.Ptr<U8>, i1 U64, i2 Int, i3 Int) I32
+
+#end
+
+-- Defined in builtins.ll: prefixes "arena [0x<hex>] " and replaces the
+-- "$1"/"$2" placeholders in msg with decimal arg1/arg2.
+extern fun arena_debug_print(
+    msg ffi.Ptr<U8>, msg_len Int, arena U64, arg1 Int, arg2 Int,
+) I32
 extern("llvm.memcpy.inline.p0.p0.i64") fun memcpy(dst ffi.PtrMut<U8>, src ffi.Ptr<U8>, n Int, volatile Bool) void
 
-let debug_create = [
-    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'c', 'r', 'e', 'a', 't', 'e', '\n', 0][..]
-let debug_alloc = [
-    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'a', 'l', 'l', 'o', 'c', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+let debug_create = [U8('c'), 'r', 'e', 'a', 't', 'e', '\n'][..]
+let debug_alloc = [U8('a'), 'l', 'l', 'o', 'c', ' ', 's', 'i', 'z', 'e', '=', '$', '1', '\n'][..]
 let debug_realloc = [
-    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'r', 'e', 'a', 'l', 'l', 'o', 'c', ' ', 'o', 'l', 'd', '_', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', ',', ' ', 'n', 'e', 'w', '_', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u',  '\n', 0][..]
+    U8('r'), 'e', 'a', 'l', 'l', 'o', 'c', ' ',
+    'o', 'l', 'd', '_', 's', 'i', 'z', 'e', '=', '$', '1', ',', ' ',
+    'n', 'e', 'w', '_', 's', 'i', 'z', 'e', '=', '$', '2', '\n',
+][..]
 let debug_alloc_page = [
-    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'a', 'l', 'l', 'o', 'c', '_', 'p', 'a', 'g', 'e', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', ' ', 'p', 'r', 'e', 'v', '_', 'f', 'r', 'e', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+    U8('a'), 'l', 'l', 'o', 'c', '_', 'p', 'a', 'g', 'e', ' ',
+    's', 'i', 'z', 'e', '=', '$', '1', ' ',
+    'p', 'r', 'e', 'v', '_', 'f', 'r', 'e', 'e', '=', '$', '2', '\n',
+][..]
 let debug_realloc_page = [
-    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'r', 'e', 'a', 'l', 'l', 'o', 'c', '_', 'p', 'a', 'g', 'e', ' ', 's', 'i', 'z', 'e', '=', '%', 'l', 'l', 'u', ' ', 'i', 'n', '_', 'p', 'l', 'a', 'c', 'e', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+    U8('r'), 'e', 'a', 'l', 'l', 'o', 'c', '_', 'p', 'a', 'g', 'e', ' ',
+    's', 'i', 'z', 'e', '=', '$', '1', ' ',
+    'i', 'n', '_', 'p', 'l', 'a', 'c', 'e', '=', '$', '2', '\n',
+][..]
 let debug_destroy = [
-    U8('a'), 'r', 'e', 'n', 'a', ' ', '[', '%', '0', '1', '6', 'l', 'l', 'x', ']', ' ', 'd', 'e', 's', 't', 'r', 'o', 'y', ' ', 'p', 'a', 'g', 'e', 's', '=', '%', 'l', 'l', 'u', '\n', 0][..]
+    U8('d'), 'e', 's', 't', 'r', 'o', 'y', ' ',
+    'p', 'a', 'g', 'e', 's', '=', '$', '1', '\n',
+][..]
 
 fun arena_create(
     a &mut ArenaAllocator,
@@ -193,5 +218,5 @@ fun arena_destroy(a &mut ArenaAllocator) Int {
 
 fun debug(a &mut ArenaAllocator, msg []U8, i1 Int, i2 Int) void {
     let arena_ptr = ffi.ref_ptr<ArenaAllocator>(a)
-    _ = unsafe arena_debug_print(ffi.slice_ptr(msg), arena_ptr.as_u64(), i1, i2)
+    _ = unsafe arena_debug_print(ffi.slice_ptr(msg), msg.len, arena_ptr.as_u64(), i1, i2)
 }

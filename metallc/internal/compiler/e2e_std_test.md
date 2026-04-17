@@ -128,7 +128,13 @@ fun gen_fmt(info comp.Type, sb &mut StrBuilder, @a Arena) void {
 
 **comp type_of**
 
-```metall
+The expected output interleaves `io.println` (which goes through `write`,
+unbuffered) with `DebugIntern.print_int` (which goes through libc's
+printf, line/pipe-buffered on native). On wasm there is no stdio
+buffering, so `print_int` lands in source order instead of at flush-time,
+giving a different-but-correct interleaving.
+
+```metall !wasm64
 use std.comp
 use std.io
 use local.type_name_macro
@@ -326,7 +332,7 @@ fun main() void {
 
 **os.args returns at least the program name**
 
-```metall
+```metall !wasm64
 use std.os
 use std.io
 

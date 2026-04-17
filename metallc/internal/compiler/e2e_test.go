@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
+	"github.com/flunderpero/metall/metallc/internal/gen"
 	mdtest "github.com/flunderpero/metall/metallc/internal/test"
 )
 
@@ -105,6 +106,31 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 			assert.NoError(err, "METALL_E2E_TEST_OPTLEVEL is invalid")
 		}
 	}
+	target := gen.TargetNative
+	if s := os.Getenv("METALL_E2E_TEST_TARGET"); s != "" {
+		var err error
+		target, err = gen.ParseTarget(s)
+		if err != nil {
+			t.Fatalf("unknown target: %s", s)
+		}
+	}
+	// `!fast` / `!wasm64` / `!native` fence tags skip a test.
+	for _, tag := range tc.Tags {
+		switch tag {
+		case "!fast":
+			if optLevel == OptLevelFast {
+				t.Skipf("skipped: tagged !fast")
+			}
+		case "!wasm64":
+			if target == gen.TargetWasm64 {
+				t.Skipf("skipped: tagged !wasm64")
+			}
+		case "!native":
+			if target == gen.TargetNative {
+				t.Skipf("skipped: tagged !native")
+			}
+		}
+	}
 	llvmPasses := r.cfg.llvmPasses
 	if llvmPasses == "" {
 		llvmPasses = "verify," + DefaultLLVMPasses
@@ -133,6 +159,7 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 		ArenaStackBufSize: 32,
 		ArenaPageMinSize:  512,
 		ArenaPageMaxSize:  2048,
+		Target:            target,
 	}
 	if _, ok := tc.Want["error"]; ok {
 		_, _, err := CompileAndRun(t.Context(), source, opts, true)

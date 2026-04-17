@@ -9,6 +9,7 @@ import (
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/compiler"
+	"github.com/flunderpero/metall/metallc/internal/gen"
 )
 
 type includeFlags []string
@@ -66,7 +67,7 @@ func (f *tagFlags) Set(value string) error {
 	return nil
 }
 
-func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
+func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolint:funlen
 	opts := compiler.CompileOpts{}.WithDefaults()
 	var includes includeFlags
 	var tags tagFlags
@@ -80,6 +81,14 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) {
 	flags.Var(&tags, "tag", "add compile-time tag (repeatable)")
 	flags.BoolVar(&opts.PrintTiming, "timing", false, "print compilation timing")
 	flags.BoolVar(&opts.KeepIR, "keep-ir", false, "keep intermediate .ll files next to the output")
+	flags.Func("target", "compile target: native (default), wasm64", func(s string) error {
+		t, err := gen.ParseTarget(s)
+		if err != nil {
+			return base.WrapErrorf(err, "failed to parse -target")
+		}
+		opts.Target = t
+		return nil
+	})
 	flags.Func("opt", "optimization mode: none, safe, fast", func(s string) error {
 		level, err := compiler.ParseOptLevel(s)
 		if err != nil {

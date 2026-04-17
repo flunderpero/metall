@@ -2229,7 +2229,7 @@ fun main() void {
 
 **add overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     let max = 9223372036854775807
     _ = max + 1
@@ -2242,7 +2242,7 @@ test.met:3:9: integer overflow
 
 **sub overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     let min = -9223372036854775808
     _ = min - 1
@@ -2255,7 +2255,7 @@ test.met:3:9: integer overflow
 
 **mul overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     let max = 9223372036854775807
     _ = max * 2
@@ -2268,7 +2268,7 @@ test.met:3:9: integer overflow
 
 **I8 overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = I8(127) + I8(1)
 }
@@ -2280,7 +2280,7 @@ test.met:2:9: integer overflow
 
 **I16 overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = I16(32767) + I16(1)
 }
@@ -2292,7 +2292,7 @@ test.met:2:9: integer overflow
 
 **I32 overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = I32(2147483647) + I32(1)
 }
@@ -2304,7 +2304,7 @@ test.met:2:9: integer overflow
 
 **U8 overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = U8(255) + U8(1)
 }
@@ -2316,7 +2316,7 @@ test.met:2:9: integer overflow
 
 **U8 underflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = U8(0) - U8(1)
 }
@@ -2328,7 +2328,7 @@ test.met:2:9: integer overflow
 
 **U16 overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = U16(65535) + U16(1)
 }
@@ -2340,7 +2340,7 @@ test.met:2:9: integer overflow
 
 **U32 overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = U32(4294967295) + U32(1)
 }
@@ -2352,7 +2352,7 @@ test.met:2:9: integer overflow
 
 **U64 overflow panics**
 
-```metall
+```metall !fast
 fun main() void {
     _ = U64(18446744073709551615) + U64(1)
 }
@@ -4353,7 +4353,7 @@ test.met:2:9: illegal rune
 
 **rune arithmetic underflow**
 
-```metall
+```metall !fast
 fun main() void {
     _ = 'a' - 'b'
 }
@@ -5136,7 +5136,7 @@ ok
 
 **ffi strlen via slice_ptr**
 
-```metall
+```metall !wasm64
 use std.ffi
 
 extern fun strlen(s ffi.Ptr<U8>) Int
@@ -5349,19 +5349,17 @@ fun main() void {
 
 **ffi is_null with C function returning null**
 
-```metall
+```metall !wasm64
 use std.ffi
 
-extern fun fopen(path ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.PtrMut<U8>
+extern fun strchr(s ffi.Ptr<U8>, c I32) ffi.Ptr<U8>
 
 fun main() void {
-    let path = ffi.slice_ptr<U8>([U8(0)][..])
-    let mode = ffi.slice_ptr<U8>([U8(0)][..])
-    let fp = unsafe fopen(path, mode)
-    DebugIntern.print_bool(fp.is_null())
-    let x = 42
-    let p = ffi.ref_ptr<Int>(&x)
-    DebugIntern.print_bool(p.is_null())
+    let haystack = ffi.slice_ptr<U8>([U8('h'), 'i', 0][..])
+    let not_found = unsafe strchr(haystack, U8('z').to_i32())
+    DebugIntern.print_bool(not_found.is_null())
+    let found = unsafe strchr(haystack, U8('h').to_i32())
+    DebugIntern.print_bool(found.is_null())
 }
 ```
 
