@@ -102,6 +102,7 @@ async function compileFromURL(url) {
 
 function defaultImports(getMemory, write) {
     const decoder = new TextDecoder()
+    const view = () => new DataView(getMemory().buffer)
     const env = {
         write: (fd, ptr, len) => {
             const mem = getMemory()
@@ -109,6 +110,50 @@ function defaultImports(getMemory, write) {
             write(Number(fd), decoder.decode(bytes))
             return len
         },
+        // Write seconds + nanoseconds into `struct timespec { i64 sec; i64 nsec }` at tsPtr.
+        // POSIX clock ids:
+        //   0 = CLOCK_REALTIME (wall-clock, relative to unix epoch)
+        //   4 = CLOCK_MONOTONIC_RAW (monotonic, arbitrary origin)
+        clock_gettime: (clockId, tsPtr) => {
+            if (clockId !== 0 && clockId !== 4) {
+                return 22 // EINVAL
+            }
+            const ms = clockId === 0
+                ? performance.timeOrigin + performance.now()
+                : performance.now()
+            const ns = BigInt(Math.round(ms * 1e6))
+            const v = view()
+            v.setBigInt64(Number(tsPtr), ns / 1000000000n, true)
+            v.setBigInt64(Number(tsPtr) + 8, ns % 1000000000n, true)
+            return 0
+        },
+        // Block for the duration given by `struct timespec` at reqPtr.
+        // Uses Atomics.wait on a throw-away SharedArrayBuffer (works in Node
+        // and in Web Workers); falls back to a busy-wait on main-thread
+        // browser contexts where Atomics.wait is forbidden.
+        nanosleep: (reqPtr, _remPtr) => {
+            const v = view()
+            const sec = v.getBigInt64(Number(reqPtr), true)
+            const nsec = v.getBigInt64(Number(reqPtr) + 8, true)
+            const ms = Number(sec) * 1000 + Number(nsec) / 1e6
+            blockingSleep(ms)
+            return 0
+        },
     }
     return { imports: { env } }
+}
+
+function blockingSleep(ms) {
+    if (ms <= 0) {
+        return
+    }
+    // todo: Implement JSPI to make this also work on the main thread.
+    try {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+    } catch {
+        const start = performance.now()
+        while (performance.now() - start < ms) {
+            // spin
+        }
+    }
 }

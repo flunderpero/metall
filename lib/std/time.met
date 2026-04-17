@@ -1,5 +1,7 @@
 use std.ffi
+#if not os.wasm
 use std.posix
+#end
 
 pub let nanosecond = Duration(1)
 pub let microsecond = Duration(1000)
@@ -136,7 +138,12 @@ pub fun sleep(d Duration) void {
         let ts = TimeSpec(remaining / second.nsec, remaining % second.nsec)
         let res = unsafe nanosleep(ffi.ref_ptr<TimeSpec>(&ts), ffi.PtrMut.null<TimeSpec>())
         if res != 0 {
+            #if os.wasm
+            panic("failed to sleep")
+            #end
+            #if not os.wasm
             panic(posix.errno_str())
+            #end
         }
         remaining = until - Instant.new().nsec
         if remaining <= 0 {
@@ -157,9 +164,16 @@ let clock_id_realtime = I32(0)
 let clock_id_monotonic_raw = I32(4)
 
 fun call_clock_gettime(ts &mut TimeSpec, clock_id I32) void {
+    #if not os.wasm
     posix.reset_errno()
+    #end
     let res = unsafe clock_gettime(clock_id, ffi.ref_ptr_mut<TimeSpec>(ts))
     if res != 0 {
+        #if os.wasm
+        panic("failed to call clock_gettime")
+        #end
+        #if not os.wasm
         panic(posix.errno_str())
+        #end
     }
 }
