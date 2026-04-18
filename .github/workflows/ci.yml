@@ -38,6 +38,7 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
+    needs: check
     strategy:
       fail-fast: false
       matrix:
