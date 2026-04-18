@@ -134,7 +134,7 @@ printf, line/pipe-buffered on native). On wasm there is no stdio
 buffering, so `print_int` lands in source order instead of at flush-time,
 giving a different-but-correct interleaving.
 
-```metall !wasm64
+```metall !wasm
 use std.comp
 use std.io
 use local.type_name_macro
@@ -332,7 +332,7 @@ fun main() void {
 
 **os.args returns at least the program name**
 
-```metall !wasm64
+```metall !wasm
 use std.os
 use std.io
 

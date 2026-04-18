@@ -10,8 +10,8 @@ use std.ffi
 
 extern fun __wasmalloc_bump_get() ffi.PtrMut<U8>
 extern fun __wasmalloc_bump_set(p ffi.PtrMut<U8>) void
-extern("llvm.wasm.memory.size.i64") fun wasm_memory_size(mem I32) Int
-extern("llvm.wasm.memory.grow.i64") fun wasm_memory_grow(mem I32, delta Int) Int
+extern fun __wasm_memory_size_pages() Int
+extern fun __wasm_memory_grow_pages(delta Int) Int
 extern("llvm.memcpy.inline.p0.p0.i64") fun memcpy(dst ffi.PtrMut<U8>, src ffi.Ptr<U8>, n Int, volatile Bool) void
 
 fun init(start ffi.PtrMut<U8>) void {
@@ -22,12 +22,12 @@ fun malloc(size Int) ffi.PtrMut<U8> {
     let aligned = (size + 7) & (~7)
     let result = unsafe __wasmalloc_bump_get()
     let new_bump = result.offset(aligned)
-    -- Wasm pages are 65536 bytes; grow memory if bump crossed the end.
-    let mem_bytes = (unsafe wasm_memory_size(0)) * 65536
+    -- Wasm pages are 64KiB; grow memory if bump crossed the end.
+    let mem_bytes = (unsafe __wasm_memory_size_pages()) * 65536
     if new_bump.as_u64() > mem_bytes.to_u64_wrapping() {
         let short = (new_bump.as_u64() - mem_bytes.to_u64_wrapping()).to_int_wrapping()
         let delta_pages = (short + 65535) / 65536
-        _ = unsafe wasm_memory_grow(0, delta_pages)
+        _ = unsafe __wasm_memory_grow_pages(delta_pages)
     }
     unsafe __wasmalloc_bump_set(new_bump)
     result

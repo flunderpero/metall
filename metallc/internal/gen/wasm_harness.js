@@ -43,8 +43,18 @@ export async function runMetall(src, options = {}) {
         return 0
     }
     try {
-        // Clang wraps user main with an (argc, argv) shim; pass nulls.
-        const code = main(0, 0n)
+        // Clang wraps user main with an (argc, argv) shim. argv is a pointer,
+        // so it's i32 on wasm32 (JS Number) and i64 on wasm64 (JS BigInt).
+        // Try BigInt first; a TypeError means we're on wasm32, retry with Number.
+        let code
+        try {
+            code = main(0, 0n)
+        } catch (e) {
+            if (!(e instanceof TypeError)) {
+                throw e
+            }
+            code = main(0, 0)
+        }
         return typeof code === "number" ? code : 0
     } catch (e) {
         // panic() -> llvm.trap() -> wasm unreachable -> RuntimeError.

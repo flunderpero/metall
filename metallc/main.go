@@ -81,7 +81,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 	flags.Var(&tags, "tag", "add compile-time tag (repeatable)")
 	flags.BoolVar(&opts.PrintTiming, "timing", false, "print compilation timing")
 	flags.BoolVar(&opts.KeepIR, "keep-ir", false, "keep intermediate .ll files next to the output")
-	flags.Func("target", "compile target: native (default), wasm64", func(s string) error {
+	flags.Func("target", "compile target: native (default), wasm32, wasm64", func(s string) error {
 		t, err := gen.ParseTarget(s)
 		if err != nil {
 			return base.WrapErrorf(err, "failed to parse -target")

@@ -13,9 +13,11 @@ precommit:
     just lint
     just test
     just test-go safe
+    just test-go safe wasm32
     just test-go safe wasm64
     just test-lib fast
     just examples
+    just examples wasm32
     just examples wasm64
 
 lint:
@@ -35,24 +37,24 @@ fmt:
 
 # Run all tests.
 #   opt: none, safe, fast - see `CompilerOpts`
-test opt="none": (test-go opt) (test-lib opt)
+test opt="none" target="native": (test-go opt target) (test-lib opt target)
 
 # Run Go tests.
 #   opt:    none, safe, fast - run the E2E tests with this opt-level, see `CompilerOpts`
-#   target: native, wasm64 - run the E2E tests for this target
+#   target: native, wasm32, wasm64 - run the E2E tests for this target
 test-go opt="none" target="native":
     {{ if opt != "" { "METALL_E2E_TEST_OPTLEVEL=" + opt } else { "" } }} {{ if target != "" { "METALL_E2E_TEST_TARGET=" + target } else { "" } }} go test ./metallc/... -count 1
 
 # Run lib tests.
 #   opt: none, safe, fast - see `CompilerOpts`
-test-lib opt="none":
+test-lib opt="none" target="native":
     #!/usr/bin/env bash
     set -uo pipefail
 
     failed=0
     for file in lib/*/*_test.met; do
         echo ">>> $file"
-        if go run ./metallc/... run --opt {{opt}} "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
+        if go run ./metallc/... run --opt {{opt}} --target {{target}} "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
             failed=1
         fi
         if [ "${PIPESTATUS[0]}" -ne 0 ]; then
@@ -71,7 +73,7 @@ benchmarks *args:
     just -f benchmarks/justfile {{args}}
 
 # Run all examples/*.met (except *_macro.met).
-#   target: native, wasm64 - run the examples for this target
+#   target: native, wasm32, wasm64 - run the examples for this target
 examples target="native":
     #!/usr/bin/env bash
     set -euo pipefail

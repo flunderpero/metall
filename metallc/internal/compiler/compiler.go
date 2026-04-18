@@ -268,9 +268,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if opts.OptLevel != OptLevelNone {
 		cmdline = append(cmdline, "-O3")
 	}
-	if opts.Target == gen.TargetWasm64 {
+	if opts.Target.IsWasm() {
 		cmdline = append(cmdline,
-			"--target=wasm64",
+			"--target="+opts.Target.String(),
 			"-nostdlib",
 			"-Wl,--no-entry",
 			"-Wl,--export=main",
@@ -285,11 +285,11 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		}
 		cmdline = append(cmdline, "-isysroot", strings.TrimSpace(string(sdk)))
 	}
-	if opts.AddressSanitizer && opts.Target != gen.TargetWasm64 {
+	if opts.AddressSanitizer && !opts.Target.IsWasm() {
 		cmdline = append(cmdline, "-fsanitize=address")
 	}
 	cmdEnv := os.Environ()
-	if opts.Target == gen.TargetWasm64 {
+	if opts.Target.IsWasm() {
 		// Put our llvmHome/bin on PATH so clang picks up the matching wasm-ld.
 		llvmBin := filepath.Join(llvmHome, "bin")
 		cmdEnv = append(cmdEnv, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -327,7 +327,7 @@ func CompileAndRun(
 		return 0, "", err
 	}
 	var cmd *exec.Cmd
-	if opts.Target == gen.TargetWasm64 {
+	if opts.Target.IsWasm() {
 		cmdline, cleanup, hErr := wasmRunCommand(runOpts.Output)
 		if hErr != nil {
 			return 0, "", hErr
@@ -463,8 +463,8 @@ func queryTargetInfo(
 ) (dataLayout, triple string, err error) {
 	clang := filepath.Join(llvmHome, "bin", "clang")
 	args := []string{"-xc", "-S", "-emit-llvm", "-o", "-"}
-	if target == gen.TargetWasm64 {
-		args = append(args, "--target=wasm64")
+	if target.IsWasm() {
+		args = append(args, "--target="+target.String())
 	}
 	args = append(args, "-")
 	cmd := exec.CommandContext(ctx, clang, args...)

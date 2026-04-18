@@ -5136,7 +5136,7 @@ ok
 
 **ffi strlen via slice_ptr**
 
-```metall !wasm64
+```metall !wasm
 use std.ffi
 
 extern fun strlen(s ffi.Ptr<U8>) Int
@@ -5349,7 +5349,7 @@ fun main() void {
 
 **ffi is_null with C function returning null**
 
-```metall !wasm64
+```metall !wasm
 use std.ffi
 
 extern fun strchr(s ffi.Ptr<U8>, c I32) ffi.Ptr<U8>

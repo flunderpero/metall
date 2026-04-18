@@ -22,6 +22,12 @@ var builtinsPosixIR string
 //go:embed builtins_wasm.ll
 var builtinsWasmIR string
 
+//go:embed builtins_wasm32.ll
+var builtinsWasm32IR string
+
+//go:embed builtins_wasm64.ll
+var builtinsWasm64IR string
+
 type CodeWriter struct {
 	indent int
 	sb     strings.Builder
@@ -110,6 +116,10 @@ func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 		funValWrappers: map[string]string{},
 		opts:           opts,
 	}
+}
+
+func (g *IRGen) ptrSize() int64 {
+	return g.opts.Target.PointerSize()
 }
 
 func (g *IRGen) newFunGen(env *types.TypeEnv) *IRFunGen {
@@ -233,15 +243,15 @@ func (g *IRGen) genUnion(env *types.TypeEnv, u types.TypeWork) {
 	// Using [N x i8] instead would cause SROA to decompose stores into
 	// byte-level operations, which can make instcombine fail to reach a fixpoint.
 	// See https://mapping-high-level-constructs-to-llvm-ir.readthedocs.io/en/latest/basic-constructs/unions.html
-	payloadIRType := unionPayloadIRType(env, unionType)
+	payloadIRType := g.unionPayloadIRType(env, unionType)
 	g.write("%%%s = type { i64, %s } ; %s\n", u.TypeID, payloadIRType, unionType.Name)
 }
 
-func unionPayloadIRType(env *types.TypeEnv, union types.UnionType) string {
+func (g *IRGen) unionPayloadIRType(env *types.TypeEnv, union types.UnionType) string {
 	var maxSize int64
 	var maxIRType string
 	for _, variantID := range union.Variants {
-		size := irTypeSize(env, variantID)
+		size := g.irTypeSize(env, variantID)
 		if size > maxSize {
 			maxSize = size
 			maxIRType = irType(env, variantID)
@@ -480,7 +490,7 @@ func (g *IRFunGen) genArenaNew(id ast.NodeID, call ast.Call, fa ast.FieldAccess)
 	valueArg := call.Args[0]
 	valueTypeID := g.typeIDOfNode(valueArg)
 	reg := g.reg()
-	size := irTypeSize(g.env, valueTypeID)
+	size := g.irTypeSize(g.env, valueTypeID)
 	g.write("%s = call ptr @runtime$arena.arena_alloc(ptr %s, i64 %d)", reg, allocReg, size)
 	if lit, ok := g.ast.Node(valueArg).Kind.(ast.TypeConstruction); ok {
 		g.genStructConstructionFields(id, lit, reg)
@@ -498,7 +508,7 @@ func (g *IRFunGen) genArenaSlice(id ast.NodeID, call ast.Call, fa ast.FieldAcces
 	sliceType := base.Cast[types.SliceType](g.typeOfNode(id).Kind)
 	reg := g.reg()
 	irTyp := g.irType(sliceType.Elem)
-	elemSize := irTypeSize(g.env, sliceType.Elem)
+	elemSize := g.irTypeSize(g.env, sliceType.Elem)
 	g.Gen(call.Args[0])
 	lenReg := g.lookupCode(call.Args[0])
 	g.write("%s_size = mul i64 %d, %s", reg, elemSize, lenReg)
@@ -523,7 +533,7 @@ func (g *IRFunGen) genArenaGrow(id ast.NodeID, call ast.Call, fa ast.FieldAccess
 	sliceType := base.Cast[types.SliceType](g.typeOfNode(id).Kind)
 	reg := g.reg()
 	irTyp := g.irType(sliceType.Elem)
-	elemSize := irTypeSize(g.env, sliceType.Elem)
+	elemSize := g.irTypeSize(g.env, sliceType.Elem)
 
 	// Load old slice data ptr and length.
 	g.Gen(call.Args[0])
@@ -588,11 +598,11 @@ func (g *IRFunGen) genInitializeMemoryScalar(
 	// Check if the value is the constant 0.
 	if valReg == "0" {
 		if compileTimeCount != nil {
-			totalBytes := *compileTimeCount * irScalarSize(irElemType)
+			totalBytes := *compileTimeCount * g.irScalarSize(irElemType)
 			g.write("call void @llvm.memset.inline.p0.i64(ptr %s, i8 0, i64 %d, i1 false)", dataReg, totalBytes)
 		} else {
 			sizeReg := g.reg()
-			g.write("%s_elm = mul i64 %s, %d", sizeReg, countReg, irScalarSize(irElemType))
+			g.write("%s_elm = mul i64 %s, %d", sizeReg, countReg, g.irScalarSize(irElemType))
 			g.write("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %s_elm, i1 false)", dataReg, sizeReg)
 		}
 		return
@@ -601,9 +611,13 @@ func (g *IRFunGen) genInitializeMemoryScalar(
 	fillValReg := valReg
 	fillIRType := irElemType
 	if irElemType == "ptr" {
-		fillIRType = "i64"
+		if g.ptrSize() == 4 {
+			fillIRType = "i32"
+		} else {
+			fillIRType = "i64"
+		}
 		fillValReg = g.reg()
-		g.write("%s = ptrtoint ptr %s to i64", fillValReg, valReg)
+		g.write("%s = ptrtoint ptr %s to %s", fillValReg, valReg, fillIRType)
 	}
 	fillFn := fmt.Sprintf("@__fill_%s", fillIRType)
 	g.write("call void %s(ptr %s, %s %s, i64 %s)", fillFn, dataReg, fillIRType, fillValReg, countReg)
@@ -615,7 +629,7 @@ func (g *IRFunGen) genInitializeMemoryStruct(
 	elemTypeID types.TypeID,
 	countReg string,
 ) {
-	elemSize := irTypeSize(g.env, elemTypeID)
+	elemSize := g.irTypeSize(g.env, elemTypeID)
 	g.write("call void @__fill_cpy(ptr %s, ptr %s, i64 %d, i64 %s)", dataReg, valReg, elemSize, countReg)
 }
 
@@ -1650,7 +1664,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 			panic(fmt.Sprintf("unexpected callee kind for sizeof: %T", g.ast.Node(call.Callee).Kind))
 		}
 		argTypeID := g.typeIDOfNode(typeArgs[0])
-		size := irTypeSize(g.env, argTypeID)
+		size := g.irTypeSize(g.env, argTypeID)
 		g.setCode(id, "%d", size)
 		return true
 	case "ffi::Ptr.as_u64", "ffi::PtrMut.as_u64":
@@ -2084,7 +2098,7 @@ func (g *IRFunGen) closureCtxSize(fun ast.Fun) int64 {
 	var total int64
 	for _, capNodeID := range fun.Captures {
 		capTypeID, _ := g.env.BindingType(ast.BindingID(capNodeID))
-		total += irTypeSize(g.env, capTypeID)
+		total += g.irTypeSize(g.env, capTypeID)
 	}
 	return total
 }
@@ -2436,17 +2450,15 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 }
 
 // validateDataLayout checks that the LLVM data layout string is compatible with
-// our irTypeSize/irTypeAlign assumptions (64-bit pointers, natural alignment).
+// our irTypeSize/irTypeAlign assumptions.
 func validateDataLayout(dl string) {
 	if !strings.Contains(dl, "i64:64") {
 		panic(base.Errorf("unsupported target data layout: expected i64:64 (8-byte i64 alignment), got %q", dl))
 	}
-	if strings.Contains(dl, "p:32") {
-		panic(base.Errorf("unsupported target data layout: 32-bit pointers are not supported, got %q", dl))
-	}
 }
 
-func irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
+func (g *IRGen) irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
+	ptrSize := g.ptrSize()
 	typ := env.Type(typeID)
 	switch kind := typ.Kind.(type) {
 	case types.IntType:
@@ -2456,16 +2468,16 @@ func irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
 	case types.VoidType:
 		return 1
 	case types.RefType, types.AllocatorType:
-		return 8
+		return ptrSize
 	case types.FunType:
-		return 8
+		return ptrSize
 	case types.StructType:
 		if types.IsBuiltinPtrStruct(kind) {
-			return 8
+			return ptrSize
 		}
 		var maxAlign int64 = 1
 		for _, field := range kind.Fields {
-			if a := irTypeAlign(env, field.Type); a > maxAlign {
+			if a := g.irTypeAlign(env, field.Type); a > maxAlign {
 				maxAlign = a
 			}
 		}
@@ -2473,7 +2485,7 @@ func irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
 	case types.UnionType:
 		return 8
 	case types.ArrayType:
-		return irTypeAlign(env, kind.Elem)
+		return g.irTypeAlign(env, kind.Elem)
 	case types.SliceType:
 		return 8
 	default:
@@ -2485,7 +2497,8 @@ func alignUp(size, align int64) int64 {
 	return (size + align - 1) / align * align
 }
 
-func irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
+func (g *IRGen) irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
+	ptrSize := g.ptrSize()
 	typ := env.Type(typeID)
 	switch kind := typ.Kind.(type) {
 	case types.IntType:
@@ -2495,41 +2508,42 @@ func irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
 	case types.VoidType:
 		return 0
 	case types.RefType, types.AllocatorType:
-		return 8
+		return ptrSize
 	case types.FunType:
-		return 16
+		return 2 * ptrSize
 	case types.StructType:
 		if types.IsBuiltinPtrStruct(kind) {
-			return 8
+			return ptrSize
 		}
 		var offset int64
 		var maxAlign int64 = 1
 		for _, field := range kind.Fields {
-			fieldAlign := irTypeAlign(env, field.Type)
+			fieldAlign := g.irTypeAlign(env, field.Type)
 			offset = alignUp(offset, fieldAlign)
-			offset += irTypeSize(env, field.Type)
+			offset += g.irTypeSize(env, field.Type)
 			if fieldAlign > maxAlign {
 				maxAlign = fieldAlign
 			}
 		}
 		return alignUp(offset, maxAlign)
 	case types.UnionType:
-		payload := unionPayloadSize(env, kind)
+		payload := g.unionPayloadSize(env, kind)
 		return alignUp(8+payload, 8)
 	case types.ArrayType:
-		elemSize := irTypeSize(env, kind.Elem)
+		elemSize := g.irTypeSize(env, kind.Elem)
 		return kind.Len * elemSize
 	case types.SliceType:
-		return 16
+		// {ptr, i64} padded up to i64 alignment.
+		return alignUp(ptrSize, 8) + 8
 	default:
 		panic(base.Errorf("irTypeSize: unknown type kind: %T", typ.Kind))
 	}
 }
 
-func unionPayloadSize(env *types.TypeEnv, union types.UnionType) int64 {
+func (g *IRGen) unionPayloadSize(env *types.TypeEnv, union types.UnionType) int64 {
 	var maxSize int64
 	for _, variantID := range union.Variants {
-		size := irTypeSize(env, variantID)
+		size := g.irTypeSize(env, variantID)
 		if size > maxSize {
 			maxSize = size
 		}
@@ -2537,7 +2551,7 @@ func unionPayloadSize(env *types.TypeEnv, union types.UnionType) int64 {
 	return maxSize
 }
 
-func irScalarSize(irType string) int64 {
+func (g *IRGen) irScalarSize(irType string) int64 {
 	switch irType {
 	case "i1", "i8":
 		return 1
@@ -2545,8 +2559,10 @@ func irScalarSize(irType string) int64 {
 		return 2
 	case "i32":
 		return 4
-	case "i64", "ptr":
+	case "i64":
 		return 8
+	case "ptr":
+		return g.ptrSize()
 	default:
 		panic(base.Errorf("unknown scalar IR type: %s", irType))
 	}
@@ -2652,6 +2668,8 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 		emitted["fflush"] = true
 		emitted["__wasmalloc_bump_get"] = true
 		emitted["__wasmalloc_bump_set"] = true
+		emitted["__wasm_memory_size_pages"] = true
+		emitted["__wasm_memory_grow_pages"] = true
 		emitted["runtime$wasmalloc.malloc"] = true
 		emitted["runtime$wasmalloc.realloc"] = true
 		emitted["runtime$wasmalloc.free"] = true
@@ -2779,9 +2797,14 @@ func GenIR(
 	g.write("; Global constants.")
 	g.write("")
 	g.sb.WriteString(g.constGlobals.String())
-	if opts.Target.IsWasm() {
+	switch opts.Target {
+	case TargetWasm32:
 		g.write(builtinsWasmIR)
-	} else {
+		g.write(builtinsWasm32IR)
+	case TargetWasm64:
+		g.write(builtinsWasmIR)
+		g.write(builtinsWasm64IR)
+	case TargetNative:
 		g.write(builtinsPosixIR)
 	}
 	g.write(builtinsIR)

@@ -114,16 +114,16 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 			t.Fatalf("unknown target: %s", s)
 		}
 	}
-	// `!fast` / `!wasm64` / `!native` fence tags skip a test.
+	// `!fast` / `!wasm` / `!native` fence tags skip a test.
 	for _, tag := range tc.Tags {
 		switch tag {
 		case "!fast":
 			if optLevel == OptLevelFast {
 				t.Skipf("skipped: tagged !fast")
 			}
-		case "!wasm64":
-			if target == gen.TargetWasm64 {
-				t.Skipf("skipped: tagged !wasm64")
+		case "!wasm":
+			if target.IsWasm() {
+				t.Skipf("skipped: tagged !wasm")
 			}
 		case "!native":
 			if target == gen.TargetNative {
