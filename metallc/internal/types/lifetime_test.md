@@ -2889,3 +2889,74 @@ test.met:4:11: function does not return noescape
 
 ```error
 ```
+
+## References To Temporaries
+
+**ref to call result used in place is fine**
+
+```metall
+{
+    fun make() Int { 1 }
+    fun take(x &Int) void {}
+    take(&make())
+}
+```
+
+```error
+```
+
+**ref to call result cannot escape via block result**
+
+```metall
+{
+    fun make() Int { 1 }
+    let r = {
+        &make()
+    }
+    r
+}
+```
+
+```error
+test.met:4:9: reference escaping its allocation scope (via block result)
+        let r = {
+            &make()
+            ^^^^^^^
+        }
+```
+
+**mut ref to call result cannot escape via return**
+
+```metall
+{
+    fun make() Int { 1 }
+    fun leak() &mut Int { &mut make() }
+    leak()
+}
+```
+
+```error
+test.met:3:27: reference escaping its allocation scope (via block result)
+        fun make() Int { 1 }
+        fun leak() &mut Int { &mut make() }
+                              ^^^^^^^^^^^
+        leak()
+```
+
+**ref to struct literal cannot escape via return**
+
+```metall
+{
+    struct Pair { a Int b Int }
+    fun leak() &Pair { &Pair(1, 2) }
+    leak()
+}
+```
+
+```error
+test.met:3:24: reference escaping its allocation scope (via block result)
+        struct Pair { a Int b Int }
+        fun leak() &Pair { &Pair(1, 2) }
+                           ^^^^^^^^^^^
+        leak()
+```

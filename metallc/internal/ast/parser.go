@@ -960,12 +960,6 @@ func (p *Parser) ParseRefExpr() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	switch p.AST.Node(target).Kind.(type) {
-	case Ident, FieldAccess, Index, Deref:
-	default:
-		p.diagnostic(p.AST.Node(target).Span, "expected a place expression (variable, field, index, or deref)")
-		return ParseFailed, false
-	}
 	return p.NewRef(target, mut, span.Combine(p.span())), true
 }
 

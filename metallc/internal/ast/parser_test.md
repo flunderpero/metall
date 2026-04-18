@@ -1031,28 +1031,42 @@ Assign()
   rhs=Ident(name="y")
 ```
 
-**Nested &ref should fail**
+**Nested &ref (ref to temporary)**
 
 ```metall
 { &&x }
 ```
 
-```error
-test.met:1:4: expected a place expression (variable, field, index, or deref)
-    { &&x }
-       ^^
+```ast
+Block()
+  exprs=Ref()
+    target=Ref()
+      target=Ident(name="x")
 ```
 
-**&ref of literal should fail**
+**&ref of literal (ref to temporary)**
 
 ```metall
 { &123 }
 ```
 
-```error
-test.met:1:4: expected a place expression (variable, field, index, or deref)
-    { &123 }
-       ^^^
+```ast
+Block()
+  exprs=Ref()
+    target=Int(value=123)
+```
+
+**&ref of call (ref to temporary)**
+
+```metall
+{ &mut foo() }
+```
+
+```ast
+Block()
+  exprs=Ref(mut=true)
+    target=Call()
+      callee=Ident(name="foo")
 ```
 
 ## Allocators

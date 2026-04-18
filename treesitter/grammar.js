@@ -454,7 +454,7 @@ module.exports = grammar({
         "[", field("index", $._expression), "]",
       )),
 
-    reference: ($) => prec(PREC.UNARY, seq("&", optional("mut"), $.identifier)),
+    reference: ($) => prec(PREC.UNARY, seq("&", optional("mut"), $._expression)),
 
     dereference: ($) =>
       prec.left(PREC.POSTFIX, seq($._expression, ".", "*")),

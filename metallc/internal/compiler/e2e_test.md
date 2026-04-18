@@ -4958,6 +4958,66 @@ fun main() void {
 3
 ```
 
+## References To Temporaries
+
+**mut ref to temp struct, method call**
+
+```metall
+struct Counter { n Int }
+
+fun Counter.inc(c &mut Counter) void {
+    c.n = c.n + 1
+}
+
+fun main() void {
+    let r = &mut Counter(7)
+    r.inc()
+    DebugIntern.print_int(r.n)
+}
+```
+
+```output
+8
+```
+
+**mut ref to call result, method call**
+
+```metall
+struct Counter { n Int }
+
+fun Counter.new() Counter { Counter(0) }
+
+fun Counter.tick(c &mut Counter) Int {
+    c.n = c.n + 1
+    c.n
+}
+
+fun main() void {
+    let r = &mut Counter.new()
+    DebugIntern.print_int(r.tick())
+}
+```
+
+```output
+1
+```
+
+**ref to int literal, passed by ref**
+
+```metall
+fun show(x &Int) void {
+    DebugIntern.print_int(x.*)
+}
+
+fun main() void {
+    show(&42)
+}
+```
+
+```output
+42
+```
+
 ## Main returning !void
 
 **main returns !void success**

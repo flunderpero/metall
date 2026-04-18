@@ -111,6 +111,29 @@ fun f() void { &mut y }
       (reference (identifier)))))
 
 ================================================================================
+Reference to temporary
+================================================================================
+
+fun f() void { (&mut "abc".iter()).next() }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (field_access
+          object: (grouped_expression
+            (reference
+              (call_expression
+                callee: (field_access
+                  object: (string_literal)
+                  field: (identifier)))))
+          field: (identifier))))))
+
+================================================================================
 Dereference
 ================================================================================
 

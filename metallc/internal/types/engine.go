@@ -2494,7 +2494,7 @@ func (e *Engine) checkRef(nodeID ast.NodeID, ref ast.Ref, span base.Span) (TypeI
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if ref.Mut {
+	if ref.Mut && !isTemporaryExpr(e.ast.Node(ref.Target).Kind) {
 		_, mut := e.isPlaceMutable(ref.Target)
 		if !mut {
 			e.diag(span, "cannot take mutable reference to immutable value")
@@ -2503,6 +2503,18 @@ func (e *Engine) checkRef(nodeID ast.NodeID, ref ast.Ref, span base.Span) (TypeI
 	}
 	refTypeID := e.env.buildRefType(nodeID, targetTypeID, ref.Mut, span)
 	return refTypeID, TypeOK
+}
+
+// isTemporaryExpr reports whether a ref's target is a temporary (as opposed
+// to a place expression like ident, field access, index, or deref). For a
+// temporary, `&expr` materializes expr into a fresh scope-local slot, so it
+// is implicitly mutable and `&mut` needs no further checks.
+func isTemporaryExpr(kind ast.Kind) bool {
+	switch kind.(type) {
+	case ast.Ident, ast.FieldAccess, ast.Index, ast.Deref:
+		return false
+	}
+	return true
 }
 
 func (e *Engine) checkRefType(

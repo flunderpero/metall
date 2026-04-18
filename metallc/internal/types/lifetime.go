@@ -257,17 +257,22 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	}
 }
 
-// analyzeRef: `&<place>` or `&mut <place>`.
-// The target can be any place expression: ident, field access, index, or deref.
-// The ref carries the root variable's storage taint (so it dies with the
-// variable's scope) plus any taints the target already holds.
-//   - `mut a = 1; &a`          --> taints: {scope(a)}, pointsTo: {a}
-//   - `mut a = &b; &a`         --> taints: {scope(a), scope(b)}, pointsTo: {a}
-//   - `let s = Foo(1); &s.one` --> taints: {scope(s)}, pointsTo: {s}
+// analyzeRef: `&<target>` or `&mut <target>`. The target is either a place
+// (ident, field, index, deref) or a temporary (any other expression,
+// materialized into a fresh stack slot in the current scope). The ref
+// carries the target's storage taint plus any taints the target already
+// holds, so it dies with that storage.
+//   - `mut a = 1; &a`           --> taints: {scope(a)}, pointsTo: {a}
+//   - `mut a = &b; &a`          --> taints: {scope(b), scope(a)}, pointsTo: {a}
+//   - `let s = Foo(1); &s.one`  --> taints: {scope(s)}, pointsTo: {s}
+//   - `&f()` (in scope S)       --> taints: {scope(S) + f()'s taints}, pointsTo: {}
 func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 	a.ast.Walk(nodeID, a.Check)
 	targetFlow := a.flow(ref.Target)
 	storageTaint, pointsTo := a.placeStorage(ref.Target)
+	if isTemporaryExpr(a.ast.Node(ref.Target).Kind) {
+		storageTaint = a.scopeState(nodeID).ScopeTaint
+	}
 	taints := targetFlow.Taints
 	if storageTaint != 0 {
 		taints = taints.Merge(TaintSet{storageTaint})

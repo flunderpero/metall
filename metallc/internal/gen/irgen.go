@@ -2232,8 +2232,22 @@ func (g *IRFunGen) genPlaceAddr(nodeID ast.NodeID) string {
 		g.Gen(kind.Expr)
 		return g.lookupCode(kind.Expr)
 	default:
-		panic(base.Errorf("genPlaceAddr: unsupported place expression: %T", kind))
+		return g.genTempAddr(nodeID)
 	}
+}
+
+func (g *IRFunGen) genTempAddr(nodeID ast.NodeID) string {
+	g.Gen(nodeID)
+	valueReg := g.lookupCode(nodeID)
+	typeID := g.typeIDOfNode(nodeID)
+	if g.isAggregateType(typeID) {
+		return valueReg
+	}
+	irTyp := g.irType(typeID)
+	reg := g.reg()
+	g.writeAlloca(reg, irTyp)
+	g.write("store %s %s, ptr %s", irTyp, valueReg, reg)
+	return reg
 }
 
 func (g *IRFunGen) genIndexAddr(id ast.NodeID, index ast.Index) string {

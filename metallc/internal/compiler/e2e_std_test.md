@@ -346,6 +346,26 @@ fun main() void {
 true
 ```
 
+## References To Temporaries
+
+**mut ref to call result, chained method call**
+
+```metall
+use std.io
+
+fun main() void {
+    let first = (&mut "xyz".iter()).next()
+    match first {
+        case Rune r: io.println(r.to_u32())
+        else: io.println("none")
+    }
+}
+```
+
+```output
+120
+```
+
 ## Conditional Compilation
 
 **conditional import with matching tag**
