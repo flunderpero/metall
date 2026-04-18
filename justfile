@@ -2,10 +2,9 @@ _host_arch := `uname -m`
 host_arch := if _host_arch == "x86_64" { "amd64" } else if _host_arch == "aarch64" { "arm64" } else { _host_arch }
 
 llvm_version := "22.1.3"
-_llvm_os := if os() == "macos" { "macOS" } else if os() == "linux" { "Linux" } else { error("unsupported OS: " + os()) }
-_llvm_arch := if arch() == "aarch64" { "ARM64" } else if arch() == "x86_64" { "X64" } else { error("unsupported arch: " + arch()) }
-_llvm_name := "LLVM-" + llvm_version + "-" + _llvm_os + "-" + _llvm_arch
-llvm_dir := justfile_directory() + "/.llvm/" + llvm_version
+host_os := os()
+host_arch_llvm := arch()
+llvm_root := justfile_directory() + "/.llvm/" + llvm_version
 
 precommit:
     just go-mod
@@ -84,45 +83,16 @@ examples target="native":
         go run ./metallc/... run --target {{target}} "$file"
     done
 
-test-linux arch=host_arch:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    platform="linux/{{arch}}"
-    image="metall-test-linux-{{arch}}"
-    if ! podman image exists "$image"; then
-        echo ">>> Building $image image ($platform)"
-        podman build --platform "$platform" -t "$image" -f - <<'DOCKERFILE'
-    FROM docker.io/library/ubuntu:noble
-    RUN apt-get update \
-        && apt-get install -y --no-install-recommends wget ca-certificates \
-        && wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key > /etc/apt/trusted.gpg.d/apt.llvm.org.asc \
-        && echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" > /etc/apt/sources.list.d/llvm.list \
-        && apt-get update \
-        && apt-get install -y --no-install-recommends clang-21 llvm-21 libclang-rt-21-dev \
-        && ln -s /usr/bin/clang-21 /usr/bin/clang \
-        && ln -s /usr/bin/opt-21 /usr/bin/opt \
-        && apt-get clean && rm -rf /var/lib/apt/lists/*
-    ENV LLVM_HOME=/usr
-    DOCKERFILE
-    fi
+metallc *args:
+    go run ./metallc/... {{args}}
 
-    echo ">>> Cross-compiling tests for $platform"
-    mkdir -p .build/tests
-    rm -f .build/tests/*
-    for pkg in $(go list ./metallc/...); do
-        name=$(echo "$pkg" | tr '/' '-')
-        CGO_ENABLED=0 GOOS=linux GOARCH="{{arch}}" go test -c -o ".build/tests/${name}" "$pkg" 2>/dev/null || true
-    done
+linux-arm64 *args:
+    METALL_ARCH=arm64 just -f justfile.linux {{args}}
 
-    echo ">>> Running tests in podman ($platform)"
-    podman run --rm --platform "$platform" \
-        -v "$PWD/.build/tests:/tests:ro" \
-        "$image" \
-        sh -c 'for t in /tests/*; do echo "=== ${t##*/}"; "$t" -test.count=1 || exit 1; done'
+linux-amd64 *args:
+    METALL_ARCH=amd64 just -f justfile.linux {{args}}
 
-# Download a prebuilt LLVM (clang + lld / wasm-ld) for the current
-# platform into ./.llvm/<version>.
-install-llvm:
+install-llvm os=host_os arch=host_arch_llvm:
     #!/usr/bin/env bash
     set -euo pipefail
     # Keep compiler.go's LLVMVersion and this llvm_version in sync.
@@ -131,11 +101,24 @@ install-llvm:
         echo "       does not match llvm_version={{llvm_version}} in justfile" >&2
         exit 1
     fi
-    dest="{{llvm_dir}}"
+    # Map `os`/`arch` args to Go's GOOS/GOARCH (local dir) and to the
+    # upstream LLVM release naming (tarball).
+    case "{{os}}" in
+        macos|darwin)  goos="darwin";  release_os="macOS" ;;
+        linux)         goos="linux";   release_os="Linux" ;;
+        *)             echo "unsupported os: {{os}}" >&2; exit 1 ;;
+    esac
+    case "{{arch}}" in
+        aarch64|arm64) goarch="arm64"; release_arch="ARM64" ;;
+        x86_64|amd64)  goarch="amd64"; release_arch="X64" ;;
+        *)             echo "unsupported arch: {{arch}}" >&2; exit 1 ;;
+    esac
+    release_name="LLVM-{{llvm_version}}-${release_os}-${release_arch}"
+    dest="{{llvm_root}}/${goos}-${goarch}"
     if [ -x "$dest/bin/clang" ] && [ -x "$dest/bin/wasm-ld" ]; then
         echo "LLVM already installed at $dest"
     else
-        tarball="{{_llvm_name}}.tar.xz"
+        tarball="${release_name}.tar.xz"
         url="https://github.com/llvm/llvm-project/releases/download/llvmorg-{{llvm_version}}/$tarball"
         mkdir -p "$(dirname "$dest")"
         archive="$(dirname "$dest")/$tarball"
@@ -147,15 +130,9 @@ install-llvm:
         echo "Extracting $archive"
         tar -xJf "$archive" -C "$(dirname "$dest")"
         rm -f "$archive"
-        # Flatten the platform-specific dir so the path stays just
-        # `.llvm/<version>/` regardless of host.
         rm -rf "$dest"
-        mv "$(dirname "$dest")/{{_llvm_name}}" "$dest"
+        mv "$(dirname "$dest")/${release_name}" "$dest"
     fi
-
-# Print the LLVM path `install-llvm` provisions (whether or not it exists yet).
-llvm-path:
-    @echo {{llvm_dir}}
 
 go-mod:
     cd metallc && go mod tidy

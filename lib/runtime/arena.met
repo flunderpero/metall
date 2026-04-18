@@ -45,7 +45,7 @@ extern("runtime$wasmalloc.realloc") fun realloc(p ffi.PtrMut<U8>, size Int) ffi.
 extern("runtime$wasmalloc.free") fun free(p ffi.PtrMut<U8>) void
 
 #end
-#if not os.wasm
+#if os.linux or os.darwin
 
 extern fun malloc(size Int) ffi.PtrMut<U8>
 extern fun realloc(p ffi.PtrMut<U8>, size Int) ffi.PtrMut<U8>

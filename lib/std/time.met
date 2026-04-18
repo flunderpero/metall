@@ -1,5 +1,5 @@
 use std.ffi
-#if not os.wasm
+#if os.linux or os.darwin
 use std.posix
 #end
 
@@ -141,7 +141,7 @@ pub fun sleep(d Duration) void {
             #if os.wasm
             panic("failed to sleep")
             #end
-            #if not os.wasm
+            #if os.linux or os.darwin
             panic(posix.errno_str())
             #end
         }
@@ -164,7 +164,7 @@ let clock_id_realtime = I32(0)
 let clock_id_monotonic_raw = I32(4)
 
 fun call_clock_gettime(ts &mut TimeSpec, clock_id I32) void {
-    #if not os.wasm
+    #if os.linux or os.darwin
     posix.reset_errno()
     #end
     let res = unsafe clock_gettime(clock_id, ffi.ref_ptr_mut<TimeSpec>(ts))
@@ -172,7 +172,7 @@ fun call_clock_gettime(ts &mut TimeSpec, clock_id I32) void {
         #if os.wasm
         panic("failed to call clock_gettime")
         #end
-        #if not os.wasm
+        #if os.linux or os.darwin
         panic(posix.errno_str())
         #end
     }

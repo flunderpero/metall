@@ -617,15 +617,14 @@ func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
 	return env
 }
 
-// findLLVMHome walks up from cwd looking for `.llvm/<LLVMVersion>/bin/clang`
-// (the layout `just install-llvm` produces).
 func findLLVMHome() (string, error) {
+	platformDir := filepath.Join(LocalLLVMDir, runtime.GOOS+"-"+runtime.GOARCH)
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", base.WrapErrorf(err, "get cwd")
 	}
 	for dir := cwd; ; {
-		candidate := filepath.Join(dir, LocalLLVMDir)
+		candidate := filepath.Join(dir, platformDir)
 		if _, err := os.Stat(filepath.Join(candidate, "bin", "clang")); err == nil {
 			return candidate, nil
 		}
@@ -633,7 +632,7 @@ func findLLVMHome() (string, error) {
 		if parent == dir {
 			return "", base.Errorf(
 				"no LLVM found at ./%s walking up from %s (run `just install-llvm`)",
-				LocalLLVMDir, cwd,
+				platformDir, cwd,
 			)
 		}
 		dir = parent

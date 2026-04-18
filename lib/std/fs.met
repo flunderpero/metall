@@ -266,9 +266,18 @@ pub fun ReadDirIter.next(it &mut ReadDirIter) ?!DirEntry {
         }
         return Result<DirEntry>(Err(posix.errno_str()))
     }
+    -- todo: This copies the whole struct. We should access the fields we are interested in
+    --       directly either via hardcoded Ptr.offset or better 
+    --       using `ffi.field_offset<Dirent>("name")`
     let entry = unsafe entry_ptr.read()
-    let name = unsafe it.@a.slice_uninit<U8>(entry.namlen.to_int())
-    _ = name.set(entry.name[0..entry.namlen.to_int()])
+    #if os.darwin
+    let namelen = entry.namlen.to_int()
+    #end
+    #if os.linux
+    let namelen = unsafe strlen(ffi.slice_ptr(entry.name[..]))
+    #end
+    let name = unsafe it.@a.slice_uninit<U8>(namelen)
+    _ = name.set(entry.name[0..namelen])
     if name.eq(dot) or name.eq(dotdot) {
         return it.next()
     }
@@ -297,16 +306,6 @@ pub let dt_link U8 = 10
 pub let dt_socket U8 = 12
 pub let dt_wht U8 = 14
 
--- todo: This is specific to Darwin.
-struct Dirent {
-    ino U64
-    seekoff U64
-    reclen U16
-    namlen U16
-    type U8
-    name [1024]U8
-}
-
 extern fun opendir(name ffi.Ptr<U8>) ffi.Ptr<void>
 extern fun readdir(dirp ffi.Ptr<void>) ffi.Ptr<Dirent>
 extern fun closedir(dirp ffi.Ptr<void>) I32
@@ -315,3 +314,24 @@ extern fun fopen(filename ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.PtrMut<void>
 extern fun fclose(file ffi.PtrMut<void>) I32
 extern fun fread(buf ffi.PtrMut<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
 extern fun fwrite(buf ffi.Ptr<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
+
+#if os.darwin
+struct Dirent {
+    ino U64
+    seekoff Int
+    reclen U16
+    namlen U16
+    type U8
+    name [1024]U8
+}
+#end
+#if os.linux
+struct Dirent {
+    ino U64
+    off Int
+    reclen U16
+    type U8
+    name [256]U8
+}
+extern fun strlen(s ffi.Ptr<U8>) Int
+#end

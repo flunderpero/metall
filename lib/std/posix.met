@@ -1,6 +1,12 @@
 use std.ffi
 
-extern fun __error() ffi.PtrMut<I32>
+#if os.darwin
+extern("__error") fun __errno() ffi.PtrMut<I32>
+#end
+#if os.linux
+extern("__errno_location") fun __errno() ffi.PtrMut<I32>
+#end
+
 extern("strerror") fun strerror_(e I32) ffi.Ptr<U8>
 extern fun strlen(s ffi.Ptr<U8>) Int
 
@@ -11,13 +17,12 @@ pub let einval I32 = 22
 pub let edeadlk I32 = 11
 
 pub fun reset_errno() void {
-    -- todo: This is MacOS specific.
-    let e = unsafe __error()
+    let e = unsafe __errno()
     unsafe e.write(0)
 }
 
 pub fun errno() I32 {
-    let e = unsafe __error()
+    let e = unsafe __errno()
     unsafe e.read()
 }
 

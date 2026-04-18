@@ -1,0 +1,61 @@
+_host_arch := `uname -m`
+_detected_arch := if _host_arch == "x86_64" { "amd64" } else if _host_arch == "aarch64" { "arm64" } else { _host_arch }
+host_arch := env_var_or_default('METALL_ARCH', _detected_arch)
+
+image := "metall-linux-" + host_arch
+platform := "linux/" + host_arch
+build_dir := ".build/linux-" + host_arch
+
+# Default: list available recipes.
+default:
+    @just --justfile {{justfile()}} --list
+
+_build_image:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo ">>> Building {{image}} image ({{platform}})"
+    podman build --platform "{{platform}}" -t "{{image}}" -f - <<'DOCKERFILE'
+    FROM docker.io/library/golang:1.25
+    RUN apt-get update \
+        && apt-get install -y --no-install-recommends curl ca-certificates just libxml2-dev \
+        && apt-get clean && rm -rf /var/lib/apt/lists/*
+    DOCKERFILE
+
+_install_llvm:
+    just install-llvm linux {{host_arch}}
+
+# Run `just <args>` inside the linux podman container.
+run *args: _build_image _install_llvm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Persist Go module + build caches under `{{build_dir}}/` (gitignored) so
+    # repeat runs don't re-download modules or cold-compile everything.
+    mkdir -p {{build_dir}}/go-mod {{build_dir}}/go-build
+    echo ">>> just {{args}} ({{platform}})"
+    podman run --rm --platform "{{platform}}" \
+        -v "$PWD:/workspace" \
+        -w /workspace \
+        -e "GOMODCACHE=/workspace/{{build_dir}}/go-mod" \
+        -e "GOCACHE=/workspace/{{build_dir}}/go-build" \
+        "{{image}}" \
+        just {{args}}
+
+enter: _build_image _install_llvm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p {{build_dir}}/go-mod {{build_dir}}/go-build
+    bash_mounts=()
+    for f in .bashrc .bash_aliases .bash_profile; do
+        if [ -f "$HOME/$f" ]; then
+            bash_mounts+=(-v "$HOME/$f:/root/$f:ro")
+        fi
+    done
+    echo ">>> entering {{image}} ({{platform}})"
+    podman run --rm -it --platform "{{platform}}" \
+        -v "$PWD:/workspace" \
+        -w /workspace \
+        -e "GOMODCACHE=/workspace/{{build_dir}}/go-mod" \
+        -e "GOCACHE=/workspace/{{build_dir}}/go-build" \
+        "${bash_mounts[@]}" \
+        "{{image}}" \
+        bash
