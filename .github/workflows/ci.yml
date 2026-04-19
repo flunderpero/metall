@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup
+
+      - name: just go-mod
+        run: just go-mod
+
+      - name: Verify go.mod / go.sum clean
+        run: git diff --exit-code
+
+      - name: just fmt
+        run: just fmt
+
+      - name: Verify fmt clean
+        run: git diff --exit-code
+
+      - name: just lint
+        run: just lint
+
+      - name: just examples
+        run: just examples
+
+      - name: just examples wasm32
+        run: just examples wasm32
+
+      - name: just examples wasm64
+        run: just examples wasm64
+
+  test:
+    runs-on: ubuntu-24.04
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [test-go, test-lib]
+        opt: [none, safe, fast]
+        target: [native, wasm32, wasm64]
+    name: test (${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }})
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup
+
+      - name: just ${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }}
+        run: just ${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }}
