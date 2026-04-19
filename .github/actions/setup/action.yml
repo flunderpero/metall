@@ -5,18 +5,18 @@ runs:
   using: composite
   steps:
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: metallc/go.mod
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: "25"
 
     - name: Cache just
       id: cache-just
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.local/bin/just
         key: just-1.49.0-${{ runner.os }}-${{ runner.arch }}
@@ -43,7 +43,7 @@ runs:
         "$HOME/.local/bin/just" --version
 
     - name: Cache LLVM toolchain
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: .llvm/22.1.3
         key: llvm-22.1.3-${{ runner.os }}-${{ runner.arch }}

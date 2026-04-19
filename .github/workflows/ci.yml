@@ -9,7 +9,7 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
 
       - name: just go-mod
@@ -52,7 +52,7 @@ jobs:
           - { suite: test-lib, opt: fast, target: native }
     name: test (${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
 
       - name: just ${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }}
