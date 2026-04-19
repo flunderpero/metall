@@ -8,6 +8,9 @@ runs:
       uses: actions/setup-go@v6
       with:
         go-version-file: metallc/go.mod
+        cache-dependency-path: |
+          metallc/go.sum
+          tools/go.sum
 
     - name: Setup Node.js
       uses: actions/setup-node@v6
