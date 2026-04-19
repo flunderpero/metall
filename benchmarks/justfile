@@ -1,3 +1,4 @@
 all *args:
+    mkdir -p .build
     go run ../metallc/... build -I ../lib --opt fast -o .build/run run.met
     ./.build/run {{args}}

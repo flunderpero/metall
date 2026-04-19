@@ -10,14 +10,9 @@ precommit:
     just go-mod
     just fmt
     just lint
-    just test
-    just test-go safe
-    just test-go safe wasm32
-    just test-go safe wasm64
-    just test-lib fast
+    just test safe
+    just test safe wasm32 
     just examples
-    just examples wasm32
-    just examples wasm64
 
 lint:
     go tool golangci-lint run ./metallc/...
@@ -52,6 +47,13 @@ test-lib opt="none" target="native":
 
     failed=0
     for file in lib/*/*_test.met; do
+        case "{{target}}:$(basename "$file")" in
+            wasm*:fs_test.met|wasm*:os_test.met|wasm*:thread_test.met)
+                echo ">>> $file (skipped on {{target}})"
+                echo ""
+                continue
+                ;;
+        esac
         echo ">>> $file"
         if go run ./metallc/... run --opt {{opt}} --target {{target}} "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
             failed=1

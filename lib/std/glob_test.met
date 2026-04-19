@@ -1,8 +1,10 @@
 use std.test
 use std.glob
-use std.os
 use std.io
+#if not os.wasm
+use std.os
 use std.fs
+#end
 
 let paths = [
     "README.md",
@@ -45,6 +47,8 @@ shape Sut {
     fun Sut.yes(s Sut, pattern Str, paths []Str) !void 
     fun Sut.non(s Sut, pattern Str, paths []Str) !void 
 }
+
+#if not os.wasm
 
 struct GitSut {
     dir fs.Path
@@ -123,6 +127,8 @@ func (g *gitGlobTester) check(pattern string, paths ...string) []string {
 }
 ---
 
+#end
+
 fun test_happy_path<S Sut>(sut S) !void {
 }
 
@@ -133,9 +139,13 @@ fun main() void {
         let @local = Arena()
         try test.eq("abc", Str.from_utf8_lossy(glob.Pattern.new("abc ").text, @local))
     })
+
+    #if not os.wasm
     let git_sut = try GitSut.new() else e { io.println("failed to create git_sut") return void }
     suite.test("happy_path", fun[&git_sut]() !void {
         try test_happy_path(git_sut)
     })
+    #end
+
     _ = suite.run()
 }

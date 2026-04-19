@@ -1,11 +1,14 @@
 use std.test
 use std.ffi
+#if not os.wasm
 use std.fs
+#end
 
 fun main() void {
     let @local = Arena()
 
     let fun_ptr_suite = test.Suite.new("fun_ptr", @local)
+    #if not os.wasm
     fun_ptr_suite.test("fun", fun() !void {
         let @local = Arena()
         fun hello() void {
@@ -17,6 +20,7 @@ fun main() void {
         let read = try fs.read_file(fs.Path.from_str("/tmp/ffi_test.met.file"), @local)
         try test.eq("hello".as_bytes(), read) 
     })
+    #end
     fun_ptr_suite.test("closure", fun() !void {
         mut value = ""
         let hello = fun[&mut value]() void {
