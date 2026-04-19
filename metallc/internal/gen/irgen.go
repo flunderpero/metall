@@ -238,29 +238,27 @@ func (g *IRGen) genStruct(env *types.TypeEnv, s types.TypeWork) {
 func (g *IRGen) genUnion(env *types.TypeEnv, u types.TypeWork) {
 	typ := env.Type(u.TypeID)
 	unionType := base.Cast[types.UnionType](typ.Kind)
-	// LLVM has no native union type. The standard approach is to use a struct
-	// whose payload field is the type of the largest variant.
-	// Using [N x i8] instead would cause SROA to decompose stores into
-	// byte-level operations, which can make instcombine fail to reach a fixpoint.
-	// See https://mapping-high-level-constructs-to-llvm-ir.readthedocs.io/en/latest/basic-constructs/unions.html
+	// LLVM has no native union type; we model it as { i64 tag, payload }.
 	payloadIRType := g.unionPayloadIRType(env, unionType)
 	g.write("%%%s = type { i64, %s } ; %s\n", u.TypeID, payloadIRType, unionType.Name)
 }
 
+// unionPayloadIRType picks an IR type for the union's payload slot sized to
+// fit the largest variant. We use [N x i64] rather than the largest variant's
+// own type because a variant like {ptr, i64} has internal padding on wasm32
+// (ptr=4, pad=4, i64=8); SROA would then split a store of an 8-byte scalar
+// variant into the 4-byte ptr sub-slot and truncate the value. [N x i64]
+// gives SROA clean, padding-free word slots. Rounding up to i64 costs nothing
+// because the i64 tag already forces 8-byte struct alignment.
 func (g *IRGen) unionPayloadIRType(env *types.TypeEnv, union types.UnionType) string {
 	var maxSize int64
-	var maxIRType string
 	for _, variantID := range union.Variants {
 		size := g.irTypeSize(env, variantID)
 		if size > maxSize {
 			maxSize = size
-			maxIRType = irType(env, variantID)
 		}
 	}
-	if maxSize == 0 {
-		return "[0 x i8]"
-	}
-	return maxIRType
+	return fmt.Sprintf("[%d x i64]", (maxSize+7)/8)
 }
 
 func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {

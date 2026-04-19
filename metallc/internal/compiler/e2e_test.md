@@ -3792,6 +3792,36 @@ fun main() void {
 104
 ```
 
+**union with Int variant and pointer-containing struct variant preserves 64-bit value**
+
+Regression test for wasm32: a union whose largest variant is a struct containing a
+pointer (e.g. `Result<Int>` where `Err` holds a `Str`) has internal padding on
+wasm32 between the pointer (4 bytes) and the following i64 (8 bytes). If the
+payload slot is typed as that struct, SROA splits a store of the 8-byte `Int`
+variant into the 4-byte ptr sub-slot, truncating the high 32 bits.
+
+```metall
+union IntOrStr = Int | Str
+
+fun wrap(n Int) IntOrStr { n }
+
+fun main() void {
+    match wrap(9223372036854775807) {
+        case Int i: DebugIntern.print_int(i)
+        case Str s: DebugIntern.print_str(s)
+    }
+    match wrap(-9223372036854775807) {
+        case Int i: DebugIntern.print_int(i)
+        case Str s: DebugIntern.print_str(s)
+    }
+}
+```
+
+```output
+9223372036854775807
+-9223372036854775807
+```
+
 ## Function Literals
 
 **function literal basic**
