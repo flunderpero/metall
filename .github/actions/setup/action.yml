@@ -29,12 +29,25 @@ runs:
       shell: bash
       env:
         JUST_VERSION: "1.49.0"
-        JUST_SHA256: "05eb2f068b641b06e5b318796c2e27d4dcca608e65b34329a08c1b9f582611bd"
       run: |
         set -euo pipefail
-        url="https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+        case "$(uname)-$(uname -m)" in
+          Linux-x86_64)
+            just_target="x86_64-unknown-linux-musl"
+            just_sha="05eb2f068b641b06e5b318796c2e27d4dcca608e65b34329a08c1b9f582611bd"
+            ;;
+          Darwin-arm64)
+            just_target="aarch64-apple-darwin"
+            just_sha="d21b20df01ec9b9762b0ef08e56ae8dccf3738770edeafa8d2b3a750aee06d78"
+            ;;
+          *)
+            echo "unsupported platform: $(uname)-$(uname -m)" >&2
+            exit 1
+            ;;
+        esac
+        url="https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${just_target}.tar.gz"
         curl -fL --retry 5 --retry-delay 5 --retry-all-errors "$url" -o just.tar.gz
-        echo "${JUST_SHA256}  just.tar.gz" | sha256sum -c -
+        echo "${just_sha}  just.tar.gz" | shasum -a 256 -c -
         mkdir -p "$HOME/.local/bin"
         tar -xzf just.tar.gz -C "$HOME/.local/bin" just
         rm just.tar.gz

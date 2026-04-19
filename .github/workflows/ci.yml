@@ -37,15 +37,20 @@ jobs:
         run: just examples wasm64
 
   test:
-    runs-on: ubuntu-24.04
     needs: check
     strategy:
       fail-fast: false
       matrix:
+        os: [linux-amd64, darwin-arm64]
         suite: [test-go, test-lib]
         opt: [none, safe, fast]
         target: [native, wasm32, wasm64]
-    name: test (${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }})
+        exclude:
+          # darwin-arm64 is a self-hosted runner dedicated to native.
+          - { os: darwin-arm64, target: wasm32 }
+          - { os: darwin-arm64, target: wasm64 }
+    runs-on: ${{ matrix.os == 'darwin-arm64' && fromJSON('["self-hosted","macOS","ARM64"]') || 'ubuntu-24.04' }}
+    name: test (${{ matrix.os }} ${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }})
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup
