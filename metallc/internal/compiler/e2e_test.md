@@ -4066,6 +4066,39 @@ fun main() void {
 10
 ```
 
+## Default Parameters
+
+**default arg used at multiple call sites**
+
+Regression: a default argument expression is a single AST node on the function
+declaration, shared across all call sites. Codegen must re-emit its init IR into
+each call site's basic block. Otherwise later call sites pass a byval alloca
+whose stores are dominated by the first call site only, reading uninitialized
+memory.
+
+```metall
+struct Point { x Int y Int }
+
+fun make_point() Point { Point(1234, 5678) }
+
+fun use_default(p Point = make_point()) Int { p.x }
+
+fun main() void {
+    -- Two call sites in sibling branches. If default codegen caches its IR
+    -- to the first branch, the second reads uninitialized stack memory for p.
+    mut which = 1
+    if which == 0 {
+        DebugIntern.print_int(use_default())
+    } else {
+        DebugIntern.print_int(use_default())
+    }
+}
+```
+
+```output
+1234
+```
+
 ## Defer
 
 **defer basic**

@@ -1873,13 +1873,17 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		argNodes = append(argNodes, target)
 	}
 	argNodes = append(argNodes, call.Args...)
-	if defaults, ok := g.env.CallDefaults(id); ok {
-		argNodes = append(argNodes, defaults...)
-	}
 	for _, nodeID := range argNodes {
-		if _, ok := g.astCode[nodeID]; !ok {
-			g.Gen(nodeID)
+		g.Gen(nodeID)
+	}
+	// Default-argument AST nodes live on the function declaration and are
+	// shared across every call site. Re-emit into the current basic block
+	// so init IR doesn't end up dominated by just one call site's branch.
+	if defaults, ok := g.env.CallDefaults(id); ok {
+		for _, defaultID := range defaults {
+			g.regenSubtree(defaultID)
 		}
+		argNodes = append(argNodes, defaults...)
 	}
 	if _, isDirect := g.env.NamedFunRef(call.Callee); !isDirect {
 		g.genIndirectCall(id, call, fun, argNodes)
@@ -2578,6 +2582,20 @@ func (g *IRGen) irScalarSize(irType string) int64 {
 	default:
 		panic(base.Errorf("unknown scalar IR type: %s", irType))
 	}
+}
+
+// regenSubtree wipes the astCode cache for the given node and all its
+// descendants, then re-runs Gen so its IR lands in the current basic block.
+// Used for default-argument expressions whose AST nodes are shared across
+// every call site.
+func (g *IRFunGen) regenSubtree(id ast.NodeID) {
+	var clear func(ast.NodeID) //nolint:predeclared
+	clear = func(n ast.NodeID) {
+		delete(g.astCode, n)
+		g.ast.Walk(n, clear)
+	}
+	clear(id)
+	g.Gen(id)
 }
 
 func (g *IRFunGen) setCode(astID ast.NodeID, code string, args ...any) {
