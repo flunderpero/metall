@@ -42,14 +42,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [test-go]
+        suite: [test-go, test-lib]
         opt: [none, safe, fast]
         target: [native, wasm32, wasm64]
-        include:
-          # test-lib on wasm hits unresolved libc imports; keep it native-only.
-          - { suite: test-lib, opt: none, target: native }
-          - { suite: test-lib, opt: safe, target: native }
-          - { suite: test-lib, opt: fast, target: native }
     name: test (${{ matrix.suite }} ${{ matrix.opt }} ${{ matrix.target }})
     steps:
       - uses: actions/checkout@v6
