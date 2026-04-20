@@ -16,6 +16,7 @@ type EngineCore struct {
 	unions           map[string]TypeWork
 	shapes           map[string]TypeWork
 	consts           []ConstWork
+	exports          []ExportWork
 	skipRegisterWork bool
 }
 

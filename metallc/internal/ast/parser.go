@@ -110,6 +110,10 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			if imp, ok := p.ParseImport(); ok {
 				decls = append(decls, imp)
 			}
+		case t.Kind == token.Export:
+			if exp, ok := p.ParseExport(); ok {
+				decls = append(decls, exp)
+			}
 		case t.Kind == token.HashIf:
 			if compIf, ok := p.parseCompIf(p.ParseDecls); ok {
 				decls = append(decls, compIf)
@@ -123,6 +127,26 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 			return decls, false
 		}
 	}
+}
+
+func (p *Parser) ParseExport() (NodeID, bool) {
+	t, ok := p.expect(token.Export)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := t.Span
+	nameTok, ok := p.expect(token.Ident)
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.Eq); !ok {
+		return ParseFailed, false
+	}
+	target, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewExport(Name{nameTok.Value, nameTok.Span}, target, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseImport() (NodeID, bool) {

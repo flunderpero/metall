@@ -98,6 +98,13 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 		return nil
 	})
 	flags.BoolVar(&opts.AddressSanitizer, "asan", false, "enable AddressSanitizer")
+	flags.BoolVar(&opts.EmitObject, "c", false, "emit a relocatable object file (.o) instead of linking an executable")
+	flags.BoolVar(
+		&opts.EmitHeaderFile,
+		"emit-header-file",
+		false,
+		"write a C header (.h) declaring every `export`d function next to the output",
+	)
 	flags.BoolVar(&opts.PrintTypesDebug, "print-types-debug", false, "print type debug info to stderr")
 	flags.BoolVar(&opts.PrintBindingsDebug, "print-bindings-debug", false, "print binding debug info to stderr")
 	flags.BoolVar(&opts.DebugTypeCheck, "debug-typecheck", false, "enable verbose type checker debug output")

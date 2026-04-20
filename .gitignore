@@ -3,3 +3,5 @@
 .build
 .llvm
 /lib/builtin
+/examples/*.o
+/examples/*.h

@@ -101,6 +101,8 @@ type CompileOpts struct {
 	PrintBindingsDebug  bool
 	DebugTypeCheck      bool
 	DebugLifetime       bool
+	EmitObject          bool
+	EmitHeaderFile      bool
 }
 
 func (o CompileOpts) WithDefaults() CompileOpts {
@@ -195,6 +197,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	module := base.Cast[ast.Module](engine.AST().Node(fileID).Kind)
 	ir, err := gen.GenIR(
 		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(), engine.Consts(),
+		engine.Exports(),
 		gen.IROpts{
 			TargetDataLayout:        targetDataLayout,
 			TargetTriple:            targetTriple,
@@ -263,39 +266,15 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		return base.WrapErrorf(err, "failed to generate bitcode")
 	}
 
-	// Compile from optimized bitcode.
-	cmdline = []string{llvmHome + "/bin/clang", bc, "-v", "-o", output}
-	if opts.OptLevel != OptLevelNone {
-		cmdline = append(cmdline, "-O3")
+	if err := runClang(ctx, llvmHome, opts, bc, output, !opts.EmitObject); err != nil {
+		return err
 	}
-	if opts.Target.IsWasm() {
-		cmdline = append(cmdline,
-			"--target="+opts.Target.String(),
-			"-nostdlib",
-			"-Wl,--no-entry",
-			"-Wl,--export=main",
-			"-Wl,--export=memory",
-			"-Wl,--allow-undefined",
-		)
-	} else if runtime.GOOS == "darwin" {
-		// Bundled LLVM has no macOS SDK; point it at Command Line Tools.
-		sdk, err := exec.CommandContext(ctx, "xcrun", "--show-sdk-path").Output()
-		if err != nil {
-			return base.WrapErrorf(err, "failed to locate macOS SDK via xcrun")
+	if opts.EmitHeaderFile {
+		header := gen.GenCHeader(engine.AST(), module, engine.Exports())
+		headerPath := strings.TrimSuffix(output, filepath.Ext(output)) + ".h"
+		if err := os.WriteFile(headerPath, []byte(header), 0o600); err != nil {
+			return base.WrapErrorf(err, "failed to write C header")
 		}
-		cmdline = append(cmdline, "-isysroot", strings.TrimSpace(string(sdk)))
-	}
-	if opts.AddressSanitizer && !opts.Target.IsWasm() {
-		cmdline = append(cmdline, "-fsanitize=address")
-	}
-	cmdEnv := os.Environ()
-	if opts.Target.IsWasm() {
-		// Put our llvmHome/bin on PATH so clang picks up the matching wasm-ld.
-		llvmBin := filepath.Join(llvmHome, "bin")
-		cmdEnv = append(cmdEnv, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	}
-	if err := run_cmd(ctx, cmdline, cmdEnv); err != nil {
-		return base.WrapErrorf(err, "failed to compile with clang")
 	}
 	timingListener.OnLink()
 	if listener != nil && !listener.OnLink() {
@@ -618,6 +597,15 @@ func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
 }
 
 func findLLVMHome() (string, error) {
+	// Explicit override — used by the podman wrapper to point at an LLVM
+	// install that's mounted outside the workspace and not reachable via a
+	// walk-up from the working directory.
+	if override := os.Getenv("METALL_LLVM_HOME"); override != "" {
+		if _, err := os.Stat(filepath.Join(override, "bin", "clang")); err == nil {
+			return override, nil
+		}
+		return "", base.Errorf("METALL_LLVM_HOME=%q has no bin/clang", override)
+	}
 	platformDir := filepath.Join(LocalLLVMDir, runtime.GOOS+"-"+runtime.GOARCH)
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -679,6 +667,73 @@ func wasmRunCommand(wasmPath string) ([]string, func(), error) {
 		harnessURL, absWasm, runOpts,
 	)
 	return []string{"node", "--input-type=module", "-e", script}, cleanup, nil
+}
+
+// runClang invokes the bundled clang on the optimized bitcode. When `link` is
+// true clang links an executable; otherwise it emits a relocatable object
+// file (`-c`).
+func runClang(ctx context.Context, llvmHome string, opts CompileOpts, bc, output string, link bool) error {
+	cmdline := []string{filepath.Join(llvmHome, "bin", "clang")}
+	if link {
+		cmdline = append(cmdline, "-v")
+	} else {
+		cmdline = append(cmdline, "-c")
+	}
+	cmdline = append(cmdline, bc, "-o", output)
+	if opts.OptLevel != OptLevelNone {
+		cmdline = append(cmdline, "-O3")
+	}
+	if opts.AddressSanitizer && !opts.Target.IsWasm() {
+		cmdline = append(cmdline, "-fsanitize=address")
+	}
+	env := os.Environ()
+	if link {
+		extra, linkEnv, err := clangLinkFlags(ctx, llvmHome, opts)
+		if err != nil {
+			return err
+		}
+		cmdline = append(cmdline, extra...)
+		env = linkEnv
+	}
+	action := "link"
+	if !link {
+		action = "compile object file"
+	}
+	if err := run_cmd(ctx, cmdline, env); err != nil {
+		return base.WrapErrorf(err, "failed to %s with clang", action)
+	}
+	return nil
+}
+
+// clangLinkFlags returns link-time flags (and the environment clang should be
+// run in) for the active target: wasm linker directives + a PATH override so
+// clang finds the matching wasm-ld, or a macOS sysroot so the bundled LLVM
+// can locate Command Line Tools headers.
+func clangLinkFlags(
+	ctx context.Context, llvmHome string, opts CompileOpts,
+) ([]string, []string, error) {
+	env := os.Environ()
+	if opts.Target.IsWasm() {
+		flags := []string{
+			"--target=" + opts.Target.String(),
+			"-nostdlib",
+			"-Wl,--no-entry",
+			"-Wl,--export=main",
+			"-Wl,--export=memory",
+			"-Wl,--allow-undefined",
+		}
+		llvmBin := filepath.Join(llvmHome, "bin")
+		env = append(env, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		return flags, env, nil
+	}
+	if runtime.GOOS == "darwin" {
+		sdk, err := exec.CommandContext(ctx, "xcrun", "--show-sdk-path").Output()
+		if err != nil {
+			return nil, nil, base.WrapErrorf(err, "failed to locate macOS SDK via xcrun")
+		}
+		return []string{"-isysroot", strings.TrimSpace(string(sdk))}, env, nil
+	}
+	return nil, env, nil
 }
 
 func run_cmd(ctx context.Context, cmdline []string, env []string) error {

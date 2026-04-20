@@ -1,0 +1,66 @@
+================================================================================
+simple export
+================================================================================
+
+fun add(a Int, b Int) Int { a + b }
+
+export c_add = add
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier)))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block
+      (binary_expression
+        (identifier)
+        (identifier))))
+  (export_declaration
+    name: (identifier)
+    target: (identifier)))
+
+================================================================================
+multiple exports
+================================================================================
+
+fun a() Int { 1 }
+fun b() Bool { true }
+
+export metall_a = a
+export metall_b = b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block
+      (integer_literal)))
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block
+      (boolean_literal)))
+  (export_declaration
+    name: (identifier)
+    target: (identifier))
+  (export_declaration
+    name: (identifier)
+    target: (identifier)))

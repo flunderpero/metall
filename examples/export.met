@@ -1,0 +1,20 @@
+-- Metall library that exposes a small C ABI. Compile with:
+--   just metallc build -c -o /tmp/export.o examples/export.met
+-- then link the generated header + object from C:
+--   clang -include /tmp/export.h examples/export.c /tmp/export.o -o /tmp/export_demo
+
+fun add(a Int, b Int) Int {
+    a + b
+}
+
+fun fib(n Int) Int {
+    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+fun is_even(n Int) Bool {
+    n % 2 == 0
+}
+
+export metall_add = add
+export metall_fib = fib
+export metall_is_even = is_even

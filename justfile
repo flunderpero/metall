@@ -79,8 +79,35 @@ examples target="native":
     #!/usr/bin/env bash
     set -euo pipefail
 
+    # Export-flavored examples compile to an object file and are driven from a
+    # matching .c file; regular examples are run directly as metall programs.
+    # The .o / .h artifacts land next to the source in examples/.
     for file in examples/*.met; do
         if [[ "$file" == *_macro.met ]]; then continue; fi
+        c_file="${file%.met}.c"
+        if [ -f "$c_file" ]; then
+            if [ "{{target}}" != "native" ]; then
+                echo ">>> $file ({{target}}) (skipped: C export demo is native-only)"
+                continue
+            fi
+            echo ">>> $file + $c_file ({{target}})"
+            base="${file%.met}"
+            obj="$base.o"
+            header="$base.h"
+            bin="$(mktemp -t "$(basename "$base").XXXXXX")"
+            trap 'rm -f "$bin"' EXIT
+            go run ./metallc/... build -c -emit-header-file -o "$obj" "$file"
+            clang_args=(-I "$(dirname "$header")" -o "$bin" "$c_file" "$obj")
+            if [ "$(uname -s)" = "Darwin" ]; then
+                clang_args+=(-isysroot "$(xcrun --show-sdk-path)")
+            fi
+            clang_home="${METALL_LLVM_HOME:-{{llvm_root}}/$(uname -s | tr '[:upper:]' '[:lower:]')-{{host_arch}}}"
+            "$clang_home/bin/clang" "${clang_args[@]}"
+            "$bin"
+            rm -f "$bin"
+            trap - EXIT
+            continue
+        fi
         echo ">>> $file ({{target}})"
         go run ./metallc/... run --target {{target}} "$file"
     done

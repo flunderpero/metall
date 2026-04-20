@@ -31,6 +31,7 @@ const (
 	Eq
 	EqEq
 	Excl
+	Export
 	Extern
 	False
 	For
@@ -116,6 +117,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Eq:                    "=",
 	EqEq:                  "==",
 	Excl:                  "!",
+	Export:                "<export>",
 	Extern:                "<extern>",
 	False:                 "false",
 	For:                   "<for>",
@@ -212,6 +214,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"continue": Continue,
 	"defer":    Defer,
 	"else":     Else,
+	"export":   Export,
 	"extern":   Extern,
 	"false":    False,
 	"for":      For,

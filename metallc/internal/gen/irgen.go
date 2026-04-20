@@ -2783,13 +2783,14 @@ func (g *IRGen) genModuleConsts(consts []types.ConstWork) {
 	g.sb.WriteString(f.sb.String())
 }
 
-func GenIR(
+func GenIR( //nolint:funlen
 	a *ast.AST,
 	module ast.Module,
 	funs []types.FunWork,
 	structs []types.TypeWork,
 	unions []types.TypeWork,
 	consts []types.ConstWork,
+	exports []types.ExportWork,
 	opts IROpts,
 ) (string, error) {
 	g := NewIRGen(a, module, opts)
@@ -2823,6 +2824,10 @@ func GenIR(
 		g.sb.WriteString(f.sb.String())
 		g.sb.WriteString(f.wrapperBuf.String())
 	}
+	// Emit C export wrappers.
+	for _, exp := range exports {
+		g.genCExport(exp)
+	}
 	// Emit global constants (strings, const-init arrays).
 	g.write("; Global constants.")
 	g.write("")
@@ -2849,6 +2854,58 @@ func GenIR(
 	}
 	g.write(builtinFill("i1"))
 	return g.sb.String(), nil
+}
+
+// genCExport emits an externally-visible C entry point that `alwaysinline`s
+// the internal Metall function, keeping the target free to be specialized
+// while giving C a stable unmangled symbol.
+func (g *IRGen) genCExport(exp types.ExportWork) {
+	funType := base.Cast[types.FunType](exp.Env.Type(exp.FunTypeID).Kind)
+	retIRTyp := irReturnType(exp.Env, funType.Return)
+	params := strings.Builder{}
+	args := strings.Builder{}
+	for i, paramTypeID := range funType.Params {
+		if i > 0 {
+			params.WriteString(", ")
+			args.WriteString(", ")
+		}
+		paramIR := irType(exp.Env, paramTypeID)
+		name := fmt.Sprintf("%%arg%d", i)
+		fmt.Fprintf(&params, "%s%s %s", paramIR, cABIExtAttr(exp.Env, paramTypeID), name)
+		fmt.Fprintf(&args, "%s %s", paramIR, name)
+	}
+	g.write("define%s %s @%s(%s) {",
+		cABIExtAttr(exp.Env, funType.Return), retIRTyp, exp.CName, params.String())
+	g.indent++
+	callee := irName(exp.InternalIR)
+	if retIRTyp == "void" {
+		g.write("call void @%s(%s) alwaysinline", callee, args.String())
+		g.write("ret void")
+	} else {
+		g.write("%%ret = call %s @%s(%s) alwaysinline", retIRTyp, callee, args.String())
+		g.write("ret %s %%ret", retIRTyp)
+	}
+	g.indent--
+	g.write("}\n")
+}
+
+// cABIExtAttr returns " signext" / " zeroext" / "" (with leading space so it
+// concatenates cleanly into an LLVM parameter slot) for narrow-integer types
+// that clang's C ABI extends at the call boundary.
+func cABIExtAttr(env *types.TypeEnv, typeID types.TypeID) string {
+	switch kind := env.Type(typeID).Kind.(type) {
+	case types.BoolType:
+		return " zeroext"
+	case types.IntType:
+		if kind.Bits >= 32 {
+			return ""
+		}
+		if kind.Signed {
+			return " signext"
+		}
+		return " zeroext"
+	}
+	return ""
 }
 
 func builtinFill(irType string) string {

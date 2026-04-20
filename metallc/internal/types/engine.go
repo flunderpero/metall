@@ -240,6 +240,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkRuneLiteral(nodeKind, node.Span, typeHint)
 	case ast.Var:
 		typeID, status = e.checkVar(nodeID, nodeKind, node.Span)
+	case ast.Export:
+		typeID, status = e.checkExport(nodeID, nodeKind, node.Span)
 	default:
 		panic(base.Errorf("unknown node kind: %T", nodeKind))
 	}

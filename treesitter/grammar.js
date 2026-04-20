@@ -40,7 +40,7 @@ module.exports = grammar({
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
     _declaration: ($) =>
-      choice($.function_declaration, $.extern_function_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding, $.compile_if_declaration),
+      choice($.function_declaration, $.extern_function_declaration, $.export_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding, $.compile_if_declaration),
 
     // >>> Conditional compilation
 
@@ -204,6 +204,18 @@ module.exports = grammar({
         optional("noescape"),
         field("return_type", $._type),
       ),
+
+    // >>> Export declaration
+    // `export <c_name> = <target>` exposes a Metall function under an
+    // unmangled C symbol.
+
+    export_declaration: ($) =>
+      prec.right(seq(
+        "export",
+        field("name", $.identifier),
+        "=",
+        field("target", $._expression),
+      )),
 
     function_name: ($) =>
       choice(

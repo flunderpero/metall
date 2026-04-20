@@ -64,6 +64,8 @@
 (function_declaration "fun" @keyword.function)
 (extern_function_declaration "extern" @keyword)
 (extern_function_declaration "fun" @keyword.function)
+(export_declaration "export" @keyword)
+(export_declaration name: (identifier) @function)
 (call_expression "unsafe" @keyword)
 (function_name (identifier) @function)
 (function_name (type_identifier) @type)

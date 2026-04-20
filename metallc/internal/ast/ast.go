@@ -68,6 +68,13 @@ type Import struct {
 
 func (Import) isKind() {}
 
+type Export struct {
+	Name   Name
+	Target NodeID
+}
+
+func (Export) isKind() {}
+
 type SimpleType struct {
 	Name     Name
 	TypeArgs []NodeID
@@ -586,6 +593,10 @@ func (a *AST) NewImport(alias *Name, segments []string, span base.Span) NodeID {
 	return a.node(Import{Alias: alias, Segments: segments}, span)
 }
 
+func (a *AST) NewExport(name Name, target NodeID, span base.Span) NodeID {
+	return a.node(Export{Name: name, Target: target}, span)
+}
+
 func (a *AST) NewFunDecl(
 	name Name, typeParams []NodeID, params []NodeID, returnType NodeID,
 	pub bool, extern bool, unsafe bool, noescapeReturn bool, span base.Span,
@@ -853,6 +864,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Deref:
 		f(kind.Expr)
 	case Import:
+	case Export:
+		f(kind.Target)
 	case Module:
 		for i := range len(kind.Decls) {
 			f(kind.Decls[i])
@@ -1197,6 +1210,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addAttr("alias", fmt.Sprintf("%q", kind.Alias.Name))
 		}
 		addAttr("path", strings.Join(kind.Segments, "::"))
+	case Export:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if !children {
+			addAttr("target", nodeIDKind(kind.Target))
+		} else {
+			addChild("target", kind.Target)
+		}
 	case Module:
 		addAttr("fileName", fmt.Sprintf("%q", kind.FileName))
 		addAttr("name", fmt.Sprintf("%q", kind.Name))
@@ -1787,6 +1807,8 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 		required(k.Cond)
 		k.Body = removeFromSlice(k.Body)
 		parent.Kind = k
+	case Export:
+		required(k.Target)
 	case Import, Break, Continue, EmptySlice, TryPattern, Capture, Int, Bool, String, RuneLiteral:
 		// no NodeID children
 	default:
