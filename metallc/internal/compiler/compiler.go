@@ -640,8 +640,8 @@ func wasmRunCommand(wasmPath string) ([]string, func(), error) {
 		return nil, func() {}, base.WrapErrorf(err, "temp dir for wasm harness")
 	}
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
-	harnessPath := filepath.Join(tmpDir, "wasm_harness.mjs")
-	if err := os.WriteFile(harnessPath, []byte(gen.WasmHarnessJS()), 0o600); err != nil {
+	harnessPath := filepath.Join(tmpDir, "wasm_harness.ts")
+	if err := os.WriteFile(harnessPath, []byte(gen.WasmHarnessTS()), 0o600); err != nil {
 		cleanup()
 		return nil, func() {}, base.WrapErrorf(err, "write wasm harness")
 	}
