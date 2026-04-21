@@ -103,7 +103,13 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 		&opts.EmitHeaderFile,
 		"emit-header-file",
 		false,
-		"write a C header (.h) declaring every `export`d function next to the output",
+		"write a C header (.h) declaring every `export`d function next to the output (native only)",
+	)
+	flags.BoolVar(
+		&opts.EmitTypeScript,
+		"emit-typescript",
+		false,
+		"write a TypeScript module (.ts) with the embedded wasm harness and typed wrappers for every `export` (wasm only)",
 	)
 	flags.BoolVar(&opts.PrintTypesDebug, "print-types-debug", false, "print type debug info to stderr")
 	flags.BoolVar(&opts.PrintBindingsDebug, "print-bindings-debug", false, "print binding debug info to stderr")

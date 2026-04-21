@@ -1,8 +1,10 @@
 # E2E Export Tests
 
-Each test compiles the Metall source to an object file with `export`s, then
-compiles and links the following `c` block against the generated header.
-`output` is captured from running the resulting binary.
+Each test ships a Metall source plus drivers that exercise the generated
+`export`s. The `c` driver runs on the native target (Metall -> `.o` + `.h`,
+linked against the C block). The `ts` driver runs on wasm (Metall -> `.wasm`
++ `.ts` bindings, executed via `node driver.mts`). `output` is captured from
+running the resulting program.
 
 ## Exports
 
@@ -23,6 +25,13 @@ int main(void) {
     printf("%lld\n", (long long)metall_add(3, 4));
     return 0;
 }
+```
+
+```ts
+import { loadMetall } from "./metall.ts"
+import * as fs from "node:fs"
+const api = await loadMetall(fs.readFileSync("./metall.wasm"))
+console.log(api.metall_add(3n, 4n).toString())
 ```
 
 ```output
@@ -52,6 +61,15 @@ int main(void) {
     printf("%d %d\n", metall_toggle(true), metall_toggle(false));
     return 0;
 }
+```
+
+```ts
+import { loadMetall } from "./metall.ts"
+import * as fs from "node:fs"
+const api = await loadMetall(fs.readFileSync("./metall.wasm"))
+const b = (x: boolean) => x ? 1 : 0
+console.log(`${b(api.metall_is_even(7n))} ${b(api.metall_is_even(8n))}`)
+console.log(`${b(api.metall_toggle(true))} ${b(api.metall_toggle(false))}`)
 ```
 
 ```output
@@ -84,6 +102,14 @@ int main(void) {
 }
 ```
 
+```ts
+import { loadMetall } from "./metall.ts"
+import * as fs from "node:fs"
+const api = await loadMetall(fs.readFileSync("./metall.wasm"))
+console.log(api.add_i16(100, 27).toString())
+console.log(api.add_u8(250, 10).toString())
+```
+
 ```output
 127
 4
@@ -106,6 +132,13 @@ int main(void) {
     metall_greet();
     return 0;
 }
+```
+
+```ts
+import { loadMetall } from "./metall.ts"
+import * as fs from "node:fs"
+const api = await loadMetall(fs.readFileSync("./metall.wasm"))
+api.metall_greet()
 ```
 
 ```output
@@ -133,6 +166,17 @@ int main(void) {
     printf("\n");
     return 0;
 }
+```
+
+```ts
+import { loadMetall } from "./metall.ts"
+import * as fs from "node:fs"
+const api = await loadMetall(fs.readFileSync("./metall.wasm"))
+const parts: string[] = []
+for (let i = 0n; i < 10n; i++) {
+    parts.push(api.metall_fib(i).toString())
+}
+console.log(parts.join(" "))
 ```
 
 ```output

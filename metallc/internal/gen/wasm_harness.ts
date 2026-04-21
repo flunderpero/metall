@@ -21,24 +21,30 @@ export type RunOptions = {
     imports?: MetallImports
 }
 
-type Source = string | ArrayBuffer | ArrayBufferView
+export type Source = string | ArrayBuffer | ArrayBufferView
+
+export type MetallInstance = {
+    instance: WebAssembly.Instance
+    write: WriteFn
+}
 
 /**
- * Run a Metall WASM file. Returns the program's exit code.
- *
- * `src` may be a URL string, an `ArrayBuffer`, or an `ArrayBufferView`.
+ * Compile and instantiate a Metall WASM module. The returned instance has the
+ * built-in `env` imports wired up (plus any caller overrides) but `main` has
+ * not been invoked. Use {@link runMetall} to also run `main`.
  */
-export async function runMetall(src: Source, options: RunOptions = {}): Promise<number> {
+export async function instantiateMetall(
+    src: Source, options: RunOptions = {},
+): Promise<MetallInstance> {
     let instance: WebAssembly.Instance
     const write = options.write ?? defaultWriteImpl()
-    const { imports } = defaultImports(() => instance.exports.memory as WebAssembly.Memory, write)
+    const {imports} = defaultImports(() => instance.exports.memory as WebAssembly.Memory, write)
     if (options.imports) {
-        imports.env = { ...imports.env, ...options.imports }
+        imports.env = {...imports.env, ...options.imports}
     }
     const module = src instanceof ArrayBuffer || ArrayBuffer.isView(src)
         ? await WebAssembly.compile(src)
         : await compileFromURL(String(src))
-    // Find missing extern declarations.
     const missing: string[] = []
     for (const imp of WebAssembly.Module.imports(module)) {
         if (imp.kind !== "function") {
@@ -52,10 +58,20 @@ export async function runMetall(src: Source, options: RunOptions = {}): Promise<
     if (missing.length > 0) {
         throw new Error(
             "Metall: unresolved extern imports: " + missing.join(", ") +
-            "\nProvide implementations via runMetall(uri, { imports: { ... } }).",
+            "\nProvide implementations via the `imports` option.",
         )
     }
     instance = await WebAssembly.instantiate(module, imports)
+    return {instance, write}
+}
+
+/**
+ * Run a Metall WASM file. Returns the program's exit code.
+ *
+ * `src` may be a URL string, an `ArrayBuffer`, or an `ArrayBufferView`.
+ */
+export async function runMetall(src: Source, options: RunOptions = {}): Promise<number> {
+    const {instance, write} = await instantiateMetall(src, options)
     const main = instance.exports.main
     if (typeof main !== "function") {
         return 0

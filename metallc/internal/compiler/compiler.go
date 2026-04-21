@@ -75,9 +75,9 @@ const LocalLLVMDir = ".llvm/" + LLVMVersion
 
 // LLVM optimization passes (https://llvm.org/docs/Passes.html):
 //   - mem2reg: Promote alloca'd scalars to SSA registers.
-//   - sroa: Scalar Replacement of Aggregates — decompose struct/array allocas into individual scalars.
-//   - instcombine: Peephole optimizations — constant folding, strength reduction, dead code elimination.
-//   - simplifycfg: Simplify the control flow graph — merge blocks, remove unreachable code.
+//   - sroa: Scalar Replacement of Aggregates, decomposes struct/array allocas into individual scalars.
+//   - instcombine: Peephole optimizations: constant folding, strength reduction, dead code elimination.
+//   - simplifycfg: Simplify the control flow graph by merging blocks and removing unreachable code.
 const DefaultLLVMPasses = "mem2reg,sroa,instcombine,simplifycfg"
 
 type CompileOpts struct {
@@ -103,6 +103,7 @@ type CompileOpts struct {
 	DebugLifetime       bool
 	EmitObject          bool
 	EmitHeaderFile      bool
+	EmitTypeScript      bool
 }
 
 func (o CompileOpts) WithDefaults() CompileOpts {
@@ -120,6 +121,12 @@ func (o CompileOpts) WithDefaults() CompileOpts {
 
 func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error { //nolint:funlen
 	opts = opts.WithDefaults()
+	if opts.EmitHeaderFile && opts.Target.IsWasm() {
+		return base.Errorf("--emit-header-file is only valid for the native target")
+	}
+	if opts.EmitTypeScript && !opts.Target.IsWasm() {
+		return base.Errorf("--emit-typescript is only valid for wasm targets")
+	}
 	llvmHome, err := findLLVMHome()
 	if err != nil {
 		return err
@@ -266,14 +273,24 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 		return base.WrapErrorf(err, "failed to generate bitcode")
 	}
 
-	if err := runClang(ctx, llvmHome, opts, bc, output, !opts.EmitObject); err != nil {
+	exportNames := make([]string, 0, len(engine.Exports()))
+	for _, exp := range engine.Exports() {
+		exportNames = append(exportNames, exp.CName)
+	}
+	if err := runClang(ctx, llvmHome, opts, bc, output, !opts.EmitObject, exportNames); err != nil {
 		return err
 	}
+	outBase := strings.TrimSuffix(output, filepath.Ext(output))
 	if opts.EmitHeaderFile {
 		header := gen.GenCHeader(engine.AST(), module, engine.Exports())
-		headerPath := strings.TrimSuffix(output, filepath.Ext(output)) + ".h"
-		if err := os.WriteFile(headerPath, []byte(header), 0o600); err != nil {
+		if err := os.WriteFile(outBase+".h", []byte(header), 0o600); err != nil {
 			return base.WrapErrorf(err, "failed to write C header")
+		}
+	}
+	if opts.EmitTypeScript {
+		ts := gen.GenTypeScript(engine.AST(), module, engine.Exports())
+		if err := os.WriteFile(outBase+".ts", []byte(ts), 0o600); err != nil {
+			return base.WrapErrorf(err, "failed to write TypeScript bindings")
 		}
 	}
 	timingListener.OnLink()
@@ -597,7 +614,7 @@ func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
 }
 
 func findLLVMHome() (string, error) {
-	// Explicit override — used by the podman wrapper to point at an LLVM
+	// Explicit override, used by the podman wrapper to point at an LLVM
 	// install that's mounted outside the workspace and not reachable via a
 	// walk-up from the working directory.
 	if override := os.Getenv("METALL_LLVM_HOME"); override != "" {
@@ -671,8 +688,11 @@ func wasmRunCommand(wasmPath string) ([]string, func(), error) {
 
 // runClang invokes the bundled clang on the optimized bitcode. When `link` is
 // true clang links an executable; otherwise it emits a relocatable object
-// file (`-c`).
-func runClang(ctx context.Context, llvmHome string, opts CompileOpts, bc, output string, link bool) error {
+// file (`-c`). `wasmExports` is the set of user-declared export symbols that
+// wasm-ld needs explicit `--export=<name>` directives for.
+func runClang(
+	ctx context.Context, llvmHome string, opts CompileOpts, bc, output string, link bool, wasmExports []string,
+) error {
 	cmdline := []string{filepath.Join(llvmHome, "bin", "clang")}
 	if link {
 		cmdline = append(cmdline, "-v")
@@ -688,7 +708,7 @@ func runClang(ctx context.Context, llvmHome string, opts CompileOpts, bc, output
 	}
 	env := os.Environ()
 	if link {
-		extra, linkEnv, err := clangLinkFlags(ctx, llvmHome, opts)
+		extra, linkEnv, err := clangLinkFlags(ctx, llvmHome, opts, wasmExports)
 		if err != nil {
 			return err
 		}
@@ -710,17 +730,20 @@ func runClang(ctx context.Context, llvmHome string, opts CompileOpts, bc, output
 // clang finds the matching wasm-ld, or a macOS sysroot so the bundled LLVM
 // can locate Command Line Tools headers.
 func clangLinkFlags(
-	ctx context.Context, llvmHome string, opts CompileOpts,
+	ctx context.Context, llvmHome string, opts CompileOpts, wasmExports []string,
 ) ([]string, []string, error) {
 	env := os.Environ()
 	if opts.Target.IsWasm() {
-		flags := []string{
+		flags := []string{ //nolint:prealloc
 			"--target=" + opts.Target.String(),
 			"-nostdlib",
 			"-Wl,--no-entry",
 			"-Wl,--export=main",
 			"-Wl,--export=memory",
 			"-Wl,--allow-undefined",
+		}
+		for _, name := range wasmExports {
+			flags = append(flags, "-Wl,--export="+name)
 		}
 		llvmBin := filepath.Join(llvmHome, "bin")
 		env = append(env, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))

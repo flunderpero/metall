@@ -5,3 +5,5 @@
 /lib/builtin
 /examples/*.o
 /examples/*.h
+/examples/*.wasm
+/examples/*.ts

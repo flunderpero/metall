@@ -79,19 +79,18 @@ examples target="native":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Export-flavored examples compile to an object file and are driven from a
-    # matching .c file; regular examples are run directly as metall programs.
-    # The .o / .h artifacts land next to the source in examples/.
+    # Export-flavored examples have a runner paired with the .met:
+    #   <name>.c   -> native: compile to .o + .h, link against the C runner.
+    #   <name>.mts -> wasm:   compile to .wasm + .ts, run the TS runner via node.
+    # All artifacts (.o, .h, .wasm, .ts) land next to the source in examples/.
     for file in examples/*.met; do
         if [[ "$file" == *_macro.met ]]; then continue; fi
-        c_file="${file%.met}.c"
-        if [ -f "$c_file" ]; then
-            if [ "{{target}}" != "native" ]; then
-                echo ">>> $file ({{target}}) (skipped: C export demo is native-only)"
-                continue
-            fi
+        base="${file%.met}"
+        c_file="$base.c"
+        mts_file="$base.mts"
+        has_runner=false
+        if [ "{{target}}" = "native" ] && [ -f "$c_file" ]; then
             echo ">>> $file + $c_file ({{target}})"
-            base="${file%.met}"
             obj="$base.o"
             header="$base.h"
             bin="$(mktemp -t "$(basename "$base").XXXXXX")"
@@ -106,6 +105,19 @@ examples target="native":
             "$bin"
             rm -f "$bin"
             trap - EXIT
+            has_runner=true
+        elif [ "{{target}}" != "native" ] && [ -f "$mts_file" ]; then
+            echo ">>> $file + $mts_file ({{target}})"
+            wasm="$base.wasm"
+            go run ./metallc/... build --target {{target}} --emit-typescript -o "$wasm" "$file"
+            (cd "$(dirname "$mts_file")" && node "$(basename "$mts_file")")
+            has_runner=true
+        fi
+        if $has_runner; then
+            continue
+        fi
+        if [ -f "$c_file" ] || [ -f "$mts_file" ]; then
+            echo ">>> $file ({{target}}) (skipped: no runner for target)"
             continue
         fi
         echo ">>> $file ({{target}})"
