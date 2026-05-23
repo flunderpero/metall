@@ -233,7 +233,6 @@ func (TypeParam) isKind() {}
 type Shape struct {
 	Name       Name
 	TypeParams []NodeID
-	Fields     []NodeID // StructField nodes
 	Funs       []NodeID // FunDecl nodes
 	Pub        bool
 }
@@ -685,10 +684,8 @@ func (a *AST) NewTypeParam(name Name, constraint *NodeID, defaultType *NodeID, s
 	return a.node(TypeParam{Name: name, Constraint: constraint, Default: defaultType, Sync: sync}, span)
 }
 
-func (a *AST) NewShape(
-	name Name, typeParams []NodeID, fields []NodeID, funs []NodeID, pub bool, span base.Span,
-) NodeID {
-	return a.node(Shape{Name: name, TypeParams: typeParams, Fields: fields, Funs: funs, Pub: pub}, span)
+func (a *AST) NewShape(name Name, typeParams []NodeID, funs []NodeID, pub bool, span base.Span) NodeID {
+	return a.node(Shape{Name: name, TypeParams: typeParams, Funs: funs, Pub: pub}, span)
 }
 
 func (a *AST) NewUnion(
@@ -946,9 +943,6 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Shape:
 		for i := range len(kind.TypeParams) {
 			f(kind.TypeParams[i])
-		}
-		for i := range len(kind.Fields) {
-			f(kind.Fields[i])
 		}
 		for i := range len(kind.Funs) {
 			f(kind.Funs[i])
@@ -1374,13 +1368,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			if len(kind.TypeParams) > 0 {
 				addAttr("typeParams", nodeIDList(kind.TypeParams))
 			}
-			addAttr("fields", nodeIDList(kind.Fields))
 			addAttr("funs", nodeIDList(kind.Funs))
 		} else {
 			if len(kind.TypeParams) > 0 {
 				addChild("typeParams", kind.TypeParams...)
 			}
-			addChild("fields", kind.Fields...)
 			addChild("funs", kind.Funs...)
 		}
 	case Union:
@@ -1732,7 +1724,6 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 		parent.Kind = k
 	case Shape:
 		k.TypeParams = removeFromSlice(k.TypeParams)
-		k.Fields = removeFromSlice(k.Fields)
 		k.Funs = removeFromSlice(k.Funs)
 		parent.Kind = k
 	case Union:

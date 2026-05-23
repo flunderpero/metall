@@ -61,6 +61,13 @@ linters:
           - gci
           - gofumpt
           - goimports
+      - path: metallc/internal/types/generics\.go
+        linters:
+          # generics.go is undergoing a structural rewrite (the Resolve
+          # single-entry-point work). Its function order will shake out
+          # once that lands; until then funcorder noise here isn't
+          # actionable.
+          - funcorder
   settings:
     depguard:
       rules:
@@ -97,3 +104,7 @@ linters:
         - .WrapErrorf
     exhaustruct:
       allow-empty: true
+      exclude:
+        - 'github\.com/flunderpero/metall/metallc/internal/types\.Task$'
+        - 'github\.com/flunderpero/metall/metallc/internal/types\.Outcome$'
+        - 'github\.com/flunderpero/metall/metallc/internal/types\.ArgResult$'

@@ -99,6 +99,13 @@ func (g *ScopeGraph) NodeScope(nodeID NodeID) *Scope {
 	return scope
 }
 
+// SetNodeScope assigns a scope to a node. Intended for synthesized AST nodes
+// (e.g. implicit type parameters for built-in generic owners) whose scope is
+// inherited from a sibling node rather than discovered by the initial walk.
+func (g *ScopeGraph) SetNodeScope(nodeID NodeID, scope *Scope) {
+	g.scopeByNodeID[nodeID] = scope
+}
+
 func (g *ScopeGraph) IntroducedScope(nodeID NodeID) *Scope {
 	scope, ok := g.scopeByRootNode[nodeID]
 	if !ok {

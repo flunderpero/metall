@@ -210,7 +210,6 @@ Block: Int
   Var: void
     TypeConstruction: union02
       Ident: union02
-        SimpleType: Int
       Int: Int
   Match: Int
     Ident: union02

@@ -61,7 +61,6 @@ func runEngineTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 		}
 	}
 
-	// Always verify that work results contain no unresolved type parameters.
 	for _, f := range e.Funs() {
 		ft := base.Cast[FunType](e.env.Type(f.TypeID).Kind)
 		for _, p := range ft.Params {
@@ -70,16 +69,31 @@ func runEngineTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 		}
 		assert.Equal(false, e.env.containsTypeParam(ft.Return),
 			"Funs() should not contain type params in return: %s", f.Name)
+		assert.NotNil(f.Env, "FunWork %s must carry a non-nil Env", f.Name)
+		if _, isMat := e.env.GenericOrigin(f.TypeID); isMat && f.Env != nil {
+			assert.Equal(false, f.Env.IsRoot(),
+				"materialized FunWork %s must capture a child env, not the root env", f.Name)
+		}
 	}
 	for _, s := range e.Structs() {
 		st := base.Cast[StructType](e.env.Type(s.TypeID).Kind)
 		assert.Equal(false, e.env.hasTypeParam(st.TypeArgs),
 			"Structs() should not contain type params: %s", st.Name)
+		assert.NotNil(s.Env, "StructWork %s must carry a non-nil Env", st.Name)
+		if _, isMat := e.env.GenericOrigin(s.TypeID); isMat && s.Env != nil {
+			assert.Equal(false, s.Env.IsRoot(),
+				"materialized StructWork %s must capture a child env, not the root env", st.Name)
+		}
 	}
 	for _, u := range e.Unions() {
 		ut := base.Cast[UnionType](e.env.Type(u.TypeID).Kind)
 		assert.Equal(false, e.env.hasTypeParam(ut.TypeArgs),
 			"Unions() should not contain type params: %s", ut.Name)
+		assert.NotNil(u.Env, "UnionWork %s must carry a non-nil Env", ut.Name)
+		if _, isMat := e.env.GenericOrigin(u.TypeID); isMat && u.Env != nil {
+			assert.Equal(false, u.Env.IsRoot(),
+				"materialized UnionWork %s must capture a child env, not the root env", ut.Name)
+		}
 	}
 
 	return results

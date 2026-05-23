@@ -4,23 +4,23 @@ use std.list
 pub shape Reader<T> {
     --- Read up to `buf.len` items into the give `buf` and returns a slice
         into `buf` with the data. ---
-    pub fun Reader.read<T>(r &mut Reader, buf []mut T) ![]mut T
+    pub fun Reader.read(r &mut Reader, buf []mut T) ![]mut T
 }
 
 pub shape Writer<T> {
     --- Write the given data and return the number of elements written. ---
-    pub fun Writer.write<T>(w &mut Writer, data []T) !Int
+    pub fun Writer.write(w &mut Writer, data []T) !Int
 }
 
-pub shape Closer<T> {
-    pub fun Closer.close<T>(r &mut Closer) !void
+pub shape Closer {
+    pub fun Closer.close(r &mut Closer) !void
 }
 
 pub shape ReaderCloser<T> {
     --- See `Reader<T>`. ---
-    pub fun ReaderCloser.read<T>(r &mut ReaderCloser, buf []mut T) ![]mut T
-    --- See `Closer<T>`. ---
-    pub fun ReaderCloser.close<T>(r &mut ReaderCloser) !void
+    pub fun ReaderCloser.read(r &mut ReaderCloser, buf []mut T) ![]mut T
+    --- See `Closer`. ---
+    pub fun ReaderCloser.close(r &mut ReaderCloser) !void
 }
 
 pub struct Buffer<T> {
@@ -28,26 +28,26 @@ pub struct Buffer<T> {
     read_pos Int
 }
 
-pub fun Buffer.new<T>(initial_capacity Int, @a Arena) &mut Buffer<T> {
+pub fun Buffer.new(initial_capacity Int, @a Arena) &mut Buffer {
     let data = list.List.new<T>(initial_capacity, @a)
     @a.new(Buffer(data, 0))
 }
 
 --- Implementation of `io.Writer`. ---
-pub fun Buffer.write<T>(b &mut Buffer<T>, data []T) !Int {
+pub fun Buffer.write(b &mut Buffer, data []T) !Int {
     b.data.push_all(data)
     data.len
 }
 
 --- Implementation of `io.Reader`. ---
-pub fun Buffer.read<T>(b &mut Buffer<T>, buf []mut T) ![] mut T {
+pub fun Buffer.read(b &mut Buffer, buf []mut T) ![] mut T {
     let n = buf.set(b.data.as_slice()[b.read_pos..])
     b.read_pos = b.read_pos + n
     buf[0..n]
 }
 
 --- Implementation of `io.Closer`. ---
-pub fun Buffer.close<T>(b &mut Buffer<T>) !void {
+pub fun Buffer.close(b &mut Buffer) !void {
     b.data.reset()
     b.read_pos = 0
 }

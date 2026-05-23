@@ -115,7 +115,7 @@ n3:Struct(name="Foo",fields=[n2:StructField]):a
 **Shape scope**
 
 ```metall
-shape Showable { name Str fun Showable.str(self Showable) Str }
+shape Showable { fun Showable.str(self Showable) Str }
 ```
 
 ```scopes
@@ -125,13 +125,11 @@ c:b
 ```
 
 ```nodes
-n1:SimpleType(name="Str"):b
-n2:StructField(name="name",type=n1:SimpleType):b
-n3:SimpleType(name="Showable"):c
-n4:FunParam(name="self",type=n3:SimpleType):c
-n5:SimpleType(name="Str"):c
-n6:FunDecl(name="Showable.str",params=[n4:FunParam],returnType=n5:SimpleType):b
-n7:Shape(name="Showable",fields=[n2:StructField],funs=[n6:FunDecl]):a
+n1:SimpleType(name="Showable"):c
+n2:FunParam(name="self",type=n1:SimpleType):c
+n3:SimpleType(name="Str"):c
+n4:FunDecl(name="Showable.str",params=[n2:FunParam],returnType=n3:SimpleType):b
+n5:Shape(name="Showable",funs=[n4:FunDecl]):a
 ```
 
 **Generic struct scope**

@@ -203,7 +203,6 @@ Module: scope01
         Call: scope04
           FieldAccess: scope04
             Ident: scope04
-            SimpleType: scope04
           Int: scope04
 ---
 scope01:
@@ -266,8 +265,6 @@ Module: scope01
         TypeConstruction: scope04
           FieldAccess: scope04
             Ident: scope04
-            SimpleType: scope04
-            SimpleType: scope04
           Int: scope04
           String: scope04
       Assign: scope04

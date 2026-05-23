@@ -4,23 +4,23 @@ pub struct Set<T map.Key> {
     m &mut map.Map<T, Bool>
 }
 
-pub fun Set.new<T map.Key>(capacity Int, @a Arena) &mut Set<T> {
+pub fun Set.new(capacity Int, @a Arena) &mut Set {
     let m = map.Map.new<T, Bool>(capacity, @a)
     @a.new(Set<T>(m))
 }
 
-pub fun Set.len<T map.Key>(s &Set<T>) Int {
+pub fun Set.len(s &Set) Int {
     s.m.len
 }
 
-pub fun Set.add<T map.Key>(s &mut Set<T>, value T) void {
+pub fun Set.add(s &mut Set, value T) void {
     s.m.set(value, true)
 }
 
-pub fun Set.del<T map.Key>(s &mut Set<T>, value T) Bool {
+pub fun Set.del(s &mut Set, value T) Bool {
     s.m.del(value)
 }
 
-pub fun Set.has<T map.Key>(s &Set<T>, value T) Bool {
+pub fun Set.has(s &Set, value T) Bool {
     s.m.has(value)
 }

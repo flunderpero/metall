@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 	"unicode"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -392,7 +393,6 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 	if _, ok := p.expect(token.LCurly); !ok {
 		return ParseFailed, false
 	}
-	var fields []NodeID
 	var funs []NodeID
 	for {
 		next, ok := p.mayPeek()
@@ -403,8 +403,6 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 			p.next()
 			break
 		}
-		// `[pub] fun` -> method declaration.
-		// `[pub] [mut] <ident>` -> field.
 		if p.lookAhead(token.Fun) || p.lookAhead(token.Pub, token.Fun) {
 			funDecl, ok := p.ParseFunDecl()
 			if !ok {
@@ -413,14 +411,11 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 			funs = append(funs, funDecl)
 			continue
 		}
-		// Stop field parsing before `fun` or `pub fun` (which are methods).
-		parsed, ok := p.ParseStructFields(token.RCurly, token.Fun)
-		if !ok {
+		if _, ok := p.expect(token.Fun); !ok {
 			return ParseFailed, false
 		}
-		fields = append(fields, parsed...)
 	}
-	return p.NewShape(name, typeParams, fields, funs, pub, t.Span.Combine(p.span())), true
+	return p.NewShape(name, typeParams, funs, pub, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseUnion() (NodeID, bool) {
@@ -1234,11 +1229,23 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 		return ParseFailed, false
 	case token.TypeIdent:
 		p.next()
+		var name strings.Builder
+		name.WriteString(t.Value)
+		nameSpan := t.Span
+		for p.lookAheadConsume(token.Dot) {
+			next, ok := p.expect(token.TypeIdent)
+			if !ok {
+				return ParseFailed, false
+			}
+			name.WriteByte('.')
+			name.WriteString(next.Value)
+			nameSpan = nameSpan.Combine(next.Span)
+		}
 		typeArgs, ok := p.parseTypeArgs()
 		if !ok {
 			return ParseFailed, false
 		}
-		return p.NewSimpleType(Name{t.Value, span}, typeArgs, span.Combine(p.span())), true
+		return p.NewSimpleType(Name{name.String(), nameSpan}, typeArgs, span.Combine(p.span())), true
 	case token.LBracket, token.LBracketImmediate:
 		return p.ParseArrayOrSliceType()
 	case token.Amp:
@@ -1772,7 +1779,7 @@ func (p *Parser) isStructTarget(nodeID NodeID) bool {
 	}
 }
 
-func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
+func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 	if t, ok := p.mayPeek(); !ok || t.Kind != token.LtImmediate {
 		return nil, true
 	}
@@ -1803,25 +1810,12 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) { //nolint:funlen
 			return nil, false
 		}
 		var constraint *NodeID
-		if next, ok := p.mayPeek(); ok && next.Kind == token.TypeIdent {
-			p.next()
-			typeArgs, ok := p.parseTypeArgs()
+		if next, ok := p.mayPeek(); ok && (next.Kind == token.TypeIdent || p.lookAhead(token.Ident, token.Dot)) {
+			c, ok := p.ParseType()
 			if !ok {
 				return nil, false
 			}
-			c := p.NewSimpleType(Name{next.Value, next.Span}, typeArgs, next.Span.Combine(p.span()))
 			constraint = &c
-		} else if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
-			if p.lookAheadConsume(token.Ident, token.Dot) {
-				// Module-qualified constraint: e.g. `lib.Showable`
-				typeIdent, ok := p.expect(token.TypeIdent)
-				if !ok {
-					return nil, false
-				}
-				target := p.NewIdent(next.Value, nil, next.Span)
-				c := p.NewFieldAccess(target, Name{typeIdent.Value, typeIdent.Span}, nil, next.Span.Combine(p.span()))
-				constraint = &c
-			}
 		}
 		var defaultType *NodeID
 		if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {

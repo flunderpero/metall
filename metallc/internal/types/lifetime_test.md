@@ -1861,12 +1861,6 @@ test.met:6:30: reference escaping its allocation scope (via return)
                                  ^^^^^^
                 case Bool: return &local
 
-test.met:6:30: reference escaping its allocation scope (via return)
-            match u {
-                case Int: return &local
-                                 ^^^^^^
-                case Bool: return &local
-
 test.met:6:30: reference escaping its allocation scope (via block result)
             match u {
                 case Int: return &local
@@ -2460,61 +2454,14 @@ test.met:7:54: reference escaping its allocation scope (via block result)
         let r = {
 ```
 
-**shape field ref escapes**
-
-```metall
-{
-    shape Shape {
-        one &Int
-    }
-
-    fun foo<T Shape>(s &mut T) void {
-        let x = 42
-        s.one = &x
-    }
-}
-```
-
-```error
-test.met:8:17: reference escaping its allocation scope (via mutation of outer variable)
-            let x = 42
-            s.one = &x
-                    ^^
-        }
-```
-
-**shape mut param ref escapes via side effect**
-
-```metall
-{
-    shape HasRef { one &Int }
-    struct Foo { one &Int }
-    struct Bar { one &Int }
-    fun baz<T HasRef>(t &mut T, b &Int) void { t.one = b }
-    mut x = 42
-    mut foo = Foo(&mut x)
-    {
-        let z = 99
-        baz<Foo>(&mut foo, &z)
-    }
-}
-```
-
-```error
-test.met:10:28: reference escaping its allocation scope (via mutation of outer variable)
-            let z = 99
-            baz<Foo>(&mut foo, &z)
-                               ^^
-        }
-```
-
 **shape value param no escape when not written to mut ref**
 
 ```metall
 {
-    shape HasRef { one &Int }
+    shape HasRef { fun HasRef.get(t HasRef) &Int }
     struct Foo { one &Int }
     struct Bar { one &Int }
+    fun Foo.get(t Foo) &Int { t.one }
     fun baz<T HasRef>(t T, b &mut Bar) void { b.one = b.one }
     let x = 42
     mut y = Bar(&x)
@@ -2532,10 +2479,11 @@ test.met:10:28: reference escaping its allocation scope (via mutation of outer v
 
 ```metall
 {
-    shape HasRef { one &Int }
+    shape HasRef { fun HasRef.get(t HasRef) &Int }
     struct Foo { one &Int }
     struct Bar { one &Int }
-    fun baz<T HasRef>(t T, b &mut Bar) void { b.one = t.one }
+    fun Foo.get(t Foo) &Int { t.one }
+    fun baz<T HasRef>(t T, b &mut Bar) void { b.one = t.get() }
     let x = 42
     mut y = Bar(&x)
     {
@@ -2546,7 +2494,7 @@ test.met:10:28: reference escaping its allocation scope (via mutation of outer v
 ```
 
 ```error
-test.met:10:22: reference escaping its allocation scope (via mutation of outer variable)
+test.met:11:22: reference escaping its allocation scope (via mutation of outer variable)
             let z = 99
             baz<Foo>(Foo(&z), &mut y)
                          ^^
@@ -2580,7 +2528,31 @@ test.met:10:22: reference escaping its allocation scope (via mutation of outer v
 ```error
 ```
 
-**concrete method violates shape contract: side effect**
+**shape method can store ref when lifetime fits**
+
+```metall
+{
+    shape Store<Item> {
+        fun Store.put(s &mut Store, value Item) void
+    }
+    struct RefStore { one &Int }
+    fun RefStore.put(s &mut RefStore, value &Int) void {
+        s.one = value
+    }
+    fun put_value<S Store<&Int>>(s &mut S, value &Int) void {
+        s.put(value)
+    }
+    let initial = 0
+    mut store = RefStore(&initial)
+    let next = 1
+    put_value(&mut store, &next)
+}
+```
+
+```error
+```
+
+**shape method stored ref escapes through mut self**
 
 ```metall
 {
@@ -2602,14 +2574,11 @@ test.met:10:22: reference escaping its allocation scope (via mutation of outer v
 ```
 
 ```error
-test.met:6:5: method Foo.do violates shape S contract: parameter x flows into parameter f
-        struct Foo { one &Int }
-        fun Foo.do(f &mut Foo, x &Int) void {
-        ^
-            f.one = x
+test.met:11:14: reference escaping its allocation scope (via mutation of outer variable)
+            let a = 123
+            t.do(&a)
+                 ^^
         }
-        ^
-        fun bar<T S>(t &mut T) void {
 ```
 
 ## Noescape
@@ -2959,4 +2928,34 @@ test.met:3:24: reference escaping its allocation scope (via block result)
         fun leak() &Pair { &Pair(1, 2) }
                            ^^^^^^^^^^^
         leak()
+```
+
+## Shape contract verification
+
+**concrete impl with side effect into self escapes via shape call**
+
+```metall
+{
+    shape S {
+        fun S.do(s &mut S, x &Int) void
+    }
+    struct Bag { r &Int }
+    fun Bag.do(b &mut Bag, x &Int) void {
+        b.r = x
+    }
+    fun caller<T S>(t &mut T) void {
+        let a = 1
+        t.do(&a)
+    }
+    mut b = Bag(&0)
+    caller<Bag>(&mut b)
+}
+```
+
+```error
+test.met:11:14: reference escaping its allocation scope (via mutation of outer variable)
+            let a = 1
+            t.do(&a)
+                 ^^
+        }
 ```

@@ -988,7 +988,7 @@ hello
 
 ```metall
 struct Foo<T> { one T }
-fun Foo.bar<T>(f Foo<T>, a T, b Bool) T { if b { return f.one } a }
+fun Foo.bar(f Foo, a T, b Bool) T { if b { return f.one } a }
 
 fun main() void {
     let x = Foo<Int>(42)
@@ -1024,7 +1024,7 @@ hello
 
 ```metall
 struct Foo<T> { one T }
-fun Foo.bar<T, U>(f Foo<T>, a U) U { a }
+fun Foo.bar<U>(f Foo, a U) U { a }
 
 fun main() void {
     let x = Foo<Int>(42)
@@ -1042,8 +1042,8 @@ hello
 
 ```metall
 struct Pair<A, B> { first A second B }
-fun Pair.get_first<A, B>(p Pair<A, B>) A { p.first }
-fun Pair.get_second<A, B>(p Pair<A, B>) B { p.second }
+fun Pair.get_first(p Pair) A { p.first }
+fun Pair.get_second(p Pair) B { p.second }
 
 fun main() void {
     let p = Pair<Int, Str>(42, "hello")
@@ -1061,8 +1061,8 @@ hello
 
 ```metall
 struct Pair<A, B> { first A second B }
-fun Pair.swap<A, B>(p Pair<A, B>) Pair<B, A> { Pair<B, A>(p.second, p.first) }
-fun Pair.map_first<A, B, C>(p Pair<A, B>, f fun(A) C) Pair<C, B> { Pair<C, B>(f(p.first), p.second) }
+fun Pair.swap(p Pair) Pair<B, A> { Pair<B, A>(p.second, p.first) }
+fun Pair.map_first<C>(p Pair, f fun(A) C) Pair<C, B> { Pair<C, B>(f(p.first), p.second) }
 
 fun to_str(x Int) Str { "mapped" }
 
@@ -1088,7 +1088,7 @@ hello
 
 ```metall
 struct Wrap<T> { inner T }
-fun Wrap.unwrap<T>(w Wrap<T>) T { w.inner }
+fun Wrap.unwrap(w Wrap) T { w.inner }
 
 fun main() void {
     let w = Wrap<Wrap<Int>>(Wrap<Int>(99))
@@ -1106,7 +1106,7 @@ fun main() void {
 ```metall
 struct Box<T> { value T }
 fun id<T>(x T) T { x }
-fun Box.get_id<T>(b Box<T>) T { id<T>(b.value) }
+fun Box.get_id(b Box) T { id<T>(b.value) }
 
 fun main() void {
     let b = Box<Int>(7)
@@ -1150,7 +1150,7 @@ struct Box<V> {
     items []V
 }
 
-fun Box.len<V>(b &Box<V>) Int {
+fun Box.len(b &Box) Int {
     b.items.len
 }
 
@@ -3003,12 +3003,13 @@ fun main() void {
 42
 ```
 
-**shape field access**
+**shape method access**
 
 ```metall
-shape HasPair { one Str two Int }
+shape HasPair { fun HasPair.first(p HasPair) Str }
 struct Pair { one Str two Int }
-fun first<T HasPair>(t T) Str { t.one }
+fun Pair.first(p Pair) Str { p.one }
+fun first<T HasPair>(t T) Str { t.first() }
 fun main() void {
     let p = Pair("hello", 42)
     DebugIntern.print_str(first<Pair>(p))
@@ -4985,7 +4986,7 @@ fun main() void {
 **slice method**
 
 ```metall
-fun Slice.first<T>(s []T) T { s[0] }
+fun Slice.first(s []T) T { s[0] }
 
 fun main() void {
     let x = [10, 20, 30]

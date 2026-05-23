@@ -268,7 +268,6 @@ Block: void
     Block: void
   Call: void
     Ident: fun02
-      SimpleType: Str
     Int: Int
 ---
 fun01 = sync fun(Int) void
@@ -1591,7 +1590,6 @@ Block: fun01
   Fun: fun01
     FunParam: union01
       SimpleType: union01
-        SimpleType: Int
     SimpleType: void
     Block: void
 ---
@@ -1620,19 +1618,16 @@ Block: fun01
   Fun: fun02
     FunParam: union03
       SimpleType: union03
-        SimpleType: Int
     SimpleType: void
     Block: void
   Fun: fun02
     FunParam: union03
       SimpleType: union03
-        SimpleType: Int
     SimpleType: void
     Block: void
   Fun: fun01
     FunParam: union01
       SimpleType: union01
-        SimpleType: Str
     SimpleType: void
     Block: void
 ---
@@ -1736,7 +1731,6 @@ Block: fun01
   Fun: fun01
     FunParam: union01
       SimpleType: union01
-        SimpleType: Int
     SimpleType: void
     Block: void
 ---
@@ -1835,7 +1829,6 @@ Block: union01
     SimpleType: ?
   TypeConstruction: union01
     Ident: union01
-      SimpleType: Int
     Int: Int
 ---
 union01 = Maybe<Int> = Int | Bool
@@ -2062,11 +2055,9 @@ Block: scope01
     SimpleType: scope02
   Var: scope02
     SimpleType: scope02
-      SimpleType: scope02
     Int: scope02
   Var: scope02
     SimpleType: scope02
-      SimpleType: scope02
     String: scope02
 ---
 scope01:
@@ -2166,7 +2157,6 @@ Block: scope01
     FunParam: scope04
       SimpleType: scope04
     SimpleType: scope04
-      SimpleType: scope04
     Block: scope04
       If: scope05
         Ident: scope05
@@ -4985,7 +4975,6 @@ Block: Int
   Var: void
     TypeConstruction: struct02
       Ident: struct02
-        SimpleType: Int
       Int: Int
   FieldAccess: Int
     Ident: struct02
@@ -5021,12 +5010,8 @@ Block: Int
   Var: void
     TypeConstruction: struct03
       Ident: struct03
-        SimpleType: struct04
-          SimpleType: Int
-        SimpleType: Str
       TypeConstruction: struct04
         Ident: struct04
-          SimpleType: Int
         Int: Int
       String: Str
   FieldAccess: Int
@@ -5054,17 +5039,14 @@ Block: void
   Var: void
     TypeConstruction: struct02
       Ident: struct02
-        SimpleType: Int
       Int: Int
   Var: void
     TypeConstruction: struct02
       Ident: struct02
-        SimpleType: Int
       Int: Int
   Var: void
     TypeConstruction: struct03
       Ident: struct03
-        SimpleType: Str
       String: Str
 ---
 struct01 = Foo { value T }
@@ -5095,7 +5077,6 @@ Block: fun01
     FunParam: &struct01
       RefType: &struct01
         SimpleType: struct01
-          SimpleType: Int
     SimpleType: Int
     Block: Int
       FieldAccess: Int
@@ -5132,7 +5113,6 @@ Block: Int
   Var: void
     TypeConstruction: struct02
       Ident: struct02
-        SimpleType: Int
       Int: Int
   Assign: void
     Ident: ?
@@ -5146,7 +5126,6 @@ Block: Int
       Var: void
         TypeConstruction: struct04
           Ident: struct04
-            SimpleType: Int
           Int: Int
           Int: Int
       FieldAccess: Int
@@ -5185,10 +5164,8 @@ Block: Int
   Var: void
     TypeConstruction: struct04
       Ident: struct04
-        SimpleType: Int
       TypeConstruction: struct05
         Ident: struct05
-          SimpleType: Int
         Int: Int
   FieldAccess: Int
     FieldAccess: struct05
@@ -5233,22 +5210,17 @@ Block: Int
     Ident: ?
     Call: Int
       Ident: fun02
-        SimpleType: Int
       Int: Int
   Assign: void
     Ident: ?
     Call: Str
       Ident: fun03
-        SimpleType: Str
       String: Str
   Var: void
     Call: struct02
       Ident: fun04
-        SimpleType: struct02
-          SimpleType: Int
       TypeConstruction: struct02
         Ident: struct02
-          SimpleType: Int
         Int: Int
   FieldAccess: Int
     Ident: struct02
@@ -5284,8 +5256,6 @@ Block: Int
       Ident: A
   Call: Int
     Ident: fun02
-      SimpleType: Int
-      SimpleType: Str
     Int: Int
     String: Str
 ---
@@ -5316,11 +5286,9 @@ Block: Int
     Ident: ?
     Call: Int
       Ident: fun02
-        SimpleType: Int
       Int: Int
   Call: Int
     Ident: fun02
-      SimpleType: Int
     Int: Int
 ---
 fun01 = fun(T) T
@@ -5332,7 +5300,7 @@ fun02 = fun(Int) Int
 ```metall
 {
     struct Foo<T> { one T }
-    fun Foo.bar<T>(f Foo<T>, a T, b Bool) T { if b { return f.one } a }
+    fun Foo.bar(f Foo, a T, b Bool) T { if b { return f.one } a }
     let x = Foo<Int>(42)
     x.bar(123, true)
 }
@@ -5365,7 +5333,6 @@ Block: Int
   Var: void
     TypeConstruction: struct03
       Ident: struct03
-        SimpleType: Int
       Int: Int
   Call: Int
     FieldAccess: fun02
@@ -5412,7 +5379,6 @@ Block: Str
   Call: Str
     FieldAccess: fun02
       Ident: struct01
-      SimpleType: Str
     String: Str
 ---
 struct01 = Foo { value Int }
@@ -5425,7 +5391,7 @@ fun02    = fun(struct01, Str) Str
 ```metall
 {
     struct Foo<T> { one T }
-    fun Foo.bar<T, U>(f Foo<T>, a U) U { a }
+    fun Foo.bar<U>(f Foo, a U) U { a }
     let x = Foo<Int>(42)
     x.bar<Str>("hello")
 }
@@ -5451,12 +5417,10 @@ Block: Str
   Var: void
     TypeConstruction: struct03
       Ident: struct03
-        SimpleType: Int
       Int: Int
   Call: Str
     FieldAccess: fun02
       Ident: struct03
-      SimpleType: Str
     String: Str
 ---
 struct01 = Foo { one T }
@@ -5497,7 +5461,6 @@ Block: Int
         Ident: T
   Call: Int
     Ident: fun04
-      SimpleType: Int
     Int: Int
 ---
 fun01 = fun(T) T
@@ -5532,7 +5495,6 @@ Block: Int
   Var: void
     Call: Int
       Ident: fun02
-        SimpleType: Int
       Int: Int
   Block: Int
     Fun: fun03
@@ -5545,7 +5507,6 @@ Block: Int
     Var: void
       Call: Int
         Ident: fun04
-          SimpleType: Str
         String: Str
     Ident: Int
 ---
@@ -5602,7 +5563,6 @@ Block: Int
   Var: void
     Call: struct03
       Ident: fun02
-        SimpleType: Int
       Int: Int
   FieldAccess: Int
     Ident: struct03
@@ -5639,7 +5599,6 @@ Block: Int
     Int: Int
   Call: Int
     Ident: fun02
-      SimpleType: Int
     Ref: &Int
       Ident: Int
 ---
@@ -5668,7 +5627,6 @@ Block: Int
       Ident: T
   Var: void
     Ident: fun02
-      SimpleType: Int
   Call: Int
     Ident: fun02
     Int: Int
@@ -5706,7 +5664,6 @@ Block: Int
       Ident: T
   Var: void
     Ident: fun02
-      SimpleType: Str
   Assign: void
     Ident: ?
     Call: Str
@@ -5717,7 +5674,6 @@ Block: Int
       String: Str
   Var: void
     Ident: fun03
-      SimpleType: Int
   Call: Int
     Ident: fun03
     TypeConstruction: struct01
@@ -5760,7 +5716,6 @@ Block: void
     Int: Int
   Call: void
     Ident: fun02
-      SimpleType: Int
     Ref: &mut Int
       Ident: Int
     Int: Int
@@ -5774,7 +5729,7 @@ fun02 = fun(&mut Int, Int) void
 ```metall
 {
     struct Box<V> { value V }
-    fun Box.get<V>(b &Box<V>) V { b.value }
+    fun Box.get(b &Box) V { b.value }
     fun wrap<V>(b &Box<V>) V { b.get() }
     let b = Box<Int>(42)
     wrap<Int>(&b)
@@ -5811,11 +5766,9 @@ Block: Int
   Var: void
     TypeConstruction: struct04
       Ident: struct04
-        SimpleType: Int
       Int: Int
   Call: Int
     Ident: fun04
-      SimpleType: Int
     Ref: &struct04
       Ident: struct04
 ---
@@ -5834,7 +5787,7 @@ fun04    = fun(&struct04) Int
 ```metall
 {
     struct Bag<V> { items []V }
-    fun Bag.len<V>(b &Bag<V>) Int { b.items.len }
+    fun Bag.len(b &Bag) Int { b.items.len }
     fun count<V>(b &Bag<V>) Int { b.len() }
     let @a = Arena()
     let items = @a.slice<Str>(2, "")
@@ -5883,11 +5836,9 @@ Block: Int
   Var: void
     TypeConstruction: struct04
       Ident: struct04
-        SimpleType: Str
       Ident: []mut Str
   Call: Int
     Ident: fun05
-      SimpleType: Str
     Ref: &struct04
       Ident: struct04
 ---
@@ -5937,7 +5888,6 @@ Block: Int
           Ident: Str
   Call: Int
     Ident: fun04
-      SimpleType: Str
     String: Str
     Ident: fun03
 ---
@@ -5948,151 +5898,381 @@ fun05 = fun(Str) Int
 fun04 = fun(Str, fun05) Int
 ```
 
+## Template Shorthand Syntax
+
+**Bare owner param and return carry owner params**
+
+```metall
+{
+    struct Box<T> { value T }
+    fun Box.get(b Box) T { b.value }
+    fun Box.keep(b Box) Box { b }
+    let x Int = Box<Int>(42).get()
+    let y Str = Box<Str>("hi").get()
+    let z Int = Box<Int>(7).keep().value
+}
+```
+
+```error
+```
+
+**Method-local param must be declared**
+
+```metall
+{
+    struct Box<T> { value T }
+    fun Box.replace(b Box, value U) Box { Box(value) }
+}
+```
+
+```error
+test.met:3:34: symbol not defined: U
+        struct Box<T> { value T }
+        fun Box.replace(b Box, value U) Box { Box(value) }
+                                     ^
+    }
+```
+
+**Declared method-local param can return different owner type**
+
+```metall
+{
+    struct Box<T> { value T }
+    fun Box.replace<U>(b Box, value U) Box<U> { Box(value) }
+    let x Str = Box<Int>(42).replace("hi").value
+}
+```
+
+```error
+```
+
+**Explicit method param is added after owner params**
+
+```metall
+{
+    struct Pair<A, B> { first A second B }
+    fun Pair.with_first<C>(p Pair, value C) Pair<C, B> { Pair(value, p.second) }
+    let x Str = Pair<Int, Str>(1, "tail").with_first("head").first
+}
+```
+
+```error
+```
+
+**Owner param can be used without a bare owner type**
+
+```metall
+{
+    struct Box<T> { value T }
+    fun Box.echo(value T) T { value }
+    let x Int = Box.echo(42)
+}
+```
+
+```error
+```
+
+**Owner param keeps its shape constraint**
+
+```metall
+{
+    shape Same { fun Same.same(a Same, b Same) Bool }
+    struct Score { n Int }
+    fun Score.same(a Score, b Score) Bool { a.n == b.n }
+    struct EqualBox<T Same> { value T }
+    fun EqualBox.same(a EqualBox, b EqualBox) Bool { a.value.same(b.value) }
+    let x Bool = EqualBox(Score(1)).same(EqualBox(Score(1)))
+}
+```
+
+```error
+```
+
+**Explicit method param can type a concrete owner**
+
+```metall
+{
+    shape Same { fun Same.same(a Same, b Same) Bool }
+    struct Score { n Int }
+    fun Score.same(a Score, b Score) Bool { a.n == b.n }
+    struct Box<T> { value T }
+    fun Box.same<U Same>(a Box<U>, b Box<U>) Bool { a.value.same(b.value) }
+    let x Bool = Box<Score>(Score(1)).same(Box<Score>(Score(1)))
+}
+```
+
+```error
+```
+
+**Shape member shorthand carries shape params**
+
+```metall
+{
+    shape Cell<Value> { fun Cell.get(c Cell) Value }
+    struct IntCell { value Int }
+    fun IntCell.get(c IntCell) Int { c.value }
+    fun read<C Cell>(c C) C.Value { c.get() }
+    let x Int = read(IntCell(5))
+}
+```
+
+```error
+```
+
+**Attached slot used in field and function types**
+
+```metall
+{
+    shape Cell<Value> { fun Cell.get(c Cell) Value }
+    struct IntCell { value Int }
+    fun IntCell.get(c IntCell) Int { c.value }
+
+    struct Mapped<In Cell, Out> {
+        input In
+        map fun(In.Value) Out
+    }
+    fun Mapped.value(m Mapped) Out { m.map(m.input.get()) }
+
+    fun add1(x Int) Int { x + 1 }
+    let x Int = Mapped(IntCell(4), add1).value()
+}
+```
+
+```error
+```
+
+**Attached slot used as another constraint argument**
+
+```metall
+{
+    shape Cell<Value> { fun Cell.get(c Cell) Value }
+    struct IntCell { value Int }
+    fun IntCell.get(c IntCell) Int { c.value }
+    struct OtherIntCell { value Int }
+    fun OtherIntCell.get(c OtherIntCell) Int { c.value }
+
+    struct SameValuePair<Left Cell, Right Cell<Left.Value>> {
+        left Left
+        right Right
+    }
+    fun SameValuePair.right_value(p SameValuePair) Left.Value { p.right.get() }
+
+    let x Int = SameValuePair(IntCell(1), OtherIntCell(2)).right_value()
+}
+```
+
+```error
+```
+
+**Associated slot projection must be introduced first**
+
+```metall
+{
+    shape Cell<Value> { fun Cell.get(c Cell) Value }
+    struct Pair<Right Cell<Left.Value>, Left Cell> {
+        right Right
+        left Left
+    }
+}
+```
+
+```error
+test.met:3:28: unknown associated type: Left.Value
+        shape Cell<Value> { fun Cell.get(c Cell) Value }
+        struct Pair<Right Cell<Left.Value>, Left Cell> {
+                               ^^^^^^^^^^
+            right Right
+```
+
+**Explicit shape argument introduces associated slot**
+
+```metall
+{
+    shape Source<Item> { fun Source.next(s &mut Source) ?Item }
+    struct Counter { value Int }
+    fun Counter.next(c &mut Counter) ?Int { c.value }
+    fun first<S Source<Int>>(s &mut S) ?S.Item { s.next() }
+    mut c = Counter(3)
+    let x ?Int = first(&mut c)
+}
+```
+
+```error
+```
+
+**Explicit shape argument fixes associated slot**
+
+```metall
+{
+    shape Source<Item> { fun Source.next(s &mut Source) ?Item }
+    struct Counter { value Int }
+    fun Counter.next(c &mut Counter) ?Int { c.value }
+    fun use_item<S Source<Int>>(s &mut S, value S.Item) void {
+        _ = s
+        _ = value
+    }
+    mut c = Counter(3)
+    use_item(&mut c, "wrong")
+}
+```
+
+```error
+test.met:10:22: type mismatch at argument 2: expected Int, got Str
+        mut c = Counter(3)
+        use_item(&mut c, "wrong")
+                         ^^^^^^^
+    }
+```
+
+**Attached slots can be chained**
+
+```metall
+{
+    shape Cell<Value> { fun Cell.get(c Cell) Value }
+    shape Holder<Inner Cell> { fun Holder.inner(h Holder) Inner }
+    struct IntCell { value Int }
+    fun IntCell.get(c IntCell) Int { c.value }
+    struct IntHolder { cell IntCell }
+    fun IntHolder.inner(h IntHolder) IntCell { h.cell }
+
+    struct Boxed<H Holder> { holder H }
+    fun Boxed.value(b Boxed) H.Inner.Value { b.holder.inner().get() }
+
+    let x Int = Boxed(IntHolder(IntCell(7))).value()
+}
+```
+
+```error
+```
+
+**Open shape slot is rejected**
+
+```metall
+{
+    shape Marker<Item> {}
+}
+```
+
+```error
+test.met:2:18: open shape slot: Item is not used by the shape contract
+    {
+        shape Marker<Item> {}
+                     ^^^^
+    }
+```
+
+**Unknown associated type projection is rejected**
+
+```metall
+{
+    shape Source<T> { fun Source.next(s &mut Source) ?T }
+    struct Counter { value Int }
+    fun Counter.next(c &mut Counter) ?Int { c.value }
+    struct Pipeline<In Source> { source In }
+    fun Pipeline.next(p &mut Pipeline) ?In.Item {
+        (&mut p.source).next()
+    }
+}
+```
+
+```error
+test.met:6:41: unknown associated type: In.Item
+        struct Pipeline<In Source> { source In }
+        fun Pipeline.next(p &mut Pipeline) ?In.Item {
+                                            ^^^^^^^
+            (&mut p.source).next()
+```
+
+**Associated type constraint reports shape mismatch**
+
+```metall
+{
+    shape Source<Item> { fun Source.next(s &mut Source) ?Item }
+    struct Counter { value Int }
+    fun Counter.next(c &mut Counter) ?Int { c.value }
+    fun wants_str<S Source<Str>>(s &mut S) void {
+        _ = s
+    }
+    mut c = Counter(8)
+    wants_str(&mut c)
+}
+```
+
+```error
+test.met:9:5: type mismatch: expected Source<Str>, got Source<Int>
+        mut c = Counter(8)
+        wants_str(&mut c)
+        ^^^^^^^^^^^^^^^^^
+    }
+```
+
+**Type parameter constraint reports associated type mismatch**
+
+```metall
+{
+    shape Source<Item> { fun Source.next(s &mut Source) ?Item }
+    fun needs_int<S Source<Int>>(s &mut S) void {
+        _ = s
+    }
+    fun forwards_str<S Source<Str>>(s &mut S) void {
+        needs_int<S>(s)
+    }
+}
+```
+
+```error
+test.met:7:9: type mismatch: expected Source<Int>, got Source<Str>
+        fun forwards_str<S Source<Str>>(s &mut S) void {
+            needs_int<S>(s)
+            ^^^^^^^^^^^^
+        }
+```
+
+**Shape subset checks associated type values**
+
+```metall
+{
+    shape Source<Item> { fun Source.next(s &mut Source) ?Item }
+    shape Rewindable<Item> {
+        fun Rewindable.next(s &mut Rewindable) ?Item
+        fun Rewindable.rewind(s &mut Rewindable) void
+    }
+    fun needs_int<S Source<Int>>(s &mut S) void {
+        _ = s
+    }
+    fun forwards_rewindable_str<S Rewindable<Str>>(s &mut S) void {
+        needs_int<S>(s)
+    }
+}
+```
+
+```error
+test.met:11:9: type mismatch: expected Source<Int>, got Rewindable<Str>
+        fun forwards_rewindable_str<S Rewindable<Str>>(s &mut S) void {
+            needs_int<S>(s)
+            ^^^^^^^^^^^^
+        }
+```
+
+**Explicit method param does not replace owner param**
+
+```metall
+{
+    shape Same { fun Same.same(a Same, b Same) Bool }
+    struct Box<T> { value T }
+    fun Box.same<T Same>(a Box, b Box) Bool { true }
+}
+```
+
+```error
+test.met:4:18: type parameter T shadows owner type parameter
+        struct Box<T> { value T }
+        fun Box.same<T Same>(a Box, b Box) Bool { true }
+                     ^
+    }
+```
+
 ## Shapes
-
-**Shape field access**
-
-```metall
-{
-    shape HasPair { one Str two Int }
-    struct Pair { one Str two Int }
-    fun first<T HasPair>(t T) Str { t.one }
-    first<Pair>(Pair("hello", 42))
-}
-```
-
-```types
-Block: Str
-  Shape: shape01
-    StructField: Str
-      SimpleType: Str
-    StructField: Int
-      SimpleType: Int
-  Struct: struct01
-    StructField: ?
-      SimpleType: ?
-    StructField: ?
-      SimpleType: ?
-  Fun: fun01
-    TypeParam: T
-      SimpleType: shape01
-    FunParam: T
-      SimpleType: T
-    SimpleType: Str
-    Block: Str
-      FieldAccess: Str
-        Ident: T
-  Call: Str
-    Ident: fun02
-      SimpleType: struct01
-    TypeConstruction: struct01
-      Ident: struct01
-      String: Str
-      Int: Int
----
-shape01  = HasPair { one Str, two Int }
-struct01 = Pair { one Str, two Int }
-fun01    = fun(T) Str
-fun02    = fun(struct01) Str
-```
-
-**Shape satisfied with extra fields and different order**
-
-```metall
-{
-    shape HasPair { one Str two Int }
-    struct Big { extra Bool two Int name Str one Str }
-    fun first<T HasPair>(t T) Str { t.one }
-    first<Big>(Big(true, 42, "world", "hello"))
-}
-```
-
-```types
-Block: Str
-  Shape: shape01
-    StructField: Str
-      SimpleType: Str
-    StructField: Int
-      SimpleType: Int
-  Struct: struct01
-    StructField: ?
-      SimpleType: ?
-    StructField: ?
-      SimpleType: ?
-    StructField: ?
-      SimpleType: ?
-    StructField: ?
-      SimpleType: ?
-  Fun: fun01
-    TypeParam: T
-      SimpleType: shape01
-    FunParam: T
-      SimpleType: T
-    SimpleType: Str
-    Block: Str
-      FieldAccess: Str
-        Ident: T
-  Call: Str
-    Ident: fun02
-      SimpleType: struct01
-    TypeConstruction: struct01
-      Ident: struct01
-      Bool: Bool
-      Int: Int
-      String: Str
-      String: Str
----
-shape01  = HasPair { one Str, two Int }
-struct01 = Big { extra Bool, two Int, name Str, one Str }
-fun01    = fun(T) Str
-fun02    = fun(struct01) Str
-```
-
-**Shape forward declared after struct**
-
-```metall
-{
-    struct Pair { one Str two Int }
-    shape HasPair { one Str two Int }
-    fun first<T HasPair>(t T) Str { t.one }
-    first<Pair>(Pair("hello", 42))
-}
-```
-
-```types
-Block: Str
-  Struct: struct01
-    StructField: ?
-      SimpleType: ?
-    StructField: ?
-      SimpleType: ?
-  Shape: shape01
-    StructField: Str
-      SimpleType: Str
-    StructField: Int
-      SimpleType: Int
-  Fun: fun01
-    TypeParam: T
-      SimpleType: shape01
-    FunParam: T
-      SimpleType: T
-    SimpleType: Str
-    Block: Str
-      FieldAccess: Str
-        Ident: T
-  Call: Str
-    Ident: fun02
-      SimpleType: struct01
-    TypeConstruction: struct01
-      Ident: struct01
-      String: Str
-      Int: Int
----
-struct01 = Pair { one Str, two Int }
-shape01  = HasPair { one Str, two Int }
-fun01    = fun(T) Str
-fun02    = fun(struct01) Str
-```
 
 **Shape method call**
 
@@ -6139,7 +6319,6 @@ Block: Str
           Ident: T
   Call: Str
     Ident: fun04
-      SimpleType: struct01
     TypeConstruction: struct01
       Ident: struct01
       String: Str
@@ -6203,7 +6382,6 @@ Block: Int
       Int: Int
   Call: Int
     Ident: fun04
-      SimpleType: struct01
     Ref: &struct01
       Ident: struct01
 ---
@@ -6266,7 +6444,6 @@ Block: Int
       Int: Int
   Call: Int
     Ident: fun04
-      SimpleType: struct01
     Ref: &mut struct01
       Ident: struct01
 ---
@@ -6341,8 +6518,6 @@ Block: Str
           Ident: A
   Call: Str
     Ident: fun05
-      SimpleType: struct01
-      SimpleType: struct02
     TypeConstruction: struct01
       Ident: struct01
       String: Str
@@ -6406,7 +6581,6 @@ Block: struct01
           Ident: T
   Call: struct01
     Ident: fun04
-      SimpleType: struct01
     TypeConstruction: struct01
       Ident: struct01
       Int: Int
@@ -6472,7 +6646,6 @@ Block: Bool
         Ident: T
   Call: Bool
     Ident: fun04
-      SimpleType: struct01
     TypeConstruction: struct01
       Ident: struct01
       Int: Int
@@ -6539,12 +6712,10 @@ Block: Str
   Var: void
     Call: Str
       Ident: fun05
-        SimpleType: struct01
       TypeConstruction: struct01
         Ident: struct01
   Call: Str
     Ident: fun06
-      SimpleType: struct02
     TypeConstruction: struct02
       Ident: struct02
 ---
@@ -6615,7 +6786,6 @@ Block: Str
           Ident: T
   Call: Str
     Ident: fun06
-      SimpleType: struct01
     TypeConstruction: struct01
       Ident: struct01
 ---
@@ -6627,74 +6797,6 @@ fun03    = fun(T) Str
 fun04    = fun(T) Int
 fun05    = fun(T) Str
 fun06    = fun(struct01) Str
-```
-
-**Shape field and method combined**
-
-```metall
-{
-    shape Named {
-        name Str
-        fun Named.greet(self Named) Str
-    }
-    struct Person { name Str age Int }
-    fun Person.greet(p Person) Str { p.name }
-    fun intro<T Named>(t T) Str {
-        let n = t.name
-        t.greet()
-    }
-    intro<Person>(Person("Alice", 30))
-}
-```
-
-```types
-Block: Str
-  Shape: shape01
-    StructField: Str
-      SimpleType: Str
-    FunDecl: ?
-      FunParam: shape01
-        SimpleType: shape01
-      SimpleType: Str
-  Struct: struct01
-    StructField: ?
-      SimpleType: ?
-    StructField: ?
-      SimpleType: ?
-  Fun: fun01
-    FunParam: struct01
-      SimpleType: struct01
-    SimpleType: Str
-    Block: Str
-      FieldAccess: Str
-        Ident: struct01
-  Fun: fun02
-    TypeParam: T
-      SimpleType: shape01
-    FunParam: T
-      SimpleType: T
-    SimpleType: Str
-    Block: Str
-      Var: void
-        FieldAccess: Str
-          Ident: T
-      Call: Str
-        FieldAccess: fun03
-          Ident: T
-  Call: Str
-    Ident: fun04
-      SimpleType: struct01
-    TypeConstruction: struct01
-      Ident: struct01
-      String: Str
-      Int: Int
----
-shape01  = Named { name Str }
-struct01 = Person { name Str, age Int }
-fun01    = sync fun(struct01) Str
-fun02    = fun(T) Str
-fun03    = fun(T) Str
-fun04    = fun(struct01) Str
 ```
 
 **Shape satisfied by non-struct type**
@@ -6735,7 +6837,6 @@ Block: Int
           Ident: T
   Call: Int
     Ident: fun04
-      SimpleType: Int
     Int: Int
 ---
 shape01 = Displayable {  }
@@ -6795,7 +6896,6 @@ Block: Int
         Ident: K
   Call: Int
     Ident: fun06
-      SimpleType: Int
     Int: Int
 ---
 shape01 = Displayable {  }
@@ -6907,7 +7007,6 @@ Block: Int
           Int: Int
   Call: Int
     Ident: fun08
-      SimpleType: Int
     Int: Int
     Int: Int
     Int: Int
@@ -6932,7 +7031,7 @@ fun08   = fun(Int, Int, Int) Int
         fun Displayable.display(self Displayable) Int
     }
     struct Wrapper<T> { value T }
-    fun Wrapper.display<T Displayable>(w Wrapper<T>) Int { w.value.display() }
+    fun Wrapper.display<U Displayable>(w Wrapper<U>) Int { w.value.display() }
     fun Int.display(i Int) Int { i }
     fun show<T Displayable>(t T) Int { t.display() }
     show<Wrapper<Int>>(Wrapper<Int>(42))
@@ -6951,16 +7050,16 @@ Block: Int
     StructField: ?
       SimpleType: ?
   Fun: fun01
-    TypeParam: T
+    TypeParam: U
       SimpleType: shape01
     FunParam: struct02
       SimpleType: struct02
-        SimpleType: T
+        SimpleType: U
     SimpleType: Int
     Block: Int
       Call: Int
         FieldAccess: fun02
-          FieldAccess: T
+          FieldAccess: U
             Ident: struct02
   Fun: fun03
     FunParam: Int
@@ -6980,18 +7079,15 @@ Block: Int
           Ident: T
   Call: Int
     Ident: fun06
-      SimpleType: struct03
-        SimpleType: Int
     TypeConstruction: struct03
       Ident: struct03
-        SimpleType: Int
       Int: Int
 ---
 shape01  = Displayable {  }
 struct01 = Wrapper { value T }
-struct02 = Wrapper<T> { value T }
+struct02 = Wrapper<U> { value U }
 fun01    = fun(struct02) Int
-fun02    = fun(T) Int
+fun02    = fun(U) Int
 fun03    = sync fun(Int) Int
 fun04    = fun(T) Int
 fun05    = fun(T) Int
@@ -7034,7 +7130,6 @@ Block: Int
     FunParam: struct01
       SimpleType: struct01
     SimpleType: union01
-      SimpleType: Int
     Block: union01
       If: void
         Binary: Bool
@@ -7061,7 +7156,6 @@ Block: Int
       Int: Int
   Call: Int
     Ident: fun03
-      SimpleType: struct01
     TypeConstruction: struct01
       Ident: struct01
       Int: Int
@@ -7110,7 +7204,6 @@ Block: union01
       RefType: &mut struct02
         SimpleType: struct02
     SimpleType: union01
-      SimpleType: Int
     Block: union01
       Var: void
         FieldAccess: Int
@@ -7145,8 +7238,6 @@ Block: union01
       Int: Int
   Call: union01
     Ident: fun04
-      SimpleType: Int
-      SimpleType: struct02
     Ref: &mut struct02
       Ident: struct02
 ---
@@ -7195,7 +7286,6 @@ Block: union01
       RefType: &mut struct02
         SimpleType: struct02
     SimpleType: union01
-      SimpleType: Int
     Block: union01
       Var: void
         FieldAccess: Int
@@ -7249,12 +7339,12 @@ fun04    = fun(&mut struct02) union01
 
 ```metall module
 shape RC<T> {
-    fun RC.read<T>(r &RC, buf []T) ![]T
+    fun RC.read(r &RC, buf []T) ![]T
 }
 
 struct Buf<T> {}
 
-fun Buf.read<T>(b &Buf<T>, buf []T) ![]T { buf }
+fun Buf.read(b &Buf, buf []T) ![]T { buf }
 
 fun use_rc<T, R RC<T>>(r R) !Int { 1 }
 
@@ -7283,7 +7373,7 @@ fun main() !void {
 ```
 
 ```error
-test.met:9:5: type Foo does not satisfy shape Iter: method next has signature fun(&mut Foo) Option<Str>, expected fun(&mut Iter) Option<T>
+test.met:9:5: type mismatch: expected Iter<Int>, got Iter<Str>
         mut f = Foo()
         first<Int, Foo>(&mut f)
         ^^^^^^^^^^^^^^^
@@ -7328,7 +7418,7 @@ test.met:9:5: type Foo does not satisfy shape Iter: method next has signature fu
 {
     shape S { fun S.eq(a S, b S) Bool }
     struct Box<T> { value T }
-    fun Box.eq<T S>(a &mut Box<T>, b &mut Box<T>) Bool { a.value.eq(b.value) }
+    fun Box.eq<U S>(a &mut Box<U>, b &mut Box<U>) Bool { a.value.eq(b.value) }
     fun Int.eq(a Int, b Int) Bool { a == b }
     fun check<T S>(a T, b T) Bool { a.eq(b) }
     mut x = Box<Int>(1)
@@ -7383,7 +7473,6 @@ Block: Int
   Var: void
     TypeConstruction: struct03
       Ident: struct03
-        SimpleType: Str
       String: Str
   FieldAccess: Int
     Ident: struct02
@@ -7416,7 +7505,6 @@ Block: Str
   Var: void
     TypeConstruction: struct02
       Ident: struct02
-        SimpleType: Str
       String: Str
       Int: Int
   FieldAccess: Str
@@ -7753,7 +7841,6 @@ Block: union01
     SimpleType: ?
   Fun: fun01
     SimpleType: union01
-      SimpleType: Int
     Block: union01
       TypeConstruction: union01
         Ident: union01
@@ -7789,7 +7876,6 @@ Block: union01
     FunParam: Bool
       SimpleType: Bool
     SimpleType: union01
-      SimpleType: Int
     Block: union01
       If: union01
         Ident: Bool
@@ -7834,9 +7920,7 @@ Block: union01
   Fun: fun01
     FunParam: union01
       SimpleType: union01
-        SimpleType: Int
     SimpleType: union01
-      SimpleType: Int
     Block: union01
       Match: union01
         Ident: union01
@@ -7854,7 +7938,6 @@ Block: union01
     Ident: fun01
     TypeConstruction: union01
       Ident: union01
-        SimpleType: Int
       Int: Int
 ---
 union01 = MyResult<Int> = Int | Str
@@ -7885,6 +7968,7 @@ Block: Int
         Ident: Int
   Call: Int
     Ident: fun01
+    Int: Int
     Int: Int
 ---
 fun01 = sync fun(Int, Int) Int
@@ -7945,6 +8029,7 @@ Block: Int
     Ident: fun01
     Int: Int
     Int: Int
+    Int: Int
 ---
 fun01 = sync fun(Int, Int, Int) Int
 ```
@@ -7971,6 +8056,8 @@ Block: Int
         Ident: Int
   Call: Int
     Ident: fun01
+    Int: Int
+    Int: Int
 ---
 fun01 = sync fun(Int, Int) Int
 ```
@@ -8007,6 +8094,7 @@ Block: Int
       TypeConstruction: struct01
         Ident: struct01
         Int: Int
+    Int: Int
 ---
 struct01 = Foo { x Int }
 fun01    = sync fun(struct01, Int) Int
@@ -8129,10 +8217,10 @@ Block: Str
           Ident: T
   Call: Str
     Ident: fun04
-      SimpleType: struct01
     TypeConstruction: struct01
       Ident: struct01
       Int: Int
+    String: Str
 ---
 shape01  = HasFmt {  }
 struct01 = Foo { x Int }
@@ -8212,15 +8300,15 @@ test.met:1:25: symbol already defined: foo
 
 ```metall module
 struct Foo<T> { one T }
-fun Foo.bar<T>(f &Foo<T>) T { f.one }
-fun Foo.bar<T>(f &Foo<T>) T { f.one }
+fun Foo.bar(f &Foo) T { f.one }
+fun Foo.bar(f &Foo) T { f.one }
 fun main() void { let f = Foo<Int>(42) let r = &f _ = r.bar() }
 ```
 
 ```error
 test.met:3:5: symbol already defined: test.Foo.bar
-    fun Foo.bar<T>(f &Foo<T>) T { f.one }
-    fun Foo.bar<T>(f &Foo<T>) T { f.one }
+    fun Foo.bar(f &Foo) T { f.one }
+    fun Foo.bar(f &Foo) T { f.one }
         ^^^^^^^
     fun main() void { let f = Foo<Int>(42) let r = &f _ = r.bar() }
 ```
@@ -9039,13 +9127,13 @@ test.met:1:32: argument count mismatch: expected 2, got 1
 **Generic method call wrong arg count**
 
 ```metall
-{ struct Foo<T> { one T } fun Foo.add<T>(f Foo<T>, n T) T { n } let x = Foo(42) x.add(1, 2) }
+{ struct Foo<T> { one T } fun Foo.add(f Foo, n T) T { n } let x = Foo(42) x.add(1, 2) }
 ```
 
 ```error
-test.met:1:81: argument count mismatch: expected 1, got 2
-    { struct Foo<T> { one T } fun Foo.add<T>(f Foo<T>, n T) T { n } let x = Foo(42) x.add(1, 2) }
-                                                                                    ^^^^^^^^^^^
+test.met:1:75: argument count mismatch: expected 1, got 2
+    { struct Foo<T> { one T } fun Foo.add(f Foo, n T) T { n } let x = Foo(42) x.add(1, 2) }
+                                                                              ^^^^^^^^^^^
 ```
 
 **Method call wrong arg type**
@@ -9203,40 +9291,37 @@ test.met:1:14: duplicate type parameter: T
 **Method on generic struct too few type args**
 
 ```metall
-{ struct Foo<T> { one T } fun Foo.bar<T, U>(f Foo<T>, a U) U { a } let x = Foo<Int>(1) x.bar() }
+{ struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo, a U) U { a } let x = Foo<Int>(1) x.bar<Str>("hi") }
 ```
 
 ```error
-test.met:1:90: type argument count mismatch: expected 2, got 1
-    { struct Foo<T> { one T } fun Foo.bar<T, U>(f Foo<T>, a U) U { a } let x = Foo<Int>(1) x.bar() }
-                                                                                             ^^^
+test.met:1:87: type argument count mismatch: expected 3, got 2
+    { struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo, a U) U { a } let x = Foo<Int>(1) x.bar<Str>("hi") }
+                                                                                          ^^^
 ```
 
 **Method on generic struct too many type args**
 
 ```metall
-{ struct Foo<T> { one T } fun Foo.bar<T>(f Foo<T>) T { f.one } let x = Foo<Int>(1) x.bar<Int, Str>() }
+{ struct Foo<T> { one T } fun Foo.bar(f Foo) T { f.one } let x = Foo<Int>(1) x.bar<Int, Str>() }
 ```
 
 ```error
-test.met:1:86: type argument count mismatch: expected 1, got 3
-    { struct Foo<T> { one T } fun Foo.bar<T>(f Foo<T>) T { f.one } let x = Foo<Int>(1) x.bar<Int, Str>() }
-                                                                                         ^^^
+test.met:1:80: type argument count mismatch: expected 1, got 3
+    { struct Foo<T> { one T } fun Foo.bar(f Foo) T { f.one } let x = Foo<Int>(1) x.bar<Int, Str>() }
+                                                                                   ^^^
 ```
 
 **Method on generic struct wrong first param type**
 
 ```metall
-{ struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }
+{ struct Foo<T> { one T } fun Foo.bar(f Int) Int { f } let x = Foo<Int>(1) x.bar() }
 ```
 
 ```error
-test.met:1:53: return type mismatch: expected T, got Int
-    { struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }
-                                                        ^
-test.met:1:77: type mismatch at receiver: expected Int, got Foo<Int>
-    { struct Foo<T> { one T } fun Foo.bar<T>(f Int) T { f } let x = Foo<Int>(1) x.bar() }
-                                                                                ^
+test.met:1:76: type mismatch at receiver: expected Int, got Foo<Int>
+    { struct Foo<T> { one T } fun Foo.bar(f Int) Int { f } let x = Foo<Int>(1) x.bar() }
+                                                                               ^
 ```
 
 **Method on generic struct type param must be in first position**
@@ -9249,6 +9334,30 @@ test.met:1:77: type mismatch at receiver: expected Int, got Foo<Int>
 test.met:1:88: type mismatch at receiver: expected Foo<Str>, got Foo<Int>
     { struct Foo<T> { one T } fun Foo.bar<U, V>(f Foo<V>, a U) U { a } let x = Foo<Int>(1) x.bar<Str>("hi") }
                                                                                            ^
+```
+
+**Method cannot have same name as struct field**
+
+```metall
+{ struct Foo { value Int } fun Foo.value(f Foo) Int { f.value } }
+```
+
+```error
+test.met:1:32: method name conflicts with field: Foo.value
+    { struct Foo { value Int } fun Foo.value(f Foo) Int { f.value } }
+                                   ^^^^^^^^^
+```
+
+**Generic method cannot have same name as struct field**
+
+```metall
+{ struct Box<T> { value T } fun Box.value(b Box) T { b.value } }
+```
+
+```error
+test.met:1:33: method name conflicts with field: Box.value
+    { struct Box<T> { value T } fun Box.value(b Box) T { b.value } }
+                                    ^^^^^^^^^
 ```
 
 **Duplicate union name**
@@ -9335,43 +9444,6 @@ test.met:1:29: type Bool is not a variant of Foo
                                 ^^^^
 ```
 
-**Shape not satisfied missing field**
-
-```metall
-{ shape HasPair { one Str two Int } struct Foo { one Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello")) }
-```
-
-```error
-test.met:1:100: type Foo does not satisfy shape HasPair: missing field two
-    { shape HasPair { one Str two Int } struct Foo { one Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello")) }
-                                                                                                       ^^^^^^^^^^
-```
-
-**Shape not satisfied wrong field type**
-
-```metall
-{ shape HasPair { one Str two Int } struct Foo { one Str two Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello", "world")) }
-```
-
-```error
-test.met:1:108: type Foo does not satisfy shape HasPair: field two has type Str, expected Int
-    { shape HasPair { one Str two Int } struct Foo { one Str two Str } fun first<T HasPair>(t T) Str { t.one } first<Foo>(Foo("hello", "world")) }
-                                                                                                               ^^^^^^^^^^
-```
-
-
-**Shape not satisfied ref vs mut ref**
-
-```metall
-{ shape S { one &mut Int } struct Foo { one &Int } fun foo<T S>(t T) Int { 1 } let x = 1 foo<Foo>(Foo(&x)) }
-```
-
-```error
-test.met:1:90: type Foo does not satisfy shape S: field one has type &Int, expected &mut Int
-    { shape S { one &mut Int } struct Foo { one &Int } fun foo<T S>(t T) Int { 1 } let x = 1 foo<Foo>(Foo(&x)) }
-                                                                                             ^^^^^^^^
-```
-
 **Shape not satisfied missing method**
 
 ```metall
@@ -9436,7 +9508,23 @@ test.met:4:28: type parameter U with constraint test.B does not satisfy shape te
                                ^^^^^^^^^
 ```
 
-**Method on unconstrained type param (module)**
+**Type-param argument shape constraint with private method**
+
+```metall module
+shape PublicFoo { pub fun PublicFoo.foo(x PublicFoo) Int }
+shape PrivateFoo { fun PrivateFoo.foo(x PrivateFoo) Int }
+fun call_foo<T PublicFoo>(t T) Int { t.foo() }
+fun caller<U PrivateFoo>(u U) Int { call_foo(u) }
+```
+
+```error
+test.met:4:37: type mismatch: expected PublicFoo, got PrivateFoo
+    fun call_foo<T PublicFoo>(t T) Int { t.foo() }
+    fun caller<U PrivateFoo>(u U) Int { call_foo(u) }
+                                        ^^^^^^^^^^^
+```
+
+**Method parameter cannot shadow constrained owner param (module)**
 
 ```metall module
 shape X { fun X.to_str(x X) Str }
@@ -9445,10 +9533,10 @@ fun Value.to_str<T>(v Value<T>) Str { v.value.to_str() }
 ```
 
 ```error
-test.met:3:47: unconstrained type parameter has no fields or methods: T
+test.met:3:18: type parameter T shadows owner type parameter
     struct Value<T X> { value T }
     fun Value.to_str<T>(v Value<T>) Str { v.value.to_str() }
-                                                  ^^^^^^
+                     ^
 ```
 
 **Shape duplicate method**
@@ -9512,12 +9600,10 @@ fun main() void {}
 Module: test
   Fun: fun01
     SimpleType: union01
-      SimpleType: void
     Block: union01
       Match: void
         TypeConstruction: union01
           Ident: union01
-            SimpleType: void
           Ident: void
         TryPattern: void
         Block: void
@@ -9754,7 +9840,7 @@ test.met:1:31: unsafe keyword can only be used on unsafe functions
 ```metall
 {
     shape Show { fun Show.show(self Show) Int }
-    fun Slice.first<T Show>(s []T) Int { s[0].show() }
+    fun Slice.first<U Show>(s []U) Int { s[0].show() }
     fun Int.show(self Int) Int { self }
     let x = [1, 2, 3]
     x[..].first()
@@ -9769,17 +9855,17 @@ Block: Int
         SimpleType: shape01
       SimpleType: Int
   Fun: fun01
-    TypeParam: T
+    TypeParam: U
       SimpleType: shape01
-    FunParam: []T
-      SliceType: []T
-        SimpleType: T
+    FunParam: []U
+      SliceType: []U
+        SimpleType: U
     SimpleType: Int
     Block: Int
       Call: Int
         FieldAccess: fun02
-          Index: T
-            Ident: []T
+          Index: U
+            Ident: []U
             Int: Int
   Fun: fun03
     FunParam: Int
@@ -9799,8 +9885,8 @@ Block: Int
         Range: void
 ---
 shape01 = Show {  }
-fun01   = fun([]T) Int
-fun02   = fun(T) Int
+fun01   = fun([]U) Int
+fun02   = fun(U) Int
 fun03   = sync fun(Int) Int
 fun04   = fun([]Int) Int
 ```
@@ -9879,50 +9965,6 @@ fun02 = sync fun() void
 
 ## Pub
 
-**Shape requires pub field, struct has pub field**
-
-```metall module
-shape HasName { pub name Str }
-struct Foo { pub name Str }
-fun foo<T HasName>(t T) void {}
-fun main() void { foo<Foo>(Foo("hi")) }
-```
-
-```error
-```
-
-**Shape requires pub field, struct has non-pub field**
-
-```metall module
-shape HasName { pub name Str }
-struct Foo { name Str }
-fun foo<T HasName>(t T) void {}
-fun main() void { foo<Foo>(Foo("hi")) }
-```
-
-```error
-test.met:4:19: type test.Foo does not satisfy shape HasName: field name must be public
-    fun foo<T HasName>(t T) void {}
-    fun main() void { foo<Foo>(Foo("hi")) }
-                      ^^^^^^^^
-```
-
-**Shape requires non-pub field, struct has pub field**
-
-```metall module
-shape HasName { name Str }
-struct Foo { pub name Str }
-fun foo<T HasName>(t T) void {}
-fun main() void { foo<Foo>(Foo("hi")) }
-```
-
-```error
-test.met:4:19: type test.Foo does not satisfy shape HasName: field name must not be public
-    fun foo<T HasName>(t T) void {}
-    fun main() void { foo<Foo>(Foo("hi")) }
-                      ^^^^^^^^
-```
-
 **Shape requires pub method, struct has pub method**
 
 ```metall module
@@ -9969,19 +10011,6 @@ test.met:5:41: type test.Foo does not satisfy shape Greet: method greet must not
     fun main() void { let f = Foo("hi") _ = foo<Foo>(&f) }
                                             ^^^^^^^^
 ```
-
-**Shape with pub and non-pub fields mixed**
-
-```metall module
-shape Mixed { pub x Int y Str }
-struct Foo { pub x Int y Str }
-fun foo<T Mixed>(t T) void {}
-fun main() void { foo<Foo>(Foo(1, "hi")) }
-```
-
-```error
-```
-
 
 **Pub union with pub variants is ok**
 
@@ -10635,6 +10664,183 @@ fun01 = fun(noescape &Int) void
     fun read(x &Int) Int { x.* }
     fun apply(f fun(noescape &Int) Int) void {}
     apply(read)
+}
+```
+
+```error
+```
+
+## Export
+
+**export of Int-returning Int fun (module)**
+
+```metall module
+fun add(a Int, b Int) Int { a + b }
+export metall_add = add
+```
+
+```error
+```
+
+**export of Bool-returning Bool fun (module)**
+
+```metall module
+fun ident(x Bool) Bool { x }
+export metall_ident = ident
+```
+
+```error
+```
+
+**export of void-returning fun (module)**
+
+```metall module
+fun do_nothing() void { }
+export metall_noop = do_nothing
+```
+
+```error
+```
+
+**duplicate export name rejected (module)**
+
+```metall module
+fun first(a Int) Int { a }
+fun second(a Int) Int { a }
+export metall_dup = first
+export metall_dup = second
+```
+
+```error
+test.met:3:8: export name already used: metall_dup
+    fun second(a Int) Int { a }
+    export metall_dup = first
+           ^^^^^^^^^^
+    export metall_dup = second
+
+test.met:4:8: export name already used: metall_dup
+    export metall_dup = first
+    export metall_dup = second
+           ^^^^^^^^^^
+```
+
+**export rejects non-function target (module)**
+
+```metall module
+let value = 42
+export metall_value = value
+```
+
+```error
+test.met:2:23: export target must be a function
+    let value = 42
+    export metall_value = value
+                          ^^^^^
+```
+
+**export rejects bare generic reference (module)**
+
+```metall module
+fun id<T>(x T) T { x }
+export metall_id = id
+```
+
+```error
+test.met:2:20: type argument count mismatch: expected 1, got 0
+    fun id<T>(x T) T { x }
+    export metall_id = id
+                       ^^
+```
+
+**export rejects extern target (module)**
+
+```metall module
+extern fun abs(x Int) Int
+export metall_abs = abs
+```
+
+```error
+test.met:2:21: export target must be a Metall function declared in the current module
+    extern fun abs(x Int) Int
+    export metall_abs = abs
+                        ^^^
+```
+
+**export rejects Str param (module)**
+
+```metall module
+fun greet(s Str) void { }
+export metall_greet = greet
+```
+
+```error
+test.met:1:11: parameter type 'Str' is not exportable to C
+    fun greet(s Str) void { }
+              ^^^^^
+    export metall_greet = greet
+```
+
+**export rejects Str return (module)**
+
+```metall module
+fun get_name() Str { "hello" }
+export metall_get_name = get_name
+```
+
+```error
+test.met:1:16: return type 'Str' is not exportable to C
+    fun get_name() Str { "hello" }
+                   ^^^
+    export metall_get_name = get_name
+```
+
+**export rejects void param (module)**
+
+```metall module
+fun bad(v void) Int { 0 }
+export metall_bad = bad
+```
+
+```error
+test.met:1:9: parameter type 'void' is not exportable to C
+    fun bad(v void) Int { 0 }
+            ^^^^^^
+    export metall_bad = bad
+```
+
+## Recursive Types
+
+**Mutually recursive generics through references**
+
+```metall
+{
+    struct Foo<T> { value T next &Bar<T> }
+    struct Bar<T> { tag T prev &Foo<T> }
+    fun build(f &Foo<Int>, b &Bar<Int>) Int { f.next.tag + b.prev.value }
+}
+```
+
+```error
+```
+
+**Generic struct cached across distinct instantiations**
+
+```metall
+{
+    struct Pair<A, B> { first A second B }
+    fun mixer(p Pair<Int, Str>, q Pair<Str, Int>) Int { p.first + q.second }
+}
+```
+
+```error
+```
+
+**Generic instantiation re-entered with same args returns cache hit**
+
+```metall
+{
+    struct Wrap<T> { value T }
+    fun pair(a Wrap<Int>, b Wrap<Int>) Int { a.value + b.value }
 }
 ```
 

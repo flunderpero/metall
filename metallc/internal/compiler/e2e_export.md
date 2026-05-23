@@ -305,6 +305,12 @@ export dup = b
 ```
 
 ```error
+export_E2E_Export_Tests_Errors_5_duplicate_export_name.met:4:8: export name already used: dup
+    
+    export dup = a
+           ^^^
+    export dup = b
+
 export_E2E_Export_Tests_Errors_5_duplicate_export_name.met:5:8: export name already used: dup
     export dup = a
     export dup = b

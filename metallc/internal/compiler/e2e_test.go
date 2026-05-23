@@ -28,6 +28,11 @@ func TestE2EStdMD(t *testing.T) {
 	runE2ESuite(t, "e2e_std_test.md", e2eConfig{minimalPrelude: false, useEnvOptLevel: true})
 }
 
+func TestE2ETemplateMD(t *testing.T) {
+	t.Parallel()
+	runE2ESuite(t, "e2e_template.md", e2eConfig{prefix: "template_", minimalPrelude: true, useEnvOptLevel: true})
+}
+
 type e2eConfig struct {
 	prefix         string
 	minimalPrelude bool

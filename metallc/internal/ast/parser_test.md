@@ -2184,16 +2184,16 @@ Fun(name="foo")
 
 ## Shapes
 
-**Shape**
+**Shape rejects fields**
 
 ```metall
 shape Foo { name Str }
 ```
 
-```ast
-Shape(name="Foo")
-  fields=StructField(name="name")
-    type=SimpleType(name="Str")
+```error
+test.met:1:13: unexpected token: expected <fun>, got <identifier>
+    shape Foo { name Str }
+                ^^^^
 ```
 
 **Shape with fun**
@@ -2210,33 +2210,15 @@ Shape(name="Foo")
     returnType=SimpleType(name="Str")
 ```
 
-**Shape with field and fun**
-
-```metall
-shape Foo { name Str fun Foo.bar(f Foo) Str }
-```
-
-```ast
-Shape(name="Foo")
-  fields=StructField(name="name")
-    type=SimpleType(name="Str")
-  funs=FunDecl(name="Foo.bar")
-    params=FunParam(name="f")
-      type=SimpleType(name="Foo")
-    returnType=SimpleType(name="Str")
-```
-
-**Pub shape with pub fields and pub fun**
+**Pub shape with pub fun**
 
 ```metall module
-pub shape Foo { pub name Str fun Foo.bar(f Foo) Str pub fun Foo.baz(f Foo) Int }
+pub shape Foo { fun Foo.bar(f Foo) Str pub fun Foo.baz(f Foo) Int }
 ```
 
 ```ast
 Module(fileName="test.met",name="test",main=true)
   decls=Shape(name="Foo",pub=true)
-    fields=StructField(name="name",pub=true)
-      type=SimpleType(name="Str")
     funs[0]=FunDecl(name="Foo.bar")
       params=FunParam(name="f")
         type=SimpleType(name="Foo")

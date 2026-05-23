@@ -30,15 +30,15 @@ pub struct Range<T> {
     pub end T
 }
 
-pub fun Range.eq<T HasEq>(r Range<T>, other Range<T>) Bool {
+pub fun Range.eq<U HasEq>(r Range<U>, other Range<U>) Bool {
     r.start.eq(other.start) and r.end.eq(other.end)
 }
 
-pub fun Range.hash<T HasHash>(r Range<T>, other Range<T>) U64 {
+pub fun Range.hash<U HasHash>(r Range<U>, other Range<U>) U64 {
     r.start.hash() +% r.end.hash()
 }
 
-pub fun Range.fmt<T HasFmt>(r Range<T>, sb &mut StrBuilder) void {
+pub fun Range.fmt<U HasFmt>(r Range<U>, sb &mut StrBuilder) void {
     sb.str("Range(")
     sb.fmt(r.start)
     sb.str(", ")
@@ -48,12 +48,12 @@ pub fun Range.fmt<T HasFmt>(r Range<T>, sb &mut StrBuilder) void {
 
 --- Left oriented pattern for slices and Str. ---
 shape LPattern<T> {
-    pub fun LPattern.lfind_pattern<T>(p LPattern, haystack T) ?Range<Int>
+    pub fun LPattern.lfind_pattern(p LPattern, haystack T) ?Range<Int>
 }
 
 --- Right oriented pattern for slices and Str. ---
 shape RPattern<T> {
-    pub fun RPattern.rfind_pattern<T>(p RPattern, haystack T) ?Range<Int>
+    pub fun RPattern.rfind_pattern(p RPattern, haystack T) ?Range<Int>
 }
 
 --- Replace an illegal unicode codepoint with the replacement character U+FFFD. 
@@ -472,7 +472,7 @@ pub struct StrLMatchesIter<P LPattern<[]U8>> {
     pattern P
 }
 
-pub fun StrLMatchesIter.next<P LPattern<[]U8>>(it &mut StrLMatchesIter<P>) ?Str {
+pub fun StrLMatchesIter.next(it &mut StrLMatchesIter) ?Str {
     match it.data.lfind(it.pattern) {
     case None: None()
     else range:
@@ -498,7 +498,7 @@ pub struct StrRMatchesIter<P RPattern<[]U8>> {
     pattern P
 }
 
-pub fun StrRMatchesIter.next<P RPattern<[]U8>>(it &mut StrRMatchesIter<P>) ?Str {
+pub fun StrRMatchesIter.next(it &mut StrRMatchesIter) ?Str {
     match it.data.rfind(it.pattern) {
     case None: None()
     else range:
@@ -526,7 +526,7 @@ pub struct StrLSplitIter<P LPattern<[]U8>> {
     remaining Int
 }
 
-pub fun StrLSplitIter.next<P LPattern<[]U8>>(it &mut StrLSplitIter<P>) ?Str {
+pub fun StrLSplitIter.next(it &mut StrLSplitIter) ?Str {
     match it.data.lfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -573,7 +573,7 @@ pub struct StrRSplitIter<P RPattern<[]U8>> {
     remaining Int
 }
 
-pub fun StrRSplitIter.next<P RPattern<[]U8>>(it &mut StrRSplitIter<P>) ?Str {
+pub fun StrRSplitIter.next(it &mut StrRSplitIter) ?Str {
     match it.data.rfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -841,7 +841,7 @@ fun StrBuilder.byte_raw(sb &mut StrBuilder, b U8) void {
     sb.len = sb.len + 1
 }
 
-pub fun Slice.copy<T>(s []T, @a Arena) []mut T {
+pub fun Slice.copy(s []T, @a Arena) []mut T {
     let c = unsafe @a.slice_uninit<T>(s.len)
     _ = c.set(s)
     c
@@ -850,7 +850,7 @@ pub fun Slice.copy<T>(s []T, @a Arena) []mut T {
 --- Copy the `src` elements to `dest` up to `dest.len`. 
 
     Return the number of elements written. ---
-pub fun Slice.set<T>(dst []mut T, src []T) Int {
+pub fun Slice.set(dst []mut T, src []T) Int {
     mut i = 0
     for i < dst.len and i < src.len {
         dst[i] = src[i]
@@ -860,7 +860,7 @@ pub fun Slice.set<T>(dst []mut T, src []T) Int {
 }
 
 --- `Slice` can be used as an `LPattern`. ---
-pub fun Slice.lfind_pattern<T HasEq>(needle []T, haystack []T) ?Range<Int> {
+pub fun Slice.lfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
     if needle.len == 0 {
         return Range(0, 0)
     }
@@ -884,7 +884,7 @@ pub fun Slice.lfind_pattern<T HasEq>(needle []T, haystack []T) ?Range<Int> {
 }
 
 --- `Slice` can be used as an `RPattern`. ---
-pub fun Slice.rfind_pattern<T HasEq>(needle []T, haystack []T) ?Range<Int> {
+pub fun Slice.rfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
     if needle.len == 0 {
         return Range(0, 0)
     }
@@ -909,15 +909,15 @@ pub fun Slice.rfind_pattern<T HasEq>(needle []T, haystack []T) ?Range<Int> {
     None()
 }
 
-pub fun Slice.lfind<T, P LPattern<[]T>>(s []T, pattern P) ?Range<Int> {
+pub fun Slice.lfind<P LPattern<[]T>>(s []T, pattern P) ?Range<Int> {
     pattern.lfind_pattern(s)
 }
 
-pub fun Slice.rfind<T, P RPattern<[]T>>(s []T, pattern P) ?Range<Int> {
+pub fun Slice.rfind<P RPattern<[]T>>(s []T, pattern P) ?Range<Int> {
     pattern.rfind_pattern(s)
 }
 
-pub fun Slice.contains<T, P LPattern<[]T>>(s []T pattern P) Bool {
+pub fun Slice.contains<P LPattern<[]T>>(s []T pattern P) Bool {
     match s.lfind(pattern) {
         case None: false
         else: true
@@ -929,7 +929,7 @@ pub struct SliceLMatchesIter<T, P LPattern<[]T>> {
     pattern P
 }
 
-pub fun SliceLMatchesIter.next<T, P LPattern<[]T>>(it &mut SliceLMatchesIter<T, P>) ?[]T {
+pub fun SliceLMatchesIter.next(it &mut SliceLMatchesIter) ?[]T {
     match it.data.lfind(it.pattern) {
     case None: None()
     else range:
@@ -943,7 +943,7 @@ pub fun SliceLMatchesIter.next<T, P LPattern<[]T>>(it &mut SliceLMatchesIter<T, 
     }
 }
 
-pub fun Slice.lmatches<T, P LPattern<[]T>>(s []T, pattern P) SliceLMatchesIter<T, P> {
+pub fun Slice.lmatches<P LPattern<[]T>>(s []T, pattern P) SliceLMatchesIter<T, P> {
     SliceLMatchesIter(s , pattern)
 }
 
@@ -952,7 +952,7 @@ pub struct SliceRMatchesIter<T, P RPattern<[]T>> {
     pattern P
 }
 
-pub fun SliceRMatchesIter.next<T, P RPattern<[]T>>(it &mut SliceRMatchesIter<T, P>) ?[]T {
+pub fun SliceRMatchesIter.next(it &mut SliceRMatchesIter) ?[]T {
     match it.data.rfind(it.pattern) {
     case None: None()
     else range:
@@ -966,7 +966,7 @@ pub fun SliceRMatchesIter.next<T, P RPattern<[]T>>(it &mut SliceRMatchesIter<T, 
     }
 }
 
-pub fun Slice.rmatches<T, P RPattern<[]T>>(s []T, pattern P) SliceRMatchesIter<T, P> {
+pub fun Slice.rmatches<P RPattern<[]T>>(s []T, pattern P) SliceRMatchesIter<T, P> {
     SliceRMatchesIter(s , pattern)
 }
 
@@ -977,7 +977,7 @@ pub struct SliceLSplitIter<T, P LPattern<[]T>> {
     remaining Int
 }
 
-pub fun SliceLSplitIter.next<T, P LPattern<[]T>>(it &mut SliceLSplitIter<T, P>) ?[]T {
+pub fun SliceLSplitIter.next(it &mut SliceLSplitIter) ?[]T {
     match it.data.lfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -1007,7 +1007,7 @@ pub fun SliceLSplitIter.next<T, P LPattern<[]T>>(it &mut SliceLSplitIter<T, P>) 
     }
 }
 
-pub fun Slice.lsplit<T, P LPattern<[]T>>(s []T, pattern P, max_splits ?Int = None()) SliceLSplitIter<T, P> {
+pub fun Slice.lsplit<P LPattern<[]T>>(s []T, pattern P, max_splits ?Int = None()) SliceLSplitIter<T, P> {
     -- todo: use Int.max
     SliceLSplitIter(s, pattern, false, max_splits.or_default(1000000000))
 }
@@ -1019,7 +1019,7 @@ pub struct SliceRSplitIter<T, P RPattern<[]T>> {
     remaining Int
 }
 
-pub fun SliceRSplitIter.next<T, P RPattern<[]T>>(it &mut SliceRSplitIter<T, P>) ?[]T {
+pub fun SliceRSplitIter.next(it &mut SliceRSplitIter) ?[]T {
     match it.data.rfind(it.pattern) {
     case None: 
         if it.data.len > 0 or not it.consumed_last {
@@ -1049,12 +1049,12 @@ pub fun SliceRSplitIter.next<T, P RPattern<[]T>>(it &mut SliceRSplitIter<T, P>) 
     }
 }
 
-pub fun Slice.rsplit<T, P RPattern<[]T>>(s []T, pattern P, max_splits ?Int = None()) SliceRSplitIter<T, P> {
+pub fun Slice.rsplit<P RPattern<[]T>>(s []T, pattern P, max_splits ?Int = None()) SliceRSplitIter<T, P> {
     -- todo: use Int.max
     SliceRSplitIter(s, pattern, false, max_splits.or_default(1000000000))
 }
 
-pub fun Slice.starts_with<T HasEq>(s []T, other []T) Bool {
+pub fun Slice.starts_with<U HasEq>(s []U, other []U) Bool {
     if s.len < other.len {
         return false
     }
@@ -1066,7 +1066,7 @@ pub fun Slice.starts_with<T HasEq>(s []T, other []T) Bool {
     return true
 }
 
-pub fun Slice.ends_with<T HasEq>(s []T, other []T) Bool {
+pub fun Slice.ends_with<U HasEq>(s []U, other []U) Bool {
     if s.len < other.len {
         return false
     }
@@ -1079,7 +1079,7 @@ pub fun Slice.ends_with<T HasEq>(s []T, other []T) Bool {
     return true
 }
 
-pub fun Slice.concat<T>(first []T, others [][]T, @a Arena) []mut T {
+pub fun Slice.concat(first []T, others [][]T, @a Arena) []mut T {
     mut len = first.len
     for i in 0..others.len {
         len = len + others[i].len
@@ -1095,13 +1095,13 @@ pub fun Slice.concat<T>(first []T, others [][]T, @a Arena) []mut T {
     new
 }
 
-pub fun Slice.fmt<T HasFmt>(s []T, sb &mut StrBuilder) void {
+pub fun Slice.fmt<U HasFmt>(s []U, sb &mut StrBuilder) void {
     sb.rune('[')
     sb.slice(s, ", ", 240, true)
     sb.rune(']')
 }
 
-pub fun Slice.eq<T HasEq>(s []T, other []T) Bool {
+pub fun Slice.eq<U HasEq>(s []U, other []U) Bool {
     if s.len != other.len {
         return false
     }
@@ -1113,8 +1113,8 @@ pub fun Slice.eq<T HasEq>(s []T, other []T) Bool {
     return true
 }
 
-pub fun Slice.sort_in_place<T>(s []mut T, cmp fun(T, T) Int) void {
-    fun partition<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) Int {
+pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Int) void {
+    fun partition(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) Int {
         let pivot = s[hi]
         mut i = lo
         for j in lo..hi {
@@ -1130,7 +1130,7 @@ pub fun Slice.sort_in_place<T>(s []mut T, cmp fun(T, T) Int) void {
         s[hi] = swap
         i
     }
-    fun qs<T>(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) void {
+    fun qs(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) void {
         if lo >= hi {
             return void
         }
@@ -1141,7 +1141,7 @@ pub fun Slice.sort_in_place<T>(s []mut T, cmp fun(T, T) Int) void {
     qs(s, 0, s.len - 1, cmp)
 }
 
-pub fun Slice.cmp<T HasCmp>(s []T, other []T) Int {
+pub fun Slice.cmp<U HasCmp>(s []U, other []U) Int {
     when {
         case s.len > other.len: return -1
         case s.len < other.len: return 1
@@ -1156,7 +1156,7 @@ pub fun Slice.cmp<T HasCmp>(s []T, other []T) Int {
 }
 
 --- Return a sub-slice starting at the first index that is not one of the given elements. ---
-pub fun Slice.ltrim<T HasEq>(s []T, elems []T) []T {
+pub fun Slice.ltrim<U HasEq>(s []U, elems []U) []U {
     mut i = 0
     for i < s.len {
         mut found = false
@@ -1175,7 +1175,7 @@ pub fun Slice.ltrim<T HasEq>(s []T, elems []T) []T {
 }
 
 --- Return a sub-slice ending at the first index from the right that is not one of the given elements. ---
-pub fun Slice.rtrim<T HasEq>(s []T, elems []T) []T {
+pub fun Slice.rtrim<U HasEq>(s []U, elems []U) []U {
     mut i = s.len - 1
     for i >= 0 {
         mut found = false
@@ -1255,7 +1255,7 @@ pub struct SliceIter<T> {
     pos Int
 }
 
-pub fun SliceIter.next<T>(it &mut SliceIter<T>) ?T {
+pub fun SliceIter.next(it &mut SliceIter) ?T {
     if it.pos == it.data.len {
         return None()
     }
@@ -1264,14 +1264,14 @@ pub fun SliceIter.next<T>(it &mut SliceIter<T>) ?T {
     e
 }
 
-pub fun SliceIter.peek<T>(it &mut SliceIter<T>) ?T {
+pub fun SliceIter.peek(it &mut SliceIter) ?T {
     if it.pos == it.data.len {
         return None()
     }
     it.data[it.pos]
 }
 
-pub fun Slice.iter<T>(s []T) SliceIter<T> {
+pub fun Slice.iter(s []T) SliceIter<T> {
     SliceIter(s, 0)
 }
 
@@ -1287,14 +1287,14 @@ pub fun None.hash(n None) U64 { 0 }
 --- Option represents a value that is either present or not. ---
 -- union Option<T> = T | None
 
-pub fun Option.fmt<T HasFmt>(o Option<T>, sb &mut StrBuilder) void {
+pub fun Option.fmt<U HasFmt>(o Option<U>, sb &mut StrBuilder) void {
     match o {
-        case T t: sb.fmt(t)
+        case U t: sb.fmt(t)
         case None n: sb.fmt(n)
     } 
 }
 
-pub fun Option.eq<T HasEq>(o Option<T>, other Option<T>) Bool {
+pub fun Option.eq<U HasEq>(o Option<U>, other Option<U>) Bool {
     match o {
         case None:
             match other {
@@ -1309,28 +1309,28 @@ pub fun Option.eq<T HasEq>(o Option<T>, other Option<T>) Bool {
     }
 }
 
-pub fun Option.hash<T HasHash>(o Option<T>) U64 {
+pub fun Option.hash<U HasHash>(o Option<U>) U64 {
     match o {
         case None n: n.hash()
         else t: t.hash()
     }
 }
 
-pub fun Option.is_none<T>(o Option<T>) Bool {
+pub fun Option.is_none(o Option) Bool {
     match o {
         case None: true
         else: false
     }
 }
 
-pub fun Option.is_some<T>(o Option<T>) Bool {
+pub fun Option.is_some(o Option) Bool {
     match o {
         case None: false
         else: true
     }
 }
 
-pub fun Option.or_default<T>(o Option<T>, default T) T {
+pub fun Option.or_default(o Option, default T) T {
     try o else { return default }
 }
 
@@ -1346,14 +1346,14 @@ pub fun Err.hash(e Err) U64 { e.msg.hash() }
 --- A result type. Use this to distinct between "success" and "error" ---
 -- union Result<T> = T | Err
 
-pub fun Result.fmt<T HasFmt>(r Result<T>, sb &mut StrBuilder) void {
+pub fun Result.fmt<U HasFmt>(r Result<U>, sb &mut StrBuilder) void {
     match r {
-        case T t: sb.fmt(t)
+        case U t: sb.fmt(t)
         case Err: sb.str("<error>")
     }
 }
 
-pub fun Result.eq<T HasEq>(r Result<T>, other Result<T>) Bool {
+pub fun Result.eq<U HasEq>(r Result<U>, other Result<U>) Bool {
     match r {
         case Err e:
             match other {
@@ -1368,21 +1368,21 @@ pub fun Result.eq<T HasEq>(r Result<T>, other Result<T>) Bool {
         }
 }
 
-pub fun Result.hash<T HasHash>(r Result<T>) U64 {
+pub fun Result.hash<U HasHash>(r Result<U>) U64 {
     match r {
         case Err e: e.hash()
         else t: t.hash()
     } 
 }
 
-pub fun Result.is_err<T>(r Result<T>) Bool {
+pub fun Result.is_err(r Result) Bool {
     match r {
     case Err: true
     else: false
     }
 }
 
-pub fun Result.is_ok<T>(r Result<T>) Bool {
+pub fun Result.is_ok(r Result) Bool {
     match r {
     case Err: false
     else: true

@@ -41,7 +41,8 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 		var variantTypeID TypeID
 		if _, ok := e.ast.Node(arm.Pattern).Kind.(ast.TryPattern); ok {
 			variantTypeID = union.Variants[0]
-			e.env.setNodeType(arm.Pattern, e.env.reg.types[variantTypeID])
+			variantCached, _ := e.env.cachedTypeInfo(variantTypeID)
+			e.env.setNodeType(arm.Pattern, variantCached)
 		} else {
 			var varStatus TypeStatus
 			variantTypeID, varStatus = e.Query(arm.Pattern)

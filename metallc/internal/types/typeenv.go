@@ -15,7 +15,6 @@ const (
 	syncFunFlag      TypeID = 1 << 60
 )
 
-// StripSyncFlag removes the sync qualifier flag from a TypeID.
 func StripSyncFlag(id TypeID) TypeID {
 	return id &^ syncFunFlag
 }
@@ -76,13 +75,14 @@ type arrayTypeCacheKey struct {
 
 type TypeRegistry struct {
 	types          map[TypeID]*cachedType
-	typeParamTypes map[ast.NodeID]TypeID // TypeParam NodeID → TypeParamType TypeID
+	typeParamTypes map[ast.NodeID]TypeID
 	genericSpecs   map[TypeID]*GenericSpec
 	refTypes       map[refTypeCacheKey]*cachedType
 	arrayTypes     map[arrayTypeCacheKey]*cachedType
 	sliceTypes     map[sliceTypeCacheKey]*cachedType
 	funTypes       map[string]*cachedType
-	genericOrigin  map[TypeID]TypeID // monomorphized type ID → generic type ID
+	funTypeParams  map[ast.NodeID][]ast.NodeID
+	genericOrigin  map[TypeID]TypeID
 	nextID         TypeID
 }
 
@@ -96,16 +96,18 @@ type TypeEnv struct {
 	ast                *ast.AST
 	scopeGraph         *ast.ScopeGraph
 	reg                *TypeRegistry
+	node               ast.NodeID // 0 for anonymous/root envs.
+	childEnvs          map[ast.NodeID]*TypeEnv
 	bindings           map[ast.BindingID]*Binding
 	nodes              map[ast.NodeID]*cachedType
 	namedFunRef        map[ast.NodeID]string
-	funDeclRef         map[ast.NodeID]ast.NodeID // calleeNodeID → function declaration NodeID
-	pathBindings       map[ast.NodeID]*Binding   // nodeID → resolved binding (for idents/paths)
-	captureOrigins     map[ast.NodeID]*Binding   // capNodeID → outer-scope binding the capture refers to
+	funDeclRef         map[ast.NodeID]ast.NodeID
+	pathBindings       map[ast.NodeID]*Binding
+	captureOrigins     map[ast.NodeID]*Binding
 	methodCallReceiver map[ast.NodeID]ast.NodeID
-	callDefaults       map[ast.NodeID][]ast.NodeID // callNodeID → default arg NodeIDs to append
+	callDefaults       map[ast.NodeID][]ast.NodeID
 	unionWraps         map[ast.NodeID]unionWrap
-	constArrays        map[ast.NodeID]bool // array literals with all-constant elements
+	constArrays        map[ast.NodeID]bool
 }
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
@@ -113,6 +115,8 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		parent:     nil,
 		ast:        a,
 		scopeGraph: g,
+		node:       0,
+		childEnvs:  map[ast.NodeID]*TypeEnv{},
 		reg: &TypeRegistry{
 			types:          map[TypeID]*cachedType{},
 			typeParamTypes: map[ast.NodeID]TypeID{},
@@ -121,6 +125,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 			arrayTypes:     map[arrayTypeCacheKey]*cachedType{},
 			sliceTypes:     map[sliceTypeCacheKey]*cachedType{},
 			funTypes:       map[string]*cachedType{},
+			funTypeParams:  map[ast.NodeID][]ast.NodeID{},
 			genericOrigin:  map[TypeID]TypeID{},
 			nextID:         1,
 		},
@@ -137,12 +142,17 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 	}
 }
 
-func (e *TypeEnv) NewChildEnv() *TypeEnv {
+// NewChildEnv creates a child env. node=0 creates an anonymous child that is
+// never cached; otherwise the child is keyed by node so a later lookup returns
+// the same env.
+func (e *TypeEnv) NewChildEnv(node ast.NodeID) *TypeEnv {
 	return &TypeEnv{
 		parent:             e,
 		ast:                e.ast,
 		scopeGraph:         e.scopeGraph,
 		reg:                e.reg,
+		node:               node,
+		childEnvs:          map[ast.NodeID]*TypeEnv{},
 		bindings:           map[ast.BindingID]*Binding{},
 		nodes:              map[ast.NodeID]*cachedType{},
 		namedFunRef:        map[ast.NodeID]string{},
@@ -186,14 +196,14 @@ func (e *TypeEnv) DeclNode(typeID TypeID) ast.NodeID {
 	return 0
 }
 
-func (e *TypeEnv) GenericOrigin(typeID TypeID) (TypeID, bool) {
-	origin, ok := e.reg.genericOrigin[typeID]
-	return origin, ok
+func (e *TypeEnv) TypeParamForNode(nodeID ast.NodeID) (TypeID, bool) {
+	typeID, ok := e.reg.typeParamTypes[nodeID]
+	return typeID, ok
 }
 
-func (e *TypeEnv) GenericSpec(typeID TypeID) (*GenericSpec, bool) {
-	spec, ok := e.reg.genericSpecs[typeID]
-	return spec, ok
+func (e *TypeEnv) FunTypeParams(funNodeID ast.NodeID) ([]ast.NodeID, bool) {
+	params, ok := e.reg.funTypeParams[funNodeID]
+	return params, ok
 }
 
 func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
@@ -207,6 +217,9 @@ func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
 	return "", false
 }
 
+// PathBinding returns the binding recorded for nodeID, walking up parent envs.
+// Use this when the binding may have been recorded in an outer env (e.g.,
+// before a child env was pushed).
 func (e *TypeEnv) PathBinding(id ast.NodeID) (*Binding, bool) {
 	b, ok := e.pathBindings[id]
 	if ok {
@@ -216,6 +229,18 @@ func (e *TypeEnv) PathBinding(id ast.NodeID) (*Binding, bool) {
 		return e.parent.PathBinding(id)
 	}
 	return nil, false
+}
+
+// LocalPathBinding returns the binding recorded for nodeID in the current env
+// only, without consulting parents. Used when caller and recorder are in the
+// same env (the common case).
+func (e *TypeEnv) LocalPathBinding(id ast.NodeID) (*Binding, bool) {
+	b, ok := e.pathBindings[id]
+	return b, ok
+}
+
+func (e *TypeEnv) SetPathBinding(id ast.NodeID, binding *Binding) {
+	e.pathBindings[id] = binding
 }
 
 func (e *TypeEnv) CaptureOrigin(capNodeID ast.NodeID) (*Binding, bool) {
@@ -372,8 +397,6 @@ func (e *TypeEnv) UnionWrap(nodeID ast.NodeID) (TypeID, int, bool) {
 	return 0, 0, false
 }
 
-// IsConstArray reports whether the given array literal node contains only
-// constant elements and can be emitted as a global constant.
 func (e *TypeEnv) IsConstArray(nodeID ast.NodeID) bool {
 	if v, ok := e.constArrays[nodeID]; ok {
 		return v
@@ -393,6 +416,32 @@ func (e *TypeEnv) FunDeclNode(id ast.NodeID) (ast.NodeID, bool) {
 		return e.parent.FunDeclNode(id)
 	}
 	return 0, false
+}
+
+func (e *TypeEnv) GenericOrigin(typeID TypeID) (TypeID, bool) {
+	origin, ok := e.reg.genericOrigin[typeID]
+	return origin, ok
+}
+
+func (e *TypeEnv) GenericSpec(typeID TypeID) (*GenericSpec, bool) {
+	spec, ok := e.reg.genericSpecs[typeID]
+	return spec, ok
+}
+
+func (e *TypeEnv) setGenericOrigin(child, origin TypeID) {
+	e.reg.genericOrigin[child] = origin
+}
+
+func (e *TypeEnv) setGenericSpec(origin TypeID, spec *GenericSpec) {
+	e.reg.genericSpecs[origin] = spec
+}
+
+func (e *TypeEnv) setTypeParamForNode(nodeID ast.NodeID, typeID TypeID) {
+	e.reg.typeParamTypes[nodeID] = typeID
+}
+
+func (e *TypeEnv) setFunTypeParams(funNodeID ast.NodeID, params []ast.NodeID) {
+	e.reg.funTypeParams[funNodeID] = params
 }
 
 func (e *TypeEnv) recordUnionWrap(nodeID ast.NodeID, unionTypeID TypeID, variantIndex int) {
@@ -524,9 +573,8 @@ func (e *TypeEnv) cachedTypeInfo(typeID TypeID) (*cachedType, bool) {
 	return cached, ok
 }
 
-// buildFunType returns a (possibly cached) TypeID for the given FunType.
-// For sync fun types, the TypeID is the base (non-sync) TypeID with the syncFunFlag bit set,
-// mirroring how buildRefType handles mutable refs with mutableRefFlag.
+// buildFunType returns a (possibly cached) TypeID. Sync fun TypeIDs are the
+// base (non-sync) TypeID with syncFunFlag set, mirroring mutableRefFlag.
 func (e *TypeEnv) buildFunType(typ FunType, nodeID ast.NodeID, span base.Span) TypeID {
 	cacheKey := funTypeCacheKey(typ)
 	if cached, ok := e.reg.funTypes[cacheKey]; ok {
@@ -611,8 +659,8 @@ func (e *TypeEnv) containsTypeParam(id TypeID) bool {
 	}
 }
 
-// methodFQN returns the fully qualified name used to look up a method on this type.
-// Returns false for types that cannot have methods (e.g. FunType).
+// methodFQN returns the fully qualified method lookup name, or false for types
+// that cannot have methods (e.g. FunType).
 func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 	var ns string
 	switch kind := typ.Kind.(type) {

@@ -24,7 +24,6 @@ package types
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -168,6 +167,12 @@ type LifetimeCheck struct {
 	taintOrigin    map[TaintID]ast.NodeID // Which &x created this taint (for diagnostics).
 	status         map[ast.NodeID]analysisStatus
 	shapeContracts *shapeContractsCheck
+	emittedEscape  map[escapeDiagKey]bool
+}
+
+type escapeDiagKey struct {
+	span   base.Span
+	detail string
 }
 
 func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []FunWork) *LifetimeCheck {
@@ -188,6 +193,7 @@ func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []Fun
 		taintOrigin:    map[TaintID]ast.NodeID{},
 		status:         map[ast.NodeID]analysisStatus{},
 		shapeContracts: nil,
+		emittedEscape:  map[escapeDiagKey]bool{},
 	}
 	lc.shapeContracts = &shapeContractsCheck{LifetimeCheck: lc, funWorks: funWorks}
 	return lc
@@ -851,12 +857,59 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 				return true
 			}
 		}
+		// A shape method that yields refs or takes refs makes T effectively
+		// ref-carrying: passing/storing a T means we may be moving refs around,
+		// so the param needs a caller taint for side-effect tracking.
+		shapeDeclID := a.env.DeclNode(*kind.Shape)
+		if shapeDeclID != 0 {
+			if shapeNode, ok := a.ast.Node(shapeDeclID).Kind.(ast.Shape); ok {
+				for _, funDeclNodeID := range shapeNode.Funs {
+					funDecl, ok := a.ast.Node(funDeclNodeID).Kind.(ast.FunDecl)
+					if !ok {
+						continue
+					}
+					if a.funDeclTypeContainsRefOrAlloc(funDecl) {
+						return true
+					}
+				}
+			}
+		}
 	case ArrayType:
 		return a.typeContainsRefOrAlloc(kind.Elem)
 	case SliceType:
 		return a.typeContainsRefOrAlloc(kind.Elem)
 	}
 	return false
+}
+
+// funDeclTypeContainsRefOrAlloc reports whether any parameter or return type
+// in the given FunDecl is, or contains, a reference or allocator. Used to
+// decide whether a TypeParam constrained by a shape is potentially ref-bearing.
+func (a *LifetimeCheck) funDeclTypeContainsRefOrAlloc(funDecl ast.FunDecl) bool {
+	check := func(nodeID ast.NodeID) bool {
+		if nodeID == 0 {
+			return false
+		}
+		switch kind := a.ast.Node(nodeID).Kind.(type) {
+		case ast.RefType:
+			return true
+		case ast.SimpleType:
+			if kind.Name.Name == "Arena" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, paramNodeID := range funDecl.Params {
+		paramNode, ok := a.ast.Node(paramNodeID).Kind.(ast.FunParam)
+		if !ok {
+			continue
+		}
+		if check(paramNode.Type) {
+			return true
+		}
+	}
+	return check(funDecl.ReturnType)
 }
 
 // typeCanEscape is like typeContainsRefOrAlloc but also considers slices
@@ -1298,7 +1351,13 @@ func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, s
 			continue
 		}
 		reported[diagNode] = true
-		a.diag(a.ast.Node(diagNode).Span, "reference escaping its allocation scope (%s)", detail)
+		span := a.ast.Node(diagNode).Span
+		key := escapeDiagKey{span, detail}
+		if a.emittedEscape[key] {
+			continue
+		}
+		a.emittedEscape[key] = true
+		a.diag(span, "reference escaping its allocation scope (%s)", detail)
 	}
 }
 
@@ -1403,29 +1462,6 @@ func (a *LifetimeCheck) diag(span base.Span, msg string, msgArgs ...any) {
 	a.Diagnostics = append(a.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
 
-// checkShapeEffectsCompatible verifies that a concrete function's effects don't
-// violate a shape's effect contract. The shape contract says params don't flow
-// into each other, so any side effect in the concrete function is a violation.
-func (a *LifetimeCheck) checkShapeEffectsCompatible(
-	concreteDeclID ast.NodeID, shapeName string, expected, concrete *FunEffects,
-) {
-	for targetIdx, srcIndices := range concrete.SideEffects {
-		if _, ok := expected.SideEffects[targetIdx]; ok {
-			continue
-		}
-		for _, srcIdx := range srcIndices {
-			funNode := a.ast.Node(concreteDeclID)
-			fun := base.Cast[ast.Fun](funNode.Kind)
-			targetName := base.Cast[ast.FunParam](a.ast.Node(fun.Params[targetIdx]).Kind).Name.Name
-			srcName := base.Cast[ast.FunParam](a.ast.Node(fun.Params[srcIdx]).Kind).Name.Name
-			a.diag(funNode.Span,
-				"method %s violates shape %s contract: parameter %s flows into parameter %s",
-				fun.Name.Name, shapeName, srcName, targetName,
-			)
-		}
-	}
-}
-
 // shapeContractsCheck verifies that shape method contracts are consistent
 // with their concrete implementations. The shape contract specifies that
 // parameters do not flow into each other (no side effects), but all
@@ -1475,61 +1511,37 @@ func (s *shapeContractsCheck) verify() {
 
 func (s *shapeContractsCheck) verifyFunWork(fw FunWork) {
 	fun, ok := s.ast.Node(fw.NodeID).Kind.(ast.Fun)
+	if !ok || fun.Builtin || fun.Extern {
+		return
+	}
+	if len(fun.TypeParams) == 0 {
+		return
+	}
+	prevEnv := s.env
+	s.env = fw.Env
+	defer func() { s.env = prevEnv }()
+	s.resetAnalysisStatus(fw.NodeID)
+	s.analyzeFun(fw.NodeID, fun)
+}
+
+// resetAnalysisStatus marks the given fun's body subtree as "not visited" so
+// a follow-up Check pass will re-run the analyzers on it (with a different
+// env or context).
+func (s *shapeContractsCheck) resetAnalysisStatus(nodeID ast.NodeID) {
+	fun, ok := s.ast.Node(nodeID).Kind.(ast.Fun)
 	if !ok {
 		return
 	}
-	s.ast.Walk(fun.Block, func(nodeID ast.NodeID) {
-		call, ok := s.ast.Node(nodeID).Kind.(ast.Call)
-		if !ok {
+	var visit func(id ast.NodeID)
+	visit = func(id ast.NodeID) {
+		if id == 0 {
 			return
 		}
-		shapeDeclID := s.resolveShapeDeclID(call.Callee)
-		if shapeDeclID == 0 {
-			return
-		}
-		expected := s.funEffects[shapeDeclID]
-		if expected == nil {
-			return
-		}
-		concreteDeclID := s.resolveConcreteDeclID(fw.Env, call.Callee)
-		if concreteDeclID == 0 {
-			return
-		}
-		concrete := s.funEffects[concreteDeclID]
-		if concrete == nil {
-			return
-		}
-		shapeName := ""
-		if fd, ok := s.ast.Node(shapeDeclID).Kind.(ast.FunDecl); ok {
-			shapeName, _, _ = strings.Cut(fd.Name.Name, ".")
-		}
-		s.checkShapeEffectsCompatible(concreteDeclID, shapeName, expected, concrete)
-	})
-}
-
-func (s *shapeContractsCheck) resolveShapeDeclID(calleeNodeID ast.NodeID) ast.NodeID {
-	if ref, ok := s.env.NamedFunRef(calleeNodeID); ok {
-		if binding, ok := s.env.Lookup(calleeNodeID, ref, -1); ok {
-			if _, isFunDecl := s.ast.Node(binding.Decl).Kind.(ast.FunDecl); isFunDecl {
-				return binding.Decl
-			}
-		}
+		delete(s.status, id)
+		s.ast.Walk(id, visit)
 	}
-	return 0
-}
-
-func (s *shapeContractsCheck) resolveConcreteDeclID(env *TypeEnv, calleeNodeID ast.NodeID) ast.NodeID {
-	declID, ok := env.FunDeclNode(calleeNodeID)
-	if ok {
-		return declID
+	visit(fun.Block)
+	for _, p := range fun.Params {
+		visit(p)
 	}
-	calleeType := env.TypeOfNode(calleeNodeID)
-	if calleeType == nil {
-		return 0
-	}
-	typeID := calleeType.ID
-	if origin, ok := env.GenericOrigin(typeID); ok {
-		typeID = origin
-	}
-	return env.DeclNode(typeID)
 }

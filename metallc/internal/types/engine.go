@@ -35,22 +35,17 @@ type ConstWork struct {
 type MacroExpander func(macroSource string, funName string, args []macros.MacroArg) (expandedSource string, err error)
 
 type Engine struct {
-	*EngineCore
-	moduleResolution *modules.ModuleResolution
-	macroExpander    MacroExpander
-
-	loopStack          []ast.NodeID
-	funStack           []TypeID
-	typeHint           *TypeID
-	blockExprsIndex    int // Current index in Block.Exprs during block checking. -1 when outside a block.
-	instantiationScope *ast.NodeID
-	voidTyp            TypeID
-	boolTyp            TypeID
-	strTyp             TypeID
-	runeTyp            TypeID
-	arenaTyp           TypeID
-	neverTyp           TypeID
-	intTyp             TypeID
+	*TypeContext
+	resolveGenerics func(nodeID ast.NodeID, typeHint *TypeID) (TypeID, TypeStatus, bool)
+	macroExpander   MacroExpander
+	consts          []ConstWork
+	exports         []ExportWork
+	voidTyp         TypeID
+	boolTyp         TypeID
+	strTyp          TypeID
+	runeTyp         TypeID
+	arenaTyp        TypeID
+	intTyp          TypeID
 }
 
 func NewEngine(
@@ -64,12 +59,19 @@ func NewEngine(
 		panic(base.WrapErrorf(err, "failed to merge prelude AST"))
 	}
 	g := ast.BuildScopeGraph(merged, merged.Roots)
-	c := NewEngineCore(merged, g)
+	c := NewTypeContext(merged, g, moduleResolution)
 	e := &Engine{ //nolint:exhaustruct
-		EngineCore:       c,
-		moduleResolution: moduleResolution,
-		macroExpander:    macroExpander,
-		blockExprsIndex:  -1,
+		TypeContext:   c,
+		macroExpander: macroExpander,
+	}
+	generics := newGenerics(c, e.Query, e.queryWithHint)
+	e.resolveGenerics = func(nodeID ast.NodeID, typeHint *TypeID) (TypeID, TypeStatus, bool) {
+		outcome := generics.Resolve(nodeID, typeHint)
+		if !outcome.Handled {
+			return InvalidTypeID, TypeFailed, false
+		}
+		e.runResolveTasks(outcome.Tasks)
+		return outcome.TypeID, outcome.Status, true
 	}
 	for _, root := range preludeAST.Roots {
 		e.Query(root)
@@ -101,8 +103,14 @@ func (e *Engine) SetDebug(d base.Debug) {
 }
 
 func (e *Engine) Funs() []FunWork {
+	names := make([]string, 0, len(e.funs))
+	for name := range e.funs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
 	var result []FunWork
-	for _, fw := range e.funs {
+	for _, name := range names {
+		fw := e.funs[name]
 		funTyp := base.Cast[FunType](e.env.Type(fw.TypeID).Kind)
 		if !e.env.hasTypeParam(funTyp.Params) && !e.env.hasTypeParam([]TypeID{funTyp.Return}) {
 			result = append(result, fw)
@@ -112,8 +120,14 @@ func (e *Engine) Funs() []FunWork {
 }
 
 func (e *Engine) Structs() []TypeWork {
+	names := make([]string, 0, len(e.structs))
+	for name := range e.structs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
 	var result []TypeWork
-	for _, sw := range e.structs {
+	for _, name := range names {
+		sw := e.structs[name]
 		structTyp := base.Cast[StructType](e.env.Type(sw.TypeID).Kind)
 		if !e.env.hasTypeParam(structTyp.TypeArgs) {
 			result = append(result, sw)
@@ -122,19 +136,25 @@ func (e *Engine) Structs() []TypeWork {
 	return result
 }
 
-func (e *Engine) Consts() []ConstWork {
-	return e.consts
-}
-
 func (e *Engine) Unions() []TypeWork {
+	names := make([]string, 0, len(e.unions))
+	for name := range e.unions {
+		names = append(names, name)
+	}
+	slices.Sort(names)
 	var result []TypeWork
-	for _, uw := range e.unions {
+	for _, name := range names {
+		uw := e.unions[name]
 		unionTyp := base.Cast[UnionType](e.env.Type(uw.TypeID).Kind)
 		if !e.env.hasTypeParam(unionTyp.TypeArgs) {
 			result = append(result, uw)
 		}
 	}
 	return result
+}
+
+func (e *Engine) Consts() []ConstWork {
+	return e.consts
 }
 
 func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
@@ -182,7 +202,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Fun, ast.Struct, ast.Shape, ast.Union:
 		cachedType, ok := e.env.cachedNodeType(nodeID)
 		if !ok {
-			e.forwardDeclare([]ast.NodeID{nodeID})
+			nodes := []ast.NodeID{nodeID}
+			e.forwardDeclareTypes(nodes)
+			e.forwardDeclareFuns(nodes)
 			cachedType, ok = e.env.cachedNodeType(nodeID)
 			if !ok {
 				return InvalidTypeID, TypeFailed
@@ -292,348 +314,158 @@ func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint *TypeID) (TypeID, Typ
 			}
 		}
 	}
-	saved := e.typeHint
-	e.typeHint = typeHint
+	restore := e.withTypeHint(typeHint)
 	typeID, status := e.Query(nodeID)
-	e.typeHint = saved
+	restore()
 	if !status.Failed() && typeID != *typeHint {
 		typeID = e.tryUnionAutoWrap(nodeID, typeID, *typeHint)
 	}
 	return typeID, status
 }
 
-// mangledName returns a unique name for a declaration by combining the scope
-// namespace with the parent function's TypeID when inside a materialized generic.
-func (e *Engine) declMangledName(nodeID ast.NodeID, name string) string {
-	n := e.scopeGraph.NodeScope(nodeID).NamespacedName(name)
-	if len(e.funStack) > 0 {
-		parentTypeID := e.funStack[len(e.funStack)-1]
-		if _, ok := e.env.GenericOrigin(parentTypeID); ok {
-			n = fmt.Sprintf("%s.%s", n, parentTypeID)
+func (e *Engine) runResolveTasks(tasks []Task) {
+	for _, t := range tasks {
+		switch {
+		case t.BodyCheck != nil:
+			e.runMaterializedBody(t.BodyCheck.Mat, t.BodyCheck.FunTypeID)
+		case t.RegisterStruct != nil:
+			e.registerStruct(t.RegisterStruct.Type, t.RegisterStruct.DeclNodeID, t.RegisterStruct.TypeID)
+		case t.RegisterUnion != nil:
+			e.registerUnion(t.RegisterUnion.Type, t.RegisterUnion.DeclNodeID, t.RegisterUnion.TypeID)
+		case t.RegisterFun != 0:
+			e.registerFun(t.RegisterFun)
 		}
-	}
-	return n
-}
-
-// isSync returns true if the given type is safe to share across threads.
-func (e *Engine) isSync(typeID TypeID) bool {
-	typ := e.env.Type(typeID)
-	switch kind := typ.Kind.(type) {
-	case VoidType, NeverType, BoolType, IntType:
-		return true
-	case StructType:
-		declNode := e.env.DeclNode(typeID)
-		if declNode != 0 {
-			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Sync != ast.SyncNone {
-				return s.Sync == ast.SyncSync
-			}
-		}
-		for _, field := range kind.Fields {
-			if !e.isSync(field.Type) {
-				return false
-			}
-		}
-		return true
-	case UnionType:
-		declNode := e.env.DeclNode(typeID)
-		if declNode != 0 {
-			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Sync != ast.SyncNone {
-				return u.Sync == ast.SyncSync
-			}
-		}
-		for _, variant := range kind.Variants {
-			if !e.isSync(variant) {
-				return false
-			}
-		}
-		return true
-	case ArrayType:
-		return e.isSync(kind.Elem)
-	case TypeParamType:
-		declNode := e.env.DeclNode(typeID)
-		if declNode != 0 {
-			if tp, ok := e.ast.Node(declNode).Kind.(ast.TypeParam); ok {
-				return tp.Sync == ast.SyncSync
-			}
-		}
-		return false
-	case FunType:
-		return typeID&syncFunFlag != 0
-	case RefType, SliceType, AllocatorType, ShapeType:
-		return false
-	default:
-		panic(fmt.Sprintf("unknown type: %T", kind))
 	}
 }
 
-// isCopyable returns true if a value of the given type can be copied (assigned,
-// passed by value). A type is not copyable if it is explicitly marked `nocopy`
-// or if any of its fields (struct) or variants (union) are not copyable.
-func (e *Engine) isCopyable(typeID TypeID) bool {
-	typ := e.env.Type(typeID)
-	switch kind := typ.Kind.(type) {
-	case VoidType, NeverType, BoolType, IntType:
-		return true
-	case StructType:
-		declNode := e.env.DeclNode(typeID)
-		if declNode != 0 {
-			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Nocopy {
-				return false
-			}
-		}
-		for _, field := range kind.Fields {
-			if !e.isCopyable(field.Type) {
-				return false
-			}
-		}
-		return true
-	case UnionType:
-		declNode := e.env.DeclNode(typeID)
-		if declNode != 0 {
-			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Nocopy {
-				return false
-			}
-		}
-		for _, variant := range kind.Variants {
-			if !e.isCopyable(variant) {
-				return false
-			}
-		}
-		return true
-	case ArrayType:
-		return e.isCopyable(kind.Elem)
-	case RefType, SliceType, FunType, AllocatorType, TypeParamType, ShapeType:
-		return true
-	default:
-		panic(fmt.Sprintf("isCopyable: unknown type: %T", kind))
+func (e *Engine) runMaterializedBody(mat FunMaterialization, funTypeID TypeID) {
+	if !mat.NeedsBodyCheck {
+		return
 	}
+	prevEnv := e.env
+	prevSkip := e.skipRegisterWork
+	e.env = mat.Env
+	e.skipRegisterWork = mat.SkipRegister
+	defer func() {
+		e.env = prevEnv
+		e.skipRegisterWork = prevSkip
+	}()
+	defer e.withInstantiationScope(&mat.CallSiteNodeID)()
+	funNode := base.Cast[ast.Fun](e.ast.Node(mat.FunNodeID).Kind)
+	e.checkFunBody(mat.FunNodeID, funNode, funTypeID, mat.FunType)
 }
 
-// isFreshValue returns true if the expression creates a new value rather than
-// reading from an existing binding (which would be a copy). Fresh values:
-// constructions, function calls, blocks/if/when/match whose result is fresh.
-func (e *Engine) isFreshValue(nodeID ast.NodeID) bool {
-	node := e.ast.Node(nodeID)
-	switch kind := node.Kind.(type) {
-	case ast.TypeConstruction:
-		return true
-	case ast.Call:
-		return true
-	case ast.AllocatorVar:
-		// @a.new(Struct{...}) is fresh; @a.new(existing_val) is a copy.
-		for _, arg := range kind.Args {
-			if _, ok := e.ast.Node(arg).Kind.(ast.TypeConstruction); ok {
-				return true
-			}
-		}
-		return false
-	case ast.Block:
-		if len(kind.Exprs) > 0 {
-			return e.isFreshValue(kind.Exprs[len(kind.Exprs)-1])
-		}
-		return true
-	case ast.If:
-		return e.isFreshValue(kind.Then) && (kind.Else == nil || e.isFreshValue(*kind.Else))
-	default:
-		return false
+func (e *Engine) checkModule( //nolint:funlen
+	nodeID ast.NodeID,
+	module ast.Module,
+	span base.Span,
+) (TypeID, TypeStatus) {
+	if macros.IsMacroModule(module.Name) {
+		return e.checkMacroModule(nodeID, module, span)
 	}
-}
-
-// checkNocopy verifies that a nocopy value is not being copied. It should be
-// called whenever a value is consumed (variable init, assignment, function arg).
-// Returns true if the usage is valid (either the type is copyable or the
-// expression produces a fresh value).
-func (e *Engine) checkNocopy(exprNodeID ast.NodeID, exprTypeID TypeID, span base.Span) bool {
-	if e.isCopyable(exprTypeID) {
-		return true
+	if status := e.bindImports(nodeID, module); status.Failed() {
+		return InvalidTypeID, status
 	}
-	if e.isFreshValue(exprNodeID) {
-		return true
-	}
-	e.diag(span, "cannot copy value of nocopy type %s", e.env.TypeDisplay(exprTypeID))
-	return false
-}
-
-// isFunDeclSync determines if a function declaration produces a sync fun type.
-// A function is sync if all its parameters, return type, and captures are sync.
-// paramTypeIDs and retTypeID are the already-resolved types (needed because
-// function literals may have inferred types not present as AST nodes).
-func (e *Engine) isFunDeclSync(node *ast.Node, paramTypeIDs []TypeID, retTypeID TypeID) bool {
-	funNode, ok := node.Kind.(ast.Fun)
+	e.forwardDeclareTypes(module.Decls)
+	newDeclIDs, ok := e.expandMacrosInModule(nodeID, &module)
 	if !ok {
-		return false
-	}
-	if funNode.Sync == ast.SyncUnsync {
-		return false
-	}
-	for _, capNodeID := range funNode.Captures {
-		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
-		if capture.Mode != ast.CaptureByValue {
-			return false
-		}
-		outerBinding, ok := e.lookup(node.ID, capture.Name.Name, -1)
-		if !ok {
-			return false
-		}
-		if !e.isSync(outerBinding.TypeID) {
-			return false
-		}
-	}
-	for _, paramTypeID := range paramTypeIDs {
-		if !e.isSync(paramTypeID) {
-			return false
-		}
-	}
-	return e.isSync(retTypeID)
-}
-
-func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
-	// `_ = expr` discards the result of expr.
-	if ident, ok := e.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
-		rhsTypeID, status := e.Query(assign.RHS)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		if !e.isInstantiable(rhsTypeID) {
-			e.diag(e.ast.Node(assign.RHS).Span, "cannot discard expression of type %s", e.env.TypeDisplay(rhsTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-		return e.voidTyp, TypeOK
-	}
-	lhsTypeID, status := e.typeOfPlace(assign.LHS)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	rhsTypeID, status := e.queryWithHint(assign.RHS, &lhsTypeID)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if !e.isAssignableTo(rhsTypeID, lhsTypeID) {
-		span := e.ast.Node(assign.RHS).Span
-		e.diag(span, "type mismatch: expected %s, got %s",
-			e.env.TypeDisplay(lhsTypeID), e.env.TypeDisplay(rhsTypeID))
-		return InvalidTypeID, TypeDepFailed
-	}
-	if !e.checkNocopy(assign.RHS, rhsTypeID, e.ast.Node(assign.RHS).Span) {
 		return InvalidTypeID, TypeFailed
 	}
-	return e.voidTyp, TypeOK
-}
-
-func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
-	exprTypeID, status := e.Query(unary.Expr)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	switch unary.Op {
-	case ast.UnaryOpNot:
-		if exprTypeID != e.boolTyp {
-			span := e.ast.Node(unary.Expr).Span
-			e.diag(
-				span,
-				"type mismatch: expected %s, got %s",
-				e.env.TypeDisplay(e.boolTyp),
-				e.env.TypeDisplay(exprTypeID),
-			)
-			return InvalidTypeID, TypeDepFailed
+	e.forwardDeclareTypes(newDeclIDs)
+	// Module-level constants are checked before functions so function bodies
+	// can reference them.
+	depFailed := false
+	for _, declNodeID := range module.Decls {
+		varNode, isVar := e.ast.Node(declNodeID).Kind.(ast.Var)
+		if !isVar {
+			continue
 		}
-		return e.boolTyp, TypeOK
-	case ast.UnaryOpBitNot:
-		if !e.env.isIntType(exprTypeID) {
-			span := e.ast.Node(unary.Expr).Span
-			e.diag(
-				span,
-				"type mismatch: bitwise NOT expects an integer, got %s",
-				e.env.TypeDisplay(exprTypeID),
-			)
-			return InvalidTypeID, TypeDepFailed
-		}
-		return exprTypeID, TypeOK
-	default:
-		panic(base.Errorf("unknown unary operator: %s", unary.Op))
-	}
-}
-
-func (e *Engine) isLiteral(nodeID ast.NodeID) bool {
-	switch e.ast.Node(nodeID).Kind.(type) {
-	case ast.Int, ast.RuneLiteral:
-		return true
-	}
-	return false
-}
-
-func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:funlen
-	// When the LHS is a literal but the RHS is not, resolve the RHS first so its
-	// concrete type can serve as a type hint for the literal (e.g. `10 == byte`).
-	lhsIsLiteral := e.isLiteral(binary.LHS) && !e.isLiteral(binary.RHS)
-	var lhsTypeID, rhsTypeID TypeID
-	var status TypeStatus
-	if lhsIsLiteral {
-		rhsTypeID, status = e.Query(binary.RHS)
+		_, status := e.Query(declNodeID)
 		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
+			depFailed = true
+			continue
 		}
-		lhsTypeID, status = e.queryWithHint(binary.LHS, &rhsTypeID)
-	} else {
-		lhsTypeID, status = e.Query(binary.LHS)
+		if callNodeID, ok := ast.FindNode[ast.Call](e.ast, varNode.Expr); ok {
+			e.diag(e.ast.Node(callNodeID).Span, "function calls are not allowed in module-level constants")
+			depFailed = true
+			continue
+		}
+		typeID := e.env.TypeOfNode(varNode.Expr).ID
+		if e.env.containsMutablePart(typeID) {
+			exprSpan := e.ast.Node(varNode.Expr).Span
+			e.diag(exprSpan, "module-level constants cannot contain mutable references or slices")
+			depFailed = true
+			continue
+		}
+		name := e.declMangledName(declNodeID, varNode.Name.Name)
+		e.consts = append(e.consts, ConstWork{NodeID: declNodeID, TypeID: typeID, Name: name, Env: e.env})
 	}
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
+	MarkBuiltins(e.ast, module)
+	e.forwardDeclareFuns(module.Decls)
+	// Eagerly register every fun in runtime modules: generated IR calls into
+	// them by mangled name (e.g. @runtime$arena.arena_alloc) without Metall
+	// ever `use`-ing them, so the default lazy registration would miss them.
+	for _, declNodeID := range module.Decls {
+		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok {
+			if fun.Name.Name == "main" ||
+				module.Name == "runtime::arena" ||
+				module.Name == "runtime::wasmalloc" {
+				e.registerFun(declNodeID)
+			}
+		}
 	}
-	var valid bool
-	var expected string
-	switch binary.Op {
-	case ast.BinaryOpEq, ast.BinaryOpNeq:
-		valid = e.env.isIntType(lhsTypeID) || lhsTypeID == e.boolTyp
-		expected = "an integer or Bool"
-	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
-		valid = e.env.isIntType(lhsTypeID)
-		expected = "an integer"
-	case ast.BinaryOpOr, ast.BinaryOpAnd:
-		valid = lhsTypeID == e.boolTyp
-		expected = "Bool"
-	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod,
-		ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul:
-		valid = e.env.isIntType(lhsTypeID)
-		expected = "an integer"
-	case ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
-		valid = e.env.isIntType(lhsTypeID)
-		expected = "an integer"
-	default:
-		panic(base.Errorf("unknown binary operator: %s", binary.Op))
-	}
-	if !valid {
-		e.diag(
-			e.ast.Node(binary.LHS).Span,
-			"type mismatch: binary operation '%s' expects %s, got %s",
-			binary.Op,
-			expected,
-			e.env.TypeDisplay(lhsTypeID),
-		)
-		return InvalidTypeID, TypeDepFailed
-	}
-	if !lhsIsLiteral {
-		rhsTypeID, status = e.queryWithHint(binary.RHS, &lhsTypeID)
+	for _, declNodeID := range module.Decls {
+		switch e.ast.Node(declNodeID).Kind.(type) {
+		case ast.Var, ast.Import:
+			continue
+		}
+		_, status := e.Query(declNodeID)
 		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
+			depFailed = true
 		}
 	}
-	if rhsTypeID != lhsTypeID {
-		span := e.ast.Node(binary.RHS).Span
-		e.diag(
-			span,
-			"type mismatch: expected type of LHS: %s, got %s",
-			e.env.TypeDisplay(lhsTypeID),
-			e.env.TypeDisplay(rhsTypeID),
-		)
+	if depFailed {
 		return InvalidTypeID, TypeDepFailed
 	}
-	switch binary.Op { //nolint:exhaustive
-	case ast.BinaryOpEq, ast.BinaryOpNeq, ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
-		return e.boolTyp, TypeOK
-	default:
-		return lhsTypeID, TypeOK
+	if module.Name == "" {
+		return e.voidTyp, TypeOK
 	}
+	typeID := e.env.newType(ModuleType{Name: module.Name, Macro: false}, nodeID, span, TypeOK)
+	return typeID, TypeOK
+}
+
+func (e *Engine) bindImports(nodeID ast.NodeID, module ast.Module) TypeStatus {
+	importMap, ok := e.moduleResolution.Imports[nodeID]
+	if !ok {
+		return TypeOK
+	}
+	for name, importedModuleNodeID := range importMap {
+		typeID, status := e.Query(importedModuleNodeID)
+		if status.Failed() {
+			return TypeDepFailed
+		}
+		var importNodeID ast.NodeID
+		for _, id := range module.Decls {
+			imp, ok := e.ast.Node(id).Kind.(ast.Import)
+			if !ok {
+				continue
+			}
+			isAlias := imp.Alias != nil && imp.Alias.Name == name
+			if isAlias || imp.Segments[len(imp.Segments)-1] == name {
+				importNodeID = id
+				break
+			}
+		}
+		if importNodeID == 0 {
+			panic(base.Errorf(
+				"module resolution exposed %q with no matching import decl in module %q",
+				name, module.Name,
+			))
+		}
+		scope := e.scopeGraph.NodeScope(importNodeID)
+		e.env.bindInScope(scope, importNodeID, name, typeID)
+	}
+	return TypeOK
 }
 
 func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *TypeID) (TypeID, TypeStatus) {
@@ -668,8 +500,7 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 			e.diag(e.ast.Node(exprNodeID).Span, "unreachable code")
 			return InvalidTypeID, TypeDepFailed
 		}
-		prevBlockExprsIndex := e.blockExprsIndex
-		e.blockExprsIndex = i
+		restoreIndex := e.withBlockIndex(i)
 		if i == lastIdx {
 			lastExprTypeID, status = e.queryWithHint(exprNodeID, typeHint)
 		} else {
@@ -677,7 +508,6 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 			if !status.Failed() && e.isInstantiable(lastExprTypeID) && lastExprTypeID != e.voidTyp {
 				switch e.ast.Node(exprNodeID).Kind.(type) {
 				case ast.Fun, ast.Struct, ast.Shape, ast.Union:
-					// Declarations are not expressions — skip the check.
 				default:
 					e.diag(
 						e.ast.Node(exprNodeID).Span,
@@ -691,7 +521,7 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 		if status.Failed() {
 			depFailed = true
 		}
-		e.blockExprsIndex = prevBlockExprsIndex
+		restoreIndex()
 		if lastExprTypeID == e.neverTyp {
 			wouldBeDeadCode = true
 		}
@@ -700,92 +530,6 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 		return InvalidTypeID, TypeDepFailed
 	}
 	return lastExprTypeID, TypeOK
-}
-
-func (e *Engine) checkContinue(span base.Span) (TypeID, TypeStatus) {
-	if len(e.loopStack) == 0 {
-		e.diag(span, "continue statement outside of loop")
-		return InvalidTypeID, TypeFailed
-	}
-	return e.neverTyp, TypeOK
-}
-
-func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatus) {
-	blockTypeID, status := e.Query(defer_.Block)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if blockTypeID != e.voidTyp && e.isInstantiable(blockTypeID) {
-		e.diag(span, "defer block must not yield a value, got %s", e.env.TypeDisplay(blockTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	return e.voidTyp, TypeOK
-}
-
-func (e *Engine) checkBreak(span base.Span) (TypeID, TypeStatus) {
-	if len(e.loopStack) == 0 {
-		e.diag(span, "break statement outside of loop")
-		return InvalidTypeID, TypeFailed
-	}
-	return e.neverTyp, TypeOK
-}
-
-func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) {
-	if for_.Binding != nil {
-		range_ := base.Cast[ast.Range](e.ast.Node(*for_.Cond).Kind)
-		if range_.Lo == nil || range_.Hi == nil {
-			e.diag(e.ast.Node(*for_.Cond).Span, "for-in range requires both lower and upper bound")
-			return InvalidTypeID, TypeFailed
-		}
-		if _, status := e.Query(*for_.Cond); status.Failed() {
-			return InvalidTypeID, status
-		}
-		e.bind(for_.Body, for_.Binding.Name, false, e.intTyp, for_.Binding.Span, -1)
-	} else if for_.Cond != nil {
-		condType, status := e.Query(*for_.Cond)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		if condType != e.boolTyp {
-			condSpan := e.ast.Node(*for_.Cond).Span
-			e.diag(condSpan, "type mismatch: expected Bool, got %s", e.env.TypeDisplay(condType))
-			return InvalidTypeID, TypeFailed
-		}
-	}
-	e.loopStack = append(e.loopStack, nodeID)
-	defer func() { e.loopStack = e.loopStack[:len(e.loopStack)-1] }()
-	bodyTypeID, status := e.Query(for_.Body)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if bodyTypeID != e.voidTyp && e.isInstantiable(bodyTypeID) {
-		bodySpan := e.ast.Node(for_.Body).Span
-		e.diag(bodySpan, "for loop body must not yield a value, got %s", e.env.TypeDisplay(bodyTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	return e.voidTyp, TypeOK
-}
-
-func (e *Engine) checkRange(range_ ast.Range) (TypeID, TypeStatus) {
-	checkBound := func(bound *ast.NodeID) bool {
-		if bound == nil {
-			return true
-		}
-		boundTypeID, s := e.Query(*bound)
-		if s.Failed() {
-			return false
-		}
-		if boundTypeID != e.intTyp {
-			boundSpan := e.ast.Node(*bound).Span
-			e.diag(boundSpan, "range bound must be Int, got %s", e.env.TypeDisplay(boundTypeID))
-			return false
-		}
-		return true
-	}
-	if !checkBound(range_.Lo) || !checkBound(range_.Hi) {
-		return InvalidTypeID, TypeFailed
-	}
-	return e.voidTyp, TypeOK
 }
 
 func (e *Engine) checkIf(if_ ast.If, typeHint *TypeID) (TypeID, TypeStatus) {
@@ -886,6 +630,941 @@ func (e *Engine) checkWhen(when ast.When, typeHint *TypeID) (TypeID, TypeStatus)
 		return e.neverTyp, TypeOK
 	}
 	return *resultType, TypeOK
+}
+
+func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) {
+	if for_.Binding != nil {
+		range_ := base.Cast[ast.Range](e.ast.Node(*for_.Cond).Kind)
+		if range_.Lo == nil || range_.Hi == nil {
+			e.diag(e.ast.Node(*for_.Cond).Span, "for-in range requires both lower and upper bound")
+			return InvalidTypeID, TypeFailed
+		}
+		if _, status := e.Query(*for_.Cond); status.Failed() {
+			return InvalidTypeID, status
+		}
+		e.bind(for_.Body, for_.Binding.Name, false, e.intTyp, for_.Binding.Span, -1)
+	} else if for_.Cond != nil {
+		condType, status := e.Query(*for_.Cond)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if condType != e.boolTyp {
+			condSpan := e.ast.Node(*for_.Cond).Span
+			e.diag(condSpan, "type mismatch: expected Bool, got %s", e.env.TypeDisplay(condType))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	defer e.enterLoop(nodeID)()
+	bodyTypeID, status := e.Query(for_.Body)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if bodyTypeID != e.voidTyp && e.isInstantiable(bodyTypeID) {
+		bodySpan := e.ast.Node(for_.Body).Span
+		e.diag(bodySpan, "for loop body must not yield a value, got %s", e.env.TypeDisplay(bodyTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidTyp, TypeOK
+}
+
+func (e *Engine) checkRange(range_ ast.Range) (TypeID, TypeStatus) {
+	checkBound := func(bound *ast.NodeID) bool {
+		if bound == nil {
+			return true
+		}
+		boundTypeID, s := e.Query(*bound)
+		if s.Failed() {
+			return false
+		}
+		if boundTypeID != e.intTyp {
+			boundSpan := e.ast.Node(*bound).Span
+			e.diag(boundSpan, "range bound must be Int, got %s", e.env.TypeDisplay(boundTypeID))
+			return false
+		}
+		return true
+	}
+	if !checkBound(range_.Lo) || !checkBound(range_.Hi) {
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidTyp, TypeOK
+}
+
+func (e *Engine) checkBreak(span base.Span) (TypeID, TypeStatus) {
+	if len(e.loopStack) == 0 {
+		e.diag(span, "break statement outside of loop")
+		return InvalidTypeID, TypeFailed
+	}
+	return e.neverTyp, TypeOK
+}
+
+func (e *Engine) checkContinue(span base.Span) (TypeID, TypeStatus) {
+	if len(e.loopStack) == 0 {
+		e.diag(span, "continue statement outside of loop")
+		return InvalidTypeID, TypeFailed
+	}
+	return e.neverTyp, TypeOK
+}
+
+func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatus) {
+	blockTypeID, status := e.Query(defer_.Block)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if blockTypeID != e.voidTyp && e.isInstantiable(blockTypeID) {
+		e.diag(span, "defer block must not yield a value, got %s", e.env.TypeDisplay(blockTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidTyp, TypeOK
+}
+
+func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeStatus) {
+	if len(e.funStack) == 0 {
+		e.diag(span, "return outside of function")
+		return InvalidTypeID, TypeFailed
+	}
+	funType := base.Cast[FunType](e.env.Type(e.funStack[len(e.funStack)-1]).Kind)
+	exprTypeID, status := e.queryWithHint(return_.Expr, &funType.Return)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if !e.isAssignableTo(exprTypeID, funType.Return) {
+		span := e.ast.Node(return_.Expr).Span
+		e.diag(
+			span,
+			"return type mismatch: expected %s, got %s",
+			e.env.TypeDisplay(funType.Return),
+			e.env.TypeDisplay(exprTypeID),
+		)
+		return InvalidTypeID, TypeFailed
+	}
+	return e.neverTyp, TypeOK
+}
+
+// checkInferredFunLit resolves a function literal whose param or return type
+// is omitted, using the supplied hint as the expected function type. Fun
+// literals don't participate in mutual recursion and the hint is only
+// available here, so they bypass the two-phase forwardDeclareFuns approach.
+func (e *Engine) checkInferredFunLit( //nolint:funlen
+	_ ast.NodeID, block ast.Block, funNode ast.Fun, hintTypeID *TypeID,
+) (TypeID, TypeStatus) {
+	var hintFun *FunType
+	if hintTypeID != nil {
+		if cached, ok := e.env.cachedTypeInfo(*hintTypeID); ok {
+			if ft, ok := cached.Type.Kind.(FunType); ok {
+				hintFun = &ft
+			}
+		}
+	}
+	funNodeID := block.Exprs[0]
+	node := e.ast.Node(funNodeID)
+	paramTypeIDs := make([]TypeID, len(funNode.Params))
+	noescapeParams := make([]bool, len(funNode.Params))
+	for i, paramNodeID := range funNode.Params {
+		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		if paramNode.Type == ast.InferredType {
+			if hintFun == nil || i >= len(hintFun.Params) {
+				e.diag(paramNode.Name.Span, "cannot infer type of parameter '%s'", paramNode.Name.Name)
+				return InvalidTypeID, TypeFailed
+			}
+			paramTypeIDs[i] = hintFun.Params[i]
+			paramCached, paramOK := e.env.cachedTypeInfo(hintFun.Params[i])
+			if !paramOK {
+				panic(base.Errorf("type %s not found", hintFun.Params[i]))
+			}
+			e.env.setNodeType(paramNodeID, paramCached)
+		} else {
+			paramTypeID, status := e.Query(paramNodeID)
+			if status.Failed() {
+				return InvalidTypeID, TypeDepFailed
+			}
+			paramTypeIDs[i] = paramTypeID
+		}
+		if paramNode.Noescape {
+			noescapeParams[i] = true
+		}
+	}
+	var retTypeID TypeID
+	inferRetFromBody := false
+	if funNode.ReturnType == ast.InferredType {
+		if hintFun == nil {
+			e.diag(node.Span, "cannot infer return type of function literal")
+			return InvalidTypeID, TypeFailed
+		} else if _, isTypeParam := e.env.Type(hintFun.Return).Kind.(TypeParamType); isTypeParam {
+			inferRetFromBody = true
+		} else {
+			retTypeID = hintFun.Return
+		}
+	} else {
+		var status TypeStatus
+		retTypeID, status = e.Query(funNode.ReturnType)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	}
+	// Push a temporary fun type so `return` and `try` in the body resolve
+	// against this function, not an outer one. We skip the push when
+	// inferring the return from the body (which has no return/try support).
+	if !inferRetFromBody {
+		tmpFunType := FunType{
+			Params: paramTypeIDs, Return: retTypeID,
+			Macro: false, Sync: false, NoescapeParams: noescapeParams,
+			NoescapeReturn: funNode.NoescapeReturn,
+		}
+		tmpFunTypeID := e.env.buildFunType(tmpFunType, 0, node.Span)
+		defer e.enterFun(tmpFunTypeID)()
+	}
+	for _, capNodeID := range funNode.Captures {
+		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
+		e.bindCapture(funNodeID, capNodeID, capture)
+	}
+	for i, paramNodeID := range funNode.Params {
+		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		if !e.bind(paramNodeID, paramNode.Name.Name, false, paramTypeIDs[i], paramNode.Name.Span, -1) {
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	if inferRetFromBody {
+		// The hint's return type is an unresolved type parameter, so use the
+		// body's result as the return type without supplying a hint.
+		blockTypeID, status := e.Query(funNode.Block)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		retTypeID = blockTypeID
+	} else {
+		blockTypeID, status := e.queryWithHint(funNode.Block, &retTypeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if blockTypeID != e.neverTyp && !e.isAssignableTo(blockTypeID, retTypeID) {
+			e.diag(e.ast.Node(funNode.Block).Span,
+				"return type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(retTypeID), e.env.TypeDisplay(blockTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	isSync := e.isFunDeclSync(node, paramTypeIDs, retTypeID)
+	funType := FunType{
+		Params: paramTypeIDs, Return: retTypeID,
+		Macro: false, Sync: isSync, NoescapeParams: noescapeParams,
+		NoescapeReturn: funNode.NoescapeReturn,
+	}
+	funTypeID := e.env.buildFunType(funType, funNodeID, node.Span)
+	e.updateCachedType(node, funTypeID, TypeOK)
+	e.bind(funNodeID, funNode.Name.Name, false, funTypeID, funNode.Name.Span, -1)
+	e.env.setNamedFunRef(funNodeID, e.declMangledName(funNodeID, funNode.Name.Name))
+	identTypeID, status := e.queryWithHint(block.Exprs[1], hintTypeID)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	return identTypeID, TypeOK
+}
+
+func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID TypeID, funType FunType) {
+	debugDedent := e.debug.Print(0, "checkFunBody %s (type=%s)", funNode.Name.Name, funTypeID).Indent()
+	defer debugDedent()
+	defer e.enterFun(funTypeID)()
+	for _, capNodeID := range funNode.Captures {
+		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
+		e.bindCapture(funNodeID, capNodeID, capture)
+	}
+	for i, paramNodeID := range funNode.Params {
+		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		paramTypeID := funType.Params[i]
+		if !e.bind(paramNodeID, paramNode.Name.Name, false, paramTypeID, paramNode.Name.Span, -1) {
+			return
+		}
+	}
+	if funNode.Name.Name == "main" {
+		e.verifyMain(funNode)
+	}
+	blockTypeID, status := e.queryWithHint(funNode.Block, &funType.Return)
+	if status.Failed() {
+		return
+	}
+	blockNode := e.ast.Node(funNode.Block)
+	block := base.Cast[ast.Block](blockNode.Kind)
+	if blockTypeID == e.neverTyp {
+		return
+	}
+	if !e.isAssignableTo(blockTypeID, funType.Return) {
+		diagSpan := blockNode.Span
+		if len(block.Exprs) > 0 {
+			lastNode := e.ast.Node(block.Exprs[len(block.Exprs)-1])
+			diagSpan = lastNode.Span
+		}
+		e.diag(
+			diagSpan,
+			"return type mismatch: expected %s, got %s",
+			e.env.TypeDisplay(funType.Return),
+			e.env.TypeDisplay(blockTypeID),
+		)
+		return
+	}
+}
+
+func (e *Engine) checkFunParam(funParam ast.FunParam) (TypeID, TypeStatus) {
+	typeID, status := e.Query(funParam.Type)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if funParam.Default != nil {
+		if _, ok := e.ast.Node(funParam.Type).Kind.(ast.RefType); ok {
+			e.diag(e.ast.Node(*funParam.Default).Span, "default parameters cannot be references")
+			return InvalidTypeID, TypeFailed
+		}
+		defaultTypeID, status := e.queryWithHint(*funParam.Default, &typeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if !e.isAssignableTo(defaultTypeID, typeID) {
+			e.diag(e.ast.Node(*funParam.Default).Span,
+				"default value type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(typeID), e.env.TypeDisplay(defaultTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	return typeID, TypeOK
+}
+
+func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.Span) (TypeID, TypeStatus) {
+	params := []TypeID{}
+	for _, paramNodeID := range funType.ParamTypes {
+		paramType, status := e.Query(paramNodeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		params = append(params, paramType)
+	}
+	returnType, status := e.Query(funType.ReturnType)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	funTyp := FunType{
+		Params:         params,
+		Return:         returnType,
+		Macro:          false,
+		Sync:           funType.Sync == ast.SyncSync,
+		NoescapeParams: funType.NoescapeParams,
+		NoescapeReturn: funType.NoescapeReturn,
+	}
+	return e.env.buildFunType(funTyp, nodeID, span), TypeOK
+}
+
+func (e *Engine) verifyMain(fun ast.Fun) {
+	if len(fun.Params) != 0 {
+		firstNode := e.ast.Node(fun.Params[0])
+		lastNode := e.ast.Node(fun.Params[len(fun.Params)-1])
+		span := firstNode.Span.Combine(lastNode.Span)
+		e.diag(span, "main function cannot take arguments")
+	}
+	retTypeID, status := e.Query(fun.ReturnType)
+	if status.Failed() {
+		return
+	}
+	if retTypeID == e.voidTyp {
+		return
+	}
+	if union, ok := e.env.Type(retTypeID).Kind.(UnionType); ok {
+		if strings.HasPrefix(union.Name, "Result.") && len(union.Variants) > 0 && union.Variants[0] == e.voidTyp {
+			return
+		}
+	}
+	e.diag(e.ast.Node(fun.ReturnType).Span, "main function must return void or !void")
+}
+
+func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
+	if ident.Name == "_" {
+		e.diag(span, "_ can only be used as the left-hand side of an assignment")
+		return InvalidTypeID, TypeFailed
+	}
+	lookupName := ident.Name
+	if structName, methodName, ok := strings.Cut(ident.Name, "."); ok {
+		resolved, ok := e.resolveMethodBindName(nodeID, structName, methodName, span)
+		if !ok {
+			return InvalidTypeID, TypeFailed
+		}
+		lookupName = resolved
+	}
+	binding, ok := e.lookup(nodeID, lookupName, e.blockExprsIndex)
+	if !ok {
+		e.diag(span, "symbol not defined: %s", ident.Name)
+		return InvalidTypeID, TypeFailed
+	}
+	e.debug.Print(1, "checkIdent %q -> lookup=%q binding.Decl=%s binding.TypeID=%s type=%s",
+		ident.Name, lookupName, binding.Decl, binding.TypeID, e.env.TypeDisplay(binding.TypeID))
+	if binding.Decl != 0 && e.unreachableBindingInOuterScope(nodeID, binding) {
+		e.diag(span, "cannot reference %q from outer scope", ident.Name)
+		return InvalidTypeID, TypeFailed
+	}
+	e.env.SetPathBinding(nodeID, binding)
+	return e.resolveBinding(nodeID, binding)
+}
+
+func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
+	targetTypeID, status := e.Query(fieldAccess.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	targetTyp := e.env.Type(targetTypeID)
+	if refTyp, ok := targetTyp.Kind.(RefType); ok {
+		targetTyp = e.env.Type(refTyp.Type)
+	}
+	if _, ok := targetTyp.Kind.(ModuleType); ok {
+		return e.checkModuleMemberAccess(nodeID, fieldAccess)
+	}
+	if _, ok := targetTyp.Kind.(SliceType); ok && fieldAccess.Field.Name == "len" {
+		return e.intTyp, TypeOK
+	}
+	if _, ok := targetTyp.Kind.(ArrayType); ok {
+		if fieldAccess.Field.Name == "len" {
+			return e.intTyp, TypeOK
+		}
+		e.diag(fieldAccess.Field.Span, "unknown field on array: %s", fieldAccess.Field.Name)
+		return InvalidTypeID, TypeFailed
+	}
+	typeName := e.env.TypeDisplay(targetTyp.ID)
+	if struct_, ok := targetTyp.Kind.(StructType); ok {
+		for _, field := range struct_.Fields {
+			if field.Name == fieldAccess.Field.Name {
+				if !e.isVisible(e.env.DeclNode(targetTyp.ID), field.Pub, nodeID) {
+					e.diag(fieldAccess.Field.Span, "field %s.%s is not public",
+						typeName, field.Name)
+					return InvalidTypeID, TypeFailed
+				}
+				return field.Type, TypeOK
+			}
+		}
+	}
+	if typeID, status, handled := e.resolveGenerics(nodeID, nil); handled {
+		return typeID, status
+	}
+	switch kind := targetTyp.Kind.(type) {
+	case StructType, UnionType, IntType, BoolType, AllocatorType, SliceType:
+		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
+	case TypeParamType:
+		e.diagTypeParamFieldAccess(kind, fieldAccess, typeName)
+	default:
+		targetSpan := e.ast.Node(fieldAccess.Target).Span
+		e.diag(targetSpan, "cannot access field on non-struct type: %s", typeName)
+	}
+	return InvalidTypeID, TypeFailed
+}
+
+func (e *Engine) diagTypeParamFieldAccess(
+	tpt TypeParamType, fieldAccess ast.FieldAccess, typeName string,
+) {
+	if tpt.Shape == nil {
+		e.diag(
+			fieldAccess.Field.Span,
+			"unconstrained type parameter has no fields or methods: %s", typeName,
+		)
+		return
+	}
+	shapeType := base.Cast[ShapeType](e.env.Type(*tpt.Shape).Kind)
+	names := make([]string, 0)
+	for _, f := range shapeType.Fields {
+		names = append(names, f.Name)
+	}
+	if shapeNodeID := e.env.DeclNode(*tpt.Shape); shapeNodeID != 0 {
+		if shapeNode, ok := e.ast.Node(shapeNodeID).Kind.(ast.Shape); ok {
+			for _, funDeclNodeID := range shapeNode.Funs {
+				funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
+				if _, methodName, found := strings.Cut(funDecl.Name.Name, "."); found {
+					names = append(names, methodName)
+				} else {
+					names = append(names, funDecl.Name.Name)
+				}
+			}
+		}
+	}
+	e.diag(
+		fieldAccess.Field.Span,
+		"shape %s (constraint on %s) has no member %s; available: %v",
+		e.env.TypeDisplay(*tpt.Shape), typeName, fieldAccess.Field.Name, names,
+	)
+}
+
+func (e *Engine) checkModuleMemberAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
+	span := e.ast.Node(nodeID).Span
+	targetIdent := base.Cast[ast.Ident](e.ast.Node(fieldAccess.Target).Kind)
+	moduleName := targetIdent.Name
+	memberName := fieldAccess.Field.Name
+	thisModuleNode, _ := e.moduleOf(nodeID)
+	importedModuleNodeID, ok := e.moduleResolution.Imports[thisModuleNode.ID][moduleName]
+	if !ok {
+		e.diag(span, "module not found: %s", moduleName)
+		return InvalidTypeID, TypeFailed
+	}
+	mod := base.Cast[ast.Module](e.ast.Node(importedModuleNodeID).Kind)
+	if len(mod.Decls) == 0 {
+		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
+		return InvalidTypeID, TypeFailed
+	}
+	binding, ok := e.env.Lookup(mod.Decls[0], memberName, -1)
+	if !ok {
+		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
+		return InvalidTypeID, TypeFailed
+	}
+	if !e.isVisible(binding.Decl, e.declIsPub(binding.Decl), nodeID) {
+		e.diag(span, "%s::%s is not public", moduleName, memberName)
+		return InvalidTypeID, TypeFailed
+	}
+	e.env.SetPathBinding(nodeID, binding)
+	return e.resolveBinding(nodeID, binding)
+}
+
+func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding) (TypeID, TypeStatus) {
+	if cached, ok := e.env.cachedTypeInfo(binding.TypeID); ok && cached.Status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if typeID, status, handled := e.resolveGenerics(nodeID, nil); handled {
+		return typeID, status
+	}
+	return binding.TypeID, TypeOK
+}
+
+func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) { //nolint:funlen
+	if _, status, handled := e.resolveGenerics(callNodeID, nil); handled && status.Failed() {
+		return InvalidTypeID, status
+	}
+	calleeTypeID, status := e.Query(call.Callee)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	calleeTyp := e.env.Type(calleeTypeID)
+	fun, ok := calleeTyp.Kind.(FunType)
+	if !ok {
+		calleeSpan := e.ast.Node(call.Callee).Span
+		e.diag(calleeSpan, "cannot call non-function: %s", e.env.TypeDisplay(calleeTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	var argNodes []ast.NodeID
+	fieldAccess, isFieldAccess := e.ast.Node(call.Callee).Kind.(ast.FieldAccess)
+	// Method calls are named functions reached via field access on a value
+	// (not on a module or a type name).
+	isMethod := false
+	if e.env.isNamedFun(call.Callee) && isFieldAccess {
+		targetType := e.env.TypeOfNode(fieldAccess.Target)
+		switch targetType.Kind.(type) {
+		case ModuleType:
+		default:
+			isMethod = !e.isTypeReference(fieldAccess.Target)
+		}
+	}
+	if isMethod {
+		argNodes = append(argNodes, fieldAccess.Target)
+		e.env.setMethodCallReceiver(callNodeID, fieldAccess.Target)
+	}
+	argNodes = append(argNodes, call.Args...)
+	argNodes = e.fillCallDefaults(call, callNodeID, argNodes, fun)
+	if len(argNodes) != len(fun.Params) {
+		expected := len(fun.Params)
+		if isMethod {
+			expected--
+		}
+		e.diag(span, "argument count mismatch: expected %d, got %d", expected, len(call.Args))
+		return InvalidTypeID, TypeFailed
+	}
+	for i, argNodeID := range argNodes {
+		paramTypeID := fun.Params[i]
+		argTypeID, status := e.queryWithHint(argNodeID, &paramTypeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if !e.isAssignableTo(argTypeID, paramTypeID) {
+			argNode := e.ast.Node(argNodeID)
+			if i == 0 && isMethod {
+				e.diag(argNode.Span, "type mismatch at receiver: expected %s, got %s",
+					e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
+			} else {
+				argIndex := i
+				if isMethod {
+					argIndex--
+				}
+				e.diag(argNode.Span, "type mismatch at argument %d: expected %s, got %s",
+					argIndex+1, e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
+			}
+			return InvalidTypeID, TypeFailed
+		}
+		if _, isRef := e.env.Type(paramTypeID).Kind.(RefType); !isRef {
+			if !e.checkNocopy(argNodeID, argTypeID, e.ast.Node(argNodeID).Span) {
+				return InvalidTypeID, TypeFailed
+			}
+		}
+	}
+	calleeIsUnsafe := false
+	if binding, ok := e.env.LocalPathBinding(call.Callee); ok && binding.Decl != 0 {
+		switch kind := e.ast.Node(binding.Decl).Kind.(type) {
+		case ast.Fun:
+			calleeIsUnsafe = kind.Unsafe
+		case ast.FunDecl:
+			calleeIsUnsafe = kind.Unsafe
+		}
+	}
+	if calleeIsUnsafe && !call.Unsafe {
+		e.diag(span, "calling unsafe function requires the unsafe keyword")
+		return InvalidTypeID, TypeFailed
+	}
+	if call.Unsafe && !calleeIsUnsafe {
+		e.diag(span, "unsafe keyword can only be used on unsafe functions")
+		return InvalidTypeID, TypeFailed
+	}
+	return fun.Return, TypeOK
+}
+
+func (e *Engine) fillCallDefaults(
+	call ast.Call, callNodeID ast.NodeID, argNodes []ast.NodeID, fun FunType,
+) []ast.NodeID {
+	if len(argNodes) >= len(fun.Params) {
+		return argNodes
+	}
+	defaults := e.funDeclDefaults(call)
+	if defaults == nil {
+		return argNodes
+	}
+	missing := len(fun.Params) - len(argNodes)
+	if missing > len(defaults) {
+		return argNodes
+	}
+	fill := defaults[len(defaults)-missing:]
+	e.env.setCallDefaults(callNodeID, fill)
+	return append(argNodes, fill...)
+}
+
+// funDeclDefaults returns the default-expression NodeIDs for the trailing
+// parameters of the callee, or nil if not applicable.
+func (e *Engine) funDeclDefaults(call ast.Call) []ast.NodeID {
+	binding, ok := e.env.LocalPathBinding(call.Callee)
+	if !ok || binding.Decl == 0 {
+		return nil
+	}
+	funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun)
+	if !ok {
+		return nil
+	}
+	var defaults []ast.NodeID
+	for _, paramNodeID := range funNode.Params {
+		param := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
+		if param.Default != nil {
+			defaults = append(defaults, *param.Default)
+		}
+	}
+	return defaults
+}
+
+func (e *Engine) checkBool() (TypeID, TypeStatus) {
+	return e.boolTyp, TypeOK
+}
+
+func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
+	target := e.intTyp
+	if typeHint != nil {
+		if _, ok := e.env.Type(*typeHint).Kind.(IntType); ok {
+			target = *typeHint
+		}
+	}
+	info := base.Cast[IntType](e.env.Type(target).Kind)
+	if intNode.Value.Cmp(info.Min) < 0 || intNode.Value.Cmp(info.Max) > 0 {
+		e.diag(span, "value %s out of range for %s (%s..%s)",
+			intNode.Value, info.Name, info.Min, info.Max)
+		return InvalidTypeID, TypeFailed
+	}
+	return target, TypeOK
+}
+
+func (e *Engine) checkString() (TypeID, TypeStatus) {
+	return e.strTyp, TypeOK
+}
+
+func (e *Engine) checkRuneLiteral(lit ast.RuneLiteral, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
+	const maxUnicodeCodepoint = 0x10FFFF
+	const surrogateMin = 0xD800
+	const surrogateMax = 0xDFFF
+	if lit.Value > maxUnicodeCodepoint {
+		e.diag(span, "invalid rune literal: value U+%04X exceeds maximum Unicode codepoint U+10FFFF", lit.Value)
+		return InvalidTypeID, TypeFailed
+	}
+	if lit.Value >= surrogateMin && lit.Value <= surrogateMax {
+		e.diag(span, "invalid rune literal: value U+%04X is in the surrogate range (U+D800..U+DFFF)", lit.Value)
+		return InvalidTypeID, TypeFailed
+	}
+	if typeHint != nil {
+		if info, ok := e.env.Type(*typeHint).Kind.(IntType); ok && *typeHint != e.runeTyp {
+			val := new(big.Int).SetUint64(uint64(lit.Value))
+			if val.Cmp(info.Min) >= 0 && val.Cmp(info.Max) <= 0 {
+				return *typeHint, TypeOK
+			}
+		}
+	}
+	return e.runeTyp, TypeOK
+}
+
+func (e *Engine) checkSimpleType(nodeID ast.NodeID, simpleType ast.SimpleType, span base.Span) (TypeID, TypeStatus) {
+	if typeID, status, handled := e.resolveGenerics(nodeID, nil); handled {
+		return typeID, status
+	}
+	if _, ok := e.lookup(nodeID, simpleType.Name.Name, -1); !ok {
+		e.diag(span, "symbol not defined: %s", simpleType.Name.Name)
+	}
+	return InvalidTypeID, TypeFailed
+}
+
+func (e *Engine) checkRefType(
+	nodeID ast.NodeID, refType ast.RefType, span base.Span,
+) (TypeID, TypeStatus) {
+	innerTypeID, status := e.Query(refType.Type)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	return e.env.buildRefType(nodeID, innerTypeID, refType.Mut, span), TypeOK
+}
+
+func (e *Engine) checkRef(nodeID ast.NodeID, ref ast.Ref, span base.Span) (TypeID, TypeStatus) {
+	targetTypeID, status := e.Query(ref.Target)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if ref.Mut && !isTemporaryExpr(e.ast.Node(ref.Target).Kind) {
+		_, mut := e.isPlaceMutable(ref.Target)
+		if !mut {
+			e.diag(span, "cannot take mutable reference to immutable value")
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	refTypeID := e.env.buildRefType(nodeID, targetTypeID, ref.Mut, span)
+	return refTypeID, TypeOK
+}
+
+func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
+	exprTypeID, status := e.Query(deref.Expr)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	exprTyp := e.env.Type(exprTypeID)
+	ref, ok := exprTyp.Kind.(RefType)
+	if !ok {
+		exprSpan := e.ast.Node(deref.Expr).Span
+		e.diag(exprSpan, "dereference: expected reference, got %s", e.env.TypeDisplay(exprTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	return ref.Type, TypeOK
+}
+
+// isTemporaryExpr reports whether a ref's target is a temporary, in which
+// case `&expr` materializes into a fresh scope-local slot and is implicitly
+// mutable.
+func isTemporaryExpr(kind ast.Kind) bool {
+	switch kind.(type) {
+	case ast.Ident, ast.FieldAccess, ast.Index, ast.Deref:
+		return false
+	}
+	return true
+}
+
+func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
+	if ident, ok := e.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
+		rhsTypeID, status := e.Query(assign.RHS)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if !e.isInstantiable(rhsTypeID) {
+			e.diag(e.ast.Node(assign.RHS).Span, "cannot discard expression of type %s", e.env.TypeDisplay(rhsTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+		return e.voidTyp, TypeOK
+	}
+	lhsTypeID, status := e.typeOfPlace(assign.LHS)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	rhsTypeID, status := e.queryWithHint(assign.RHS, &lhsTypeID)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if !e.isAssignableTo(rhsTypeID, lhsTypeID) {
+		span := e.ast.Node(assign.RHS).Span
+		e.diag(span, "type mismatch: expected %s, got %s",
+			e.env.TypeDisplay(lhsTypeID), e.env.TypeDisplay(rhsTypeID))
+		return InvalidTypeID, TypeDepFailed
+	}
+	if !e.checkNocopy(assign.RHS, rhsTypeID, e.ast.Node(assign.RHS).Span) {
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidTyp, TypeOK
+}
+
+func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:funlen
+	// When the LHS is a literal but the RHS is not, resolve the RHS first so its
+	// concrete type can serve as a type hint for the literal (e.g. `10 == byte`).
+	lhsIsLiteral := e.isLiteral(binary.LHS) && !e.isLiteral(binary.RHS)
+	var lhsTypeID, rhsTypeID TypeID
+	var status TypeStatus
+	if lhsIsLiteral {
+		rhsTypeID, status = e.Query(binary.RHS)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		lhsTypeID, status = e.queryWithHint(binary.LHS, &rhsTypeID)
+	} else {
+		lhsTypeID, status = e.Query(binary.LHS)
+	}
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	var valid bool
+	var expected string
+	switch binary.Op {
+	case ast.BinaryOpEq, ast.BinaryOpNeq:
+		valid = e.env.isIntType(lhsTypeID) || lhsTypeID == e.boolTyp
+		expected = "an integer or Bool"
+	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
+		valid = e.env.isIntType(lhsTypeID)
+		expected = "an integer"
+	case ast.BinaryOpOr, ast.BinaryOpAnd:
+		valid = lhsTypeID == e.boolTyp
+		expected = "Bool"
+	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod,
+		ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul:
+		valid = e.env.isIntType(lhsTypeID)
+		expected = "an integer"
+	case ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
+		valid = e.env.isIntType(lhsTypeID)
+		expected = "an integer"
+	default:
+		panic(base.Errorf("unknown binary operator: %s", binary.Op))
+	}
+	if !valid {
+		e.diag(
+			e.ast.Node(binary.LHS).Span,
+			"type mismatch: binary operation '%s' expects %s, got %s",
+			binary.Op,
+			expected,
+			e.env.TypeDisplay(lhsTypeID),
+		)
+		return InvalidTypeID, TypeDepFailed
+	}
+	if !lhsIsLiteral {
+		rhsTypeID, status = e.queryWithHint(binary.RHS, &lhsTypeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	}
+	if rhsTypeID != lhsTypeID {
+		span := e.ast.Node(binary.RHS).Span
+		e.diag(
+			span,
+			"type mismatch: expected type of LHS: %s, got %s",
+			e.env.TypeDisplay(lhsTypeID),
+			e.env.TypeDisplay(rhsTypeID),
+		)
+		return InvalidTypeID, TypeDepFailed
+	}
+	switch binary.Op { //nolint:exhaustive
+	case ast.BinaryOpEq, ast.BinaryOpNeq, ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
+		return e.boolTyp, TypeOK
+	default:
+		return lhsTypeID, TypeOK
+	}
+}
+
+func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
+	exprTypeID, status := e.Query(unary.Expr)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	switch unary.Op {
+	case ast.UnaryOpNot:
+		if exprTypeID != e.boolTyp {
+			span := e.ast.Node(unary.Expr).Span
+			e.diag(
+				span,
+				"type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(e.boolTyp),
+				e.env.TypeDisplay(exprTypeID),
+			)
+			return InvalidTypeID, TypeDepFailed
+		}
+		return e.boolTyp, TypeOK
+	case ast.UnaryOpBitNot:
+		if !e.env.isIntType(exprTypeID) {
+			span := e.ast.Node(unary.Expr).Span
+			e.diag(
+				span,
+				"type mismatch: bitwise NOT expects an integer, got %s",
+				e.env.TypeDisplay(exprTypeID),
+			)
+			return InvalidTypeID, TypeDepFailed
+		}
+		return exprTypeID, TypeOK
+	default:
+		panic(base.Errorf("unknown unary operator: %s", unary.Op))
+	}
+}
+
+func (e *Engine) isLiteral(nodeID ast.NodeID) bool {
+	switch e.ast.Node(nodeID).Kind.(type) {
+	case ast.Int, ast.RuneLiteral:
+		return true
+	}
+	return false
+}
+
+func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (TypeID, TypeStatus) {
+	var declTypeID TypeID
+	if varNode.Type != nil {
+		var status TypeStatus
+		declTypeID, status = e.Query(*varNode.Type)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	}
+	var exprTypeID TypeID
+	if varNode.Type != nil {
+		var status TypeStatus
+		exprTypeID, status = e.queryWithHint(varNode.Expr, &declTypeID)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	} else {
+		var status TypeStatus
+		exprTypeID, status = e.Query(varNode.Expr)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+	}
+	if !e.isInstantiable(exprTypeID) {
+		e.diag(span, "cannot assign expression of type '%s' to a variable", e.env.TypeDisplay(exprTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	if !e.checkNocopy(varNode.Expr, exprTypeID, e.ast.Node(varNode.Expr).Span) {
+		return InvalidTypeID, TypeFailed
+	}
+	bindTypeID := exprTypeID
+	// This handles `mut sut = [3,2,4,1][..]` - the array literal is owned by
+	// this binding so mutation is safe.
+	if varNode.Mut {
+		if sliceTyp, ok := e.env.Type(exprTypeID).Kind.(SliceType); ok && !sliceTyp.Mut {
+			if subSlice, ok := e.ast.Node(varNode.Expr).Kind.(ast.SubSlice); ok {
+				if _, ok := e.ast.Node(subSlice.Target).Kind.(ast.ArrayLiteral); ok {
+					bindTypeID = e.env.buildSliceType(sliceTyp.Elem, true, nodeID, span)
+				}
+			}
+		}
+	}
+	if varNode.Type != nil {
+		if !e.isAssignableTo(exprTypeID, declTypeID) {
+			exprSpan := e.ast.Node(varNode.Expr).Span
+			e.diag(exprSpan, "type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(declTypeID), e.env.TypeDisplay(exprTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+		bindTypeID = declTypeID
+	}
+	if !e.bind(nodeID, varNode.Name.Name, varNode.Mut, bindTypeID, varNode.Name.Span, e.blockExprsIndex) {
+		return InvalidTypeID, TypeFailed
+	}
+	return e.voidTyp, TypeOK
 }
 
 func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, span base.Span) (TypeID, TypeStatus) {
@@ -1038,7 +1717,7 @@ func (e *Engine) checkSubSlice(nodeID ast.NodeID, subSlice ast.SubSlice) (TypeID
 func (e *Engine) checkTypeConstruction(
 	nodeID ast.NodeID, lit ast.TypeConstruction, span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
-	if typeID, status, ok := e.InferTypeConstruction(lit, span, typeHint); ok {
+	if typeID, status, handled := e.resolveGenerics(nodeID, typeHint); handled {
 		if status.Failed() {
 			return InvalidTypeID, status
 		}
@@ -1166,1521 +1845,12 @@ func (e *Engine) checkIntConstruction(
 	return targetTypeID, TypeOK
 }
 
-func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
-	targetTypeID, status := e.Query(fieldAccess.Target)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	targetTyp := e.env.Type(targetTypeID)
-	if refTyp, ok := targetTyp.Kind.(RefType); ok {
-		targetTyp = e.env.Type(refTyp.Type)
-	}
-	if _, ok := targetTyp.Kind.(ModuleType); ok {
-		return e.checkModuleMemberAccess(nodeID, fieldAccess)
-	}
-	if _, ok := targetTyp.Kind.(SliceType); ok && fieldAccess.Field.Name == "len" {
-		return e.intTyp, TypeOK
-	}
-	if _, ok := targetTyp.Kind.(ArrayType); ok {
-		if fieldAccess.Field.Name == "len" {
-			return e.intTyp, TypeOK
-		}
-		e.diag(fieldAccess.Field.Span, "unknown field on array: %s", fieldAccess.Field.Name)
-		return InvalidTypeID, TypeFailed
-	}
-	typeName := e.env.TypeDisplay(targetTyp.ID)
-	if struct_, ok := targetTyp.Kind.(StructType); ok {
-		for _, field := range struct_.Fields {
-			if field.Name == fieldAccess.Field.Name {
-				if !e.isVisible(e.env.DeclNode(targetTyp.ID), field.Pub, nodeID) {
-					e.diag(fieldAccess.Field.Span, "field %s.%s is not public",
-						typeName, field.Name)
-					return InvalidTypeID, TypeFailed
-				}
-				return field.Type, TypeOK
-			}
-		}
-	}
-	if typeID, status, ok := e.CheckShapeFieldAccess(targetTyp, fieldAccess.Field.Name); ok {
-		return typeID, status
-	}
-	if typeID, status, ok := e.resolveMethod(nodeID, fieldAccess, targetTyp); ok {
-		return typeID, status
-	}
-	switch kind := targetTyp.Kind.(type) {
-	case StructType, UnionType, IntType, BoolType, AllocatorType, SliceType:
-		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
-	case TypeParamType:
-		e.diagTypeParamFieldAccess(kind, fieldAccess, typeName)
-	default:
-		targetSpan := e.ast.Node(fieldAccess.Target).Span
-		e.diag(targetSpan, "cannot access field on non-struct type: %s", typeName)
-	}
-	return InvalidTypeID, TypeFailed
-}
-
-func (e *Engine) diagTypeParamFieldAccess(
-	tpt TypeParamType, fieldAccess ast.FieldAccess, typeName string,
-) {
-	if tpt.Shape == nil {
-		e.diag(
-			fieldAccess.Field.Span,
-			"unconstrained type parameter has no fields or methods: %s", typeName,
-		)
-		return
-	}
-	shapeType := base.Cast[ShapeType](e.env.Type(*tpt.Shape).Kind)
-	names := make([]string, 0)
-	for _, f := range shapeType.Fields {
-		names = append(names, f.Name)
-	}
-	if shapeNodeID := e.env.DeclNode(*tpt.Shape); shapeNodeID != 0 {
-		if shapeNode, ok := e.ast.Node(shapeNodeID).Kind.(ast.Shape); ok {
-			for _, funDeclNodeID := range shapeNode.Funs {
-				funDecl := base.Cast[ast.FunDecl](e.ast.Node(funDeclNodeID).Kind)
-				if _, methodName, found := strings.Cut(funDecl.Name.Name, "."); found {
-					names = append(names, methodName)
-				} else {
-					names = append(names, funDecl.Name.Name)
-				}
-			}
-		}
-	}
-	e.diag(
-		fieldAccess.Field.Span,
-		"shape %s (constraint on %s) has no member %s; available: %v",
-		e.env.TypeDisplay(*tpt.Shape), typeName, fieldAccess.Field.Name, names,
-	)
-}
-
-func (e *Engine) resolveMethod( //nolint:funlen
-	nodeID ast.NodeID,
-	fieldAccess ast.FieldAccess,
-	targetTyp *Type,
-) (TypeID, TypeStatus, bool) {
-	e.debug.Print(
-		1,
-		"resolveMethod .%s on %s (node=%s)",
-		fieldAccess.Field.Name,
-		e.env.TypeDisplay(targetTyp.ID),
-		nodeID,
-	)
-	methodName := fieldAccess.Field.Name
-	lookupName, ok := e.env.methodFQN(targetTyp, methodName)
-	if !ok {
-		return InvalidTypeID, TypeFailed, false
-	}
-	binding, ok := e.lookup(nodeID, lookupName, -1)
-	if !ok && e.instantiationScope != nil {
-		binding, ok = e.lookup(*e.instantiationScope, lookupName, -1)
-	}
-	if !ok {
-		binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
-	}
-	if !ok {
-		structType, isStruct := targetTyp.Kind.(StructType)
-		if isStruct && len(structType.TypeArgs) > 0 {
-			structNodeID := e.env.DeclNode(targetTyp.ID)
-			structNode := base.Cast[ast.Struct](e.ast.Node(structNodeID).Kind)
-			structName := e.scopeGraph.NodeScope(structNodeID).NamespacedName(structNode.Name.Name)
-			lookupName = structName + "." + methodName
-			binding, ok = e.lookup(nodeID, lookupName, -1)
-			if !ok {
-				binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
-			}
-			if !ok ||
-				len(base.Cast[ast.Fun](e.ast.Node(binding.Decl).Kind).TypeParams) < len(structType.TypeArgs) {
-				return InvalidTypeID, TypeFailed, false
-			}
-		}
-	}
-	if !ok {
-		unionType, isUnion := targetTyp.Kind.(UnionType)
-		if isUnion && len(unionType.TypeArgs) > 0 {
-			unionNodeID := e.env.DeclNode(targetTyp.ID)
-			unionNode := base.Cast[ast.Union](e.ast.Node(unionNodeID).Kind)
-			unionName := e.scopeGraph.NodeScope(unionNodeID).NamespacedName(unionNode.Name.Name)
-			lookupName = unionName + "." + methodName
-			binding, ok = e.lookup(nodeID, lookupName, -1)
-			if !ok {
-				binding, ok = e.lookupInTypeModule(targetTyp, lookupName)
-			}
-			if !ok ||
-				len(base.Cast[ast.Fun](e.ast.Node(binding.Decl).Kind).TypeParams) < len(unionType.TypeArgs) {
-				return InvalidTypeID, TypeFailed, false
-			}
-		}
-	}
-	if !ok {
-		return InvalidTypeID, TypeFailed, false
-	}
-	if !e.isVisible(binding.Decl, e.declIsPub(binding.Decl), nodeID) {
-		e.diag(fieldAccess.Field.Span, "method %s.%s is not public",
-			e.env.TypeDisplay(targetTyp.ID), methodName)
-		return InvalidTypeID, TypeFailed, true
-	}
-	return e.ResolveMethodBinding(nodeID, fieldAccess, targetTyp, binding)
-}
-
-func (e *Engine) lookupInTypeModule(typ *Type, name string) (*Binding, bool) {
-	if len(e.moduleResolution.Imports) == 0 {
-		return nil, false
-	}
-	if _, ok := typ.Kind.(ModuleType); ok {
-		return nil, false
-	}
-	declNodeID := e.env.DeclNode(typ.ID)
-	if declNodeID == 0 || ast.IsPreludeNode(declNodeID) {
-		return nil, false
-	}
-	_, typModule := e.moduleOf(declNodeID)
-	if len(typModule.Decls) == 0 {
-		return nil, false
-	}
-	return e.env.Lookup(typModule.Decls[0], name, -1)
-}
-
-func (e *Engine) declIsPub(declNodeID ast.NodeID) bool {
-	switch kind := e.ast.Node(declNodeID).Kind.(type) {
-	case ast.Fun:
-		return kind.Pub
-	case ast.FunDecl:
-		return kind.Pub
-	case ast.Struct:
-		return kind.Pub
-	case ast.Shape:
-		return kind.Pub
-	case ast.Union:
-		return kind.Pub
-	case ast.Var:
-		return kind.Pub
-	}
-	return false
-}
-
-// isVisible checks whether something declared at declNodeID with the given pub
-// flag is visible from the access site `from`. Everything is visible within the
-// same module, from the prelude, or from a "_test" companion module. Across
-// other module boundaries only pub declarations are visible.
-func (e *Engine) isVisible(declNodeID ast.NodeID, pub bool, from ast.NodeID) bool {
-	if pub {
-		return true
-	}
-	if len(e.moduleResolution.Imports) == 0 {
-		return true
-	}
-	if declNodeID == 0 {
-		return true
-	}
-	fromModuleNode, fromModule := e.moduleOf(from)
-	declModuleNode, declModule := e.moduleOf(declNodeID)
-	if fromModuleNode.ID == declModuleNode.ID {
-		return true
-	}
-	// A test module (e.g. "std::map_test") can see everything in its subject ("std::map").
-	if subject, ok := strings.CutSuffix(fromModule.Name, "_test"); ok && subject == declModule.Name {
-		return true
-	}
-	return false
-}
-
-func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span) (TypeID, TypeStatus) { //nolint:funlen
-	if _, status, ok := e.InferFunCall(call, span); ok {
-		if status.Failed() {
-			return InvalidTypeID, status
-		}
-	}
-	calleeTypeID, status := e.Query(call.Callee)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	calleeTyp := e.env.Type(calleeTypeID)
-	fun, ok := calleeTyp.Kind.(FunType)
-	if !ok {
-		calleeSpan := e.ast.Node(call.Callee).Span
-		e.diag(calleeSpan, "cannot call non-function: %s", e.env.TypeDisplay(calleeTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	var argNodes []ast.NodeID
-	fieldAccess, isFieldAccess := e.ast.Node(call.Callee).Kind.(ast.FieldAccess)
-	// A method call is a named function accessed via field access where the
-	// target is a value (not a module or a type name like Foo or ffi.PtrMut).
-	isMethod := false
-	if e.env.isNamedFun(call.Callee) && isFieldAccess {
-		targetType := e.env.TypeOfNode(fieldAccess.Target)
-		switch targetType.Kind.(type) {
-		case ModuleType:
-			// Module function call, not a method.
-		default:
-			isMethod = !e.isTypeReference(fieldAccess.Target)
-		}
-	}
-	if isMethod {
-		argNodes = append(argNodes, fieldAccess.Target)
-		e.env.setMethodCallReceiver(callNodeID, fieldAccess.Target)
-	}
-	argNodes = append(argNodes, call.Args...)
-	argNodes = e.fillCallDefaults(call, callNodeID, argNodes, fun)
-	if len(argNodes) != len(fun.Params) {
-		expected := len(fun.Params)
-		if isMethod {
-			expected--
-		}
-		e.diag(span, "argument count mismatch: expected %d, got %d", expected, len(call.Args))
-		return InvalidTypeID, TypeFailed
-	}
-	for i, argNodeID := range argNodes {
-		paramTypeID := fun.Params[i]
-		argTypeID, status := e.queryWithHint(argNodeID, &paramTypeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		if !e.isAssignableTo(argTypeID, paramTypeID) {
-			argNode := e.ast.Node(argNodeID)
-			if i == 0 && isMethod {
-				e.diag(argNode.Span, "type mismatch at receiver: expected %s, got %s",
-					e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
-			} else {
-				argIndex := i
-				if isMethod {
-					argIndex--
-				}
-				e.diag(argNode.Span, "type mismatch at argument %d: expected %s, got %s",
-					argIndex+1, e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
-			}
-			return InvalidTypeID, TypeFailed
-		}
-		// By-value arguments to non-reference params are copies.
-		if _, isRef := e.env.Type(paramTypeID).Kind.(RefType); !isRef {
-			if !e.checkNocopy(argNodeID, argTypeID, e.ast.Node(argNodeID).Span) {
-				return InvalidTypeID, TypeFailed
-			}
-		}
-	}
-	calleeIsUnsafe := false
-	if binding, ok := e.resolveCallBinding(call); ok {
-		switch kind := e.ast.Node(binding.Decl).Kind.(type) {
-		case ast.Fun:
-			calleeIsUnsafe = kind.Unsafe
-		case ast.FunDecl:
-			calleeIsUnsafe = kind.Unsafe
-		}
-	}
-	if calleeIsUnsafe && !call.Unsafe {
-		e.diag(span, "calling unsafe function requires the unsafe keyword")
-		return InvalidTypeID, TypeFailed
-	}
-	if call.Unsafe && !calleeIsUnsafe {
-		e.diag(span, "unsafe keyword can only be used on unsafe functions")
-		return InvalidTypeID, TypeFailed
-	}
-	return fun.Return, TypeOK
-}
-
-func (e *Engine) fillCallDefaults(
-	call ast.Call, callNodeID ast.NodeID, argNodes []ast.NodeID, fun FunType,
-) []ast.NodeID {
-	if len(argNodes) >= len(fun.Params) {
-		return argNodes
-	}
-	defaults := e.funDeclDefaults(call)
-	if defaults == nil {
-		return argNodes
-	}
-	missing := len(fun.Params) - len(argNodes)
-	if missing > len(defaults) {
-		return argNodes
-	}
-	fill := defaults[len(defaults)-missing:]
-	e.env.setCallDefaults(callNodeID, fill)
-	return append(argNodes, fill...)
-}
-
-// funDeclDefaults returns the default expression NodeIDs for the trailing
-// parameters of the function being called, or nil if not applicable.
-func (e *Engine) funDeclDefaults(call ast.Call) []ast.NodeID {
-	binding, ok := e.resolveCallBinding(call)
-	if !ok {
-		return nil
-	}
-	funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun)
-	if !ok {
-		return nil
-	}
-	var defaults []ast.NodeID
-	for _, paramNodeID := range funNode.Params {
-		param := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
-		if param.Default != nil {
-			defaults = append(defaults, *param.Default)
-		}
-	}
-	return defaults
-}
-
-func (e *Engine) checkDeref(deref ast.Deref) (TypeID, TypeStatus) {
-	exprTypeID, status := e.Query(deref.Expr)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	exprTyp := e.env.Type(exprTypeID)
-	ref, ok := exprTyp.Kind.(RefType)
-	if !ok {
-		exprSpan := e.ast.Node(deref.Expr).Span
-		e.diag(exprSpan, "dereference: expected reference, got %s", e.env.TypeDisplay(exprTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	return ref.Type, TypeOK
-}
-
-func (e *Engine) bindImports(nodeID ast.NodeID, module ast.Module) TypeStatus {
-	importMap, ok := e.moduleResolution.Imports[nodeID]
-	if !ok {
-		return TypeOK
-	}
-	for name, importedModuleNodeID := range importMap {
-		typeID, status := e.Query(importedModuleNodeID)
-		if status.Failed() {
-			return TypeDepFailed
-		}
-		var importNodeID ast.NodeID
-		for _, id := range module.Decls {
-			imp, ok := e.ast.Node(id).Kind.(ast.Import)
-			if !ok {
-				continue
-			}
-			isAlias := imp.Alias != nil && imp.Alias.Name == name
-			if isAlias || imp.Segments[len(imp.Segments)-1] == name {
-				importNodeID = id
-				break
-			}
-		}
-		scope := e.scopeGraph.NodeScope(importNodeID)
-		e.env.bindInScope(scope, importNodeID, name, typeID)
-	}
-	return TypeOK
-}
-
-func (e *Engine) checkModule( //nolint:funlen
-	nodeID ast.NodeID,
-	module ast.Module,
-	span base.Span,
-) (TypeID, TypeStatus) {
-	if macros.IsMacroModule(module.Name) {
-		return e.checkMacroModule(nodeID, module, span)
-	}
-	if status := e.bindImports(nodeID, module); status.Failed() {
-		return InvalidTypeID, status
-	}
-	e.forwardDeclareTypes(module.Decls)
-	newDeclIDs, ok := e.expandMacrosInModule(nodeID, &module)
-	if !ok {
-		return InvalidTypeID, TypeFailed
-	}
-	e.forwardDeclareTypes(newDeclIDs)
-	// Process module-level constants before functions so function bodies can reference them.
-	depFailed := false
-	for _, declNodeID := range module.Decls {
-		varNode, isVar := e.ast.Node(declNodeID).Kind.(ast.Var)
-		if !isVar {
-			continue
-		}
-		_, status := e.Query(declNodeID)
-		if status.Failed() {
-			depFailed = true
-			continue
-		}
-		if callNodeID, ok := ast.FindNode[ast.Call](e.ast, varNode.Expr); ok {
-			e.diag(e.ast.Node(callNodeID).Span, "function calls are not allowed in module-level constants")
-			depFailed = true
-			continue
-		}
-		typeID := e.env.TypeOfNode(varNode.Expr).ID
-		if e.env.containsMutablePart(typeID) {
-			exprSpan := e.ast.Node(varNode.Expr).Span
-			e.diag(exprSpan, "module-level constants cannot contain mutable references or slices")
-			depFailed = true
-			continue
-		}
-		name := e.declMangledName(declNodeID, varNode.Name.Name)
-		e.registerConst(declNodeID, name, typeID)
-	}
-	MarkBuiltins(e.ast, module)
-	e.forwardDeclareFuns(module.Decls)
-	// Eagerly register every fun in runtime modules: generated IR calls into
-	// them by mangled name (e.g. @runtime$arena.arena_alloc) without Metall
-	// ever `use`-ing them, so the default lazy registration would miss them.
-	for _, declNodeID := range module.Decls {
-		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok {
-			if fun.Name.Name == "main" ||
-				module.Name == "runtime::arena" ||
-				module.Name == "runtime::wasmalloc" {
-				e.registerFun(declNodeID)
-			}
-		}
-	}
-	for _, declNodeID := range module.Decls {
-		switch e.ast.Node(declNodeID).Kind.(type) {
-		case ast.Var, ast.Import:
-			continue
-		}
-		_, status := e.Query(declNodeID)
-		if status.Failed() {
-			depFailed = true
-		}
-	}
-	if depFailed {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if module.Name == "" {
-		// This is from the prelude which lives in the global namespace.
-		return e.voidTyp, TypeOK
-	}
-	typeID := e.env.newType(ModuleType{Name: module.Name, Macro: false}, nodeID, span, TypeOK)
-	return typeID, TypeOK
-}
-
-type forwardDecl struct {
-	node       *ast.Node
-	typeID     TypeID
-	status     TypeStatus
-	cachedType *cachedType
-}
-
-func (e *Engine) forwardDeclare(nodeIDs []ast.NodeID) {
-	e.forwardDeclareTypes(nodeIDs)
-	e.forwardDeclareFuns(nodeIDs)
-}
-
-func (e *Engine) forwardDeclareTypes(nodeIDs []ast.NodeID) { //nolint:funlen
-	var decls []*forwardDecl
-	for _, nodeID := range nodeIDs {
-		node := e.ast.Node(nodeID)
-		switch node.Kind.(type) {
-		case ast.Struct, ast.Shape, ast.Union:
-			decls = append(decls, &forwardDecl{node, InvalidTypeID, TypeFailed, nil})
-		}
-	}
-
-	for _, decl := range decls {
-		if _, ok := decl.node.Kind.(ast.Shape); !ok {
-			continue
-		}
-		nodeKind := base.Cast[ast.Shape](decl.node.Kind)
-		typeID, status := e.CheckShapeCreateAndBind(decl.node, nodeKind)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
-		if typeID != InvalidTypeID {
-			cachedType, ok := e.env.cachedTypeInfo(typeID)
-			if !ok {
-				panic(base.Errorf("type %s not found", typeID))
-			}
-			decl.cachedType = cachedType
-		}
-	}
-
-	for _, decl := range decls {
-		if _, ok := decl.node.Kind.(ast.Struct); !ok {
-			continue
-		}
-		nodeKind := base.Cast[ast.Struct](decl.node.Kind)
-		typeID, status := e.checkStructCreateAndBind(decl.node, nodeKind)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
-		if typeID != InvalidTypeID {
-			cachedType, ok := e.env.cachedTypeInfo(typeID)
-			if !ok {
-				panic(base.Errorf("type %s not found", typeID))
-			}
-			decl.cachedType = cachedType
-		}
-	}
-
-	for _, decl := range decls {
-		if _, ok := decl.node.Kind.(ast.Union); !ok {
-			continue
-		}
-		nodeKind := base.Cast[ast.Union](decl.node.Kind)
-		typeID, status := e.checkUnionCreateAndBind(decl.node, nodeKind)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
-		if typeID != InvalidTypeID {
-			cachedType, ok := e.env.cachedTypeInfo(typeID)
-			if !ok {
-				panic(base.Errorf("type %s not found", typeID))
-			}
-			decl.cachedType = cachedType
-		}
-	}
-
-	for _, decl := range decls {
-		if _, ok := decl.node.Kind.(ast.Shape); !ok {
-			continue
-		}
-		if decl.status.Failed() {
-			continue
-		}
-		shapeNode := base.Cast[ast.Shape](decl.node.Kind)
-		shapeType := base.Cast[ShapeType](decl.cachedType.Type.Kind)
-		decl.status, decl.cachedType.Type.Kind = e.CheckShapeCompleteType(
-			decl.node, shapeNode, shapeType,
-		)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
-	}
-
-	for _, decl := range decls {
-		if _, ok := decl.node.Kind.(ast.Struct); !ok {
-			continue
-		}
-		if decl.status.Failed() {
-			continue
-		}
-		structType := base.Cast[StructType](decl.cachedType.Type.Kind)
-		structNode := base.Cast[ast.Struct](decl.node.Kind)
-		decl.status, decl.cachedType.Type.Kind = e.checkStructCompleteType(structNode, structType)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
-		if ast.IsPreludeNode(decl.node.ID) {
-			e.fixPreludeType(decl.node, decl.cachedType)
-		}
-	}
-
-	for _, decl := range decls {
-		if _, ok := decl.node.Kind.(ast.Union); !ok {
-			continue
-		}
-		if decl.status.Failed() {
-			continue
-		}
-		unionType := base.Cast[UnionType](decl.cachedType.Type.Kind)
-		unionNode := base.Cast[ast.Union](decl.node.Kind)
-		decl.status, decl.cachedType.Type.Kind = e.checkUnionCompleteType(unionNode, unionType)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, decl.status)
-	}
-}
-
-func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
-	var decls []*forwardDecl
-	for _, nodeID := range nodeIDs {
-		node := e.ast.Node(nodeID)
-		switch node.Kind.(type) {
-		case ast.Fun, ast.FunDecl:
-			decls = append(decls, &forwardDecl{node, InvalidTypeID, TypeFailed, nil})
-		}
-	}
-	for _, decl := range decls {
-		var funDecl ast.FunDecl
-		switch kind := decl.node.Kind.(type) {
-		case ast.Fun:
-			funDecl = kind.FunDecl
-		case ast.FunDecl:
-			funDecl = kind
-		}
-		typeID, status := e.checkFunCreateAndBind(decl.node, funDecl)
-		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
-		if typeID != InvalidTypeID {
-			cachedType, ok := e.env.cachedTypeInfo(typeID)
-			if !ok {
-				panic(base.Errorf("type %s not found", typeID))
-			}
-			decl.cachedType = cachedType
-		}
-	}
-	for _, decl := range decls {
-		if decl.status.Failed() {
-			continue
-		}
-		funKind, isFun := decl.node.Kind.(ast.Fun)
-		if isFun && !funKind.Builtin && !funKind.Extern {
-			funType := base.Cast[FunType](decl.cachedType.Type.Kind)
-			e.debug.Print(
-				0,
-				"forwardDeclare checkFunBody: %s (node=%s, type=%s)",
-				funKind.Name.Name,
-				decl.node.ID,
-				decl.cachedType.Type.ID,
-			)
-			prev := e.skipRegisterWork
-			if len(funKind.TypeParams) > 0 {
-				e.skipRegisterWork = true
-			}
-			e.checkFunBody(decl.node.ID, funKind, decl.cachedType.Type.ID, funType)
-			e.skipRegisterWork = prev
-		}
-	}
-}
-
-func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID, TypeStatus) {
-	if status := e.bindTypeParams(fun.TypeParams); status.Failed() {
-		return InvalidTypeID, status
-	}
-	if fun.ReturnType == ast.InferredType {
-		e.diag(node.Span, "cannot infer return type of function literal")
-		return InvalidTypeID, TypeFailed
-	}
-	retTypeID, status := e.Query(fun.ReturnType)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if _, ok := e.env.Type(retTypeID).Kind.(AllocatorType); ok {
-		e.diag(e.ast.Node(fun.ReturnType).Span, "cannot return an allocator from a function")
-		return InvalidTypeID, TypeFailed
-	}
-	paramTypeIDs := make([]TypeID, len(fun.Params))
-	noescapeParams := make([]bool, len(fun.Params))
-	for i, paramNodeID := range fun.Params {
-		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
-		if paramNode.Type == ast.InferredType {
-			e.diag(paramNode.Name.Span, "cannot infer type of parameter '%s'", paramNode.Name.Name)
-			return InvalidTypeID, TypeFailed
-		}
-		paramTypeID, status := e.Query(paramNodeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		paramTypeIDs[i] = paramTypeID
-		if paramNode.Noescape {
-			noescapeParams[i] = true
-		}
-	}
-	isSync := e.isFunDeclSync(node, paramTypeIDs, retTypeID)
-	funTyp := FunType{
-		Params:         paramTypeIDs,
-		Return:         retTypeID,
-		Macro:          false,
-		Sync:           isSync,
-		NoescapeParams: noescapeParams,
-		NoescapeReturn: fun.NoescapeReturn,
-	}
-	funTypeID := e.env.buildFunType(funTyp, node.ID, node.Span)
-	bindName := fun.Name.Name
-	if structName, methodName, ok := strings.Cut(fun.Name.Name, "."); ok {
-		resolved, ok := e.resolveMethodBindName(node.ID, structName, methodName, fun.Name.Span)
-		if !ok {
-			return InvalidTypeID, TypeFailed
-		}
-		bindName = resolved
-	}
-	if !e.bind(node.ID, bindName, false, funTypeID, fun.Name.Span, -1) {
-		return InvalidTypeID, TypeFailed
-	}
-	if fun.Extern {
-		e.env.setNamedFunRef(node.ID, fun.ExternName)
-	} else {
-		e.env.setNamedFunRef(node.ID, e.declMangledName(node.ID, fun.Name.Name))
-	}
-	return funTypeID, TypeOK
-}
-
-func (e *Engine) resolveMethodBindName(
-	nodeID ast.NodeID, structName, methodName string, span base.Span,
-) (string, bool) {
-	binding, ok := e.lookup(nodeID, structName, -1)
-	if !ok {
-		e.diag(span, "method receiver type not found: %s", structName)
-		return "", false
-	}
-	fqn, ok := e.env.methodFQN(e.env.Type(binding.TypeID), methodName)
-	if !ok {
-		e.diag(span, "type %s cannot have methods", structName)
-		return "", false
-	}
-	return fqn, true
-}
-
-func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
-	name := e.declMangledName(node.ID, structNode.Name.Name)
-	typeID := e.env.newType(
-		StructType{Name: name, Fields: []StructField{}, TypeArgs: nil},
-		node.ID,
-		node.Span,
-		TypeInProgress,
-	)
-	if !e.bind(node.ID, structNode.Name.Name, false, typeID, structNode.Name.Span, -1) {
-		return typeID, TypeFailed
-	}
-	return typeID, TypeInProgress
-}
-
-func (e *Engine) checkUnionCreateAndBind(node *ast.Node, unionNode ast.Union) (TypeID, TypeStatus) {
-	name := e.declMangledName(node.ID, unionNode.Name.Name)
-	typeID := e.env.newType(UnionType{name, nil, nil}, node.ID, node.Span, TypeInProgress)
-	if !e.bind(node.ID, unionNode.Name.Name, false, typeID, unionNode.Name.Span, -1) {
-		return typeID, TypeFailed
-	}
-	return typeID, TypeInProgress
-}
-
-func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
-	structNode := base.Cast[ast.Struct](node.Kind)
-	switch structNode.Name.Name {
-	case "Arena":
-		typ.Type.Kind = AllocatorType{AllocatorArena}
-		e.arenaTyp = typ.Type.ID
-	case "never":
-		typ.Type.Kind = NeverType{}
-		e.neverTyp = typ.Type.ID
-	case "void":
-		typ.Type.Kind = VoidType{}
-		e.voidTyp = typ.Type.ID
-	case "Bool":
-		typ.Type.Kind = BoolType{}
-		e.boolTyp = typ.Type.ID
-	case "Str":
-		e.strTyp = typ.Type.ID
-	default:
-		for _, intTyp := range intTypes {
-			if intTyp.Name == structNode.Name.Name {
-				typ.Type.Kind = intTyp
-				if intTyp.Name == "Int" {
-					e.intTyp = typ.Type.ID
-				}
-				if intTyp.Name == "Rune" {
-					e.runeTyp = typ.Type.ID
-				}
-			}
-		}
-	}
-}
-
-func (e *Engine) checkStructCompleteType(structNode ast.Struct, structType StructType) (TypeStatus, StructType) {
-	defer e.enterChildEnv()()
-	if status := e.bindTypeParams(structNode.TypeParams); status.Failed() {
-		return status, structType
-	}
-	fields := make([]StructField, len(structNode.Fields))
-	for i, fieldNodeID := range structNode.Fields {
-		fieldTypeID, status := e.Query(fieldNodeID)
-		if status.Failed() {
-			return TypeDepFailed, structType
-		}
-		fieldNode := base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind)
-		fields[i] = StructField{Name: fieldNode.Name.Name, Type: fieldTypeID, Pub: fieldNode.Pub}
-	}
-	structType.Fields = fields
-	return TypeOK, structType
-}
-
-func (e *Engine) checkUnionCompleteType(unionNode ast.Union, unionType UnionType) (TypeStatus, UnionType) {
-	defer e.enterChildEnv()()
-	if status := e.bindTypeParams(unionNode.TypeParams); status.Failed() {
-		return status, unionType
-	}
-	variants := make([]TypeID, len(unionNode.Variants))
-	for i, variantNodeID := range unionNode.Variants {
-		variantTypeID, status := e.Query(variantNodeID)
-		if status.Failed() {
-			return TypeDepFailed, unionType
-		}
-		if unionNode.Pub {
-			variantDeclNode := e.env.DeclNode(variantTypeID)
-			if variantDeclNode != 0 {
-				_, isTypeParam := e.ast.Node(variantDeclNode).Kind.(ast.TypeParam)
-				if !isTypeParam && !e.declIsPub(variantDeclNode) {
-					e.diag(e.ast.Node(variantNodeID).Span,
-						"public union %s contains non-public variant type %s",
-						unionNode.Name.Name, e.env.TypeDisplay(variantTypeID))
-					return TypeFailed, unionType
-				}
-			}
-		}
-		variants[i] = variantTypeID
-	}
-	unionType.Variants = variants
-	return TypeOK, unionType
-}
-
-// funLitNeedsInference reports whether a function literal has any omitted
-// parameter types or return type that require inference.
-func (e *Engine) funLitNeedsInference(fun ast.Fun) bool {
-	if fun.ReturnType == ast.InferredType {
-		return true
-	}
-	for _, paramNodeID := range fun.Params {
-		if base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind).Type == ast.InferredType {
-			return true
-		}
-	}
-	return false
-}
-
-// checkInferredFunLit resolves a function literal whose parameter types and/or
-// return type were omitted. The hint (from the call site, variable type, etc.)
-// provides the expected function type. This replaces the normal two-phase
-// forwardDeclareFuns approach because fun literals don't participate in mutual
-// recursion and the hint is only available here.
-func (e *Engine) checkInferredFunLit( //nolint:funlen
-	_ ast.NodeID, block ast.Block, funNode ast.Fun, hintTypeID *TypeID,
-) (TypeID, TypeStatus) {
-	// Resolve the hint to a FunType if available.
-	var hintFun *FunType
-	if hintTypeID != nil {
-		if cached, ok := e.env.cachedTypeInfo(*hintTypeID); ok {
-			if ft, ok := cached.Type.Kind.(FunType); ok {
-				hintFun = &ft
-			}
-		}
-	}
-	funNodeID := block.Exprs[0]
-	node := e.ast.Node(funNodeID)
-	// Resolve parameter types.
-	paramTypeIDs := make([]TypeID, len(funNode.Params))
-	noescapeParams := make([]bool, len(funNode.Params))
-	for i, paramNodeID := range funNode.Params {
-		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
-		if paramNode.Type == ast.InferredType {
-			if hintFun == nil || i >= len(hintFun.Params) {
-				e.diag(paramNode.Name.Span, "cannot infer type of parameter '%s'", paramNode.Name.Name)
-				return InvalidTypeID, TypeFailed
-			}
-			paramTypeIDs[i] = hintFun.Params[i]
-			paramCached, paramOK := e.env.cachedTypeInfo(hintFun.Params[i])
-			if !paramOK {
-				panic(base.Errorf("type %s not found", hintFun.Params[i]))
-			}
-			e.env.setNodeType(paramNodeID, paramCached)
-		} else {
-			paramTypeID, status := e.Query(paramNodeID)
-			if status.Failed() {
-				return InvalidTypeID, TypeDepFailed
-			}
-			paramTypeIDs[i] = paramTypeID
-		}
-		if paramNode.Noescape {
-			noescapeParams[i] = true
-		}
-	}
-	// Resolve return type: use the hint if concrete, otherwise infer from the body.
-	var retTypeID TypeID
-	inferRetFromBody := false
-	if funNode.ReturnType == ast.InferredType {
-		if hintFun == nil {
-			e.diag(node.Span, "cannot infer return type of function literal")
-			return InvalidTypeID, TypeFailed
-		} else if _, isTypeParam := e.env.Type(hintFun.Return).Kind.(TypeParamType); isTypeParam {
-			inferRetFromBody = true
-		} else {
-			retTypeID = hintFun.Return
-		}
-	} else {
-		var status TypeStatus
-		retTypeID, status = e.Query(funNode.ReturnType)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-	}
-	// Push a temporary fun type onto the stack so that `return` and `try`
-	// statements in the body resolve against this function, not an outer one.
-	// When inferring the return from the body, we don't push (no return/try
-	// support in that mode — it only applies when the hint return is a type param).
-	if !inferRetFromBody {
-		tmpFunType := FunType{
-			Params: paramTypeIDs, Return: retTypeID,
-			Macro: false, Sync: false, NoescapeParams: noescapeParams,
-			NoescapeReturn: funNode.NoescapeReturn,
-		}
-		tmpFunTypeID := e.env.buildFunType(tmpFunType, 0, node.Span)
-		e.funStack = append(e.funStack, tmpFunTypeID)
-		defer func() { e.funStack = e.funStack[:len(e.funStack)-1] }()
-	}
-	// Bind captures and parameters, then check the body.
-	for _, capNodeID := range funNode.Captures {
-		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
-		e.bindCapture(funNodeID, capNodeID, capture)
-	}
-	for i, paramNodeID := range funNode.Params {
-		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
-		if !e.bind(paramNodeID, paramNode.Name.Name, false, paramTypeIDs[i], paramNode.Name.Span, -1) {
-			return InvalidTypeID, TypeFailed
-		}
-	}
-	if inferRetFromBody {
-		// The hint's return type is an unresolved type parameter (e.g. B in
-		// map<A,B,...>). Query the body without a return type hint and use
-		// the body's result as the return type.
-		blockTypeID, status := e.Query(funNode.Block)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		retTypeID = blockTypeID
-	} else {
-		blockTypeID, status := e.queryWithHint(funNode.Block, &retTypeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		if blockTypeID != e.neverTyp && !e.isAssignableTo(blockTypeID, retTypeID) {
-			e.diag(e.ast.Node(funNode.Block).Span,
-				"return type mismatch: expected %s, got %s",
-				e.env.TypeDisplay(retTypeID), e.env.TypeDisplay(blockTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-	}
-	// Build the function type, bind the name, and cache everything.
-	isSync := e.isFunDeclSync(node, paramTypeIDs, retTypeID)
-	funType := FunType{
-		Params: paramTypeIDs, Return: retTypeID,
-		Macro: false, Sync: isSync, NoescapeParams: noescapeParams,
-		NoescapeReturn: funNode.NoescapeReturn,
-	}
-	funTypeID := e.env.buildFunType(funType, funNodeID, node.Span)
-	e.updateCachedType(node, funTypeID, TypeOK)
-	e.bind(funNodeID, funNode.Name.Name, false, funTypeID, funNode.Name.Span, -1)
-	e.env.setNamedFunRef(funNodeID, e.declMangledName(funNodeID, funNode.Name.Name))
-	// Query the Ident (last expr in the fun-lit block) so its type is cached.
-	identTypeID, status := e.queryWithHint(block.Exprs[1], hintTypeID)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	return identTypeID, TypeOK
-}
-
-func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID TypeID, funType FunType) {
-	debugDedent := e.debug.Print(0, "checkFunBody %s (type=%s)", funNode.Name.Name, funTypeID).Indent()
-	defer debugDedent()
-	e.funStack = append(e.funStack, funTypeID)
-	defer func() { e.funStack = e.funStack[:len(e.funStack)-1] }()
-	// Bind captures. Each capture references a binding in the outer scope
-	// (looked up via the Fun node, which lives in the outer scope) and creates
-	// a new binding inside the closure scope.
-	for _, capNodeID := range funNode.Captures {
-		capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
-		e.bindCapture(funNodeID, capNodeID, capture)
-	}
-	for i, paramNodeID := range funNode.Params {
-		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
-		paramTypeID := funType.Params[i]
-		if !e.bind(paramNodeID, paramNode.Name.Name, false, paramTypeID, paramNode.Name.Span, -1) {
-			return
-		}
-	}
-	if funNode.Name.Name == "main" {
-		e.verifyMain(funNode)
-	}
-	blockTypeID, status := e.queryWithHint(funNode.Block, &funType.Return)
-	if status.Failed() {
-		return
-	}
-	blockNode := e.ast.Node(funNode.Block)
-	block := base.Cast[ast.Block](blockNode.Kind)
-	if blockTypeID == e.neverTyp {
-		return
-	}
-	if !e.isAssignableTo(blockTypeID, funType.Return) {
-		diagSpan := blockNode.Span
-		if len(block.Exprs) > 0 {
-			lastNode := e.ast.Node(block.Exprs[len(block.Exprs)-1])
-			diagSpan = lastNode.Span
-		}
-		e.diag(
-			diagSpan,
-			"return type mismatch: expected %s, got %s",
-			e.env.TypeDisplay(funType.Return),
-			e.env.TypeDisplay(blockTypeID),
-		)
-		return
-	}
-}
-
-func (e *Engine) checkFunParam(funParam ast.FunParam) (TypeID, TypeStatus) {
-	typeID, status := e.Query(funParam.Type)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if funParam.Default != nil {
-		if _, ok := e.ast.Node(funParam.Type).Kind.(ast.RefType); ok {
-			e.diag(e.ast.Node(*funParam.Default).Span, "default parameters cannot be references")
-			return InvalidTypeID, TypeFailed
-		}
-		defaultTypeID, status := e.queryWithHint(*funParam.Default, &typeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		if !e.isAssignableTo(defaultTypeID, typeID) {
-			e.diag(e.ast.Node(*funParam.Default).Span,
-				"default value type mismatch: expected %s, got %s",
-				e.env.TypeDisplay(typeID), e.env.TypeDisplay(defaultTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-	}
-	return typeID, TypeOK
-}
-
-func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.Span) (TypeID, TypeStatus) {
-	params := []TypeID{}
-	for _, paramNodeID := range funType.ParamTypes {
-		paramType, status := e.Query(paramNodeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		params = append(params, paramType)
-	}
-	returnType, status := e.Query(funType.ReturnType)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	funTyp := FunType{
-		Params:         params,
-		Return:         returnType,
-		Macro:          false,
-		Sync:           funType.Sync == ast.SyncSync,
-		NoescapeParams: funType.NoescapeParams,
-		NoescapeReturn: funType.NoescapeReturn,
-	}
-	return e.env.buildFunType(funTyp, nodeID, span), TypeOK
-}
-
-func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeStatus) {
-	if len(e.funStack) == 0 {
-		e.diag(span, "return outside of function")
-		return InvalidTypeID, TypeFailed
-	}
-	funType := base.Cast[FunType](e.env.Type(e.funStack[len(e.funStack)-1]).Kind)
-	exprTypeID, status := e.queryWithHint(return_.Expr, &funType.Return)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if !e.isAssignableTo(exprTypeID, funType.Return) {
-		span := e.ast.Node(return_.Expr).Span
-		e.diag(
-			span,
-			"return type mismatch: expected %s, got %s",
-			e.env.TypeDisplay(funType.Return),
-			e.env.TypeDisplay(exprTypeID),
-		)
-		return InvalidTypeID, TypeFailed
-	}
-	return e.neverTyp, TypeOK
-}
-
 func (e *Engine) checkStructField(structField ast.StructField) (TypeID, TypeStatus) {
 	typeID, status := e.Query(structField.Type)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
 	return typeID, TypeOK
-}
-
-func (e *Engine) checkModuleMemberAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess) (TypeID, TypeStatus) {
-	span := e.ast.Node(nodeID).Span
-	targetIdent := base.Cast[ast.Ident](e.ast.Node(fieldAccess.Target).Kind)
-	moduleName := targetIdent.Name
-	memberName := fieldAccess.Field.Name
-	thisModuleNode, _ := e.moduleOf(nodeID)
-	importedModuleNodeID, ok := e.moduleResolution.Imports[thisModuleNode.ID][moduleName]
-	if !ok {
-		e.diag(span, "module not found: %s", moduleName)
-		return InvalidTypeID, TypeFailed
-	}
-	mod := base.Cast[ast.Module](e.ast.Node(importedModuleNodeID).Kind)
-	if len(mod.Decls) == 0 {
-		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
-		return InvalidTypeID, TypeFailed
-	}
-	binding, ok := e.env.Lookup(mod.Decls[0], memberName, -1)
-	if !ok {
-		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
-		return InvalidTypeID, TypeFailed
-	}
-	if !e.isVisible(binding.Decl, e.declIsPub(binding.Decl), nodeID) {
-		e.diag(span, "%s::%s is not public", moduleName, memberName)
-		return InvalidTypeID, TypeFailed
-	}
-	e.env.pathBindings[nodeID] = binding
-	return e.resolveBinding(nodeID, binding, fieldAccess.TypeArgs)
-}
-
-// isTypeReference checks if an expression node refers to a type declaration
-// (e.g. `Foo` or `ffi.PtrMut`) rather than a value.
-func (e *Engine) isTypeReference(nodeID ast.NodeID) bool {
-	switch kind := e.ast.Node(nodeID).Kind.(type) {
-	case ast.Ident:
-		binding, ok := e.lookup(nodeID, kind.Name, -1)
-		if !ok {
-			return false
-		}
-		switch e.ast.Node(binding.Decl).Kind.(type) {
-		case ast.Struct, ast.Union, ast.Shape:
-			return true
-		}
-	case ast.FieldAccess:
-		// e.g. ffi.PtrMut — a module member that is a type.
-		if b, ok := e.env.PathBinding(nodeID); ok {
-			switch e.ast.Node(b.Decl).Kind.(type) {
-			case ast.Struct, ast.Union, ast.Shape:
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) (TypeID, TypeStatus) {
-	if ident.Name == "_" {
-		e.diag(span, "_ can only be used as the left-hand side of an assignment")
-		return InvalidTypeID, TypeFailed
-	}
-	lookupName := ident.Name
-	if structName, methodName, ok := strings.Cut(ident.Name, "."); ok {
-		resolved, ok := e.resolveMethodBindName(nodeID, structName, methodName, span)
-		if !ok {
-			return InvalidTypeID, TypeFailed
-		}
-		lookupName = resolved
-	}
-	binding, ok := e.lookup(nodeID, lookupName, e.blockExprsIndex)
-	if !ok {
-		e.diag(span, "symbol not defined: %s", ident.Name)
-		return InvalidTypeID, TypeFailed
-	}
-	e.debug.Print(1, "checkIdent %q -> lookup=%q binding.Decl=%s binding.TypeID=%s type=%s",
-		ident.Name, lookupName, binding.Decl, binding.TypeID, e.env.TypeDisplay(binding.TypeID))
-	if binding.Decl != 0 && e.unreachableBindingInOuterScope(nodeID, binding) {
-		e.diag(span, "cannot reference %q from outer scope", ident.Name)
-		return InvalidTypeID, TypeFailed
-	}
-	e.env.pathBindings[nodeID] = binding
-	return e.resolveBinding(nodeID, binding, ident.TypeArgs)
-}
-
-// Check whether the binding a variable, allocator, or function parameter declared
-// in an outer scope.
-func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Capture) {
-	// Look up the captured name from the outer scope via the Fun node (which
-	// lives in the enclosing scope, before the function's own scope).
-	outerBinding, ok := e.lookup(funNodeID, capture.Name.Name, -1)
-	if !ok {
-		e.diag(capture.Name.Span, "capture: symbol not defined: %s", capture.Name.Name)
-		return
-	}
-	outerTypeID := outerBinding.TypeID
-	if _, ok := e.env.Type(outerTypeID).Kind.(AllocatorType); ok && capture.Mode != ast.CaptureByValue {
-		e.diag(capture.Name.Span, "allocator captures must be by value, not by reference")
-		return
-	}
-	var captureTypeID TypeID
-	switch capture.Mode {
-	case ast.CaptureByValue:
-		captureTypeID = outerTypeID
-	case ast.CaptureByRef:
-		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, false, capture.Name.Span)
-	case ast.CaptureByMutRef:
-		if !outerBinding.Mut {
-			e.diag(capture.Name.Span, "cannot take mutable reference to immutable value")
-			return
-		}
-		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, true, capture.Name.Span)
-	}
-	e.bind(capNodeID, capture.Name.Name, false, captureTypeID, capture.Name.Span, -1)
-	e.env.captureOrigins[capNodeID] = outerBinding
-}
-
-func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Binding) bool {
-	switch e.ast.Node(binding.Decl).Kind.(type) {
-	case ast.Var:
-		// Module-level constants can be referenced from any function.
-		bindingScope := e.scopeGraph.NodeScope(binding.Decl)
-		if bindingScope.Node == 0 {
-			return false // Root scope - always reachable.
-		}
-		if _, ok := e.ast.Node(bindingScope.Node).Kind.(ast.Module); ok {
-			return false
-		}
-	case ast.FunParam, ast.AllocatorVar:
-	default:
-		return false
-	}
-	scope := e.scopeGraph.NodeScope(nodeID)
-	bindingScope := e.scopeGraph.NodeScope(binding.Decl)
-	for scope != nil && scope.ID != bindingScope.ID {
-		if fun, ok := e.ast.Node(scope.Node).Kind.(ast.Fun); ok {
-			// Allow crossing a function boundary if the variable is explicitly captured.
-			captured := false
-			for _, capNodeID := range fun.Captures {
-				capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
-				if capture.Name.Name == binding.Name {
-					captured = true
-					break
-				}
-			}
-			if !captured {
-				return true
-			}
-		}
-		scope = scope.Parent
-	}
-	return false
-}
-
-//nolint:funlen
-func (e *Engine) resolveBinding(nodeID ast.NodeID, binding *Binding, typeArgs []ast.NodeID) (TypeID, TypeStatus) {
-	if cached, ok := e.env.cachedTypeInfo(binding.TypeID); ok && cached.Status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	span := e.ast.Node(nodeID).Span
-	if binding.Decl != 0 {
-		if funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun); ok {
-			if len(typeArgs) > 0 || len(funNode.TypeParams) > 0 {
-				typeArgIDs, status := e.QueryTypeArgs(typeArgs)
-				if status.Failed() {
-					return InvalidTypeID, status
-				}
-				decl, _ := e.NormalizeGenericDecl(binding.Decl, binding.TypeID, "")
-				spec, status := e.BuildGenericSpec(decl.originTypeID, decl.typeParams)
-				if status.Failed() {
-					return InvalidTypeID, status
-				}
-				typeArgIDs, status = e.SolveGenericArgs(spec, typeArgIDs, nodeID, span)
-				if status.Failed() {
-					return InvalidTypeID, status
-				}
-				typeID, mangledName, status := e.MaterializeFun(
-					binding.Decl,
-					binding.TypeID,
-					nodeID,
-					span,
-					typeArgIDs,
-				)
-				if status.Failed() {
-					return InvalidTypeID, status
-				}
-				e.env.setNamedFunRef(nodeID, mangledName)
-				return typeID, TypeOK
-			}
-			e.env.copyNamedFunRef(nodeID, binding.Decl)
-			e.registerFun(binding.Decl)
-		}
-		if _, ok := e.ast.Node(binding.Decl).Kind.(ast.FunDecl); ok {
-			e.env.copyNamedFunRef(nodeID, binding.Decl)
-		}
-		if structType, ok := e.env.Type(binding.TypeID).Kind.(StructType); ok {
-			if structNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Struct); ok {
-				if len(typeArgs) > 0 {
-					return e.MaterializeNamedTypeRef(binding.TypeID, typeArgs, span)
-				}
-				if len(structNode.TypeParams) == 0 {
-					e.registerStruct(structType, binding.Decl, binding.TypeID)
-				}
-			}
-		}
-		if unionType, ok := e.env.Type(binding.TypeID).Kind.(UnionType); ok {
-			if unionNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Union); ok {
-				if len(typeArgs) > 0 {
-					return e.MaterializeNamedTypeRef(binding.TypeID, typeArgs, span)
-				}
-				if len(unionNode.TypeParams) == 0 {
-					e.registerUnion(unionType, binding.Decl, binding.TypeID)
-				}
-			}
-		}
-	}
-	return binding.TypeID, TypeOK
-}
-
-func (e *Engine) checkBool() (TypeID, TypeStatus) {
-	return e.boolTyp, TypeOK
-}
-
-func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
-	target := e.intTyp
-	if typeHint != nil {
-		if _, ok := e.env.Type(*typeHint).Kind.(IntType); ok {
-			target = *typeHint
-		}
-	}
-	info := base.Cast[IntType](e.env.Type(target).Kind)
-	if intNode.Value.Cmp(info.Min) < 0 || intNode.Value.Cmp(info.Max) > 0 {
-		e.diag(span, "value %s out of range for %s (%s..%s)",
-			intNode.Value, info.Name, info.Min, info.Max)
-		return InvalidTypeID, TypeFailed
-	}
-	return target, TypeOK
-}
-
-func (e *Engine) checkRef(nodeID ast.NodeID, ref ast.Ref, span base.Span) (TypeID, TypeStatus) {
-	targetTypeID, status := e.Query(ref.Target)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if ref.Mut && !isTemporaryExpr(e.ast.Node(ref.Target).Kind) {
-		_, mut := e.isPlaceMutable(ref.Target)
-		if !mut {
-			e.diag(span, "cannot take mutable reference to immutable value")
-			return InvalidTypeID, TypeFailed
-		}
-	}
-	refTypeID := e.env.buildRefType(nodeID, targetTypeID, ref.Mut, span)
-	return refTypeID, TypeOK
-}
-
-// isTemporaryExpr reports whether a ref's target is a temporary (as opposed
-// to a place expression like ident, field access, index, or deref). For a
-// temporary, `&expr` materializes expr into a fresh scope-local slot, so it
-// is implicitly mutable and `&mut` needs no further checks.
-func isTemporaryExpr(kind ast.Kind) bool {
-	switch kind.(type) {
-	case ast.Ident, ast.FieldAccess, ast.Index, ast.Deref:
-		return false
-	}
-	return true
-}
-
-func (e *Engine) checkRefType(
-	nodeID ast.NodeID, refType ast.RefType, span base.Span,
-) (TypeID, TypeStatus) {
-	innerTypeID, status := e.Query(refType.Type)
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
-	}
-	return e.env.buildRefType(nodeID, innerTypeID, refType.Mut, span), TypeOK
-}
-
-func (e *Engine) checkSimpleType(nodeID ast.NodeID, simpleType ast.SimpleType, span base.Span) (TypeID, TypeStatus) {
-	binding, ok := e.lookup(nodeID, simpleType.Name.Name, -1)
-	if !ok {
-		e.diag(span, "symbol not defined: %s", simpleType.Name.Name)
-		return InvalidTypeID, TypeFailed
-	}
-	if len(simpleType.TypeArgs) > 0 {
-		switch kind := e.env.Type(binding.TypeID).Kind.(type) {
-		case StructType:
-			_ = kind
-			return e.MaterializeNamedTypeRef(binding.TypeID, simpleType.TypeArgs, span)
-		case UnionType:
-			_ = kind
-			return e.MaterializeNamedTypeRef(binding.TypeID, simpleType.TypeArgs, span)
-		case ShapeType:
-			_ = kind
-			return e.MaterializeNamedTypeRef(binding.TypeID, simpleType.TypeArgs, span)
-		default:
-			e.diag(span, "type arguments on non-generic type: %s", simpleType.Name.Name)
-			return InvalidTypeID, TypeFailed
-		}
-	}
-	if structType, isStruct := e.env.Type(binding.TypeID).Kind.(StructType); isStruct {
-		if structNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Struct); ok {
-			if len(structNode.TypeParams) > 0 {
-				_ = structType
-				return e.MaterializeNamedTypeRef(binding.TypeID, nil, span)
-			}
-			e.registerStruct(structType, binding.Decl, binding.TypeID)
-		}
-	}
-	if unionType, isUnion := e.env.Type(binding.TypeID).Kind.(UnionType); isUnion {
-		if unionNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Union); ok {
-			if len(unionNode.TypeParams) > 0 {
-				_ = unionType
-				return e.MaterializeNamedTypeRef(binding.TypeID, nil, span)
-			}
-			e.registerUnion(unionType, binding.Decl, binding.TypeID)
-		}
-	}
-	// We need to return the correct type status (the type might have failed).
-	cachedType, ok := e.env.cachedTypeInfo(binding.TypeID)
-	if ok {
-		return binding.TypeID, cachedType.Status
-	}
-	return binding.TypeID, TypeOK
-}
-
-func (e *Engine) checkString() (TypeID, TypeStatus) {
-	return e.strTyp, TypeOK
-}
-
-func (e *Engine) checkRuneLiteral(lit ast.RuneLiteral, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
-	const maxUnicodeCodepoint = 0x10FFFF
-	const surrogateMin = 0xD800
-	const surrogateMax = 0xDFFF
-	if lit.Value > maxUnicodeCodepoint {
-		e.diag(span, "invalid rune literal: value U+%04X exceeds maximum Unicode codepoint U+10FFFF", lit.Value)
-		return InvalidTypeID, TypeFailed
-	}
-	if lit.Value >= surrogateMin && lit.Value <= surrogateMax {
-		e.diag(span, "invalid rune literal: value U+%04X is in the surrogate range (U+D800..U+DFFF)", lit.Value)
-		return InvalidTypeID, TypeFailed
-	}
-	if typeHint != nil {
-		if info, ok := e.env.Type(*typeHint).Kind.(IntType); ok && *typeHint != e.runeTyp {
-			val := new(big.Int).SetUint64(uint64(lit.Value))
-			if val.Cmp(info.Min) >= 0 && val.Cmp(info.Max) <= 0 {
-				return *typeHint, TypeOK
-			}
-		}
-	}
-	return e.runeTyp, TypeOK
-}
-
-func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (TypeID, TypeStatus) {
-	var declTypeID TypeID
-	if varNode.Type != nil {
-		var status TypeStatus
-		declTypeID, status = e.Query(*varNode.Type)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-	}
-	var exprTypeID TypeID
-	if varNode.Type != nil {
-		var status TypeStatus
-		exprTypeID, status = e.queryWithHint(varNode.Expr, &declTypeID)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-	} else {
-		var status TypeStatus
-		exprTypeID, status = e.Query(varNode.Expr)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-	}
-	if !e.isInstantiable(exprTypeID) {
-		e.diag(span, "cannot assign expression of type '%s' to a variable", e.env.TypeDisplay(exprTypeID))
-		return InvalidTypeID, TypeFailed
-	}
-	if !e.checkNocopy(varNode.Expr, exprTypeID, e.ast.Node(varNode.Expr).Span) {
-		return InvalidTypeID, TypeFailed
-	}
-	bindTypeID := exprTypeID
-	// This handles `mut sut = [3,2,4,1][..]` - the array literal is owned by
-	// this binding so mutation is safe.
-	if varNode.Mut {
-		if sliceTyp, ok := e.env.Type(exprTypeID).Kind.(SliceType); ok && !sliceTyp.Mut {
-			if subSlice, ok := e.ast.Node(varNode.Expr).Kind.(ast.SubSlice); ok {
-				if _, ok := e.ast.Node(subSlice.Target).Kind.(ast.ArrayLiteral); ok {
-					bindTypeID = e.env.buildSliceType(sliceTyp.Elem, true, nodeID, span)
-				}
-			}
-		}
-	}
-	if varNode.Type != nil {
-		if !e.isAssignableTo(exprTypeID, declTypeID) {
-			exprSpan := e.ast.Node(varNode.Expr).Span
-			e.diag(exprSpan, "type mismatch: expected %s, got %s",
-				e.env.TypeDisplay(declTypeID), e.env.TypeDisplay(exprTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-		bindTypeID = declTypeID
-	}
-	if !e.bind(nodeID, varNode.Name.Name, varNode.Mut, bindTypeID, varNode.Name.Span, e.blockExprsIndex) {
-		return InvalidTypeID, TypeFailed
-	}
-	return e.voidTyp, TypeOK
-}
-
-func (e *Engine) verifyMain(fun ast.Fun) {
-	if len(fun.Params) != 0 {
-		firstNode := e.ast.Node(fun.Params[0])
-		lastNode := e.ast.Node(fun.Params[len(fun.Params)-1])
-		span := firstNode.Span.Combine(lastNode.Span)
-		e.diag(span, "main function cannot take arguments")
-	}
-	retTypeID, status := e.Query(fun.ReturnType)
-	if status.Failed() {
-		return
-	}
-	if retTypeID == e.voidTyp {
-		return
-	}
-	if union, ok := e.env.Type(retTypeID).Kind.(UnionType); ok {
-		if strings.HasPrefix(union.Name, "Result.") && union.Variants[0] == e.voidTyp {
-			return
-		}
-	}
-	e.diag(e.ast.Node(fun.ReturnType).Span, "main function must return void or !void")
 }
 
 func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
@@ -2761,9 +1931,8 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 			}
 			return k.Elem, mut
 		case SliceType:
-			// Slice element mutability comes from the slice type's Mut flag,
-			// not from the binding's mut. When accessed through a ref, both
-			// the ref and the slice must be mutable.
+			// Element mutability comes from the slice's Mut flag, not the
+			// binding's mut. Through a ref, both must be mutable.
 			if throughRef != nil {
 				return k.Elem, throughRef.Mut && k.Mut
 			}
@@ -2803,8 +1972,6 @@ func (e *Engine) isPlaceMutable(nodeID ast.NodeID) (TypeID, bool) { //nolint:fun
 		}
 		for _, field := range fields {
 			if field.Name == kind.Field.Name {
-				// Same module: all fields are mutable.
-				// Cross-module: only pub fields are mutable.
 				return typeID, e.isVisible(e.env.DeclNode(structTypeID), field.Pub, nodeID)
 			}
 		}
@@ -2835,42 +2002,255 @@ func (e *Engine) isInstantiable(t TypeID) bool {
 	return t != e.neverTyp
 }
 
-func (e *Engine) isAssignableTo(got TypeID, expected TypeID) bool {
-	if got == expected || got == e.neverTyp {
-		return true
+func (e *Engine) registerStruct(structType StructType, nodeID ast.NodeID, typeID TypeID) {
+	structNode, ok := e.ast.Node(nodeID).Kind.(ast.Struct)
+	if !ok || structNode.Builtin {
+		return
 	}
-	// A &mut T is assignable to &T (coerce by masking off the mutable flag).
-	if got&mutableRefFlag != 0 && got&^mutableRefFlag == expected {
-		return true
+	if e.skipRegisterWork {
+		return
 	}
-	// A []mut T is assignable to []T (coerce by masking off the mutable slice flag).
-	if got&mutableSliceFlag != 0 && got&^mutableSliceFlag == expected {
-		return true
+	if _, ok := e.loadStructWork(structType.Name); !ok {
+		e.recordStructWork(structType.Name, TypeWork{NodeID: nodeID, TypeID: typeID, Env: e.env})
 	}
-	// A sync fun is assignable to a non-sync fun (relaxing the sync guarantee).
-	if got&syncFunFlag != 0 && got&^syncFunFlag == expected {
-		return true
+}
+
+func (e *Engine) registerUnion(unionType UnionType, nodeID ast.NodeID, typeID TypeID) {
+	if e.skipRegisterWork {
+		return
 	}
-	// Recursively check nested slices/refs (e.g. [][]mut T → [][]T).
-	gotTyp := e.env.Type(got)
-	expTyp := e.env.Type(expected)
-	switch gotKind := gotTyp.Kind.(type) {
-	case SliceType:
-		if expKind, ok := expTyp.Kind.(SliceType); ok && gotKind.Mut == expKind.Mut {
-			return e.isAssignableTo(gotKind.Elem, expKind.Elem)
+	if _, ok := e.loadUnionWork(unionType.Name); !ok {
+		e.recordUnionWork(unionType.Name, TypeWork{NodeID: nodeID, TypeID: typeID, Env: e.env})
+	}
+}
+
+func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
+	structNode := base.Cast[ast.Struct](node.Kind)
+	switch structNode.Name.Name {
+	case "Arena":
+		typ.Type.Kind = AllocatorType{AllocatorArena}
+		e.arenaTyp = typ.Type.ID
+	case "never":
+		typ.Type.Kind = NeverType{}
+		e.neverTyp = typ.Type.ID
+	case "void":
+		typ.Type.Kind = VoidType{}
+		e.voidTyp = typ.Type.ID
+	case "Bool":
+		typ.Type.Kind = BoolType{}
+		e.boolTyp = typ.Type.ID
+	case "Str":
+		e.strTyp = typ.Type.ID
+	default:
+		for _, intTyp := range intTypes {
+			if intTyp.Name == structNode.Name.Name {
+				typ.Type.Kind = intTyp
+				if intTyp.Name == "Int" {
+					e.intTyp = typ.Type.ID
+				}
+				if intTyp.Name == "Rune" {
+					e.runeTyp = typ.Type.ID
+				}
+			}
 		}
-	case RefType:
-		if expKind, ok := expTyp.Kind.(RefType); ok && gotKind.Mut == expKind.Mut {
-			return e.isAssignableTo(gotKind.Type, expKind.Type)
+	}
+}
+
+// isCopyable reports whether a value of the given type can be copied.
+// A struct/union becomes non-copyable when marked `nocopy` or when any of
+// its fields/variants is non-copyable.
+func (e *Engine) isCopyable(typeID TypeID) bool {
+	typ := e.env.Type(typeID)
+	switch kind := typ.Kind.(type) {
+	case VoidType, NeverType, BoolType, IntType:
+		return true
+	case StructType:
+		declNode := e.env.DeclNode(typeID)
+		if declNode != 0 {
+			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Nocopy {
+				return false
+			}
 		}
-	case FunType:
-		// Noescape differences do not render function types different.
-		// They are checked by lifetime analysis.
-		if expKind, ok := expTyp.Kind.(FunType); ok && gotKind.Macro == expKind.Macro &&
-			gotKind.Return == expKind.Return && gotKind.Sync == expKind.Sync &&
-			slices.Equal(gotKind.Params, expKind.Params) {
-			return true
+		for _, field := range kind.Fields {
+			if !e.isCopyable(field.Type) {
+				return false
+			}
 		}
+		return true
+	case UnionType:
+		declNode := e.env.DeclNode(typeID)
+		if declNode != 0 {
+			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Nocopy {
+				return false
+			}
+		}
+		for _, variant := range kind.Variants {
+			if !e.isCopyable(variant) {
+				return false
+			}
+		}
+		return true
+	case ArrayType:
+		return e.isCopyable(kind.Elem)
+	case RefType, SliceType, FunType, AllocatorType, TypeParamType, ShapeType:
+		return true
+	default:
+		panic(fmt.Sprintf("isCopyable: unknown type: %T", kind))
+	}
+}
+
+// isFreshValue reports whether the expression creates a new value rather
+// than reading from an existing binding.
+func (e *Engine) isFreshValue(nodeID ast.NodeID) bool {
+	node := e.ast.Node(nodeID)
+	switch kind := node.Kind.(type) {
+	case ast.TypeConstruction:
+		return true
+	case ast.Call:
+		return true
+	case ast.AllocatorVar:
+		// @a.new(Struct{...}) is fresh; @a.new(existing_val) is a copy.
+		for _, arg := range kind.Args {
+			if _, ok := e.ast.Node(arg).Kind.(ast.TypeConstruction); ok {
+				return true
+			}
+		}
+		return false
+	case ast.Block:
+		if len(kind.Exprs) > 0 {
+			return e.isFreshValue(kind.Exprs[len(kind.Exprs)-1])
+		}
+		return true
+	case ast.If:
+		return e.isFreshValue(kind.Then) && (kind.Else == nil || e.isFreshValue(*kind.Else))
+	default:
+		return false
+	}
+}
+
+// checkNocopy verifies that a nocopy value is not being copied. Returns true
+// when the type is copyable or the expression produces a fresh value.
+func (e *Engine) checkNocopy(exprNodeID ast.NodeID, exprTypeID TypeID, span base.Span) bool {
+	if e.isCopyable(exprTypeID) {
+		return true
+	}
+	if e.isFreshValue(exprNodeID) {
+		return true
+	}
+	e.diag(span, "cannot copy value of nocopy type %s", e.env.TypeDisplay(exprTypeID))
+	return false
+}
+
+func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Capture) {
+	// The Fun node lives in the enclosing scope, so looking up from there
+	// resolves the captured name in the outer scope.
+	outerBinding, ok := e.lookup(funNodeID, capture.Name.Name, -1)
+	if !ok {
+		e.diag(capture.Name.Span, "capture: symbol not defined: %s", capture.Name.Name)
+		return
+	}
+	outerTypeID := outerBinding.TypeID
+	if _, ok := e.env.Type(outerTypeID).Kind.(AllocatorType); ok && capture.Mode != ast.CaptureByValue {
+		e.diag(capture.Name.Span, "allocator captures must be by value, not by reference")
+		return
+	}
+	var captureTypeID TypeID
+	switch capture.Mode {
+	case ast.CaptureByValue:
+		captureTypeID = outerTypeID
+	case ast.CaptureByRef:
+		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, false, capture.Name.Span)
+	case ast.CaptureByMutRef:
+		if !outerBinding.Mut {
+			e.diag(capture.Name.Span, "cannot take mutable reference to immutable value")
+			return
+		}
+		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, true, capture.Name.Span)
+	}
+	e.bind(capNodeID, capture.Name.Name, false, captureTypeID, capture.Name.Span, -1)
+	e.env.captureOrigins[capNodeID] = outerBinding
+}
+
+func (e *Engine) unreachableBindingInOuterScope(nodeID ast.NodeID, binding *Binding) bool {
+	switch e.ast.Node(binding.Decl).Kind.(type) {
+	case ast.Var:
+		// Module-level constants are reachable from any function.
+		bindingScope := e.scopeGraph.NodeScope(binding.Decl)
+		if bindingScope.Node == 0 {
+			return false
+		}
+		if _, ok := e.ast.Node(bindingScope.Node).Kind.(ast.Module); ok {
+			return false
+		}
+	case ast.FunParam, ast.AllocatorVar:
+	default:
+		return false
+	}
+	scope := e.scopeGraph.NodeScope(nodeID)
+	bindingScope := e.scopeGraph.NodeScope(binding.Decl)
+	for scope != nil && scope.ID != bindingScope.ID {
+		if fun, ok := e.ast.Node(scope.Node).Kind.(ast.Fun); ok {
+			captured := false
+			for _, capNodeID := range fun.Captures {
+				capture := base.Cast[ast.Capture](e.ast.Node(capNodeID).Kind)
+				if capture.Name.Name == binding.Name {
+					captured = true
+					break
+				}
+			}
+			if !captured {
+				return true
+			}
+		}
+		scope = scope.Parent
 	}
 	return false
+}
+
+// isFunDeclSync determines if a function declaration is sync. The resolved
+// types are passed in because function literals may have inferred types not
+// present as AST nodes.
+func (c *TypeContext) isFunDeclSync(node *ast.Node, paramTypeIDs []TypeID, retTypeID TypeID) bool {
+	funNode, ok := node.Kind.(ast.Fun)
+	if !ok {
+		return false
+	}
+	if funNode.Sync == ast.SyncUnsync {
+		return false
+	}
+	for _, capNodeID := range funNode.Captures {
+		capture := base.Cast[ast.Capture](c.ast.Node(capNodeID).Kind)
+		if capture.Mode != ast.CaptureByValue {
+			return false
+		}
+		outerBinding, ok := c.lookup(node.ID, capture.Name.Name, -1)
+		if !ok {
+			return false
+		}
+		if !c.isSync(outerBinding.TypeID) {
+			return false
+		}
+	}
+	for _, paramTypeID := range paramTypeIDs {
+		if !c.isSync(paramTypeID) {
+			return false
+		}
+	}
+	return c.isSync(retTypeID)
+}
+
+func (c *TypeContext) resolveMethodBindName(
+	nodeID ast.NodeID, structName, methodName string, span base.Span,
+) (string, bool) {
+	binding, ok := c.lookup(nodeID, structName, -1)
+	if !ok {
+		c.diag(span, "method receiver type not found: %s", structName)
+		return "", false
+	}
+	fqn, ok := c.env.methodFQN(c.env.Type(binding.TypeID), methodName)
+	if !ok {
+		c.diag(span, "type %s cannot have methods", structName)
+		return "", false
+	}
+	return fqn, true
 }

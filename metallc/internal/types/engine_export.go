@@ -8,11 +8,13 @@ import (
 // ExportWork describes an `export <c_name> = <fun>` declaration: a Metall
 // function that is exposed to C under an unmangled symbol name.
 type ExportWork struct {
-	FunNodeID  ast.NodeID // target ast.Fun
-	FunTypeID  TypeID
-	InternalIR string // mangled IR symbol of the target function
-	CName      string // unmangled C symbol
-	Env        *TypeEnv
+	FunNodeID         ast.NodeID // target ast.Fun
+	FunTypeID         TypeID
+	InternalIR        string // mangled IR symbol of the target function
+	CName             string // unmangled C symbol
+	NameSpan          base.Span
+	Env               *TypeEnv
+	duplicateReported bool
 }
 
 func (e *Engine) Exports() []ExportWork {
@@ -25,8 +27,12 @@ func (e *Engine) checkExport(nodeID ast.NodeID, exportNode ast.Export, span base
 		e.diag(span, "export is only allowed in the main module")
 		return InvalidTypeID, TypeFailed
 	}
-	for _, prev := range e.exports {
+	for i, prev := range e.exports {
 		if prev.CName == exportNode.Name.Name {
+			if !prev.duplicateReported {
+				e.diag(prev.NameSpan, "export name already used: %s", exportNode.Name.Name)
+				e.exports[i].duplicateReported = true
+			}
 			e.diag(exportNode.Name.Span, "export name already used: %s", exportNode.Name.Name)
 			return InvalidTypeID, TypeFailed
 		}
@@ -35,7 +41,7 @@ func (e *Engine) checkExport(nodeID ast.NodeID, exportNode ast.Export, span base
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	targetFun, funNodeID, status := e.resolveExportTarget(exportNode)
+	targetFun, funNodeID, status := e.resolveExportTarget(exportNode, targetTypeID)
 	if status.Failed() {
 		return InvalidTypeID, status
 	}
@@ -46,11 +52,13 @@ func (e *Engine) checkExport(nodeID ast.NodeID, exportNode ast.Export, span base
 	// (both maps are populated together in copyNamedFunRef).
 	internalIR, _ := e.env.NamedFunRef(exportNode.Target)
 	e.exports = append(e.exports, ExportWork{
-		FunNodeID:  funNodeID,
-		FunTypeID:  targetTypeID,
-		InternalIR: internalIR,
-		CName:      exportNode.Name.Name,
-		Env:        e.env,
+		FunNodeID:         funNodeID,
+		FunTypeID:         targetTypeID,
+		InternalIR:        internalIR,
+		CName:             exportNode.Name.Name,
+		NameSpan:          exportNode.Name.Span,
+		Env:               e.env,
+		duplicateReported: false,
 	})
 	return e.voidTyp, TypeOK
 }
@@ -58,7 +66,7 @@ func (e *Engine) checkExport(nodeID ast.NodeID, exportNode ast.Export, span base
 // resolveExportTarget returns the ast.Fun the export refers to, emitting a
 // diagnostic when the target is not a concrete Metall function in the current
 // main module.
-func (e *Engine) resolveExportTarget(exportNode ast.Export) (ast.Fun, ast.NodeID, TypeStatus) {
+func (e *Engine) resolveExportTarget(exportNode ast.Export, targetTypeID TypeID) (ast.Fun, ast.NodeID, TypeStatus) {
 	targetSpan := e.ast.Node(exportNode.Target).Span
 	funNodeID, ok := e.env.FunDeclNode(exportNode.Target)
 	if !ok {
@@ -78,7 +86,7 @@ func (e *Engine) resolveExportTarget(exportNode ast.Export) (ast.Fun, ast.NodeID
 		e.diag(targetSpan, "export target must be declared in the current main module")
 		return ast.Fun{}, 0, TypeFailed
 	}
-	if len(targetFun.TypeParams) > 0 {
+	if e.env.containsTypeParam(targetTypeID) {
 		e.diag(targetSpan, "cannot export a generic function")
 		return ast.Fun{}, 0, TypeFailed
 	}

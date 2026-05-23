@@ -1,7 +1,6 @@
 use std.io
 
 shape Showable {
-    name Str
     fun Showable.str(self Showable) Str
 }
 
