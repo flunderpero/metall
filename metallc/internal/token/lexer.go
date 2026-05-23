@@ -282,6 +282,76 @@ func (t Token) String() string {
 	return fmt.Sprintf("%s: %s", t.Span, t.Kind)
 }
 
+func isDecDigit(c rune) bool {
+	return c >= '0' && c <= '9'
+}
+
+func isHexDigit(c rune) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+func isOctDigit(c rune) bool {
+	return c >= '0' && c <= '7'
+}
+
+func isBinDigit(c rune) bool {
+	return c == '0' || c == '1'
+}
+
+// lexNumber reads a number literal. start may point at '-' or at the leading
+// digit. Supported forms: decimal, hex (0x), octal (0o), binary (0b).
+// Underscores are allowed between digits as separators.
+func lexNumber(source *base.Source, start int) Token {
+	idx := start
+	value := []rune{}
+	if idx < len(source.Content) && source.Content[idx] == '-' {
+		value = append(value, '-')
+		idx++
+	}
+	digitOk := isDecDigit
+	baseName := "decimal"
+	if idx+1 < len(source.Content) && source.Content[idx] == '0' {
+		switch source.Content[idx+1] {
+		case 'x':
+			digitOk = isHexDigit
+			baseName = "hex"
+		case 'o':
+			digitOk = isOctDigit
+			baseName = "octal"
+		case 'b':
+			digitOk = isBinDigit
+			baseName = "binary"
+		}
+		if baseName != "decimal" {
+			value = append(value, source.Content[idx], source.Content[idx+1])
+			idx += 2
+		}
+	}
+	digitsStart := len(value)
+	for idx < len(source.Content) {
+		c := source.Content[idx]
+		if !digitOk(c) && c != '_' {
+			break
+		}
+		value = append(value, c)
+		idx++
+	}
+	span := base.NewSpan(source, start, idx-1)
+	digits := value[digitsStart:]
+	if len(digits) == 0 {
+		return Token{Error, fmt.Sprintf("expected %s digit after '0%c'", baseName, value[digitsStart-1]), span}
+	}
+	if digits[0] == '_' || digits[len(digits)-1] == '_' {
+		return Token{Error, fmt.Sprintf("invalid %s literal: %s", baseName, string(value)), span}
+	}
+	for i := 1; i < len(digits); i++ {
+		if digits[i] == '_' && digits[i-1] == '_' {
+			return Token{Error, fmt.Sprintf("invalid %s literal: %s", baseName, string(value)), span}
+		}
+	}
+	return Token{Number, string(value), span}
+}
+
 func hexDigit(c rune) (rune, bool) {
 	switch {
 	case c >= '0' && c <= '9':
@@ -488,18 +558,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			return Token{Kind: MinusPercent, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		if idx < len(source.Content) && unicode.IsDigit(source.Content[idx]) {
-			value := []rune{c, source.Content[idx]}
-			idx += 1
-			for idx < len(source.Content) {
-				c := source.Content[idx]
-				if !unicode.IsDigit(c) {
-					break
-				}
-				idx += 1
-				value = append(value, c)
-			}
-			span.End = idx - 1
-			return Token{Number, string(value), span}
+			return lexNumber(source, start)
 		}
 		if idx >= len(source.Content) || source.Content[idx] != '-' {
 			return Token{Kind: Minus, Value: "", Span: span}
@@ -605,17 +664,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		return Token{kind, string(value), span}
 	case unicode.IsDigit(c):
-		value := []rune{c}
-		for idx < len(source.Content) {
-			c := source.Content[idx]
-			if !unicode.IsDigit(c) {
-				break
-			}
-			idx += 1
-			value = append(value, c)
-		}
-		span.End = idx - 1
-		return Token{Number, string(value), span}
+		return lexNumber(source, start)
 	default:
 		return Token{Unknown, string(c), span}
 	}

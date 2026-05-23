@@ -52,7 +52,7 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
     if raw_status < 0 {
         return Err(posix.errno_str())
     }
-    let status = ((raw_status >> 8) & 255).to_int()  -- WEXITSTATUS(raw_status)
+    let status = ((raw_status >> 8) & 0xFF).to_int()  -- WEXITSTATUS(raw_status)
     RunResult(status, out.as_str())
 }
 

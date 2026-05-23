@@ -23,10 +23,10 @@ fun malloc(size Int) ffi.PtrMut<U8> {
     let result = unsafe __wasmalloc_bump_get()
     let new_bump = result.offset(aligned)
     -- Wasm pages are 64KiB; grow memory if bump crossed the end.
-    let mem_bytes = (unsafe __wasm_memory_size_pages()) * 65536
+    let mem_bytes = (unsafe __wasm_memory_size_pages()) * 0x10000
     if new_bump.as_u64() > mem_bytes.to_u64_wrapping() {
         let short = (new_bump.as_u64() - mem_bytes.to_u64_wrapping()).to_int_wrapping()
-        let delta_pages = (short + 65535) / 65536
+        let delta_pages = (short + 0xFFFF) / 0x10000
         _ = unsafe __wasm_memory_grow_pages(delta_pages)
     }
     unsafe __wasmalloc_bump_set(new_bump)

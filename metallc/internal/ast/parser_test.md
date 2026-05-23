@@ -582,6 +582,66 @@ Binary(op=-)
   rhs=Int(value=123)
 ```
 
+**Hex literal**
+
+```metall
+0xFF
+```
+
+```ast
+Int(value=255)
+```
+
+**Hex literal with underscores**
+
+```metall
+0xDEAD_BEEF
+```
+
+```ast
+Int(value=3735928559)
+```
+
+**Negative hex literal**
+
+```metall
+-0xff
+```
+
+```ast
+Int(value=-255)
+```
+
+**Octal literal**
+
+```metall
+0o755
+```
+
+```ast
+Int(value=493)
+```
+
+**Binary literal**
+
+```metall
+0b1010_1010
+```
+
+```ast
+Int(value=170)
+```
+
+**Decimal underscore literal**
+
+```metall
+1_000_000
+```
+
+```ast
+Int(value=1000000)
+```
+
 ## If
 
 **If then else**

@@ -59,18 +59,18 @@ shape RPattern<T> {
 --- Replace an illegal unicode codepoint with the replacement character U+FFFD. 
     Valid codepoints range from U+0000 to U+10FFFF excluding the surrogate 
     codepoints U+D800 to U+DFFF. ---
-pub fun Rune.from_u32_lossy(n U32) Rune { 
-    if n > U32(1114111) { return Rune(65533) }
-    if n >= U32(55296) and n <= U32(57343) { return Rune(65533) }
+pub fun Rune.from_u32_lossy(n U32) Rune {
+    if n > U32(0x10FFFF) { return Rune(0xFFFD) }
+    if n >= U32(0xD800) and n <= U32(0xDFFF) { return Rune(0xFFFD) }
     Rune(n)
 }
 
 --- Fail if the rune represents an illegal unicode codepoint.
-    Valid codepoints range from U+0000 to U+10FFFF excluding the surrogate 
+    Valid codepoints range from U+0000 to U+10FFFF excluding the surrogate
     codepoints U+D800 to U+DFFF. ---
-pub fun Rune.from_u32_checked(n U32) !Rune { 
-    if n > U32(1114111) { return Err("rune out of range") }
-    if n >= U32(55296) and n <= U32(57343) { return Err("rune in invalid surrogate range") }
+pub fun Rune.from_u32_checked(n U32) !Rune {
+    if n > U32(0x10FFFF) { return Err("rune out of range") }
+    if n >= U32(0xD800) and n <= U32(0xDFFF) { return Err("rune in invalid surrogate range") }
     Rune(n)
 }
 
@@ -94,26 +94,26 @@ pub fun Rune.to_bytes(r Rune) RuneUTF8 {
         bytes[0] = u.to_u8_wrapping()
         RuneUTF8(bytes, 1)
     case u < U32(1) << 11:
-        bytes[0] = (U32(192) | (u >> 6)).to_u8_wrapping()
-        bytes[1] = (U32(128) | (u & 63)).to_u8_wrapping()
+        bytes[0] = (U32(0xC0) | (u >> 6)).to_u8_wrapping()
+        bytes[1] = (U32(0x80) | (u & 0x3F)).to_u8_wrapping()
         RuneUTF8(bytes, 2)
     case u < U32(1) << 16:
-        bytes[0] = (U32(224) | (u >> 12)).to_u8_wrapping()
-        bytes[1] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
-        bytes[2] = (U32(128) | (u & 63)).to_u8_wrapping()
+        bytes[0] = (U32(0xE0) | (u >> 12)).to_u8_wrapping()
+        bytes[1] = (U32(0x80) | ((u >> 6) & 0x3F)).to_u8_wrapping()
+        bytes[2] = (U32(0x80) | (u & 0x3F)).to_u8_wrapping()
         RuneUTF8(bytes, 3)
     else:
-        bytes[0] = (U32(240) | (u >> 18)).to_u8_wrapping()
-        bytes[1] = (U32(128) | ((u >> 12) & 63)).to_u8_wrapping()
-        bytes[2] = (U32(128) | ((u >> 6) & 63)).to_u8_wrapping()
-        bytes[3] = (U32(128) | (u & 63)).to_u8_wrapping()
+        bytes[0] = (U32(0xF0) | (u >> 18)).to_u8_wrapping()
+        bytes[1] = (U32(0x80) | ((u >> 12) & 0x3F)).to_u8_wrapping()
+        bytes[2] = (U32(0x80) | ((u >> 6) & 0x3F)).to_u8_wrapping()
+        bytes[3] = (U32(0x80) | (u & 0x3F)).to_u8_wrapping()
         RuneUTF8(bytes, 4)
     }
 }
 
 --- Check whether the given byte marks the start of a unicode rune in utf8. ---
 pub fun Rune.is_valid_utf8(b U8) Bool {
-    (b & 192) != 128
+    (b & 0xC0) != 0x80
 }
 
 -- todo: This currently only supports ASCII runes.
@@ -228,26 +228,26 @@ fun Str.rune_at(bytes []U8, index_out &mut Int) Rune {
     let b0 = bytes[index].to_u32()
     index = index + 1
     let rune = when {
-    case b0 < 128:
+    case b0 < 0x80:
         Rune(b0)
-    case b0 < 224:
+    case b0 < 0xE0:
         let b1 = bytes[index].to_u32()
         index = index + 1
-        Rune((b0 & 31) << 6 | (b1 & 63))
-    case b0 < 240:
+        Rune((b0 & 0x1F) << 6 | (b1 & 0x3F))
+    case b0 < 0xF0:
         let b1 = bytes[index].to_u32()
         index = index + 1
         let b2 = bytes[index].to_u32()
         index = index + 1
-        Rune((b0 & 15) << 12 | (b1 & 63) << 6  | (b2 & 63))
-    case b0 < 248:
+        Rune((b0 & 0x0F) << 12 | (b1 & 0x3F) << 6  | (b2 & 0x3F))
+    case b0 < 0xF8:
         let b1 = bytes[index].to_u32()
         index = index + 1
         let b2 = bytes[index].to_u32()
         index = index + 1
         let b3 = bytes[index].to_u32()
         index = index + 1
-        Rune((b0 & 7) << 18 | (b1 & 63) << 12 | (b2 & 63) << 6 | (b3 & 63))
+        Rune((b0 & 0x07) << 18 | (b1 & 0x3F) << 12 | (b2 & 0x3F) << 6 | (b3 & 0x3F))
     else:
         panic("invalid utf8")
     }
@@ -275,7 +275,7 @@ pub fun Str.is_empty(s Str) Bool {
 
 --- Replace illegal utf8 sequences with the replacement character U+FFFD. ---
 pub fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
-    let replacement_rune = [U8(239), 191, 189][..]
+    let replacement_rune = [U8(0xEF), 0xBF, 0xBD][..]
 	mut copy = unsafe @a.slice_uninit<U8>(data.len)
     mut copy_index = 0
     mut index = 0
@@ -318,40 +318,40 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
     index = index + 1
     mut valid = false
     when {
-    case b0 < 128:
+    case b0 < 0x80:
         valid = true
-    case b0 < 192:
+    case b0 < 0xC0:
         -- bare continuation byte, always invalid
-    case b0 < 224:
-        if b0 >= 194 and index < data.len and (data[index] & 192) == 128 {
+    case b0 < 0xE0:
+        if b0 >= 0xC2 and index < data.len and (data[index] & 0xC0) == 0x80 {
             index = index + 1
             valid = true
         }
-    case b0 < 240:
-        if index < data.len and (data[index] & 192) == 128 {
+    case b0 < 0xF0:
+        if index < data.len and (data[index] & 0xC0) == 0x80 {
             index = index + 1
-            if index < data.len and (data[index] & 192) == 128 {
+            if index < data.len and (data[index] & 0xC0) == 0x80 {
                 index = index + 1
-                 let cp = (b0.to_u32() & 15) << 12 
-                    | (data[index - 2].to_u32() & 63) << 6 
-                    | (data[index - 1].to_u32() & 63)
-                if cp < 55296 or cp > 57343 {
+                 let cp = (b0.to_u32() & 0x0F) << 12
+                    | (data[index - 2].to_u32() & 0x3F) << 6
+                    | (data[index - 1].to_u32() & 0x3F)
+                if cp < 0xD800 or cp > 0xDFFF {
                     valid = true
                 }
             }
         }
-    case b0 < 248:
-        if index < data.len and (data[index] & 192) == 128 {
+    case b0 < 0xF8:
+        if index < data.len and (data[index] & 0xC0) == 0x80 {
             index = index + 1
-            if index < data.len and (data[index] & 192) == 128 {
+            if index < data.len and (data[index] & 0xC0) == 0x80 {
                 index = index + 1
-                if index < data.len and (data[index] & 192) == 128 {
+                if index < data.len and (data[index] & 0xC0) == 0x80 {
                     index = index + 1
-                    let cp = (b0.to_u32() & 7) << 18
-                        | (data[index - 3].to_u32() & 63) << 12
-                        | (data[index - 2].to_u32() & 63) << 6
-                        | (data[index - 1].to_u32() & 63)
-                    if cp <= 1114111 {
+                    let cp = (b0.to_u32() & 0x07) << 18
+                        | (data[index - 3].to_u32() & 0x3F) << 12
+                        | (data[index - 2].to_u32() & 0x3F) << 6
+                        | (data[index - 1].to_u32() & 0x3F)
+                    if cp <= 0x10FFFF {
                         valid = true
                     }
                 }
@@ -462,7 +462,7 @@ pub fun Str.hash(s Str) U64 {
     mut state = U64(0)
     for i in 0..s.data.len {
         state = state ^ s.data[i].to_u64()
-        state = state *% 5871781006564002453
+        state = state *% 0x0517C_C1B7_2722_0A95
     }
     state
 }
@@ -770,7 +770,7 @@ pub fun StrBuilder.slice<T HasFmt>(
         if max_len > 0 and sb.len - start > max_len - 3 {
             sb.len = start + max_len - 3
             -- walk back to the start of a rune
-            for (sb.out[sb.len] & 192) == 128 {
+            for (sb.out[sb.len] & 0xC0) == 0x80 {
                 sb.len = sb.len - 1
             }
             sb.str("...")
@@ -1410,15 +1410,15 @@ pub fun U64.eq(u U64, other U64) Bool { u == other }
 pub fun Rune.eq(r Rune, other Rune) Bool { r == other }
 pub fun Bool.eq(b Bool, other Bool) Bool { b == other }
 
-pub fun I8.hash(i I8) U64 { i.to_u64_wrapping() *% 5871781006564002453 }
-pub fun I16.hash(i I16) U64 { i.to_u64_wrapping() *% 5871781006564002453 }
-pub fun I32.hash(i I32) U64 { i.to_u64_wrapping() *% 5871781006564002453 }
-pub fun Int.hash(i Int) U64 { i.to_u64_wrapping() *% 5871781006564002453 }
-pub fun U8.hash(u U8) U64 { u.to_u64() *% 5871781006564002453 }
-pub fun U16.hash(u U16) U64 { u.to_u64() *% 5871781006564002453 }
-pub fun U32.hash(u U32) U64 { u.to_u64() *% 5871781006564002453 }
-pub fun U64.hash(u U64) U64 { u *% 5871781006564002453 }
-pub fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() *% 5871781006564002453 }
+pub fun I8.hash(i I8) U64 { i.to_u64_wrapping() *% 0x517CC1B727220A95 }
+pub fun I16.hash(i I16) U64 { i.to_u64_wrapping() *% 0x517CC1B727220A95 }
+pub fun I32.hash(i I32) U64 { i.to_u64_wrapping() *% 0x517CC1B727220A95 }
+pub fun Int.hash(i Int) U64 { i.to_u64_wrapping() *% 0x517CC1B727220A95 }
+pub fun U8.hash(u U8) U64 { u.to_u64() *% 0x517CC1B727220A95 }
+pub fun U16.hash(u U16) U64 { u.to_u64() *% 0x517CC1B727220A95 }
+pub fun U32.hash(u U32) U64 { u.to_u64() *% 0x517CC1B727220A95 }
+pub fun U64.hash(u U64) U64 { u *% 0x517CC1B727220A95 }
+pub fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() *% 0x517CC1B727220A95 }
 pub fun Bool.hash(b Bool) U64 { if b { 1 } else { 0 } }
 
 pub fun Str.fmt(s Str, sb &mut StrBuilder) void { sb.str(s) }
@@ -1433,67 +1433,67 @@ pub fun U8.fmt(i U8, sb &mut StrBuilder) void { sb.u8(i) }
 pub fun Rune.fmt(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
 pub fun Bool.fmt(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
 
-pub fun U8.to_i8_checked(u U8) !I8 { if u > U8(127) { return Err("number out of range") } u.to_i8_wrapping() }
-pub fun U16.to_i16_checked(u U16) !I16 { if u > U16(32767) { return Err("number out of range") } u.to_i16_wrapping() }
-pub fun U32.to_i32_checked(u U32) !I32 { if u > U32(2147483647) { return Err("number out of range") } u.to_i32_wrapping() }
-pub fun U64.to_int_checked(u U64) !Int { if u > U64(9223372036854775807) { return Err("number out of range") } u.to_int_wrapping() }
+pub fun U8.to_i8_checked(u U8) !I8 { if u > U8(0x7F) { return Err("number out of range") } u.to_i8_wrapping() }
+pub fun U16.to_i16_checked(u U16) !I16 { if u > U16(0x7FFF) { return Err("number out of range") } u.to_i16_wrapping() }
+pub fun U32.to_i32_checked(u U32) !I32 { if u > U32(0x7FFF_FFFF) { return Err("number out of range") } u.to_i32_wrapping() }
+pub fun U64.to_int_checked(u U64) !Int { if u > U64(0x7FFF_FFFF_FFFF_FFFF) { return Err("number out of range") } u.to_int_wrapping() }
 pub fun I8.to_u8_checked(i I8) !U8 { if i < 0 { return Err("number out of range") } i.to_u8_wrapping() }
 pub fun I16.to_u16_checked(i I16) !U16 { if i < 0 { return Err("number out of range") } i.to_u16_wrapping() }
 pub fun I32.to_u32_checked(i I32) !U32 { if i < 0 { return Err("number out of range") } i.to_u32_wrapping() }
 pub fun Int.to_u64_checked(i Int) !U64 { if i < 0 { return Err("number out of range") } i.to_u64_wrapping() }
-pub fun U64.to_u32_checked(u U64) !U32 { if u > U64(4294967295) { return Err("number out of range") } u.to_u32_wrapping() }
-pub fun U64.to_u16_checked(u U64) !U16 { if u > U64(65535) { return Err("number out of range") } u.to_u16_wrapping() }
-pub fun U64.to_u8_checked(u U64) !U8 { if u > U64(255) { return Err("number out of range") } u.to_u8_wrapping() }
-pub fun U32.to_u16_checked(u U32) !U16 { if u > U32(65535) { return Err("number out of range") } u.to_u16_wrapping() }
-pub fun U32.to_u8_checked(u U32) !U8 { if u > U32(255) { return Err("number out of range") } u.to_u8_wrapping() }
-pub fun U16.to_u8_checked(u U16) !U8 { if u > U16(255) { return Err("number out of range") } u.to_u8_wrapping() }
-pub fun Int.to_i32_checked(i Int) !I32 { if i < -2147483648 or i > 2147483647 { return Err("number out of range") } i.to_i32_wrapping() }
-pub fun Int.to_i16_checked(i Int) !I16 { if i < -32768 or i > 32767 { return Err("number out of range") } i.to_i16_wrapping() }
-pub fun Int.to_i8_checked(i Int) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
-pub fun I32.to_i16_checked(i I32) !I16 { if i < -32768 or i > 32767 { return Err("number out of range") } i.to_i16_wrapping() }
-pub fun I32.to_i8_checked(i I32) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
-pub fun I16.to_i8_checked(i I16) !I8 { if i < -128 or i > 127 { return Err("number out of range") } i.to_i8_wrapping() }
+pub fun U64.to_u32_checked(u U64) !U32 { if u > U64(0xFFFF_FFFF) { return Err("number out of range") } u.to_u32_wrapping() }
+pub fun U64.to_u16_checked(u U64) !U16 { if u > U64(0xFFFF) { return Err("number out of range") } u.to_u16_wrapping() }
+pub fun U64.to_u8_checked(u U64) !U8 { if u > U64(0xFF) { return Err("number out of range") } u.to_u8_wrapping() }
+pub fun U32.to_u16_checked(u U32) !U16 { if u > U32(0xFFFF) { return Err("number out of range") } u.to_u16_wrapping() }
+pub fun U32.to_u8_checked(u U32) !U8 { if u > U32(0xFF) { return Err("number out of range") } u.to_u8_wrapping() }
+pub fun U16.to_u8_checked(u U16) !U8 { if u > U16(0xFF) { return Err("number out of range") } u.to_u8_wrapping() }
+pub fun Int.to_i32_checked(i Int) !I32 { if i < -0x8000_0000 or i > 0x7FFF_FFFF { return Err("number out of range") } i.to_i32_wrapping() }
+pub fun Int.to_i16_checked(i Int) !I16 { if i < -0x8000 or i > 0x7FFF { return Err("number out of range") } i.to_i16_wrapping() }
+pub fun Int.to_i8_checked(i Int) !I8 { if i < -0x80 or i > 0x7F { return Err("number out of range") } i.to_i8_wrapping() }
+pub fun I32.to_i16_checked(i I32) !I16 { if i < -0x8000 or i > 0x7FFF { return Err("number out of range") } i.to_i16_wrapping() }
+pub fun I32.to_i8_checked(i I32) !I8 { if i < -0x80 or i > 0x7F { return Err("number out of range") } i.to_i8_wrapping() }
+pub fun I16.to_i8_checked(i I16) !I8 { if i < -0x80 or i > 0x7F { return Err("number out of range") } i.to_i8_wrapping() }
 
-pub fun I16.to_i8_clamped(i I16) I8 { if i < -128 { return -128 } if i > 127 { return 127 } i.to_i8_wrapping() }
-pub fun I32.to_i8_clamped(i I32) I8 { if i < -128 { return -128 } if i > 127 { return 127 } i.to_i8_wrapping() }
-pub fun Int.to_i8_clamped(i Int) I8 { if i < -128 { return (-128) } if i > 127 { return 127 } i.to_i8_wrapping() }
-pub fun I32.to_i16_clamped(i I32) I16 { if i < -32768 { return -32768 } if i > 32767 { return 32767 } i.to_i16_wrapping() }
-pub fun Int.to_i16_clamped(i Int) I16 { if i < -32768 { return -32768 } if i > 32767 { return 32767 } i.to_i16_wrapping() }
-pub fun Int.to_i32_clamped(i Int) I32 { if i < -2147483648 { return I32(-2147483648) } if i > 2147483647 { return I32(2147483647) } i.to_i32_wrapping() }
-pub fun U16.to_u8_clamped(u U16) U8 { if u > U16(255) { return 255 } u.to_u8_wrapping() }
-pub fun U32.to_u8_clamped(u U32) U8 { if u > U32(255) { return 255 } u.to_u8_wrapping() }
-pub fun U64.to_u8_clamped(u U64) U8 { if u > U64(255) { return 255 } u.to_u8_wrapping() }
-pub fun U32.to_u16_clamped(u U32) U16 { if u > U32(65535) { return 65535 } u.to_u16_wrapping() }
-pub fun U64.to_u16_clamped(u U64) U16 { if u > U64(65535) { return 65535 } u.to_u16_wrapping() }
-pub fun U64.to_u32_clamped(u U64) U32 { if u > U64(4294967295) { return 4294967295 } u.to_u32_wrapping() }
-pub fun U8.to_i8_clamped(u U8) I8 { if u > U8(127) { return 127 } u.to_i8_wrapping() }
-pub fun U16.to_i16_clamped(u U16) I16 { if u > U16(32767) { return 32767 } u.to_i16_wrapping() }
-pub fun U16.to_i8_clamped(u U16) I8 { if u > U16(127) { return 127 } u.to_i8_wrapping() }
-pub fun U32.to_i32_clamped(u U32) I32 { if u > U32(2147483647) { return 2147483647 } u.to_i32_wrapping() }
-pub fun U32.to_i16_clamped(u U32) I16 { if u > U32(32767) { return 32767 } u.to_i16_wrapping() }
-pub fun U32.to_i8_clamped(u U32) I8 { if u > U32(127) { return 127 } u.to_i8_wrapping() }
-pub fun U64.to_int_clamped(u U64) Int { if u > U64(9223372036854775807) { return 9223372036854775807 } u.to_int_wrapping() }
-pub fun U64.to_i32_clamped(u U64) I32 { if u > U64(2147483647) { return 2147483647 } u.to_i32_wrapping() }
+pub fun I16.to_i8_clamped(i I16) I8 { if i < -0x80 { return -0x80 } if i > 0x7F { return 0x7F } i.to_i8_wrapping() }
+pub fun I32.to_i8_clamped(i I32) I8 { if i < -0x80 { return -0x80 } if i > 0x7F { return 0x7F } i.to_i8_wrapping() }
+pub fun Int.to_i8_clamped(i Int) I8 { if i < -0x80 { return (-0x80) } if i > 0x7F { return 0x7F } i.to_i8_wrapping() }
+pub fun I32.to_i16_clamped(i I32) I16 { if i < -0x8000 { return -0x8000 } if i > 0x7FFF { return 0x7FFF } i.to_i16_wrapping() }
+pub fun Int.to_i16_clamped(i Int) I16 { if i < -0x8000 { return -0x8000 } if i > 0x7FFF { return 0x7FFF } i.to_i16_wrapping() }
+pub fun Int.to_i32_clamped(i Int) I32 { if i < -0x8000_0000 { return I32(-0x8000_0000) } if i > 0x7FFF_FFFF { return I32(0x7FFF_FFFF) } i.to_i32_wrapping() }
+pub fun U16.to_u8_clamped(u U16) U8 { if u > U16(0xFF) { return 0xFF } u.to_u8_wrapping() }
+pub fun U32.to_u8_clamped(u U32) U8 { if u > U32(0xFF) { return 0xFF } u.to_u8_wrapping() }
+pub fun U64.to_u8_clamped(u U64) U8 { if u > U64(0xFF) { return 0xFF } u.to_u8_wrapping() }
+pub fun U32.to_u16_clamped(u U32) U16 { if u > U32(0xFFFF) { return 0xFFFF } u.to_u16_wrapping() }
+pub fun U64.to_u16_clamped(u U64) U16 { if u > U64(0xFFFF) { return 0xFFFF } u.to_u16_wrapping() }
+pub fun U64.to_u32_clamped(u U64) U32 { if u > U64(0xFFFF_FFFF) { return 0xFFFF_FFFF } u.to_u32_wrapping() }
+pub fun U8.to_i8_clamped(u U8) I8 { if u > U8(0x7F) { return 0x7F } u.to_i8_wrapping() }
+pub fun U16.to_i16_clamped(u U16) I16 { if u > U16(0x7FFF) { return 0x7FFF } u.to_i16_wrapping() }
+pub fun U16.to_i8_clamped(u U16) I8 { if u > U16(0x7F) { return 0x7F } u.to_i8_wrapping() }
+pub fun U32.to_i32_clamped(u U32) I32 { if u > U32(0x7FFF_FFFF) { return 0x7FFF_FFFF } u.to_i32_wrapping() }
+pub fun U32.to_i16_clamped(u U32) I16 { if u > U32(0x7FFF) { return 0x7FFF } u.to_i16_wrapping() }
+pub fun U32.to_i8_clamped(u U32) I8 { if u > U32(0x7F) { return 0x7F } u.to_i8_wrapping() }
+pub fun U64.to_int_clamped(u U64) Int { if u > U64(0x7FFF_FFFF_FFFF_FFFF) { return 0x7FFF_FFFF_FFFF_FFFF } u.to_int_wrapping() }
+pub fun U64.to_i32_clamped(u U64) I32 { if u > U64(0x7FFF_FFFF) { return 0x7FFF_FFFF } u.to_i32_wrapping() }
 pub fun I8.to_u8_clamped(i I8) U8 { if i < 0 { return 0 } i.to_u8_wrapping() }
 pub fun I8.to_u16_clamped(i I8) U16 { if i < 0 { return 0 } i.to_u16_wrapping() }
 pub fun I8.to_u32_clamped(i I8) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
 pub fun I8.to_u64_clamped(i I8) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
-pub fun I16.to_u8_clamped(i I16) U8 { if i < 0 { return 0 } if i > 255 { return 255 } i.to_u8_wrapping() }
+pub fun I16.to_u8_clamped(i I16) U8 { if i < 0 { return 0 } if i > 0xFF { return 0xFF } i.to_u8_wrapping() }
 pub fun I16.to_u16_clamped(i I16) U16 { if i < 0 { return 0 } i.to_u16_wrapping() }
 pub fun I16.to_u32_clamped(i I16) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
 pub fun I16.to_u64_clamped(i I16) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
-pub fun I32.to_u8_clamped(i I32) U8 { if i < 0 { return 0 } if i > 255 { return 255 } i.to_u8_wrapping() }
-pub fun I32.to_u16_clamped(i I32) U16 { if i < 0 { return 0 } if i > 65535 { return 65535 } i.to_u16_wrapping() }
+pub fun I32.to_u8_clamped(i I32) U8 { if i < 0 { return 0 } if i > 0xFF { return 0xFF } i.to_u8_wrapping() }
+pub fun I32.to_u16_clamped(i I32) U16 { if i < 0 { return 0 } if i > 0xFFFF { return 0xFFFF } i.to_u16_wrapping() }
 pub fun I32.to_u32_clamped(i I32) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
 pub fun I32.to_u64_clamped(i I32) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
-pub fun Int.to_u8_clamped(i Int) U8 { if i < 0 { return 0 } if i > 255 { return 255 } i.to_u8_wrapping() }
-pub fun Int.to_u16_clamped(i Int) U16 { if i < 0 { return 0 } if i > 65535 { return 65535 } i.to_u16_wrapping() }
-pub fun Int.to_u32_clamped(i Int) U32 { if i < 0 { return 0 } if i > 4294967295 { return 4294967295 } i.to_u32_wrapping() }
+pub fun Int.to_u8_clamped(i Int) U8 { if i < 0 { return 0 } if i > 0xFF { return 0xFF } i.to_u8_wrapping() }
+pub fun Int.to_u16_clamped(i Int) U16 { if i < 0 { return 0 } if i > 0xFFFF { return 0xFFFF } i.to_u16_wrapping() }
+pub fun Int.to_u32_clamped(i Int) U32 { if i < 0 { return 0 } if i > 0xFFFF_FFFF { return 0xFFFF_FFFF } i.to_u32_wrapping() }
 pub fun Int.to_u64_clamped(i Int) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
 
 pub fun Int.from_ascii_str(str []U8, base Int = 10) !Int {
     mut s = str[..]
-    let negate = if s[0] == 45 {
+    let negate = if s[0] == '-' {
         if s.len == 1 {
             return Err("parse error: '-' must be followed by digits")
         }
@@ -1502,16 +1502,16 @@ pub fun Int.from_ascii_str(str []U8, base Int = 10) !Int {
     } else { false }
     mut result = try U64.from_ascii_str(s, base)
     if negate {
-        if result > 9223372036854775808 {
+        if result > 0x8000_0000_0000_0000 {
             return Err("parse error: number out of range")
         }
-        if result == 9223372036854775808 {
-            -9223372036854775808
+        if result == 0x8000_0000_0000_0000 {
+            -0x8000_0000_0000_0000
         } else {
             0 - result.to_int_wrapping()
         }
     } else {
-        if result >= 9223372036854775808 {
+        if result >= 0x8000_0000_0000_0000 {
             return Err("parse error: number out of range")
         }
         result.to_int_wrapping()
@@ -1530,26 +1530,26 @@ pub fun U64.from_ascii_str(s []U8, base Int = 10) !U64 {
     for i in 0..s.len {
         mut digit = s[i].to_u64()
         if base_u64 == 16 {
-            if digit >= 65 and digit <= 70 {
-                digit = digit - 55
+            if digit >= U64('A') and digit <= U64('F') {
+                digit = digit - U64('A') + 10
             } else {
-                if (digit >= 97 and digit <= 102) {
-                    digit = digit - 87
+                if (digit >= U64('a') and digit <= U64('f')) {
+                    digit = digit - U64('a') + 10
                 } else {
-                    if digit < 48 or digit > 57 {
+                    if digit < U64('0') or digit > U64('9') {
                         return Err("parse error: not a valid digit")
                     }
-                    digit = digit - 48
+                    digit = digit - U64('0')
                 }
             }
         } else {
-            if digit < 48 or digit >= base_u64 + 48 {
+            if digit < U64('0') or digit >= base_u64 + U64('0') {
                 return Err("parse error: not a valid digit")
             }
-            digit = digit - 48
+            digit = digit - U64('0')
         }
         let result_before = result
-        if result > (U64(18446744073709551615) - digit) / base_u64 {
+        if result > (U64(0xFFFF_FFFF_FFFF_FFFF) - digit) / base_u64 {
              return Err("parse error: number out of range")
         }
         result = result *% base_u64 +% digit

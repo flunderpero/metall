@@ -2138,10 +2138,31 @@ func (p *Parser) expectNumber() (*big.Int, bool) {
 	if !ok {
 		return nil, false
 	}
-	n, valid := new(big.Int).SetString(t.Value, 10)
+	s := t.Value
+	neg := strings.HasPrefix(s, "-")
+	if neg {
+		s = s[1:]
+	}
+	intBase := 10
+	switch {
+	case strings.HasPrefix(s, "0x"):
+		s = s[2:]
+		intBase = 16
+	case strings.HasPrefix(s, "0o"):
+		s = s[2:]
+		intBase = 8
+	case strings.HasPrefix(s, "0b"):
+		s = s[2:]
+		intBase = 2
+	}
+	s = strings.ReplaceAll(s, "_", "")
+	n, valid := new(big.Int).SetString(s, intBase)
 	if !valid {
 		p.diagnostic(t.Span, "invalid number: %s", t.Value)
 		return nil, false
+	}
+	if neg {
+		n.Neg(n)
 	}
 	return n, true
 }

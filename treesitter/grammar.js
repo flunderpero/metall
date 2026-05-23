@@ -121,7 +121,13 @@ module.exports = grammar({
 
     // >>> Literals
 
-    integer_literal: (_) => /[0-9]+/,
+    integer_literal: (_) =>
+      token(choice(
+        seq("0x", /[0-9a-fA-F]+(_[0-9a-fA-F]+)*/),
+        seq("0o", /[0-7]+(_[0-7]+)*/),
+        seq("0b", /[01]+(_[01]+)*/),
+        /[0-9]+(_[0-9]+)*/,
+      )),
 
     string_literal: (_) => seq('"', /([^"\\]|\\.)*/, '"'),
 

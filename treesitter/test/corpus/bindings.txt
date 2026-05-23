@@ -73,3 +73,20 @@ fun f() void { x = 1  x.y = 2  x[0] = 3  x.* = 4 }
       (assignment target: (field_access object: (identifier) field: (identifier)) value: (integer_literal))
       (assignment target: (index_expression object: (identifier) index: (integer_literal)) value: (integer_literal))
       (assignment target: (dereference (identifier)) value: (integer_literal)))))
+
+================================================================================
+Integer literal bases
+================================================================================
+
+let a = 0xFF
+let b = 0o755
+let c = 0b1010_1010
+let d = 1_000_000
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding name: (identifier) value: (integer_literal))
+  (let_binding name: (identifier) value: (integer_literal))
+  (let_binding name: (identifier) value: (integer_literal))
+  (let_binding name: (identifier) value: (integer_literal)))
