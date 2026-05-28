@@ -642,6 +642,36 @@ Int(value=170)
 Int(value=1000000)
 ```
 
+**Bytes literal**
+
+```metall
+b"abc"
+```
+
+```ast
+String(value="abc",bytes=true)
+```
+
+**Empty bytes literal**
+
+```metall
+b""
+```
+
+```ast
+String(value="",bytes=true)
+```
+
+**Bytes literal with escapes**
+
+```metall
+b"\n\t\xFF"
+```
+
+```ast
+String(value="\n\tÿ",bytes=true)
+```
+
 ## If
 
 **If then else**

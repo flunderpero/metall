@@ -22,6 +22,25 @@ Int: Int
 String: Str
 ```
 
+**Bytes literal**
+
+```metall
+b"abc"
+```
+
+```types
+String: []U8
+```
+
+**Mut Str binding can be rebound**
+
+```metall
+{ mut s = "hello"  s = "world" }
+```
+
+```error
+```
+
 **Rune literal**
 
 ```metall
@@ -9050,6 +9069,35 @@ test.met:4:9: cannot assign to element of immutable array or slice
             s2[0] = 99
             ^^^^^
         }
+```
+
+**Mut binding of bytes literal can be rebound**
+
+```metall
+{
+    mut a = b"abc"
+    a = b"xyz"
+}
+```
+
+```error
+```
+
+**Mut binding of bytes literal is not mutable**
+
+```metall
+{
+    mut a = b"abc"
+    a[0] = U8(99)
+}
+```
+
+```error
+test.met:3:5: cannot assign to element of immutable array or slice
+        mut a = b"abc"
+        a[0] = U8(99)
+        ^^^^
+    }
 ```
 
 **Cannot return allocator from fun**

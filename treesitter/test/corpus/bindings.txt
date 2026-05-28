@@ -90,3 +90,18 @@ let d = 1_000_000
   (let_binding name: (identifier) value: (integer_literal))
   (let_binding name: (identifier) value: (integer_literal))
   (let_binding name: (identifier) value: (integer_literal)))
+
+================================================================================
+Bytes literal
+================================================================================
+
+let a = b"abc"
+let b = b""
+let c = b"\xFF\n"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding name: (identifier) value: (bytes_literal))
+  (let_binding name: (identifier) value: (bytes_literal))
+  (let_binding name: (identifier) value: (bytes_literal)))

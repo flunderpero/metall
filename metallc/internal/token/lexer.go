@@ -16,6 +16,7 @@ const (
 	AmpInfix
 	And
 	Break
+	Bytes
 	Caret
 	Case
 	Colon
@@ -102,6 +103,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AmpInfix:              "<&infix>",
 	And:                   "<and>",
 	Break:                 "<break>",
+	Bytes:                 "<bytes>",
 	Caret:                 "^",
 	Case:                  "<case>",
 	Colon:                 ":",
@@ -460,6 +462,30 @@ func skipToClosingQuote(source *base.Source, idx int, quote rune) int {
 	return idx
 }
 
+func lexStringBody(source *base.Source, idx int, span base.Span, kind TokenKind) Token {
+	value := []rune{}
+	for idx < len(source.Content) {
+		c := source.Content[idx]
+		if c == '"' {
+			span.End = idx
+			return Token{kind, string(value), span}
+		}
+		if c == '\\' {
+			r, newIdx, errMsg := parseEscape(source, idx, '"')
+			if errMsg != "" {
+				span.End = skipToClosingQuote(source, idx+1, '"')
+				return Token{Error, errMsg, span}
+			}
+			value = append(value, r)
+			idx = newIdx
+		} else {
+			idx += 1
+			value = append(value, c)
+		}
+	}
+	return Token{EOF, "", span}
+}
+
 func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	start := idx
 	c := source.Content[idx]
@@ -470,27 +496,9 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	}
 	switch {
 	case c == '"':
-		value := []rune{}
-		for idx < len(source.Content) {
-			c := source.Content[idx]
-			if c == '"' {
-				span.End = idx
-				return Token{String, string(value), span}
-			}
-			if c == '\\' {
-				r, newIdx, errMsg := parseEscape(source, idx, '"')
-				if errMsg != "" {
-					span.End = skipToClosingQuote(source, idx+1, '"')
-					return Token{Error, errMsg, span}
-				}
-				value = append(value, r)
-				idx = newIdx
-			} else {
-				idx += 1
-				value = append(value, c)
-			}
-		}
-		return Token{EOF, "", span}
+		return lexStringBody(source, idx, span, String)
+	case c == 'b' && idx < len(source.Content) && source.Content[idx] == '"':
+		return lexStringBody(source, idx+1, span, Bytes)
 	case c == '\'':
 		if idx < len(source.Content) && source.Content[idx] != '\'' {
 			if source.Content[idx] == '\\' {

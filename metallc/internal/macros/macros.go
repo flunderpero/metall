@@ -52,6 +52,9 @@ func RenderArg(kind ast.Kind, span base.Span) (string, *base.Diagnostic) {
 	case ast.Int:
 		return v.Value.String(), nil
 	case ast.String:
+		if v.Bytes {
+			return fmt.Sprintf("b%q", v.Value), nil
+		}
 		return fmt.Sprintf("%q", v.Value), nil
 	case ast.Bool:
 		if v.Value {

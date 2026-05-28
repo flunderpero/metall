@@ -131,6 +131,8 @@ module.exports = grammar({
 
     string_literal: (_) => seq('"', /([^"\\]|\\.)*/, '"'),
 
+    bytes_literal: (_) => seq('b"', /([^"\\]|\\.)*/, '"'),
+
     rune_literal: (_) => seq("'", /([^'\\]|\\.|\{[^}]*\})+/, "'"),
 
     boolean_literal: (_) => choice("true", "false"),
@@ -311,6 +313,7 @@ module.exports = grammar({
         // Literals and atoms.
         $.integer_literal,
         $.string_literal,
+        $.bytes_literal,
         $.rune_literal,
         $.boolean_literal,
         $.void,

@@ -2208,9 +2208,24 @@ func (g *IRFunGen) addStrConst(s string) string {
 	name := fmt.Sprintf("@str.%d", id)
 	g.strConsts[s] = name
 	n := len(s)
-	fmt.Fprintf(&g.constGlobals, "%s.data = private constant [%d x i8] c\"%s\"\n", name, n, s)
-	fmt.Fprintf(&g.constGlobals, "%s = private constant %%Str { {ptr, i64} { ptr %s.data, i64 %d } }\n", name, name, n)
+	fmt.Fprintf(&g.constGlobals, "%s.data = private constant [%d x i8] c\"%s\"\n", name, n, llvmEscape(s))
+	fmt.Fprintf(&g.constGlobals, "%s = private constant {ptr, i64} { ptr %s.data, i64 %d }\n", name, name, n)
 	return name
+}
+
+// llvmEscape escapes a Go string for use inside an LLVM `c"..."` byte literal.
+// Bytes outside printable ASCII (or '\' / '"') are emitted as \HH.
+func llvmEscape(s string) string {
+	var sb strings.Builder
+	for i := range len(s) {
+		b := s[i]
+		if b == '\\' || b == '"' || b < 0x20 || b > 0x7E {
+			fmt.Fprintf(&sb, "\\%02X", b)
+		} else {
+			sb.WriteByte(b)
+		}
+	}
+	return sb.String()
 }
 
 func (g *IRFunGen) genRef(id ast.NodeID, ref ast.Ref) {

@@ -42,6 +42,29 @@ fun main() void { let x = 123 DebugIntern.print_int(x) }
 123
 ```
 
+**bytes literal**
+
+```metall
+fun main() void {
+    let x = b"ab\n\xFF"
+    DebugIntern.print_int(x.len)
+    DebugIntern.print_uint(x[0].to_u64())
+    DebugIntern.print_uint(x[1].to_u64())
+    DebugIntern.print_uint(x[2].to_u64())
+    DebugIntern.print_uint(x[3].to_u64())
+    DebugIntern.print_uint(x[4].to_u64())
+}
+```
+
+```output
+5
+97
+98
+10
+195
+191
+```
+
 **bool var**
 
 ```metall

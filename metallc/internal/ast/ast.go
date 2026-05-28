@@ -272,6 +272,7 @@ func (Bool) isKind() {}
 
 type String struct {
 	Value string
+	Bytes bool
 }
 
 func (String) isKind() {}
@@ -718,7 +719,11 @@ func (a *AST) NewRef(target NodeID, mut bool, span base.Span) NodeID {
 }
 
 func (a *AST) NewString(value string, span base.Span) NodeID {
-	return a.node(String{Value: value}, span)
+	return a.node(String{Value: value, Bytes: false}, span)
+}
+
+func (a *AST) NewBytes(value string, span base.Span) NodeID {
+	return a.node(String{Value: value, Bytes: true}, span)
 }
 
 func (a *AST) NewRuneLiteral(value uint32, span base.Span) NodeID {
@@ -1475,6 +1480,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		addAttr("value", fmt.Sprintf("%t", kind.Value))
 	case String:
 		addAttr("value", fmt.Sprintf("%q", kind.Value))
+		if kind.Bytes {
+			addAttr("bytes", "true")
+		}
 	case RuneLiteral:
 		addAttr("value", fmt.Sprintf("'%c'(%d)", rune(kind.Value), kind.Value))
 	case Var:

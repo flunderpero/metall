@@ -905,6 +905,9 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	case token.String:
 		p.next()
 		expr = p.NewString(t.Value, t.Span.Combine(p.span()))
+	case token.Bytes:
+		p.next()
+		expr = p.NewBytes(t.Value, t.Span.Combine(p.span()))
 	case token.Rune:
 		p.next()
 		runes := []rune(t.Value)

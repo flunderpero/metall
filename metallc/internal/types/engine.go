@@ -46,6 +46,7 @@ type Engine struct {
 	runeTyp         TypeID
 	arenaTyp        TypeID
 	intTyp          TypeID
+	u8Typ           TypeID
 }
 
 func NewEngine(
@@ -257,7 +258,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.SimpleType:
 		typeID, status = e.checkSimpleType(nodeID, nodeKind, node.Span)
 	case ast.String:
-		typeID, status = e.checkString()
+		typeID, status = e.checkString(nodeID, nodeKind, node.Span)
 	case ast.RuneLiteral:
 		typeID, status = e.checkRuneLiteral(nodeKind, node.Span, typeHint)
 	case ast.Var:
@@ -1273,7 +1274,12 @@ func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (Ty
 	return target, TypeOK
 }
 
-func (e *Engine) checkString() (TypeID, TypeStatus) {
+func (e *Engine) checkString(
+	nodeID ast.NodeID, str ast.String, span base.Span,
+) (TypeID, TypeStatus) { //nolint:unparam
+	if str.Bytes {
+		return e.env.buildSliceType(e.u8Typ, false, nodeID, span), TypeOK
+	}
 	return e.strTyp, TypeOK
 }
 
@@ -2050,6 +2056,9 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 				}
 				if intTyp.Name == "Rune" {
 					e.runeTyp = typ.Type.ID
+				}
+				if intTyp.Name == "U8" {
+					e.u8Typ = typ.Type.ID
 				}
 			}
 		}
