@@ -98,6 +98,12 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 		return nil
 	})
 	flags.BoolVar(&opts.AddressSanitizer, "asan", false, "enable AddressSanitizer")
+	flags.BoolVar(
+		&opts.MinimalPrelude,
+		"minimal-prelude",
+		false,
+		"skip the stdlib prelude and load only the built-in types",
+	)
 	flags.BoolVar(&opts.EmitObject, "c", false, "emit a relocatable object file (.o) instead of linking an executable")
 	flags.BoolVar(
 		&opts.EmitHeaderFile,
