@@ -33,6 +33,9 @@ var builtinFuns = []string{ //nolint:gochecknoglobals
 	"std::ffi.PtrMut.as_slice",
 	"std::ffi.FunPtr.call",
 	"std::os.args",
+	"std::enums.variants",
+	"std::enums.value_of",
+	"std::enums.from_value",
 }
 
 // builtinCanonicalName converts "std::ffi.sizeof" to "ffi::sizeof".

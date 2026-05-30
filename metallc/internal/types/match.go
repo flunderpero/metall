@@ -10,24 +10,30 @@ func (e *Engine) checkMatch(match ast.Match, span base.Span, typeHint *TypeID) (
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	exprTyp := e.env.Type(exprTypeID)
-	union, ok := exprTyp.Kind.(UnionType)
-	if !ok {
-		e.diag(e.ast.Node(match.Expr).Span, "match expression must be a union type, got %s",
+	switch kind := e.env.Type(exprTypeID).Kind.(type) {
+	case UnionType:
+		if len(kind.Variants) == 0 {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if len(match.Arms) == 0 && match.Else == nil {
+			e.diag(span, "match requires at least one arm")
+			return InvalidTypeID, TypeFailed
+		}
+		return e.checkUnionMatchArms(match, kind, exprTypeID, span, typeHint)
+	case EnumType:
+		if len(match.Arms) == 0 && match.Else == nil {
+			e.diag(span, "match requires at least one arm")
+			return InvalidTypeID, TypeFailed
+		}
+		return e.checkEnumMatchArms(match, kind, exprTypeID, span, typeHint)
+	default:
+		e.diag(e.ast.Node(match.Expr).Span, "match expression must be a union or enum type, got %s",
 			e.env.TypeDisplay(exprTypeID))
 		return InvalidTypeID, TypeFailed
 	}
-	if len(union.Variants) == 0 {
-		return InvalidTypeID, TypeDepFailed
-	}
-	if len(match.Arms) == 0 && match.Else == nil {
-		e.diag(span, "match requires at least one arm")
-		return InvalidTypeID, TypeFailed
-	}
-	return e.checkMatchArms(match, union, exprTypeID, span, typeHint)
 }
 
-func (e *Engine) checkMatchArms( //nolint:funlen
+func (e *Engine) checkUnionMatchArms( //nolint:funlen
 	match ast.Match, union UnionType, unionTypeID TypeID, span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
 	covered := make([]bool, len(union.Variants))
@@ -75,19 +81,20 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, variantTypeID)
 		}
 		if arm.Guard != nil {
-			guardTypeID, guardStatus := e.Query(*arm.Guard)
-			if guardStatus.Failed() {
-				return InvalidTypeID, TypeDepFailed
-			}
-			if guardTypeID != e.boolTyp {
-				e.diag(e.ast.Node(*arm.Guard).Span, "guard condition must be Bool, got %s",
-					e.env.TypeDisplay(guardTypeID))
-				return InvalidTypeID, TypeFailed
+			if status := e.checkGuard(*arm.Guard); status.Failed() {
+				return InvalidTypeID, status
 			}
 		}
 		bodies = append(bodies, armBody{arm.Body, InvalidTypeID})
 	}
 	if match.Else != nil {
+		// A `try` desugars to an else that propagates the error variant, so it is
+		// never redundant. Otherwise an else over an already-exhaustive match is.
+		if !match.Try && len(uncoveredVariants(covered, union)) == 0 {
+			e.diag(span, "else is not allowed in a match on %s; it is exhaustive",
+				e.env.TypeDisplay(unionTypeID))
+			return InvalidTypeID, TypeFailed
+		}
 		if match.Else.Binding != nil {
 			bindTypeID := unionTypeID
 			if uncovered := uncoveredVariants(covered, union); len(uncovered) == 1 {
@@ -110,7 +117,7 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 	for i, ab := range bodies {
 		hint := typeHint
 		// For `try`, the success arm body should not receive the outer
-		// type hint — it yields the unwrapped value, not the Result.
+		// type hint. It yields the unwrapped value, not the Result.
 		if match.Try && i < len(match.Arms) {
 			hint = nil
 		}
@@ -153,6 +160,19 @@ func (e *Engine) checkMatchArms( //nolint:funlen
 	return resultTypeID, TypeOK
 }
 
+func (e *Engine) checkGuard(guardID ast.NodeID) TypeStatus {
+	guardTypeID, status := e.Query(guardID)
+	if status.Failed() {
+		return TypeDepFailed
+	}
+	if guardTypeID != e.boolTyp {
+		e.diag(e.ast.Node(guardID).Span, "guard condition must be Bool, got %s",
+			e.env.TypeDisplay(guardTypeID))
+		return TypeFailed
+	}
+	return TypeOK
+}
+
 func uncoveredVariants(covered []bool, union UnionType) []TypeID {
 	var result []TypeID
 	for i, c := range covered {
@@ -161,4 +181,141 @@ func uncoveredVariants(covered []bool, union UnionType) []TypeID {
 		}
 	}
 	return result
+}
+
+func (e *Engine) checkEnumMatchArms( //nolint:funlen
+	match ast.Match, enum EnumType, enumTypeID TypeID, span base.Span, typeHint *TypeID,
+) (TypeID, TypeStatus) {
+	if match.Else != nil && match.Else.Binding != nil {
+		bodyScope := e.scopeGraph.IntroducedScope(match.Else.Body)
+		e.env.bindInScope(bodyScope, match.Else.Body, match.Else.Binding.Name, enumTypeID)
+	}
+	if match.Try {
+		// A `try` desugars to one narrowing arm plus an else that must break
+		// control flow. Bare `try` leaves a TryPattern, which has no subset to
+		// narrow to, so reject it here instead of in the arm loop.
+		if _, ok := e.ast.Node(match.Arms[0].Pattern).Kind.(ast.TryPattern); ok {
+			e.diag(e.ast.Node(match.Arms[0].Pattern).Span,
+				"`try` on an enum requires a subset pattern, e.g. `try e is IOErr`")
+			return InvalidTypeID, TypeFailed
+		}
+		elseTyp, status := e.Query(match.Else.Body)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if elseTyp != e.neverTyp {
+			e.diag(e.ast.Node(match.Else.Body).Span, "try else block must break control flow")
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	covered := map[string]bool{}
+	var bodies []ast.NodeID
+	for _, arm := range match.Arms {
+		// Resolve the pattern to the variant keys it covers and the type its
+		// binding takes. `IOErr.broken_pipe` is one variant, one key. A bare
+		// subset like `IOErr` covers every variant of the subset.
+		patTypeID, status := e.Query(arm.Pattern)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		patEnum, ok := e.env.Type(patTypeID).Kind.(EnumType)
+		if !ok {
+			e.diag(e.ast.Node(arm.Pattern).Span, "%s is not an enum variant or subset of %s",
+				e.env.TypeDisplay(patTypeID), e.env.TypeDisplay(enumTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+		var keys []string
+		if _, variant, isVariant := e.env.EnumVariantRef(arm.Pattern); isVariant {
+			inFamily := patTypeID == enumTypeID
+			if enum.IsOpen {
+				inFamily = patEnum.Root == enumTypeID
+			}
+			if !inFamily {
+				e.diag(e.ast.Node(arm.Pattern).Span, "%s.%s is not a variant of %s",
+					e.env.TypeDisplay(patTypeID), variant, e.env.TypeDisplay(enumTypeID))
+				return InvalidTypeID, TypeFailed
+			}
+			keys = []string{patEnum.Name + "." + variant}
+		} else {
+			if !enum.IsOpen || patEnum.Root != enumTypeID {
+				e.diag(e.ast.Node(arm.Pattern).Span, "%s is not a subset of %s",
+					e.env.TypeDisplay(patTypeID), e.env.TypeDisplay(enumTypeID))
+				return InvalidTypeID, TypeFailed
+			}
+			keys = make([]string, len(patEnum.Variants))
+			for i, v := range patEnum.Variants {
+				keys[i] = patEnum.Name + "." + v.Name
+			}
+		}
+		if arm.Binding != nil {
+			bodyScope := e.scopeGraph.IntroducedScope(arm.Body)
+			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, patTypeID)
+		}
+		if arm.Guard != nil {
+			// A guarded arm proves nothing. It may fall through, so it covers no
+			// discriminants, mirroring the union rule.
+			if status := e.checkGuard(*arm.Guard); status.Failed() {
+				return InvalidTypeID, status
+			}
+		} else {
+			fresh := false
+			for _, k := range keys {
+				if !covered[k] {
+					covered[k] = true
+					fresh = true
+				}
+			}
+			if !fresh {
+				e.diag(e.ast.Node(arm.Pattern).Span, "unreachable match arm: all variants already covered")
+				return InvalidTypeID, TypeFailed
+			}
+		}
+		bodies = append(bodies, arm.Body)
+	}
+	if enum.IsOpen {
+		if match.Else == nil {
+			e.diag(span, "non-exhaustive match on open enum %s: an else arm is required",
+				e.env.TypeDisplay(enumTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	} else {
+		if match.Else != nil {
+			e.diag(span, "else is not allowed in a match on closed enum %s; it is exhaustive",
+				e.env.TypeDisplay(enumTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+		for _, v := range enum.Variants {
+			if !covered[enum.Name+"."+v.Name] {
+				e.diag(span, "non-exhaustive match: missing variant %s.%s",
+					e.env.TypeDisplay(enumTypeID), v.Name)
+				return InvalidTypeID, TypeFailed
+			}
+		}
+	}
+	if match.Else != nil {
+		bodies = append(bodies, match.Else.Body)
+	}
+	// Unify the body types. Diverging (`never`) bodies drop out. The rest must
+	// agree, and that shared type is the match's type.
+	var resultTypeID TypeID
+	for _, body := range bodies {
+		bodyTypeID, status := e.queryWithHint(body, typeHint)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if bodyTypeID == e.neverTyp {
+			continue
+		}
+		if resultTypeID == 0 {
+			resultTypeID = bodyTypeID
+		} else if bodyTypeID != resultTypeID {
+			e.diag(e.ast.Node(body).Span, "match arm type mismatch: expected %s, got %s",
+				e.env.TypeDisplay(resultTypeID), e.env.TypeDisplay(bodyTypeID))
+			return InvalidTypeID, TypeFailed
+		}
+	}
+	if resultTypeID == 0 {
+		return e.neverTyp, TypeOK
+	}
+	return resultTypeID, TypeOK
 }

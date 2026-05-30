@@ -150,6 +150,8 @@ func (g *ScopeGraph) walkNodes(a *AST, nodeIDs []NodeID, startScope *Scope) {
 			}
 		case Struct:
 			defer enterScope(nodeID, kind.Name.Name)()
+		case Enum:
+			defer enterScope(nodeID, kind.Name.Name)()
 		case Shape:
 			defer enterScope(nodeID, kind.Name.Name)()
 		case FunDecl:

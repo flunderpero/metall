@@ -295,6 +295,8 @@ func (r *compTypeRenderer) render(typeID TypeID, span base.Span) (string, bool) 
 		return r.renderStruct(kind, span)
 	case UnionType:
 		return r.renderUnion(kind, span)
+	case EnumType:
+		return r.renderEnum(kind, span)
 	}
 	r.engine.diag(span, "comp::type_of does not support type %s", r.engine.env.TypeDisplay(typeID))
 	return "", false
@@ -329,6 +331,27 @@ func (r *compTypeRenderer) renderUnion(kind UnionType, span base.Span) (string, 
 	}
 	return fmt.Sprintf(
 		"comp.UnionType(%q, [%s][..])", shortName(kind.Name), strings.Join(variants, ", "),
+	), true
+}
+
+func (r *compTypeRenderer) renderEnum(kind EnumType, span base.Span) (string, bool) {
+	backingExpr, ok := r.render(kind.Backing, span)
+	if !ok {
+		return "", false
+	}
+	backingRef := r.let(fmt.Sprintf("@a.new(%s)", r.letTyped("comp.Type", backingExpr)))
+	var variants []string
+	for _, v := range kind.Variants {
+		variants = append(variants, fmt.Sprintf("comp.EnumVariant(%q)", v.Name))
+	}
+	// An open root has no variants of its own; a bare `[][..]` cannot infer its
+	// element type, so emit a typed empty slice instead.
+	variantsExpr := fmt.Sprintf("[%s][..]", strings.Join(variants, ", "))
+	if len(variants) == 0 {
+		variantsExpr = r.letTyped("[]comp.EnumVariant", "[]")
+	}
+	return fmt.Sprintf(
+		"comp.EnumType(%q, %s, %s)", shortName(kind.Name), backingRef, variantsExpr,
 	), true
 }
 

@@ -1,0 +1,18 @@
+--- Return a slice with all variants of the given enum. ---
+pub fun variants<T Enum>() []T {
+    panic("implemented by the compiler")
+}
+
+--- Return the underlying integer value of an enum variant.
+
+    Note: Open enums don't have stable values, i.e. they change from build to build. ---
+pub fun value_of<T Enum>(e T) T.Item {
+    panic("implemented by the compiler")
+}
+
+--- Try to map the given integer value to an enum variant.
+
+    Note: Open enums don't have stable values, i.e. they change from build to build. ---
+pub fun from_value<T Enum>(v T.Item) ?T {
+    panic("implemented by the compiler")
+}

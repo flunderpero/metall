@@ -41,6 +41,7 @@ fun type_name(name Str, info comp.Type, sb &mut StrBuilder, @a Arena) void {
         case comp.IntType i: { sb.str(i.name) }
         case comp.StructType s: { sb.str("struct ") sb.str(s.name) }
         case comp.UnionType u: { sb.str("union ") sb.str(u.name) }
+        case comp.EnumType e: { sb.str("enum ") sb.str(e.name) }
     }
     sb.rune('"')
     sb.str(" }")
@@ -122,6 +123,7 @@ fun gen_fmt(info comp.Type, sb &mut StrBuilder, @a Arena) void {
         case comp.NeverType v: { }
         case comp.IntType i: { }
         case comp.UnionType u: { }
+        case comp.EnumType e: { }
     }
 }
 ```
@@ -240,6 +242,55 @@ fun main() void {
 
 ```output
 Pair{a=hello, b=42}
+```
+
+**enum reflection macro**
+
+```metall
+use std.comp
+use std.io
+use local.enum_reflect_macro
+
+enum Suit U8 = hearts | spades | clubs | diamonds
+
+-- An open root has no variants of its own, so it reflects an empty variant list.
+enum Event U16
+
+enum_reflect_macro.variant_names("suits", comp.type_of<Suit>())
+enum_reflect_macro.variant_names("events", comp.type_of<Event>())
+
+fun main() void {
+    io.println(suits())
+    io.println(events())
+}
+```
+
+```module.enum_reflect_macro
+use std.comp
+
+fun variant_names(name Str, info comp.Type, sb &mut StrBuilder, @a Arena) void {
+    match info {
+        case comp.EnumType e: {
+            sb.str("fun ") sb.str(name) sb.str("() Str { ")
+            sb.rune('"')
+            sb.str(e.name)
+            sb.str(":")
+            for i in 0..e.variants.len {
+                if i > 0 { sb.str(",") }
+                sb.str(e.variants[i].name)
+            }
+            sb.rune('"')
+            sb.str(" }")
+            sb.nl()
+        }
+        else: { }
+    }
+}
+```
+
+```output
+Suit:hearts,spades,clubs,diamonds
+Event:
 ```
 
 **shape impl for non-top-level struct**
@@ -398,4 +449,56 @@ fun main() void {
 
 ```output
 no import
+```
+
+## Enums
+
+**variants builtin**
+
+```metall
+use std.io
+use std.enums
+
+enum Suit U8 = hearts | spades | clubs | diamonds
+
+fun main() void {
+    let all = enums.variants<Suit>()
+    for i in 0..all.len {
+        io.println(all[i].debug_name)
+    }
+}
+```
+
+```output
+hearts
+spades
+clubs
+diamonds
+```
+
+**value_of and from_value convert between an enum and its backing integer**
+
+```metall
+use std.io
+use std.enums
+
+enum Color U8 = red | green | blue
+
+fun main() void {
+    io.println(enums.value_of(Color.green))
+    match enums.from_value<Color>(2) {
+        case None: io.println("none")
+        else c: io.println(c.debug_name)
+    }
+    match enums.from_value<Color>(7) {
+        case None: io.println("out of range")
+        else c: io.println("BAD")
+    }
+}
+```
+
+```output
+1
+blue
+out of range
 ```

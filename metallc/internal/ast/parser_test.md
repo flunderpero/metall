@@ -2359,6 +2359,24 @@ Union(name="Foo")
   variants[2]=SimpleType(name="Bool")
 ```
 
+**Union with a leading pipe**
+
+A leading `|` is optional, so multi-line variant lists read cleanly.
+
+```metall
+union Foo =
+    | Str
+    | Int
+    | Bool
+```
+
+```ast
+Union(name="Foo")
+  variants[0]=SimpleType(name="Str")
+  variants[1]=SimpleType(name="Int")
+  variants[2]=SimpleType(name="Bool")
+```
+
 **Generic union**
 
 ```metall
@@ -2437,6 +2455,170 @@ test.met:1:7: reserved word: Arena
           ^^^^^
 ```
 
+## Enums
+
+**Closed enum, compiler-assigned**
+
+```metall
+enum Ordering U8 = less | equal | greater
+```
+
+```ast
+Enum(name="Ordering")
+  backing=SimpleType(name="U8")
+  variants[0]=EnumVariant(name="less")
+  variants[1]=EnumVariant(name="equal")
+  variants[2]=EnumVariant(name="greater")
+```
+
+**Closed enum with a leading pipe**
+
+```metall
+enum Ordering U8 =
+    | less
+    | equal
+    | greater
+```
+
+```ast
+Enum(name="Ordering")
+  backing=SimpleType(name="U8")
+  variants[0]=EnumVariant(name="less")
+  variants[1]=EnumVariant(name="equal")
+  variants[2]=EnumVariant(name="greater")
+```
+
+**A closed enum with `=` but no variants is rejected**
+
+```metall
+enum Empty U8 =
+```
+
+```error
+test.met:1:15: enum Empty: expected at least one variant after '='
+    enum Empty U8 =
+                  ^
+```
+
+**Closed enum, explicit and negative discriminants**
+
+```metall
+enum Temp I8 = cold = -1 | mild = 0 | hot = 1
+```
+
+```ast
+Enum(name="Temp")
+  backing=SimpleType(name="I8")
+  variants[0]=EnumVariant(name="cold")
+    discriminant=Int(value=-1)
+  variants[1]=EnumVariant(name="mild")
+    discriminant=Int(value=0)
+  variants[2]=EnumVariant(name="hot")
+    discriminant=Int(value=1)
+```
+
+**Open root, no body**
+
+```metall
+enum AppErr U32
+```
+
+```ast
+Enum(name="AppErr",open=true)
+  backing=SimpleType(name="U32")
+```
+
+**Open root with associated-data schema**
+
+```metall
+enum AppErr(posix_code ?I32) U32
+```
+
+```ast
+Enum(name="AppErr",open=true)
+  backing=SimpleType(name="U32")
+  params=FunParam(name="posix_code")
+    type=SimpleType(name="Option")
+      typeArgs=SimpleType(name="I32")
+```
+
+**Closed subset of an open root**
+
+```metall
+enum IOErr AppErr = file_not_found(2) | broken_pipe(32)
+```
+
+```ast
+Enum(name="IOErr")
+  backing=SimpleType(name="AppErr")
+  variants[0]=EnumVariant(name="file_not_found")
+    args=Int(value=2)
+  variants[1]=EnumVariant(name="broken_pipe")
+    args=Int(value=32)
+```
+
+**Associated data with discriminant**
+
+```metall
+enum Color(name Str, rgb U32) U8 = red("Red", 0xff0000) = 1 | green("Green", 0x00ff00) = 2
+```
+
+```ast
+Enum(name="Color")
+  backing=SimpleType(name="U8")
+  params[0]=FunParam(name="name")
+    type=SimpleType(name="Str")
+  params[1]=FunParam(name="rgb")
+    type=SimpleType(name="U32")
+  variants[0]=EnumVariant(name="red")
+    args[0]=String(value="Red")
+    args[1]=Int(value=16711680)
+    discriminant=Int(value=1)
+  variants[1]=EnumVariant(name="green")
+    args[0]=String(value="Green")
+    args[1]=Int(value=65280)
+    discriminant=Int(value=2)
+```
+
+**Enum reserved word**
+
+```metall
+enum Err U8 = a | b
+```
+
+```error
+test.met:1:6: reserved word: Err
+    enum Err U8 = a | b
+         ^^^
+```
+
+**Generic enums are rejected**
+
+```metall module
+enum Bad<T> U8 = a | b
+```
+
+```error
+test.met:1:9: enums cannot be generic
+    enum Bad<T> U8 = a | b
+            ^
+test.met:1:9: unexpected token: <<immediate>
+    enum Bad<T> U8 = a | b
+            ^
+```
+
+**Enums reject copy/sync modifiers**
+
+```metall module
+sync enum E U8 = a | b
+```
+
+```error
+test.met:1:1: unexpected token: expected <enum>, got <sync>
+    sync enum E U8 = a | b
+    ^^^^
+```
+
 ## Match
 
 **Match with else**
@@ -2485,6 +2667,23 @@ Match(arms=2,arm[0].pattern=n2:SimpleType,arm[0].binding=n,arm[1].pattern=n8:Sim
     exprs=Ident(name="n")
   arm[1].body=Block()
     exprs=Int(value=0)
+```
+
+**Match with enum variant and subset patterns**
+
+```metall
+match e { case Color.red: 1 case IOErr io: 2 else: 3 }
+```
+
+```ast
+Match(arms=2,arm[0].pattern=n3:FieldAccess,arm[1].pattern=n6:SimpleType,arm[1].binding=io)
+  expr=Ident(name="e")
+  arm[0].body=Block()
+    exprs=Int(value=1)
+  arm[1].body=Block()
+    exprs=Int(value=2)
+  else.body=Block()
+    exprs=Int(value=3)
 ```
 
 **Match else with guard**
@@ -2732,6 +2931,18 @@ Match(arms=1,arm[0].pattern=n3:SimpleType,arm[0].binding=__try,else.binding=__tr
   else.body=Block()
     exprs=Return()
       expr=Ident(name="__try_e")
+```
+
+**Try with a qualified variant is rejected**
+
+```metall
+try foo() is Color.red
+```
+
+```error
+test.met:1:14: `try ... is` expects a whole enum subset, not a qualified variant
+    try foo() is Color.red
+                 ^^^^^
 ```
 
 **Try with else desugars to match**

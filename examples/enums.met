@@ -1,0 +1,155 @@
+--- Enums in Metall: a tour of every feature.
+
+    Run with `just examples`, or directly:
+      just metallc run examples/enums.met
+
+    At the IR level an enum value is just the integer it represents. ---
+use std.io
+use std.enums
+
+--- A closed, standalone enum. Values are compiler-assigned: less=0, equal=1,
+    greater=2. ---
+enum Ordering U8 = less | equal | greater
+
+--- Enums can have methods. `match` on a closed enum is exhaustive, so it needs
+    no `else`. Variants are always namespaced: `Ordering.less`. ---
+pub fun Ordering.flip(o Ordering) Ordering {
+    match o {
+        case Ordering.less: Ordering.greater
+        case Ordering.equal: Ordering.equal
+        case Ordering.greater: Ordering.less
+    }
+}
+
+--- Explicit discriminants. They are all-or-none (no mixing). The backing type
+    is always an unsigned integer (U8, U16, U32, U64). ---
+enum HttpStatus U16 = ok = 200 | not_found = 404 | teapot = 418
+
+--- Associated data, Java-enum style. The schema is declared in parens on the
+    type. Values follow function-call semantics and must be compile-time
+    constants, emitted once per variant to .rodata. The `= N` discriminant is
+    separate from the associated data. ---
+enum Color(name Str, rgb U32) U8 = red("Red", 0xff0000) = 1
+                                 | green("Green", 0x00ff00) = 2
+                                 | blue("Blue", 0x0000ff) = 3
+
+--- An open root: no variants of its own, just an extensible family marker
+    backed by U32. The associated-data schema lives on the root. `?Int` is
+    optional and defaults to `none`. (`Err` itself is a reserved builtin, so the
+    demo root is named `AppErr`.) ---
+enum AppErr(posix_code ?Int) U32
+
+--- Closed subsets of the open root. Every IOErr value is also an AppErr and
+    coerces to it. Subset discriminants are drawn from one dense, whole-program
+    pool sized by the root's U32, so they are compiler-assigned (no `= N`). ---
+enum IOErr AppErr = file_not_found(2) | permission_denied(13) | broken_pipe(32)
+
+--- Another subset. `posix_code` is omitted, so it defaults to `none`. A subset
+    is itself a regular closed enum. ---
+enum ParseErr AppErr = unexpected_token | unexpected_eof
+
+--- A method on the open root applies to every variant of every subset.
+    `.debug_name` is generated for every enum variant. For open enums it is the
+    fully-qualified name (e.g. "examples.enums.IOErr.broken_pipe"); for closed
+    enums it is the bare variant name (e.g. "red"). There is no from_debug_name. ---
+pub fun AppErr.fmt(e AppErr, sb &mut StrBuilder) void {
+    sb.str(e.debug_name)
+    match e.posix_code {
+        case None:
+        else code:
+            sb.str(" (errno ")
+            sb.int(code)
+            sb.str(")")
+    }
+}
+
+--- `Enum` is a type constraint. Its associated type `.Item` is the backing
+    integer type, so `RawEnum<Color>.value` has type U8. ---
+struct RawEnum<T Enum> {
+    value T.Item
+}
+
+--- A subset on its own is a closed enum, so this match is exhaustive. ---
+fun io_message(e IOErr) Str {
+    match e {
+        case IOErr.file_not_found: "file not found"
+        case IOErr.permission_denied: "permission denied"
+        case IOErr.broken_pipe: "broken pipe"
+    }
+}
+
+--- `match` on an open enum can never be exhaustive, so it needs an `else`.
+    `case IOErr.file_not_found` matches one variant; `case IOErr e` matches the
+    whole subset. ---
+fun classify(e AppErr) Str {
+    match e {
+        case IOErr.file_not_found: "the file is missing"
+        case IOErr io_err: io_message(io_err)
+        else other: other.debug_name
+    }
+}
+
+fun describe_color(c Color, @a Arena) Str {
+    let sb = StrBuilder.new(32, @a)
+    sb.str(c.debug_name)
+    sb.str(" = ")
+    sb.str(c.name)
+    sb.str(" #")
+    sb.u32(c.rgb, 16, false, 6)
+    sb.as_str()
+}
+
+fun main() void {
+    let @a = Arena()
+
+    -- Closed enum, method, and `.debug_name`.
+    io.println(Ordering.less.flip().debug_name)
+
+    -- Explicit discriminant.
+    io.println(HttpStatus.teapot.debug_name)
+
+    -- Associated data, read from a variant constant and from a value.
+    io.println(describe_color(Color.green, @a))
+
+    -- `variants<T>()` yields every variant of a closed enum as a slice.
+    let sb = StrBuilder.new(64, @a)
+    let all = enums.variants<Color>()
+    for i in 0..all.len {
+        sb.str(all[i].name)
+        sb.str(" ")
+    }
+    io.println(sb.as_str())
+
+    -- Open enums: a subset value coerces to the root, and a root method works.
+    let broken AppErr = IOErr.broken_pipe
+    let sb2 = StrBuilder.new(64, @a)
+    broken.fmt(sb2)
+    io.println(sb2.as_str())
+
+    -- A subset variant whose optional associated data defaults to `none`.
+    let eof AppErr = ParseErr.unexpected_eof
+    let sb3 = StrBuilder.new(64, @a)
+    eof.fmt(sb3)
+    io.println(sb3.as_str())
+
+    -- Namespaced vs. whole-subset matching on an open enum.
+    io.println(classify(IOErr.file_not_found))
+    io.println(classify(IOErr.permission_denied))
+    io.println(classify(ParseErr.unexpected_token))
+
+    -- Associated data on a variant constant is itself a compile-time value.
+    match IOErr.file_not_found.posix_code {
+        case None: io.println("no errno")
+        else code:
+            let sb4 = StrBuilder.new(16, @a)
+            sb4.str("errno ")
+            sb4.int(code)
+            io.println(sb4.as_str())
+    }
+
+    -- Reflection: RawEnum<Color>.value is U8 because Color is backed by U8.
+    let raw = RawEnum<Color>(2)
+    let sb5 = StrBuilder.new(16, @a)
+    sb5.u8(raw.value)
+    io.println(sb5.as_str())
+}

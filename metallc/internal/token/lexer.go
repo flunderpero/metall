@@ -27,6 +27,7 @@ const (
 	Dot
 	DotDot
 	Else
+	Enum
 	EOF
 	Error
 	Eq
@@ -114,6 +115,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Dot:                   ".",
 	DotDot:                "..",
 	Else:                  "<else>",
+	Enum:                  "<enum>",
 	EOF:                   "<EOF>",
 	Error:                 "<error>",
 	Eq:                    "=",
@@ -216,6 +218,7 @@ var keywords = map[string]TokenKind{ //nolint:gochecknoglobals
 	"continue": Continue,
 	"defer":    Defer,
 	"else":     Else,
+	"enum":     Enum,
 	"export":   Export,
 	"extern":   Extern,
 	"false":    False,

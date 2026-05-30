@@ -568,6 +568,12 @@ func (d *debugTypes) typeLabelForID(typeID TypeID) string { //nolint:funlen
 			d.legends = append(d.legends, debugTypesLegend{label, d.unionDetail(kind, typeID)})
 		}
 		return label
+	case EnumType:
+		label, isNew := d.reserveLabel("enum", typeID)
+		if isNew {
+			d.legends = append(d.legends, debugTypesLegend{label, d.enumDetail(kind)})
+		}
+		return label
 	case ShapeType:
 		label, isNew := d.reserveLabel("shape", typeID)
 		if isNew {
@@ -693,6 +699,21 @@ func (d *debugTypes) unionDetail(kind UnionType, typeID TypeID) string {
 			sb.WriteString(" | ")
 		}
 		sb.WriteString(d.typeLabelForID(v))
+	}
+	return sb.String()
+}
+
+func (d *debugTypes) enumDetail(kind EnumType) string {
+	var sb strings.Builder
+	sb.WriteString(kind.Name)
+	if len(kind.Variants) > 0 {
+		sb.WriteString(" = ")
+		for i, v := range kind.Variants {
+			if i > 0 {
+				sb.WriteString(" | ")
+			}
+			sb.WriteString(v.Name)
+		}
 	}
 	return sb.String()
 }

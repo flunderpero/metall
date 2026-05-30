@@ -25,7 +25,17 @@ pub struct UnionType {
     pub variants []&Type
 }
 
-pub union Type = BoolType | StrType | VoidType | NeverType | IntType | StructType | UnionType
+pub struct EnumVariant {
+    pub name Str
+}
+
+pub struct EnumType {
+    pub name Str
+    pub backing &Type
+    pub variants []EnumVariant
+}
+
+pub union Type = BoolType | StrType | VoidType | NeverType | IntType | StructType | UnionType | EnumType
 
 pub fun type_of<T>() Type {
     panic("comp.type_of must only be used as a macro argument")

@@ -158,6 +158,27 @@ func (e *Engine) Consts() []ConstWork {
 	return e.consts
 }
 
+// Enums returns the enums that own an associated-data table: standalone closed
+// enums and open roots. Every variant has a generated debug_name, so all of
+// them get a table. Subsets contribute their variants to the root's table.
+func (e *Engine) Enums() []TypeWork {
+	var result []TypeWork
+	for typeID, cached := range e.env.reg.types {
+		et, ok := cached.Type.Kind.(EnumType)
+		if !ok || et.Root != InvalidTypeID {
+			continue
+		}
+		result = append(result, TypeWork{NodeID: cached.Type.NodeID, TypeID: typeID, Env: e.env})
+	}
+	slices.SortFunc(result, func(a, b TypeWork) int {
+		return strings.Compare(
+			base.Cast[EnumType](e.env.Type(a.TypeID).Kind).Name,
+			base.Cast[EnumType](e.env.Type(b.TypeID).Kind).Name,
+		)
+	})
+	return result
+}
+
 func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	if cached, ok := e.env.cachedNodeType(nodeID); ok {
 		if cached.Status.Failed() {
@@ -200,7 +221,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkContinue(node.Span)
 	case ast.Defer:
 		typeID, status = e.checkDefer(nodeKind, node.Span)
-	case ast.Fun, ast.Struct, ast.Shape, ast.Union:
+	case ast.Fun, ast.Struct, ast.Shape, ast.Union, ast.Enum:
 		cachedType, ok := e.env.cachedNodeType(nodeID)
 		if !ok {
 			nodes := []ast.NodeID{nodeID}
@@ -508,7 +529,7 @@ func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *T
 			lastExprTypeID, status = e.Query(exprNodeID)
 			if !status.Failed() && e.isInstantiable(lastExprTypeID) && lastExprTypeID != e.voidTyp {
 				switch e.ast.Node(exprNodeID).Kind.(type) {
-				case ast.Fun, ast.Struct, ast.Shape, ast.Union:
+				case ast.Fun, ast.Struct, ast.Shape, ast.Union, ast.Enum:
 				default:
 					e.diag(
 						e.ast.Node(exprNodeID).Span,
@@ -999,6 +1020,9 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		return InvalidTypeID, TypeFailed
 	}
 	e.env.SetPathBinding(nodeID, binding)
+	if v, ok := e.ast.Node(binding.Decl).Kind.(ast.EnumVariant); ok {
+		e.env.recordEnumVariantRef(nodeID, binding.TypeID, v.Name.Name)
+	}
 	return e.resolveBinding(nodeID, binding)
 }
 
@@ -1037,11 +1061,16 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 			}
 		}
 	}
+	if enum, ok := targetTyp.Kind.(EnumType); ok {
+		if typeID, handled := e.checkEnumFieldAccess(nodeID, fieldAccess, enum, targetTyp.ID); handled {
+			return typeID, TypeOK
+		}
+	}
 	if typeID, status, handled := e.resolveGenerics(nodeID, nil); handled {
 		return typeID, status
 	}
 	switch kind := targetTyp.Kind.(type) {
-	case StructType, UnionType, IntType, BoolType, AllocatorType, SliceType:
+	case StructType, UnionType, IntType, BoolType, AllocatorType, SliceType, EnumType:
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
 	case TypeParamType:
 		e.diagTypeParamFieldAccess(kind, fieldAccess, typeName)
@@ -1050,6 +1079,30 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		e.diag(targetSpan, "cannot access field on non-struct type: %s", typeName)
 	}
 	return InvalidTypeID, TypeFailed
+}
+
+// checkEnumFieldAccess resolves a module-qualified variant reference
+// (`ord.Color.red`, where the target is the enum type), a value's generated
+// `debug_name`, and associated-data fields. Local `Color.red` is a bound name
+// (checkIdent), not a field access. Returns handled=false for any other name.
+func (e *Engine) checkEnumFieldAccess(
+	nodeID ast.NodeID, fieldAccess ast.FieldAccess, enum EnumType, enumTypeID TypeID,
+) (TypeID, bool) {
+	field := fieldAccess.Field.Name
+	if e.isTypeReference(fieldAccess.Target) {
+		if enum.VariantIndex(field) >= 0 {
+			e.env.recordEnumVariantRef(nodeID, enumTypeID, field)
+			return enumTypeID, true
+		}
+		return InvalidTypeID, false
+	}
+	assoc := base.Cast[StructType](e.env.Type(enum.AssociatedDataStruct).Kind)
+	for _, f := range assoc.Fields {
+		if f.Name == field {
+			return f.Type, true
+		}
+	}
+	return InvalidTypeID, false
 }
 
 func (e *Engine) diagTypeParamFieldAccess(
@@ -1422,7 +1475,7 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:
 	var expected string
 	switch binary.Op {
 	case ast.BinaryOpEq, ast.BinaryOpNeq:
-		valid = e.env.isIntType(lhsTypeID) || lhsTypeID == e.boolTyp
+		valid = e.env.isIntType(lhsTypeID) || lhsTypeID == e.boolTyp || e.env.isEnumType(lhsTypeID)
 		expected = "an integer or Bool"
 	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
 		valid = e.env.isIntType(lhsTypeID)
@@ -1456,7 +1509,7 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:
 			return InvalidTypeID, TypeDepFailed
 		}
 	}
-	if rhsTypeID != lhsTypeID {
+	if rhsTypeID != lhsTypeID && !e.env.sameEnumFamily(lhsTypeID, rhsTypeID) {
 		span := e.ast.Node(binary.RHS).Span
 		e.diag(
 			span,
@@ -2101,7 +2154,7 @@ func (e *Engine) isCopyable(typeID TypeID) bool {
 		return true
 	case ArrayType:
 		return e.isCopyable(kind.Elem)
-	case RefType, SliceType, FunType, AllocatorType, TypeParamType, ShapeType:
+	case RefType, SliceType, FunType, AllocatorType, TypeParamType, ShapeType, EnumType:
 		return true
 	default:
 		panic(fmt.Sprintf("isCopyable: unknown type: %T", kind))

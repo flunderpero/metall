@@ -113,6 +113,151 @@ fun main() void {
 hello there 42!
 ```
 
+## Enums
+
+An enum is a set of named, integer-backed constants. Variants can carry constant
+associated data and methods, and you `match` on them like on a union.
+
+```metall
+use std.io
+
+-- Discriminants are auto-assigned from 0 if not set explicitly. 
+enum Perm U8 = execute = 1 | write = 2 | read = 4
+
+-- Methods are namespaced functions, just like on a struct.
+pub fun Perm.symbol(p Perm) Str {
+    match p {
+        case Perm.read: "r"
+        case Perm.write: "w"
+        case Perm.execute: "x"
+    }
+}
+
+fun main() void {
+    io.println(Perm.read.symbol())
+    io.println(Perm.execute.symbol())
+}
+```
+
+```output
+r
+x
+```
+
+Each associated-data field becomes a read-only accessor, and every variant also
+gets a generated `debug_name`.
+
+```metall
+use std.io
+
+enum Planet(label Str, moons U8) U8 =
+    | mercury("Mercury", 0) = 1
+    | earth("Earth", 1) = 2
+    | mars("Mars", 2) = 3
+
+fun main() void {
+    io.println(Planet.mars.label)
+    io.println(Planet.mars.moons)
+    io.println(Planet.earth.debug_name)
+}
+```
+
+```output
+Mars
+2
+earth
+```
+
+An _open_ enum declares no variants of its own. Subsets add variants and coerce
+up to the open root, so a hierarchy can grow across modules.
+
+```metall
+use std.io
+
+enum Event U16
+enum Mouse Event = press | release | move
+enum Key Event = down | up
+
+fun describe(e Event) Str {
+    match e {
+        -- A bare subset matches all of its variants. A dotted name matches one.
+        case Mouse: "mouse event"
+        case Key.down: "key down"
+        case Key.up: "key up"
+        -- A match on an open enum is never exhaustive, so it needs an else.
+        else: "other event"
+    }
+}
+
+fun main() void {
+    -- A subset value coerces to the open root.
+    let e = Mouse.move
+    io.println(describe(e))
+    io.println(describe(Key.down))
+}
+```
+
+```output
+mouse event
+key down
+```
+
+`try e is Mouse` narrows the open enum to the subset, or short-circuits through
+the else.
+
+```metall
+use std.io
+
+enum Event U16
+enum Mouse Event = press | release | move
+enum Key Event = down | up
+
+fun on_mouse(e Event) Str {
+    let m = try e is Mouse else { return "not a mouse event" }
+    -- m has type Mouse here, so the match is over just the subset.
+    match m {
+        case Mouse.press: "press"
+        case Mouse.release: "release"
+        case Mouse.move: "move"
+    }
+}
+
+fun main() void {
+    io.println(on_mouse(Mouse.move))
+    io.println(on_mouse(Key.down))
+}
+```
+
+```output
+move
+not a mouse event
+```
+
+`enums.variants<T>()` returns every variant of an enum.
+
+```metall
+use std.io
+use std.enums
+
+enum Planet(label Str, moons U8) U8 =
+    | mercury("Mercury", 0)
+    | earth("Earth", 1)
+    | mars("Mars", 2)
+
+fun main() void {
+    let all = enums.variants<Planet>()
+    for i in 0..all.len {
+        io.println(all[i].label)
+    }
+}
+```
+
+```output
+Mercury
+Earth
+Mars
+```
+
 ## Mutability
 
 Everything in Metall is immutable by default.

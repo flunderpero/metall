@@ -108,6 +108,12 @@ type TypeEnv struct {
 	callDefaults       map[ast.NodeID][]ast.NodeID
 	unionWraps         map[ast.NodeID]unionWrap
 	constArrays        map[ast.NodeID]bool
+	enumVariantRefs    map[ast.NodeID]enumVariantRef
+}
+
+type enumVariantRef struct {
+	EnumTypeID TypeID
+	Variant    string
 }
 
 func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
@@ -139,6 +145,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
 		constArrays:        map[ast.NodeID]bool{},
+		enumVariantRefs:    map[ast.NodeID]enumVariantRef{},
 	}
 }
 
@@ -163,6 +170,7 @@ func (e *TypeEnv) NewChildEnv(node ast.NodeID) *TypeEnv {
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
 		constArrays:        map[ast.NodeID]bool{},
+		enumVariantRefs:    map[ast.NodeID]enumVariantRef{},
 	}
 }
 
@@ -341,6 +349,10 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 		astUnion := base.Cast[ast.Union](e.ast.Node(cached.Type.NodeID).Kind)
 		scope := e.scopeGraph.NodeScope(cached.Type.NodeID)
 		return e.typeNameAndTypeArgsString(scope.NamespacedName(astUnion.Name.Name), kind.TypeArgs)
+	case EnumType:
+		astEnum := base.Cast[ast.Enum](e.ast.Node(cached.Type.NodeID).Kind)
+		scope := e.scopeGraph.NodeScope(cached.Type.NodeID)
+		return scope.NamespacedName(astEnum.Name.Name)
 	case ArrayType:
 		return fmt.Sprintf("[%s %d]", e.TypeDisplay(kind.Elem), kind.Len)
 	case SliceType:
@@ -386,6 +398,24 @@ func (e *TypeEnv) IterTypes(f func(*Type, TypeStatus) bool) {
 	}
 }
 
+// EnumFamilyVariants returns the variants to switch over when reading a value's
+// generated member: a closed enum or subset's own variants, or every subset's
+// variants for an open root.
+func (e *TypeEnv) EnumFamilyVariants(enumTypeID TypeID) []EnumVariantInfo {
+	et := base.Cast[EnumType](e.Type(enumTypeID).Kind)
+	if !et.IsOpen {
+		return et.Variants
+	}
+	var all []EnumVariantInfo
+	for _, cached := range e.reg.types {
+		if sub, ok := cached.Type.Kind.(EnumType); ok && sub.Root == enumTypeID {
+			all = append(all, sub.Variants...)
+		}
+	}
+	slices.SortFunc(all, func(a, b EnumVariantInfo) int { return a.Discriminant.Cmp(b.Discriminant) })
+	return all
+}
+
 func (e *TypeEnv) UnionWrap(nodeID ast.NodeID) (TypeID, int, bool) {
 	w, ok := e.unionWraps[nodeID]
 	if ok {
@@ -428,6 +458,16 @@ func (e *TypeEnv) GenericSpec(typeID TypeID) (*GenericSpec, bool) {
 	return spec, ok
 }
 
+func (e *TypeEnv) EnumVariantRef(id ast.NodeID) (TypeID, string, bool) {
+	if r, ok := e.enumVariantRefs[id]; ok {
+		return r.EnumTypeID, r.Variant, true
+	}
+	if e.parent != nil {
+		return e.parent.EnumVariantRef(id)
+	}
+	return 0, "", false
+}
+
 func (e *TypeEnv) setGenericOrigin(child, origin TypeID) {
 	e.reg.genericOrigin[child] = origin
 }
@@ -446,6 +486,10 @@ func (e *TypeEnv) setFunTypeParams(funNodeID ast.NodeID, params []ast.NodeID) {
 
 func (e *TypeEnv) recordUnionWrap(nodeID ast.NodeID, unionTypeID TypeID, variantIndex int) {
 	e.unionWraps[nodeID] = unionWrap{unionTypeID, variantIndex}
+}
+
+func (e *TypeEnv) recordEnumVariantRef(id ast.NodeID, enumTypeID TypeID, variant string) {
+	e.enumVariantRefs[id] = enumVariantRef{enumTypeID, variant}
 }
 
 func (e *TypeEnv) containsMutablePart(typeID TypeID) bool {
@@ -631,6 +675,32 @@ func (e *TypeEnv) isIntType(typeID TypeID) bool {
 	return ok
 }
 
+func (e *TypeEnv) isEnumType(typeID TypeID) bool {
+	_, ok := e.Type(typeID).Kind.(EnumType)
+	return ok
+}
+
+// enumFamilyRoot returns the open root of a subset, or the type itself for a
+// closed enum or open root. InvalidTypeID if the type is not an enum.
+func (e *TypeEnv) enumFamilyRoot(typeID TypeID) TypeID {
+	enum, ok := e.Type(typeID).Kind.(EnumType)
+	if !ok {
+		return InvalidTypeID
+	}
+	if enum.Root != InvalidTypeID {
+		return enum.Root
+	}
+	return typeID
+}
+
+// sameEnumFamily reports whether two enum types share one discriminant pool, so
+// their values are comparable. True for a subset and its root, sibling subsets,
+// or the same closed enum.
+func (e *TypeEnv) sameEnumFamily(a, b TypeID) bool {
+	root := e.enumFamilyRoot(a)
+	return root != InvalidTypeID && root == e.enumFamilyRoot(b)
+}
+
 func (e *TypeEnv) hasTypeParam(typeIDs []TypeID) bool {
 	return slices.ContainsFunc(typeIDs, e.containsTypeParam)
 }
@@ -669,6 +739,8 @@ func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 	case StructType:
 		ns = kind.Name
 	case UnionType:
+		ns = kind.Name
+	case EnumType:
 		ns = kind.Name
 	case IntType:
 		ns = kind.Name

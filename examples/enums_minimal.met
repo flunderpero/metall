@@ -1,0 +1,4 @@
+fun main() void {
+    enum Colors U8 = red | green | blue
+    DebugIntern.print_str(Colors.green.debug_name)
+}

@@ -5648,3 +5648,271 @@ test.met:3:17: type mismatch: expected Int, got Str
                     ^^^^^^^^^^^^^^^^^^^^^^
     }
 ```
+
+## Enums
+
+**closed, open, subsets, match, methods, debug_name**
+
+```metall
+enum Ordering U8 = less | equal | greater
+enum HttpStatus U16 = ok = 200 | not_found = 404 | teapot = 418
+enum AppErr U32
+enum IOErr AppErr = file_not_found | permission_denied | broken_pipe
+enum ParseErr AppErr = unexpected_token | unexpected_eof
+
+pub fun Ordering.flip(o Ordering) Ordering {
+    match o {
+        case Ordering.less: Ordering.greater
+        case Ordering.equal: Ordering.equal
+        case Ordering.greater: Ordering.less
+    }
+}
+
+fun classify(e AppErr) Str {
+    match e {
+        case IOErr.file_not_found: "missing file"
+        case IOErr io_err: io_err.debug_name
+        else other: other.debug_name
+    }
+}
+
+fun main() void {
+    DebugIntern.print_str(Ordering.less.flip().debug_name)
+    DebugIntern.print_str(HttpStatus.teapot.debug_name)
+    let broken AppErr = IOErr.broken_pipe
+    DebugIntern.print_str(broken.debug_name)
+    DebugIntern.print_str(classify(IOErr.file_not_found))
+    DebugIntern.print_str(classify(IOErr.permission_denied))
+    DebugIntern.print_str(classify(ParseErr.unexpected_eof))
+}
+```
+
+```output
+greater
+teapot
+test.IOErr.broken_pipe
+missing file
+test.IOErr.permission_denied
+test.ParseErr.unexpected_eof
+```
+
+**enums across modules**
+
+```metall
+use local.enum_shapes
+
+fun describe(o enum_shapes.Ordering) Str {
+    match o {
+        case enum_shapes.Ordering.less: "lt"
+        case enum_shapes.Ordering.equal: "eq"
+        case enum_shapes.Ordering.greater: "gt"
+    }
+}
+
+fun main() void {
+    DebugIntern.print_str(enum_shapes.Ordering.greater.debug_name)
+    DebugIntern.print_str(describe(enum_shapes.Ordering.less))
+    let e enum_shapes.AppErr = enum_shapes.IOErr.broken_pipe
+    DebugIntern.print_str(e.debug_name)
+    match e {
+        case enum_shapes.IOErr io_err: DebugIntern.print_str(io_err.debug_name)
+        else: DebugIntern.print_str("other")
+    }
+}
+```
+
+```output
+greater
+lt
+local.enum_shapes.IOErr.broken_pipe
+local.enum_shapes.IOErr.broken_pipe
+```
+
+**associated data and the Enum constraint**
+
+```metall
+enum Color(name Str, rgb U32) U8 = red("Red", 0xff0000) = 1 | green("Green", 0x00ff00) = 2
+enum AppErr(code ?Int) U32
+enum IOErr AppErr = file_not_found(2) | broken_pipe
+
+struct RawEnum<T Enum> {
+    value T.Item
+}
+
+fun code_of(e AppErr) Int {
+    match e.code {
+        case None: -1
+        else c: c
+    }
+}
+
+fun main() void {
+    DebugIntern.print_str(Color.red.name)
+    DebugIntern.print_str(Color.green.debug_name)
+    let r = RawEnum<Color>(2)
+    if r.value == U8(2) { DebugIntern.print_str("Item is U8") }
+    DebugIntern.print_int(code_of(IOErr.file_not_found))
+    DebugIntern.print_int(code_of(IOErr.broken_pipe))
+}
+```
+
+```output
+Red
+green
+Item is U8
+2
+-1
+```
+
+**a struct object as associated data (evaluated like a module-level constant)**
+
+```metall
+struct Info {
+    label Str
+    code U16
+}
+
+enum Status(info Info) U8 = ok(Info("OK", 200)) | missing(Info("Missing", 404))
+
+fun show(s Status) Str {
+    s.info.label
+}
+
+fun main() void {
+    DebugIntern.print_str(Status.ok.info.label)
+    DebugIntern.print_int(Status.missing.info.code.to_int())
+    DebugIntern.print_str(show(Status.missing))
+}
+```
+
+```output
+OK
+404
+Missing
+```
+
+**match guards (a guarded arm proves nothing, just like a union)**
+
+```metall
+enum Ordering U8 = less | equal | greater
+enum AppErr U32
+enum IOErr AppErr = file_not_found | permission_denied | broken_pipe
+
+fun pick(o Ordering, prefer_eq Bool) Str {
+    match o {
+        case Ordering.less: "lt"
+        case Ordering.equal if prefer_eq: "EQ!"
+        case Ordering.equal: "eq"
+        case Ordering.greater: "gt"
+    }
+}
+
+fun describe(e AppErr, verbose Bool) Str {
+    match e {
+        case IOErr io if verbose: io.debug_name
+        case IOErr.broken_pipe: "pipe"
+        else: "other"
+    }
+}
+
+fun main() void {
+    DebugIntern.print_str(pick(Ordering.equal, true))
+    DebugIntern.print_str(pick(Ordering.equal, false))
+    DebugIntern.print_str(pick(Ordering.greater, true))
+    DebugIntern.print_str(describe(IOErr.file_not_found, true))
+    DebugIntern.print_str(describe(IOErr.file_not_found, false))
+    DebugIntern.print_str(describe(IOErr.broken_pipe, false))
+    DebugIntern.print_str(describe(IOErr.broken_pipe, true))
+}
+```
+
+```output
+EQ!
+eq
+gt
+test.IOErr.file_not_found
+other
+pipe
+test.IOErr.broken_pipe
+```
+
+**try narrows an open enum to a subset, else propagates the error**
+
+```metall
+enum AppErr U32
+enum IOErr AppErr = file_not_found | broken_pipe
+enum NetErr AppErr = timeout
+
+fun only_io(e AppErr) AppErr {
+    let io = try e is IOErr
+    match io {
+        case IOErr.file_not_found: IOErr.broken_pipe
+        case IOErr.broken_pipe: IOErr.file_not_found
+    }
+}
+
+fun main() void {
+    DebugIntern.print_str(only_io(IOErr.file_not_found).debug_name)
+    DebugIntern.print_str(only_io(NetErr.timeout).debug_name)
+}
+```
+
+```output
+test.IOErr.broken_pipe
+test.NetErr.timeout
+```
+
+**a local enum declared inside a function**
+
+```metall
+fun main() void {
+    enum Coin(cents U8) U8 = penny(1) | dime(10) | quarter(25)
+    DebugIntern.print_int(Coin.quarter.cents.to_int())
+    DebugIntern.print_str(Coin.penny.debug_name)
+}
+```
+
+```output
+25
+penny
+```
+
+**a module constant can read enum associated data (filled before consts)**
+
+```metall
+enum Level(weight Int) U8 = low(1) | high(9)
+let combined Int = Level.low.weight + Level.high.weight
+
+fun main() void {
+    DebugIntern.print_int(combined)
+}
+```
+
+```output
+10
+```
+
+**== and != compare enum values within one family**
+
+```metall
+enum Suit U8 = clubs | hearts
+enum AppErr U32
+enum IOErr AppErr = file_not_found | broken_pipe
+enum NetErr AppErr = timeout
+
+fun main() void {
+    if Suit.clubs == Suit.clubs { DebugIntern.print_str("eq") }
+    if Suit.clubs != Suit.hearts { DebugIntern.print_str("neq") }
+    -- a subset value and a root value share a discriminant pool
+    let e AppErr = IOErr.broken_pipe
+    if e == IOErr.broken_pipe { DebugIntern.print_str("family-eq") }
+    if e == NetErr.timeout { DebugIntern.print_str("BAD") } else { DebugIntern.print_str("family-neq") }
+}
+```
+
+```output
+eq
+neq
+family-eq
+family-neq
+```

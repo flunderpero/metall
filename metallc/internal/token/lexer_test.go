@@ -226,6 +226,7 @@ func TestLexer(t *testing.T) {
 		{"extern", `extern`, []want{{Extern, "", "1:1-1:6"}}},
 		{"unsafe", `unsafe`, []want{{Unsafe, "", "1:1-1:6"}}},
 		{"union", `union`, []want{{Union, "", "1:1-1:5"}}},
+		{"enum", `enum`, []want{{Enum, "", "1:1-1:4"}}},
 		{"match", `match`, []want{{Match, "", "1:1-1:5"}}},
 		{"case", `case`, []want{{Case, "", "1:1-1:4"}}},
 		{"when", `when`, []want{{When, "", "1:1-1:4"}}},

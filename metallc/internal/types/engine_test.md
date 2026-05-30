@@ -10894,3 +10894,564 @@ test.met:1:9: parameter type 'void' is not exportable to C
 
 ```error
 ```
+
+## Enums
+
+**Signed backing type is rejected**
+
+```metall
+{ enum Bad I8 = a | b }
+```
+
+```error
+test.met:1:12: enum Bad backing type must be an unsigned integer, got I8
+    { enum Bad I8 = a | b }
+               ^^
+```
+
+
+**Mixed explicit and implicit discriminants**
+
+```metall
+{ enum Mix U8 = a = 1 | b }
+```
+
+```error
+test.met:1:3: enum Mix: discriminants must be all-or-none
+    { enum Mix U8 = a = 1 | b }
+      ^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+**Duplicate variant**
+
+```metall
+{ enum Dup U8 = a | a }
+```
+
+```error
+test.met:1:21: duplicate enum variant: a
+    { enum Dup U8 = a | a }
+                        ^
+```
+
+**Backed by a non-integer, non-enum type**
+
+```metall
+{ struct S {} enum Bad S = a | b }
+```
+
+```error
+test.met:1:24: enum Bad must be backed by an integer type or an open enum, got S
+    { struct S {} enum Bad S = a | b }
+                           ^
+```
+
+**Subset variant cannot have an explicit discriminant**
+
+```metall module
+enum Root U32
+enum Sub Root = a = 5 | b = 6
+```
+
+```error
+test.met:2:21: subset enum variant a cannot have an explicit discriminant
+    enum Root U32
+    enum Sub Root = a = 5 | b = 6
+                        ^
+```
+
+**Duplicate explicit discriminant value**
+
+```metall
+{ enum E U8 = a = 5 | b = 5 }
+```
+
+```error
+test.met:1:27: duplicate enum discriminant: 5
+    { enum E U8 = a = 5 | b = 5 }
+                              ^
+```
+
+**Variant named debug_name is reserved**
+
+```metall
+{ enum E U8 = debug_name | other }
+```
+
+```error
+test.met:1:15: debug_name is a reserved enum member name
+    { enum E U8 = debug_name | other }
+                  ^^^^^^^^^^
+```
+
+**Associated value referencing an unbound function is rejected**
+
+Enum bodies are resolved before top-level functions are bound, so a forward
+reference to one is an unbound symbol.
+
+```metall module
+fun f() U32 { 1 }
+enum C(x U32) U8 = a(f())
+```
+
+```error
+test.met:2:22: symbol not defined: f
+    fun f() U32 { 1 }
+    enum C(x U32) U8 = a(f())
+                         ^
+```
+
+**Associated value cannot be a function call**
+
+```metall
+{ enum C(x U32) U8 = a(U8(1).to_u32()) }
+```
+
+```error
+test.met:1:24: enum associated values cannot contain function calls
+    { enum C(x U32) U8 = a(U8(1).to_u32()) }
+                           ^^^^^^^^^^^^^^
+```
+
+**Missing required associated value**
+
+```metall
+{ enum C(x U32) U8 = a }
+```
+
+```error
+test.met:1:22: enum variant a: missing associated value for x
+    { enum C(x U32) U8 = a }
+                         ^
+```
+
+**Too many associated values**
+
+```metall
+{ enum C(x U32) U8 = a(1, 2) }
+```
+
+```error
+test.met:1:22: enum variant a: expected at most 1 associated values, got 2
+    { enum C(x U32) U8 = a(1, 2) }
+                         ^
+```
+
+**Nested subset is rejected**
+
+```metall module
+enum Root U32
+enum Sub Root = a | b
+enum Deep Sub = x | y
+```
+
+```error
+test.met:3:11: enum Deep: test.Sub is not an open enum and cannot be subsetted
+    enum Sub Root = a | b
+    enum Deep Sub = x | y
+              ^^^
+```
+
+**Associated-data field defaults are rejected**
+
+```metall
+{ enum C(x U32 = 5) U8 = a | b }
+```
+
+```error
+test.met:1:10: associated-data field defaults are not supported; use ?T for an optional field
+    { enum C(x U32 = 5) U8 = a | b }
+             ^
+```
+
+**Explicit discriminant out of backing range**
+
+```metall
+{ enum C U8 = a = 300 }
+```
+
+```error
+test.met:1:19: discriminant 300 does not fit backing type U8
+    { enum C U8 = a = 300 }
+                      ^^^
+```
+
+**Subset cannot declare its own associated-data params**
+
+```metall module
+enum Root U32
+enum Sub(x U8) Root = a | b
+```
+
+```error
+test.met:2:1: subset enum Sub cannot declare its own associated-data params
+    enum Root U32
+    enum Sub(x U8) Root = a | b
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+**Subset of an open enum must have variants**
+
+```metall module
+enum Root U32
+enum Sub Root
+```
+
+```error
+test.met:2:1: enum Sub: a subset of an open enum must have variants
+    enum Root U32
+    enum Sub Root
+    ^^^^^^^^^^^^^
+```
+
+**Associated value type mismatch**
+
+```metall
+{ enum C(x U32) U8 = a("hi") }
+```
+
+```error
+test.met:1:24: associated value type mismatch for x: expected U32, got Str
+    { enum C(x U32) U8 = a("hi") }
+                           ^^^^
+```
+
+**Associated data on an enum that declares no params**
+
+```metall
+{ enum C U8 = a(1) }
+```
+
+```error
+test.met:1:15: enum variant a has associated data but the enum declares no params
+    { enum C U8 = a(1) }
+                  ^
+```
+
+**debug_name reserved as an associated-data field**
+
+```metall
+{ enum C(debug_name Str) U8 = a | b }
+```
+
+```error
+test.met:1:10: debug_name is a reserved associated-data field name
+    { enum C(debug_name Str) U8 = a | b }
+             ^^^^^^^^^^
+```
+
+**Associated value cannot read another enum's data**
+
+```metall
+{
+    enum Zebra(x U8) U8 = z(7)
+    enum Alpha(y U8) U8 = a(Zebra.z.x)
+}
+```
+
+```error
+test.met:3:29: enum associated values cannot read enum fields
+        enum Zebra(x U8) U8 = z(7)
+        enum Alpha(y U8) U8 = a(Zebra.z.x)
+                                ^^^^^^^^^
+    }
+```
+
+**Method cannot have same name as an enum field**
+
+```metall
+{ enum Color(rgb U32) U8 = red(1) fun Color.rgb(c Color) U32 { 0 } }
+```
+
+```error
+test.met:1:39: method name conflicts with field: Color.rgb
+    { enum Color(rgb U32) U8 = red(1) fun Color.rgb(c Color) U32 { 0 } }
+                                          ^^^^^^^^^
+```
+
+**Method on an enum cannot be named debug_name**
+
+```metall
+{ enum Color U8 = red fun Color.debug_name(c Color) Str { "x" } }
+```
+
+```error
+test.met:1:27: method name conflicts with field: Color.debug_name
+    { enum Color U8 = red fun Color.debug_name(c Color) Str { "x" } }
+                              ^^^^^^^^^^^^^^^^
+```
+
+**A non-enum does not satisfy the Enum constraint**
+
+```metall module
+struct RawEnum<T Enum> {
+    value T.Item
+}
+fun main() void {
+    let r = RawEnum<Int>(5)
+}
+```
+
+```error
+test.met:5:13: type Int does not satisfy Enum: not an enum type
+    fun main() void {
+        let r = RawEnum<Int>(5)
+                ^^^^^^^^^^^^
+    }
+```
+
+**Match pattern that is not a variant or subset**
+
+```metall
+{
+    enum C U8 = a | b
+    let c = C.a
+    match c {
+        case Int: 1
+    }
+}
+```
+
+```error
+test.met:5:14: Int is not an enum variant or subset of C
+        match c {
+            case Int: 1
+                 ^^^
+        }
+```
+
+**== between different enums is rejected**
+
+```metall
+{
+    enum A U8 = x | y
+    enum B U8 = p | q
+    let r = A.x == B.p
+}
+```
+
+```error
+test.met:4:20: type mismatch: expected type of LHS: A, got B
+        enum B U8 = p | q
+        let r = A.x == B.p
+                       ^^^
+    }
+```
+
+**== between an enum and an integer is rejected**
+
+```metall
+{
+    enum A U8 = x | y
+    let r = A.x == 5
+}
+```
+
+```error
+test.met:3:20: type mismatch: expected type of LHS: A, got Int
+        enum A U8 = x | y
+        let r = A.x == 5
+                       ^
+    }
+```
+
+**Enum value typing: method result, accessors, debug_name, coercion, T.Item**
+
+A method returns its enum, the associated-data accessors and `debug_name` carry
+their declared types, a subset coerces to its root, and `T.Item` is the backing
+integer.
+
+```metall module
+enum Ordering U8 = less | equal | greater
+
+pub fun Ordering.flip(o Ordering) Ordering {
+    match o {
+        case Ordering.less: Ordering.greater
+        case Ordering.equal: Ordering.equal
+        case Ordering.greater: Ordering.less
+    }
+}
+
+enum Color(name Str, rgb U32) U8 = red("Red", 0xff0000)
+enum AppErr U32
+enum IOErr AppErr = oops
+
+struct RawEnum<T Enum> {
+    value T.Item
+}
+
+fun main() void {
+    let flipped = Ordering.less.flip()
+    let name = Color.red.name
+    let code = Color.red.rgb
+    let dn = Color.red.debug_name
+    let coerced AppErr = IOErr.oops
+    let raw = RawEnum<Color>(2).value
+}
+```
+
+```bindings
+Module: scope01
+  Enum: scope02
+    SimpleType: scope03
+    EnumVariant: scope03
+    EnumVariant: scope03
+    EnumVariant: scope03
+  Fun: scope02
+    FunParam: scope04
+      SimpleType: scope04
+    SimpleType: scope04
+    Block: scope04
+      Match: scope05
+        Ident: scope05
+        FieldAccess: scope05
+          SimpleType: scope05
+        Block: scope05
+          Ident: scope06
+        FieldAccess: scope05
+          SimpleType: scope05
+        Block: scope05
+          Ident: scope07
+        FieldAccess: scope05
+          SimpleType: scope05
+        Block: scope05
+          Ident: scope08
+  Enum: scope02
+    SimpleType: scope09
+    FunParam: scope09
+      SimpleType: scope09
+    FunParam: scope09
+      SimpleType: scope09
+    EnumVariant: scope09
+      String: scope09
+      Int: scope09
+  Enum: scope02
+    SimpleType: scope10
+  Enum: scope02
+    SimpleType: scope11
+    EnumVariant: scope11
+  Struct: scope02
+    TypeParam: scope12
+      SimpleType: scope12
+    StructField: scope12
+      SimpleType: scope12
+  Fun: scope02
+    SimpleType: scope13
+    Block: scope13
+      Var: scope14
+        Call: scope14
+          FieldAccess: scope14
+            Ident: scope14
+      Var: scope14
+        FieldAccess: scope14
+          Ident: scope14
+      Var: scope14
+        FieldAccess: scope14
+          Ident: scope14
+      Var: scope14
+        FieldAccess: scope14
+          Ident: scope14
+      Var: scope14
+        SimpleType: scope14
+        Ident: scope14
+      Var: scope14
+        FieldAccess: scope14
+          TypeConstruction: scope14
+            Ident: scope14
+            Int: scope14
+---
+scope01:
+scope02:
+  AppErr: enum01
+  Color: enum02
+  IOErr: enum03
+  Ordering: enum04
+  RawEnum: struct01
+  main: fun01
+  test.Color.red: enum02
+  test.IOErr.oops: enum03
+  test.Ordering.equal: enum04
+  test.Ordering.flip: fun02
+  test.Ordering.greater: enum04
+  test.Ordering.less: enum04
+scope03:
+scope04:
+  o: enum04
+scope05:
+scope06:
+scope07:
+scope08:
+scope09:
+scope10:
+scope11:
+scope12:
+  T: ?
+scope13:
+scope14:
+  code: U32
+  coerced: enum01
+  dn: Str
+  flipped: enum04
+  name: Str
+  raw: U8
+enum01   = test.AppErr
+enum02   = test.Color = red
+enum03   = test.IOErr = oops
+enum04   = test.Ordering = less | equal | greater
+struct01 = RawEnum { value Item }
+fun01    = sync fun() void
+fun02    = sync fun(enum04) enum04
+```
+
+**== and != on same-family enums type-check to Bool**
+
+```metall
+{
+    enum AppErr U32
+    enum IOErr AppErr = a | b
+    let cross AppErr = IOErr.a
+    let same = IOErr.a == IOErr.a
+    let diff = IOErr.a != IOErr.b
+    let family = cross == IOErr.b
+}
+```
+
+```bindings
+Block: scope01
+  Enum: scope02
+    SimpleType: scope03
+  Enum: scope02
+    SimpleType: scope04
+    EnumVariant: scope04
+    EnumVariant: scope04
+  Var: scope02
+    SimpleType: scope02
+    Ident: scope02
+  Var: scope02
+    Binary: scope02
+      Ident: scope02
+      Ident: scope02
+  Var: scope02
+    Binary: scope02
+      Ident: scope02
+      Ident: scope02
+  Var: scope02
+    Binary: scope02
+      Ident: scope02
+      Ident: scope02
+---
+scope01:
+scope02:
+  AppErr: enum01
+  IOErr: enum02
+  IOErr.a: enum02
+  IOErr.b: enum02
+  cross: enum01
+  diff: Bool
+  family: Bool
+  same: Bool
+scope03:
+scope04:
+enum01 = AppErr
+enum02 = IOErr = a | b
+```

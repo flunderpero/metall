@@ -131,6 +131,9 @@ pub union Result_<T> = T | Err
 --- Placeholder type for slice method namespace. ---
 pub struct Slice_<T> {}
 
+--- Built-in constraint satisfied by any enum. `T.Item` is the backing int. ---
+pub shape Enum<Item> {}
+
 --- A placeholder for all internal debug functions. ---
 pub struct DebugIntern_ {}
 

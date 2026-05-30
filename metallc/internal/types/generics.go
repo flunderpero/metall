@@ -1927,6 +1927,31 @@ func (g *Generics) ownerImplicitSeed(
 	return seed
 }
 
+// satisfiesEnumConstraint implements the built-in `Enum` constraint: the
+// argument must be an enum, and its `Item` slot is bound to the backing int.
+func (g *Generics) satisfiesEnumConstraint(concreteTypeID TypeID, span base.Span) bool {
+	typ := g.env.Type(concreteTypeID)
+	if ref, ok := typ.Kind.(RefType); ok {
+		concreteTypeID = ref.Type
+		typ = g.env.Type(concreteTypeID)
+	}
+	enum, ok := typ.Kind.(EnumType)
+	if !ok {
+		if _, isParam := typ.Kind.(TypeParamType); isParam {
+			return true
+		}
+		g.diag(span, "type %s does not satisfy Enum: not an enum type", g.env.TypeDisplay(concreteTypeID))
+		return false
+	}
+	entry, ok := g.concreteAssociated[concreteTypeID]
+	if !ok {
+		entry = map[string]TypeID{}
+		g.concreteAssociated[concreteTypeID] = entry
+	}
+	entry["Item"] = enum.Backing
+	return true
+}
+
 func (g *Generics) satisfiesShape( //nolint:funlen
 	concreteTypeID TypeID,
 	shapeTypeID TypeID,
@@ -1934,6 +1959,9 @@ func (g *Generics) satisfiesShape( //nolint:funlen
 	span base.Span,
 ) bool {
 	shapeType := base.Cast[ShapeType](g.env.Type(shapeTypeID).Kind)
+	if ast.IsPreludeNode(g.env.DeclNode(typeIDOrigin(g.env, shapeTypeID))) && shapeType.DeclName == "Enum" {
+		return g.satisfiesEnumConstraint(concreteTypeID, span)
+	}
 	concreteTyp := g.env.Type(concreteTypeID)
 	g.debug.Print(0, "satisfiesShape concrete=%s shape=%s",
 		g.env.TypeDisplay(concreteTypeID), g.env.TypeDisplay(shapeTypeID))
@@ -2757,7 +2785,10 @@ func (g *Generics) completeShapeType(
 	if status := resolveInner(); status.Failed() {
 		return status, shapeType
 	}
-	if len(shapeNode.TypeParams) > 0 {
+	// The built-in `Enum` constraint's `Item` slot (the backing int) is bound by
+	// the compiler, not by a method contract, so skip the open-slot check.
+	isEnumConstraint := ast.IsPreludeNode(node.ID) && shapeType.DeclName == "Enum"
+	if len(shapeNode.TypeParams) > 0 && !isEnumConstraint {
 		used := map[ast.NodeID]bool{}
 		for _, method := range methods {
 			funType := base.Cast[FunType](g.env.Type(method.typeID).Kind)

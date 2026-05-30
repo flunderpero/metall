@@ -175,6 +175,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	for _, id := range runtimeModuleIDs {
 		engine.Query(id)
 	}
+	engine.AssignEnumDiscriminants()
 	timingListener.OnTypeCheck(engine, engine.Diagnostics())
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
 		return ErrAbort
@@ -203,8 +204,8 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	module := base.Cast[ast.Module](engine.AST().Node(fileID).Kind)
 	ir, err := gen.GenIR(
-		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(), engine.Consts(),
-		engine.Exports(),
+		engine.AST(), module, engine.Funs(), engine.Structs(), engine.Unions(), engine.Enums(),
+		engine.Consts(), engine.Exports(),
 		gen.IROpts{
 			TargetDataLayout:        targetDataLayout,
 			TargetTriple:            targetTriple,

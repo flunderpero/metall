@@ -67,7 +67,7 @@ func (p *Parser) ParseModule() (NodeID, bool) {
 	return p.NewModule(source.FileName, source.Module, source.Main, decls, span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseDecls() ([]NodeID, bool) {
+func (p *Parser) ParseDecls() ([]NodeID, bool) { //nolint:funlen
 	decls := make([]NodeID, 0)
 	result := true
 	for {
@@ -98,6 +98,10 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) {
 		case p.lookAheadTypeDecl(token.Union):
 			if union, ok := p.ParseUnion(); ok {
 				decls = append(decls, union)
+			}
+		case p.lookAheadTypeDecl(token.Enum):
+			if enum, ok := p.ParseEnum(); ok {
+				decls = append(decls, enum)
 			}
 		case p.lookAhead(token.Extern) || p.lookAhead(token.Pub, token.Extern):
 			if decl, ok := p.ParseExternFun(); ok {
@@ -442,6 +446,7 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 	if _, ok := p.expect(token.Eq); !ok {
 		return ParseFailed, false
 	}
+	p.lookAheadConsume(token.Pipe) // optional leading `|`
 	var variants []NodeID
 	for {
 		variant, ok := p.ParseType()
@@ -460,6 +465,65 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	return p.NewUnion(name, typeParams, variants, pub, nocopy, sync, t.Span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseEnum() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
+	t, ok := p.expect(token.Enum)
+	if !ok {
+		return ParseFailed, false
+	}
+	nameToken, ok := p.expect(token.TypeIdent)
+	if !ok {
+		return ParseFailed, false
+	}
+	if slices.Contains(ReservedWords, nameToken.Value) {
+		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
+		return ParseFailed, false
+	}
+	name := Name{nameToken.Value, nameToken.Span}
+	if next, ok := p.mayPeek(); ok && (next.Kind == token.Lt || next.Kind == token.LtImmediate) {
+		p.diagnostic(next.Span, "enums cannot be generic")
+		return ParseFailed, false
+	}
+	var schema []NodeID
+	if next, ok := p.mayPeek(); ok && next.Kind == token.LParen {
+		schema, ok = p.ParseFunParams()
+		if !ok {
+			return ParseFailed, false
+		}
+	}
+	// `U8` (backing int) or `AppErr` (open root) — the type checker classifies which.
+	backing, ok := p.ParseType()
+	if !ok {
+		return ParseFailed, false
+	}
+	var variants []NodeID
+	open := true
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
+		p.next()
+		open = false
+		p.lookAheadConsume(token.Pipe) // optional leading `|`
+		if next, ok := p.mayPeek(); !ok || next.Kind != token.Ident {
+			p.diagnostic(p.span(), "enum %s: expected at least one variant after '='", name.Name)
+			return ParseFailed, false
+		}
+		for {
+			variant, ok := p.parseEnumVariant()
+			if !ok {
+				return ParseFailed, false
+			}
+			variants = append(variants, variant)
+			next, ok := p.mayPeek()
+			if !ok || next.Kind != token.Pipe {
+				break
+			}
+			p.next()
+		}
+	}
+	return p.NewEnum(
+		name, backing, schema, variants, open, pub, t.Span.Combine(p.span()),
+	), true
 }
 
 func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
@@ -797,6 +861,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = union
+	case token.Enum:
+		enum, ok := p.ParseEnum()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = enum
 	case token.Match:
 		match, ok := p.ParseMatch()
 		if !ok {
@@ -1235,7 +1305,10 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 		var name strings.Builder
 		name.WriteString(t.Value)
 		nameSpan := t.Span
-		for p.lookAheadConsume(token.Dot) {
+		// Only continue the dotted-type chain for an uppercase segment; a
+		// `.lowercase` (e.g. an enum variant) is left for the caller.
+		for p.lookAhead(token.Dot, token.TypeIdent) {
+			p.next()
 			next, ok := p.expect(token.TypeIdent)
 			if !ok {
 				return ParseFailed, false
@@ -1647,6 +1720,10 @@ func (p *Parser) parseTry() (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
+		if p.lookAhead(token.Dot, token.Ident) {
+			p.diagnostic(p.span(), "`try ... is` expects a whole enum subset, not a qualified variant")
+			return ParseFailed, false
+		}
 	} else {
 		pattern = p.NewTryPattern(span)
 	}
@@ -1702,7 +1779,7 @@ func (p *Parser) parseMatchArms() ([]MatchArm, *MatchElse, bool) {
 			return nil, nil, false
 		}
 		p.next()
-		pattern, ok := p.ParseType()
+		pattern, ok := p.parseMatchPattern()
 		if !ok {
 			return nil, nil, false
 		}
@@ -1712,6 +1789,51 @@ func (p *Parser) parseMatchArms() ([]MatchArm, *MatchElse, bool) {
 		}
 		arms = append(arms, MatchArm{Pattern: pattern, Binding: binding, Guard: guard, Body: body})
 	}
+}
+
+func (p *Parser) parseEnumVariant() (NodeID, bool) {
+	nameTok, ok := p.expect(token.Ident)
+	if !ok {
+		return ParseFailed, false
+	}
+	span := nameTok.Span
+	name := Name{nameTok.Value, nameTok.Span}
+	var args []NodeID
+	if next, ok := p.mayPeek(); ok && next.Kind == token.LParen {
+		args, ok = p.ParseCallArgs()
+		if !ok {
+			return ParseFailed, false
+		}
+	}
+	var discriminant *NodeID
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
+		p.next()
+		// A bare int literal, not an expression: `|` would otherwise be parsed as bit-or.
+		num, ok := p.ParseNumber()
+		if !ok {
+			return ParseFailed, false
+		}
+		discriminant = &num
+	}
+	return p.NewEnumVariant(name, args, discriminant, span.Combine(p.span())), true
+}
+
+// parseMatchPattern parses a match arm pattern: a type (union variant or whole
+// enum subset) optionally followed by `.variant` for a qualified enum variant
+// (`Color.red`, `ord.Color.red`).
+func (p *Parser) parseMatchPattern() (NodeID, bool) {
+	pattern, ok := p.ParseType()
+	if !ok {
+		return ParseFailed, false
+	}
+	if p.lookAhead(token.Dot, token.Ident) {
+		_, _ = p.next()
+		variant, _ := p.next()
+		return p.NewFieldAccess(
+			pattern, Name{variant.Value, variant.Span}, nil, p.Node(pattern).Span.Combine(variant.Span),
+		), true
+	}
+	return pattern, true
 }
 
 func (p *Parser) parseMatchElse() (*MatchElse, bool) {

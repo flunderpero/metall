@@ -250,6 +250,25 @@ type Union struct {
 
 func (Union) isKind() {}
 
+type EnumVariant struct {
+	Name         Name
+	Args         []NodeID // associated-data args, nil if no "(...)"
+	Discriminant *NodeID  // explicit `= N`, nil if compiler-assigned
+}
+
+func (EnumVariant) isKind() {}
+
+type Enum struct {
+	Name     Name
+	Backing  NodeID   // backing int type, or the open root's name for a subset
+	Params   []NodeID // associated-data FunParam nodes, nil if none
+	Variants []NodeID // EnumVariant nodes, empty for an open root
+	Open     bool
+	Pub      bool
+}
+
+func (Enum) isKind() {}
+
 type FieldAccess struct {
 	Target   NodeID
 	Field    Name
@@ -698,6 +717,20 @@ func (a *AST) NewUnion(
 	)
 }
 
+func (a *AST) NewEnum(
+	name Name, backing NodeID, params []NodeID, variants []NodeID,
+	open bool, pub bool, span base.Span,
+) NodeID {
+	return a.node(
+		Enum{Name: name, Backing: backing, Params: params, Variants: variants, Open: open, Pub: pub},
+		span,
+	)
+}
+
+func (a *AST) NewEnumVariant(name Name, args []NodeID, discriminant *NodeID, span base.Span) NodeID {
+	return a.node(EnumVariant{Name: name, Args: args, Discriminant: discriminant}, span)
+}
+
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
 	return a.node(FieldAccess{Target: target, Field: field, TypeArgs: typeArgs}, span)
 }
@@ -958,6 +991,21 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		}
 		for i := range len(kind.Variants) {
 			f(kind.Variants[i])
+		}
+	case Enum:
+		f(kind.Backing)
+		for i := range len(kind.Params) {
+			f(kind.Params[i])
+		}
+		for i := range len(kind.Variants) {
+			f(kind.Variants[i])
+		}
+	case EnumVariant:
+		for i := range len(kind.Args) {
+			f(kind.Args[i])
+		}
+		if kind.Discriminant != nil {
+			f(*kind.Discriminant)
 		}
 	case TypeParam:
 		if kind.Constraint != nil {
@@ -1405,6 +1453,43 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			}
 			addChild("variants", kind.Variants...)
 		}
+	case Enum:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
+		if kind.Open {
+			addAttr("open", "true")
+		}
+		if !children {
+			addAttr("backing", nodeIDKind(kind.Backing))
+			if len(kind.Params) > 0 {
+				addAttr("params", nodeIDList(kind.Params))
+			}
+			addAttr("variants", nodeIDList(kind.Variants))
+		} else {
+			addChild("backing", kind.Backing)
+			if len(kind.Params) > 0 {
+				addChild("params", kind.Params...)
+			}
+			addChild("variants", kind.Variants...)
+		}
+	case EnumVariant:
+		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		if len(kind.Args) > 0 {
+			if !children {
+				addAttr("args", nodeIDList(kind.Args))
+			} else {
+				addChild("args", kind.Args...)
+			}
+		}
+		if kind.Discriminant != nil {
+			if !children {
+				addAttr("discriminant", nodeIDKind(*kind.Discriminant))
+			} else {
+				addChild("discriminant", *kind.Discriminant)
+			}
+		}
 	case TypeParam:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
 		if kind.Sync == SyncSync {
@@ -1737,6 +1822,17 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 	case Union:
 		k.TypeParams = removeFromSlice(k.TypeParams)
 		k.Variants = removeFromSlice(k.Variants)
+		parent.Kind = k
+	case Enum:
+		required(k.Backing)
+		k.Params = removeFromSlice(k.Params)
+		k.Variants = removeFromSlice(k.Variants)
+		parent.Kind = k
+	case EnumVariant:
+		k.Args = removeFromSlice(k.Args)
+		if k.Discriminant != nil && *k.Discriminant == childID {
+			k.Discriminant = nil
+		}
 		parent.Kind = k
 	case TypeParam:
 		if k.Constraint != nil && *k.Constraint == childID {

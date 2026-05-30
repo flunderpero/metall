@@ -122,6 +122,37 @@ type UnionType struct {
 
 func (UnionType) isTypeKind() {}
 
+type EnumVariantInfo struct {
+	Name         string
+	Discriminant *big.Int     // assigned by the discriminant pass, nil before then
+	AssocArgs    []ast.NodeID // one expr per param (0 = none), nil if no params
+	DebugName    string       // bare name for closed enums, dotted FQN for open
+}
+
+type EnumType struct {
+	Name     string
+	Backing  TypeID // an IntType (inherited from the root for a subset)
+	Params   []StructField
+	Variants []EnumVariantInfo // empty for an open root
+	Root     TypeID            // InvalidTypeID unless this is a subset of an open root
+	IsOpen   bool
+	// AssociatedDataStruct is a synthesized struct type holding a variant's generated members:
+	// { debug_name, <params...> }. For a subset it is the root's AssociatedDataStruct.
+	AssociatedDataStruct TypeID
+}
+
+// VariantIndex returns the index of the named variant, or -1.
+func (e EnumType) VariantIndex(name string) int {
+	for i, v := range e.Variants {
+		if v.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (EnumType) isTypeKind() {}
+
 type TypeParamType struct {
 	Shape   *TypeID // nil = unconstrained
 	Default *TypeID // nil = no default

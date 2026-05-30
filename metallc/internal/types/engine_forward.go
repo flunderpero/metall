@@ -17,7 +17,7 @@ func (e *Engine) forwardDeclareTypes(nodeIDs []ast.NodeID) { //nolint:funlen
 	for _, nodeID := range nodeIDs {
 		node := e.ast.Node(nodeID)
 		switch node.Kind.(type) {
-		case ast.Struct, ast.Shape, ast.Union:
+		case ast.Struct, ast.Shape, ast.Union, ast.Enum:
 			decls = append(decls, &forwardDecl{node, InvalidTypeID, TypeFailed, nil})
 		}
 	}
@@ -71,6 +71,22 @@ func (e *Engine) forwardDeclareTypes(nodeIDs []ast.NodeID) { //nolint:funlen
 	}
 
 	for _, decl := range decls {
+		enumNode, ok := decl.node.Kind.(ast.Enum)
+		if !ok {
+			continue
+		}
+		typeID, status := e.checkEnumCreateAndBind(decl.node, enumNode)
+		decl.typeID, decl.status = e.updateCachedType(decl.node, typeID, status)
+		if typeID != InvalidTypeID {
+			cachedType, ok := e.env.cachedTypeInfo(typeID)
+			if !ok {
+				panic(base.Errorf("type %s not found", typeID))
+			}
+			decl.cachedType = cachedType
+		}
+	}
+
+	for _, decl := range decls {
 		if _, ok := decl.node.Kind.(ast.Shape); !ok {
 			continue
 		}
@@ -108,6 +124,27 @@ func (e *Engine) forwardDeclareTypes(nodeIDs []ast.NodeID) { //nolint:funlen
 		}
 		unionType := base.Cast[UnionType](decl.cachedType.Type.Kind)
 		status, newKind := e.checkUnionCompleteType(decl.node, unionNode, unionType)
+		decl.cachedType.Type.Kind = newKind
+		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, status)
+	}
+
+	// Complete roots/standalone enums before subsets, since a subset reads its
+	// root's completed backing and schema.
+	e.completeEnums(decls, false)
+	e.completeEnums(decls, true)
+}
+
+func (e *Engine) completeEnums(decls []*forwardDecl, subsets bool) {
+	for _, decl := range decls {
+		enumNode, ok := decl.node.Kind.(ast.Enum)
+		if !ok || decl.status.Failed() {
+			continue
+		}
+		if e.enumDeclIsSubset(enumNode) != subsets {
+			continue
+		}
+		enumType := base.Cast[EnumType](decl.cachedType.Type.Kind)
+		status, newKind := e.checkEnumCompleteType(decl.node, enumNode, enumType)
 		decl.cachedType.Type.Kind = newKind
 		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, status)
 	}

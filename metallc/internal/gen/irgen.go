@@ -193,6 +193,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genAllocatorVar(id, kind)
 	case ast.Struct,
 		ast.Union,
+		ast.Enum,
 		ast.Shape,
 		ast.Capture,
 		ast.FunParam,
@@ -276,10 +277,7 @@ func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 		fmt.Fprintf(&g.constGlobals, "%s = internal global %s zeroinitializer\n", globalName, arrIRType)
 		g.setCode(id, globalName)
 		for i, elem := range lit.Elems {
-			ptrReg := g.reg()
-			g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", ptrReg, arrIRType, arrIRType, globalName, i)
-			elemReg := g.lookupCode(elem)
-			g.storeValue(elemReg, ptrReg, arrTyp.Elem)
+			g.storeValue(g.lookupCode(elem), g.fieldPtr(arrIRType, globalName, i), arrTyp.Elem)
 		}
 		return
 	}
@@ -287,10 +285,7 @@ func (g *IRFunGen) genArrayLiteral(id ast.NodeID, lit ast.ArrayLiteral) {
 	g.writeAlloca(reg, arrIRType)
 	g.setCode(id, reg)
 	for i, elem := range lit.Elems {
-		ptrReg := g.reg()
-		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", ptrReg, arrIRType, arrIRType, reg, i)
-		elemReg := g.lookupCode(elem)
-		g.storeValue(elemReg, ptrReg, arrTyp.Elem)
+		g.storeValue(g.lookupCode(elem), g.fieldPtr(arrIRType, reg, i), arrTyp.Elem)
 	}
 }
 
@@ -640,15 +635,16 @@ func (g *IRFunGen) genStructConstructionFields(id ast.NodeID, lit ast.TypeConstr
 	structTyp := base.Cast[types.StructType](targetTyp.Kind)
 	irTyp := g.irType(targetTyp.ID)
 	for i, arg := range lit.Args {
-		fieldReg := g.reg()
-		g.write("%s = getelementptr %s, %s* %s, i32 0, i32 %d", fieldReg, irTyp, irTyp, destReg, i)
-		argReg := g.lookupCode(arg)
-		g.storeValue(argReg, fieldReg, structTyp.Fields[i].Type)
+		fieldReg := g.fieldPtr(irTyp, destReg, i)
+		g.storeValue(g.lookupCode(arg), fieldReg, structTyp.Fields[i].Type)
 	}
 	g.setCode(id, destReg)
 }
 
 func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	if g.tryGenEnumVariantRef(id) {
+		return
+	}
 	// Check for named function references first - this handles both module-level
 	// functions (e.g. `mod.fun`) and type-namespaced methods (e.g. `mod.Type.method`).
 	if name, ok := g.env.NamedFunRef(id); ok {
@@ -687,9 +683,172 @@ func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 		}
 		panic(base.Errorf("unknown array field: %s", fieldAccess.Field.Name))
 	}
+	if _, ok := targetType.Kind.(types.EnumType); ok {
+		g.genEnumFieldAccess(id, fieldAccess)
+		return
+	}
 	ptrReg := g.genFieldAccessPtr(fieldAccess)
 	valReg := g.loadValue(ptrReg, g.typeIDOfNode(id))
 	g.setCode(id, valReg)
+}
+
+// genEnumFieldAccess reads a generated member (debug_name or an associated-data
+// field) by mapping the value's discriminant to its assoc-struct row, then doing
+// a normal struct field access.
+func (g *IRFunGen) genEnumFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
+	g.Gen(fieldAccess.Target)
+	discrReg := g.lookupCode(fieldAccess.Target)
+	enumTypeID := g.typeOfNode(fieldAccess.Target).ID
+	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
+	assoc := base.Cast[types.StructType](g.env.Type(enum.AssociatedDataStruct).Kind)
+	fieldIdx := indexOfStructField(assoc, fieldAccess.Field.Name)
+	rowPtr := g.genEnumRowPtr(id, enumTypeID, enum, discrReg)
+	fieldPtr := g.fieldPtr(g.irType(enum.AssociatedDataStruct), rowPtr, fieldIdx)
+	g.setCode(id, g.loadValue(fieldPtr, assoc.Fields[fieldIdx].Type))
+}
+
+// genEnumRowPtr maps the discriminant in discriminantReg to a pointer into the owning
+// enum's assoc-struct table via a switch + phi (handles sparse discriminants).
+func (g *IRFunGen) genEnumRowPtr(
+	id ast.NodeID, enumTypeID types.TypeID, enum types.EnumType, discriminantReg string,
+) string {
+	tableOwner := enumTypeID
+	if enum.Root != types.InvalidTypeID {
+		tableOwner = enum.Root
+	}
+	rootVars := g.env.EnumFamilyVariants(tableOwner)
+	tableIR := enumTableIR(g.env, enum.AssociatedDataStruct, len(rootVars))
+	tableGlobal := fmt.Sprintf("@enum.%s", tableOwner)
+	ordOf := map[string]int{}
+	for i, v := range rootVars {
+		ordOf[v.Discriminant.String()] = i
+	}
+	switchVars := g.env.EnumFamilyVariants(enumTypeID)
+	intIR := g.irType(enumTypeID)
+	contLabel := g.label("enumcont", id)
+	defaultLabel := g.label("enumdefault", id)
+	caseLabels := make([]Label, len(switchVars))
+	sb := strings.Builder{}
+	fmt.Fprintf(&sb, "switch %s %s, label %%%s [", intIR, discriminantReg, defaultLabel)
+	for i, v := range switchVars {
+		caseLabels[i] = g.label(fmt.Sprintf("enumcase_%d", i), id)
+		fmt.Fprintf(&sb, " %s %s, label %%%s", intIR, v.Discriminant.String(), caseLabels[i])
+	}
+	sb.WriteString(" ]")
+	g.write(sb.String())
+	g.writeLabel(defaultLabel)
+	g.write("unreachable")
+	type entry struct {
+		reg   string
+		label Label
+	}
+	entries := make([]entry, len(switchVars))
+	for i, v := range switchVars {
+		g.writeLabel(caseLabels[i])
+		row := g.fieldPtr(tableIR, tableGlobal, ordOf[v.Discriminant.String()])
+		entries[i] = entry{row, g.lastLabel}
+		g.write("br label %%%s", contLabel)
+	}
+	g.writeLabel(contLabel)
+	phi := g.reg()
+	phiSB := strings.Builder{}
+	fmt.Fprintf(&phiSB, "%s = phi ptr ", phi)
+	for i, e := range entries {
+		if i > 0 {
+			phiSB.WriteString(", ")
+		}
+		fmt.Fprintf(&phiSB, "[%s, %%%s]", e.reg, e.label)
+	}
+	g.write(phiSB.String())
+	return phi
+}
+
+// calleeTypeArgs returns the explicit type arguments on a call's callee.
+func (g *IRFunGen) calleeTypeArgs(call ast.Call) []ast.NodeID {
+	switch kind := g.ast.Node(call.Callee).Kind.(type) {
+	case ast.FieldAccess:
+		return kind.TypeArgs
+	case ast.Ident:
+		return kind.TypeArgs
+	default:
+		panic(fmt.Sprintf("unexpected callee kind: %T", kind))
+	}
+}
+
+// genEnumVariants lowers enums.variants<T>() to a rodata slice of every
+// variant's discriminant (an enum value is its backing int).
+func (g *IRFunGen) genEnumVariants(id ast.NodeID, call ast.Call) {
+	enumTypeID := g.typeIDOfNode(g.calleeTypeArgs(call)[0])
+	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
+	variants := g.env.EnumFamilyVariants(enumTypeID)
+	elemIR := g.irType(enum.Backing)
+	cid := g.constCounter
+	g.constCounter++
+	dataName := fmt.Sprintf("@__enum_variants_%d", cid)
+	elems := make([]string, len(variants))
+	for i, v := range variants {
+		elems[i] = fmt.Sprintf("%s %s", elemIR, v.Discriminant.String())
+	}
+	fmt.Fprintf(&g.constGlobals, "%s.data = private constant [%d x %s] [%s]\n",
+		dataName, len(variants), elemIR, strings.Join(elems, ", "))
+	fmt.Fprintf(&g.constGlobals, "%s = private constant {ptr, i64} { ptr %s.data, i64 %d }\n",
+		dataName, dataName, len(variants))
+	reg := g.reg()
+	g.writeAlloca(reg, "{ptr, i64}")
+	valReg := g.reg()
+	g.write("%s = load {ptr, i64}, ptr %s", valReg, dataName)
+	g.write("store {ptr, i64} %s, ptr %s", valReg, reg)
+	g.setCode(id, reg)
+}
+
+// genFromValue lowers enums.from_value<T>(v) to a checked int-to-enum: the
+// result is Some(v) when v is one of T's discriminants, else None.
+func (g *IRFunGen) genFromValue(id ast.NodeID, call ast.Call) {
+	enumTypeID := g.typeIDOfNode(g.calleeTypeArgs(call)[0])
+	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
+	intIR := g.irType(enum.Backing)
+	variants := g.env.EnumFamilyVariants(enumTypeID)
+
+	g.Gen(call.Args[0])
+	vReg := g.lookupCode(call.Args[0])
+
+	optionTypeID := g.typeIDOfNode(id)
+	optionUnion := base.Cast[types.UnionType](g.env.Type(optionTypeID).Kind)
+	optionIR := g.irType(optionTypeID)
+	someTag, noneTag := 0, 0
+	for i, vID := range optionUnion.Variants {
+		if vID == enumTypeID {
+			someTag = i
+		} else {
+			noneTag = i
+		}
+	}
+
+	optReg := g.reg()
+	g.writeAlloca(optReg, optionIR)
+	g.write("store %s zeroinitializer, ptr %s", optionIR, optReg)
+	someLabel := g.label("from_value_some", id)
+	noneLabel := g.label("from_value_none", id)
+	contLabel := g.label("from_value_cont", id)
+	sb := strings.Builder{}
+	fmt.Fprintf(&sb, "switch %s %s, label %%%s [", intIR, vReg, noneLabel)
+	for _, v := range variants {
+		fmt.Fprintf(&sb, " %s %s, label %%%s", intIR, v.Discriminant.String(), someLabel)
+	}
+	sb.WriteString(" ]")
+	g.write(sb.String())
+
+	g.writeLabel(someLabel)
+	g.write("store i64 %d, ptr %s", someTag, g.fieldPtr(optionIR, optReg, 0))
+	g.storeValue(vReg, g.fieldPtr(optionIR, optReg, 1), enumTypeID)
+	g.write("br label %%%s", contLabel)
+
+	g.writeLabel(noneLabel)
+	g.write("store i64 %d, ptr %s", noneTag, g.fieldPtr(optionIR, optReg, 0))
+	g.write("br label %%%s", contLabel)
+
+	g.writeLabel(contLabel)
+	g.setCode(id, optReg)
 }
 
 func (g *IRFunGen) genSliceFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
@@ -716,18 +875,15 @@ func (g *IRFunGen) genFieldAccessPtr(fieldAccess ast.FieldAccess) string {
 		targetType = g.env.Type(refTyp.Type)
 	}
 	structType := base.Cast[types.StructType](targetType.Kind)
-	fieldIndex := indexOfStructField(structType, fieldAccess.Field.Name)
-	irTyp := g.irType(targetType.ID)
-	ptrReg := g.reg()
-	g.write(
-		"%s = getelementptr %s, %s* %s, i32 0, i32 %d",
-		ptrReg,
-		irTyp,
-		irTyp,
-		structReg,
-		fieldIndex,
-	)
-	return ptrReg
+	return g.fieldPtr(g.irType(targetType.ID), structReg, indexOfStructField(structType, fieldAccess.Field.Name))
+}
+
+// fieldPtr points at field/element idx of the struct or fixed array of IR type
+// aggIR based at baseReg.
+func (g *IRFunGen) fieldPtr(aggIR, baseReg string, idx int) string {
+	reg := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 %d", reg, aggIR, baseReg, idx)
+	return reg
 }
 
 func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
@@ -1163,8 +1319,12 @@ func (g *IRFunGen) genWhen(id ast.NodeID, when ast.When) { //nolint:funlen
 
 func (g *IRFunGen) genMatch(id ast.NodeID, match ast.Match) {
 	g.Gen(match.Expr)
-	exprReg := g.lookupCode(match.Expr)
 	exprType := g.typeOfNode(match.Expr)
+	if _, ok := exprType.Kind.(types.EnumType); ok {
+		g.genEnumMatch(id, match, exprType.ID)
+		return
+	}
+	exprReg := g.lookupCode(match.Expr)
 	union := base.Cast[types.UnionType](exprType.Kind)
 	unionIRType := g.irType(exprType.ID)
 	tagPtr := g.reg()
@@ -1252,7 +1412,7 @@ func switchTargets(infos []matchArmInfo) []matchArmInfo {
 	return targets
 }
 
-func (g *IRFunGen) genMatchArms( //nolint:funlen
+func (g *IRFunGen) genMatchArms(
 	id ast.NodeID,
 	match ast.Match,
 	armInfos []matchArmInfo,
@@ -1260,16 +1420,7 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 	payloadPtr string,
 	elseLabel Label,
 ) {
-	resultType := g.typeOfNode(id)
-	resultIRType := g.irType(resultType.ID)
-	if g.isAggregateType(resultType.ID) {
-		resultIRType = "ptr"
-	}
-	type phiEntry struct {
-		code  string
-		label Label
-	}
-	var phiEntries []phiEntry
+	var phiEntries []matchPhiEntry
 	for _, armInfo := range armInfos {
 		arm := match.Arms[armInfo.armIndex]
 		g.writeLabel(armInfo.label)
@@ -1284,7 +1435,7 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 		g.Gen(arm.Body)
 		if !g.breaksControlFlow(arm.Body) {
 			g.write("br label %%%s", contLabel)
-			phiEntries = append(phiEntries, phiEntry{g.lookupCode(arm.Body), g.lastLabel})
+			phiEntries = append(phiEntries, matchPhiEntry{g.lookupCode(arm.Body), g.lastLabel})
 		}
 	}
 	if match.Else != nil {
@@ -1296,11 +1447,27 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 		g.Gen(match.Else.Body)
 		if !g.breaksControlFlow(match.Else.Body) {
 			g.write("br label %%%s", contLabel)
-			phiEntries = append(phiEntries, phiEntry{g.lookupCode(match.Else.Body), g.lastLabel})
+			phiEntries = append(phiEntries, matchPhiEntry{g.lookupCode(match.Else.Body), g.lastLabel})
 		}
 	}
+	g.emitMatchPhi(id, contLabel, phiEntries)
+}
+
+type matchPhiEntry struct {
+	code  string
+	label Label
+}
+
+// emitMatchPhi writes the continuation label and a phi over the arm results
+// (or `unreachable` when no arm falls through).
+func (g *IRFunGen) emitMatchPhi(id ast.NodeID, contLabel Label, entries []matchPhiEntry) {
+	resultType := g.typeOfNode(id)
+	resultIRType := g.irType(resultType.ID)
+	if g.isAggregateType(resultType.ID) {
+		resultIRType = "ptr"
+	}
 	g.writeLabel(contLabel)
-	if len(phiEntries) == 0 {
+	if len(entries) == 0 {
 		g.write("unreachable")
 		g.setCode(id, voidValue)
 		return
@@ -1312,7 +1479,7 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 	phi := g.reg()
 	phiSB := strings.Builder{}
 	fmt.Fprintf(&phiSB, "%s = phi %s ", phi, resultIRType)
-	for i, entry := range phiEntries {
+	for i, entry := range entries {
 		if i > 0 {
 			phiSB.WriteString(", ")
 		}
@@ -1320,6 +1487,104 @@ func (g *IRFunGen) genMatchArms( //nolint:funlen
 	}
 	g.write(phiSB.String())
 	g.setCode(id, phi)
+}
+
+// genEnumMatch lowers an enum match as a linear chain. It tries each arm in
+// source order, and the first whose discriminant matches and whose guard holds
+// wins. Any miss falls through to the next arm, then to else (or `unreachable`
+// for an exhaustive closed enum). A guarded arm proves nothing, so it falls
+// through on guard failure exactly like a non-matching one. This also lowers
+// `try`, which the parser desugars into a match with a diverging else.
+func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types.TypeID) { //nolint:funlen
+	discrReg := g.lookupCode(match.Expr)
+	intIR := g.irType(enumTypeID)
+	contLabel := g.label("endmatch", id)
+	elseLabel := g.label("case_else", id)
+	testLabels := make([]Label, len(match.Arms))
+	bodyLabels := make([]Label, len(match.Arms))
+	for i := range match.Arms {
+		testLabels[i] = g.label(fmt.Sprintf("test_%d", i), id)
+		bodyLabels[i] = g.label(fmt.Sprintf("case_%d", i), id)
+	}
+	if len(match.Arms) > 0 {
+		g.write("br label %%%s", testLabels[0])
+	} else {
+		g.write("br label %%%s", elseLabel)
+	}
+
+	var phiEntries []matchPhiEntry
+	for i, arm := range match.Arms {
+		miss := elseLabel
+		if i+1 < len(match.Arms) {
+			miss = testLabels[i+1]
+		}
+		g.writeLabel(testLabels[i])
+		g.genEnumArmBinding(arm.Body, arm.Binding, discrReg, intIR)
+		// Gather the discriminants this arm matches (one for a variant, every
+		// variant of a subset for a bare subset pattern), then test whether the
+		// value equals any of them.
+		var discrs []string
+		if refEnumID, variant, ok := g.env.EnumVariantRef(arm.Pattern); ok {
+			refEnum := base.Cast[types.EnumType](g.env.Type(refEnumID).Kind)
+			discrs = []string{refEnum.Variants[refEnum.VariantIndex(variant)].Discriminant.String()}
+		} else {
+			patEnum := base.Cast[types.EnumType](g.typeOfNode(arm.Pattern).Kind)
+			discrs = make([]string, len(patEnum.Variants))
+			for di, v := range patEnum.Variants {
+				discrs[di] = v.Discriminant.String()
+			}
+		}
+		matchReg := g.reg()
+		g.write("%s = icmp eq %s %s, %s", matchReg, intIR, discrReg, discrs[0])
+		for _, d := range discrs[1:] {
+			eq := g.reg()
+			g.write("%s = icmp eq %s %s, %s", eq, intIR, discrReg, d)
+			combined := g.reg()
+			g.write("%s = or i1 %s, %s", combined, matchReg, eq)
+			matchReg = combined
+		}
+		if arm.Guard == nil {
+			g.write("br i1 %s, label %%%s, label %%%s", matchReg, bodyLabels[i], miss)
+		} else {
+			guardLabel := g.label(fmt.Sprintf("guard_%d", i), id)
+			g.write("br i1 %s, label %%%s, label %%%s", matchReg, guardLabel, miss)
+			g.writeLabel(guardLabel)
+			g.Gen(*arm.Guard)
+			g.write("br i1 %s, label %%%s, label %%%s", g.lookupCode(*arm.Guard), bodyLabels[i], miss)
+		}
+		g.writeLabel(bodyLabels[i])
+		g.Gen(arm.Body)
+		if !g.breaksControlFlow(arm.Body) {
+			g.write("br label %%%s", contLabel)
+			phiEntries = append(phiEntries, matchPhiEntry{g.lookupCode(arm.Body), g.lastLabel})
+		}
+	}
+
+	g.writeLabel(elseLabel)
+	if match.Else != nil {
+		g.genEnumArmBinding(match.Else.Body, match.Else.Binding, discrReg, intIR)
+		g.Gen(match.Else.Body)
+		if !g.breaksControlFlow(match.Else.Body) {
+			g.write("br label %%%s", contLabel)
+			phiEntries = append(phiEntries, matchPhiEntry{g.lookupCode(match.Else.Body), g.lastLabel})
+		}
+	} else {
+		g.write("unreachable")
+	}
+	g.emitMatchPhi(id, contLabel, phiEntries)
+}
+
+// genEnumArmBinding binds the scrutinee's discriminant (the enum value) to the
+// arm's binding name.
+func (g *IRFunGen) genEnumArmBinding(bodyID ast.NodeID, binding *ast.Name, discrReg, intIR string) {
+	body := base.Cast[ast.Block](g.ast.Node(bodyID).Kind)
+	if binding == nil || len(body.Exprs) == 0 {
+		return
+	}
+	allocReg := g.reg()
+	g.writeAlloca(allocReg, intIR)
+	g.write("store %s %s, ptr %s", intIR, discrReg, allocReg)
+	g.setSymbol(ast.BindingID(bodyID), binding.Name, allocReg, intIR)
 }
 
 func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
@@ -1652,16 +1917,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	name := types.BuiltinName(ref)
 	switch name {
 	case "ffi::sizeof":
-		var typeArgs []ast.NodeID
-		switch kind := g.ast.Node(call.Callee).Kind.(type) {
-		case ast.FieldAccess:
-			typeArgs = kind.TypeArgs
-		case ast.Ident:
-			typeArgs = kind.TypeArgs
-		default:
-			panic(fmt.Sprintf("unexpected callee kind for sizeof: %T", g.ast.Node(call.Callee).Kind))
-		}
-		argTypeID := g.typeIDOfNode(typeArgs[0])
+		argTypeID := g.typeIDOfNode(g.calleeTypeArgs(call)[0])
 		size := g.irTypeSize(g.env, argTypeID)
 		g.setCode(id, "%d", size)
 		return true
@@ -1830,6 +2086,17 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		g.write("%s = load {ptr, i64}, ptr @__os_args", valReg)
 		g.write("store {ptr, i64} %s, ptr %s", valReg, reg)
 		g.setCode(id, reg)
+		return true
+	case "enums::variants":
+		g.genEnumVariants(id, call)
+		return true
+	case "enums::value_of":
+		// An enum value is its backing integer, so value_of is the identity.
+		g.Gen(call.Args[0])
+		g.setCode(id, g.lookupCode(call.Args[0]))
+		return true
+	case "enums::from_value":
+		g.genFromValue(id, call)
 		return true
 	}
 	if method, fa, ok := g.arenaAllocMethod(call); ok {
@@ -2004,6 +2271,9 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 		g.emitFunValue(id, name)
 		return
 	}
+	if g.tryGenEnumVariantRef(id) {
+		return
+	}
 	if symbol, ok := g.lookupSymbol(id); ok {
 		identType := g.typeOfNode(id)
 		if _, ok := identType.Kind.(types.AllocatorType); ok ||
@@ -2018,6 +2288,18 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 		return
 	}
 	g.setCode(id, ident.Name)
+}
+
+// tryGenEnumVariantRef emits the discriminant for a variant reference
+// (`Color.red` or `mod.Color.red`), recorded during type checking.
+func (g *IRFunGen) tryGenEnumVariantRef(id ast.NodeID) bool {
+	enumTypeID, variant, ok := g.env.EnumVariantRef(id)
+	if !ok {
+		return false
+	}
+	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
+	g.setCode(id, enum.Variants[enum.VariantIndex(variant)].Discriminant.String())
+	return true
 }
 
 // emitFunValue emits a fat pointer {wrapper, null} for a non-capturing function
@@ -2467,6 +2749,8 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 		return "%" + typeID.String()
 	case types.UnionType:
 		return "%" + typeID.String()
+	case types.EnumType:
+		return irType(env, kind.Backing)
 	case types.RefType, types.AllocatorType:
 		return "ptr"
 	case types.ArrayType:
@@ -2515,6 +2799,8 @@ func (g *IRGen) irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
 		return maxAlign
 	case types.UnionType:
 		return 8
+	case types.EnumType:
+		return g.irTypeAlign(env, kind.Backing)
 	case types.ArrayType:
 		return g.irTypeAlign(env, kind.Elem)
 	case types.SliceType:
@@ -2560,6 +2846,8 @@ func (g *IRGen) irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
 	case types.UnionType:
 		payload := g.unionPayloadSize(env, kind)
 		return alignUp(8+payload, 8)
+	case types.EnumType:
+		return g.irTypeSize(env, kind.Backing)
 	case types.ArrayType:
 		elemSize := g.irTypeSize(env, kind.Elem)
 		return kind.Len * elemSize
@@ -2752,37 +3040,64 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 	g.write("")
 }
 
-func (g *IRGen) genModuleConsts(consts []types.ConstWork) {
-	// Declare globals for each constant.
-	if len(consts) == 0 {
+// enumTableIR is the IR type of an enum's associated-data table: one assoc
+// struct per variant.
+func enumTableIR(env *types.TypeEnv, assocTypeID types.TypeID, n int) string {
+	return fmt.Sprintf("[%d x %s]", n, irType(env, assocTypeID))
+}
+
+func (g *IRGen) genEnumAssocStruct(ew types.TypeWork) {
+	enum := base.Cast[types.EnumType](ew.Env.Type(ew.TypeID).Kind)
+	assoc := base.Cast[types.StructType](ew.Env.Type(enum.AssociatedDataStruct).Kind)
+	fields := make([]string, len(assoc.Fields))
+	for i, f := range assoc.Fields {
+		fields[i] = irType(ew.Env, f.Type)
+	}
+	g.write("%%%s = type { %s } ; %s\n", enum.AssociatedDataStruct, strings.Join(fields, ", "), assoc.Name)
+}
+
+func (g *IRGen) genModuleConsts(consts []types.ConstWork, enums []types.TypeWork) {
+	for _, c := range consts {
+		g.write("@%s = internal global %s zeroinitializer", irName(c.Name), irType(c.Env, c.TypeID))
+	}
+	for _, ew := range enums {
+		enum := base.Cast[types.EnumType](ew.Env.Type(ew.TypeID).Kind)
+		n := len(ew.Env.EnumFamilyVariants(ew.TypeID))
+		g.write(
+			"@enum.%s = internal global %s zeroinitializer",
+			ew.TypeID,
+			enumTableIR(ew.Env, enum.AssociatedDataStruct, n),
+		)
+	}
+	if len(consts) == 0 && len(enums) == 0 {
 		g.write("define internal void @__const_init() { ret void }")
 		g.write("")
 		return
 	}
-	for _, c := range consts {
-		irTyp := irType(c.Env, c.TypeID)
-		globalName := irName(c.Name)
-		g.write("@%s = internal global %s zeroinitializer", globalName, irTyp)
+	env := consts[0].Env
+	if len(consts) == 0 {
+		env = enums[0].Env
 	}
-	// Generate init function that evaluates expressions and stores into globals.
-	f := g.newFunGen(consts[0].Env)
+	f := g.newFunGen(env)
 	f.constInit = true
 	f.write("define internal void @__const_init() {")
 	f.indent++
 	entryAllocaInsertPos := f.sb.Len()
+	// Enum associated-data tables come first: a module constant may read a
+	// variant's associated data, and that read loads from the table.
+	for _, ew := range enums {
+		f.fillEnumTable(ew)
+	}
 	for _, c := range consts {
 		varNode := base.Cast[ast.Var](f.ast.Node(c.NodeID).Kind)
-		irTyp := irType(c.Env, c.TypeID)
-		globalName := irName(c.Name)
-		globalRef := fmt.Sprintf("@%s", globalName)
+		globalRef := fmt.Sprintf("@%s", irName(c.Name))
 		f.Gen(varNode.Expr)
-		exprReg := f.lookupCode(varNode.Expr)
-		f.storeValue(exprReg, globalRef, c.TypeID)
+		f.storeValue(f.lookupCode(varNode.Expr), globalRef, c.TypeID)
 		b, ok := c.Env.Lookup(c.NodeID, varNode.Name.Name, -1)
 		if !ok {
 			panic(base.Errorf("constant binding not found: %s", varNode.Name.Name))
 		}
-		g.symbols[b.ID] = Symbol{Name: varNode.Name.Name, Reg: globalRef, Type: irTyp}
+		g.symbols[b.ID] = Symbol{Name: varNode.Name.Name, Reg: globalRef, Type: irType(c.Env, c.TypeID)}
 	}
 	if f.entryAllocas.Len() > 0 {
 		ir := f.sb.String()
@@ -2798,12 +3113,60 @@ func (g *IRGen) genModuleConsts(consts []types.ConstWork) {
 	g.sb.WriteString(f.sb.String())
 }
 
+// fillEnumTable builds each variant's assoc struct (debug_name + associated
+// values) into the enum's table, evaluating values like module-level constants.
+func (g *IRFunGen) fillEnumTable(ew types.TypeWork) {
+	enum := base.Cast[types.EnumType](g.env.Type(ew.TypeID).Kind)
+	assoc := base.Cast[types.StructType](g.env.Type(enum.AssociatedDataStruct).Kind)
+	assocIR := g.irType(enum.AssociatedDataStruct)
+	variants := g.env.EnumFamilyVariants(ew.TypeID)
+	tableIR := enumTableIR(g.env, enum.AssociatedDataStruct, len(variants))
+	tableGlobal := fmt.Sprintf("@enum.%s", ew.TypeID)
+	for ord, v := range variants {
+		rowPtr := g.fieldPtr(tableIR, tableGlobal, ord)
+		for fieldIdx, field := range assoc.Fields {
+			var valReg string
+			switch {
+			case fieldIdx == 0:
+				valReg = g.addStrConst(v.DebugName)
+			case v.AssocArgs[fieldIdx-1] == 0:
+				valReg = g.genNoneValue(field.Type)
+			default:
+				g.Gen(v.AssocArgs[fieldIdx-1])
+				valReg = g.lookupCode(v.AssocArgs[fieldIdx-1])
+			}
+			g.storeValue(valReg, g.fieldPtr(assocIR, rowPtr, fieldIdx), field.Type)
+		}
+	}
+}
+
+// genNoneValue builds a none Option value (the tag of the non-payload variant).
+func (g *IRFunGen) genNoneValue(optionTypeID types.TypeID) string {
+	union := base.Cast[types.UnionType](g.env.Type(optionTypeID).Kind)
+	noneTag := 0
+	for i, vID := range union.Variants {
+		if vID != union.TypeArgs[0] {
+			noneTag = i
+			break
+		}
+	}
+	unionIR := g.irType(optionTypeID)
+	reg := g.reg()
+	g.writeAlloca(reg, unionIR)
+	g.write("store %s zeroinitializer, ptr %s", unionIR, reg)
+	tagPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, unionIR, reg)
+	g.write("store i64 %d, ptr %s", noneTag, tagPtr)
+	return reg
+}
+
 func GenIR( //nolint:funlen
 	a *ast.AST,
 	module ast.Module,
 	funs []types.FunWork,
 	structs []types.TypeWork,
 	unions []types.TypeWork,
+	enums []types.TypeWork,
 	consts []types.ConstWork,
 	exports []types.ExportWork,
 	opts IROpts,
@@ -2828,10 +3191,14 @@ func GenIR( //nolint:funlen
 	for _, u := range unions {
 		g.genUnion(u.Env, u)
 	}
+	// Emit enum associated-data struct type definitions.
+	for _, ew := range enums {
+		g.genEnumAssocStruct(ew)
+	}
 	// Emit extern function declarations (FFI).
 	g.genExternDecls(funs)
-	// Emit module-level constants as globals + init function.
-	g.genModuleConsts(consts)
+	// Emit module-level constants and enum associated-data tables + init function.
+	g.genModuleConsts(consts, enums)
 	// Emit all functions — each gets a fresh IRFunGen.
 	for i := range funs {
 		f := g.newFunGen(funs[i].Env)

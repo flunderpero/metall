@@ -281,7 +281,7 @@ func (c *TypeContext) declMangledName(nodeID ast.NodeID, name string) string {
 func (c *TypeContext) isSync(typeID TypeID) bool {
 	typ := c.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
-	case VoidType, NeverType, BoolType, IntType:
+	case VoidType, NeverType, BoolType, IntType, EnumType:
 		return true
 	case StructType:
 		declNode := c.env.DeclNode(typeID)
@@ -359,6 +359,10 @@ func (c *TypeContext) isAssignableTo(got TypeID, expected TypeID) bool {
 			slices.Equal(gotKind.Params, expKind.Params) {
 			return true
 		}
+	case EnumType:
+		// A subset of an open enum widens to its root (a no-op: same backing int
+		// and the same whole-program discriminant).
+		return gotKind.Root != InvalidTypeID && gotKind.Root == expected
 	}
 	return false
 }
@@ -394,6 +398,8 @@ func (c *TypeContext) declIsPub(declNodeID ast.NodeID) bool {
 	case ast.Shape:
 		return kind.Pub
 	case ast.Union:
+		return kind.Pub
+	case ast.Enum:
 		return kind.Pub
 	case ast.Var:
 		return kind.Pub
@@ -440,19 +446,21 @@ func (c *TypeContext) funLitNeedsInference(fun ast.Fun) bool {
 // rather than a value.
 func (c *TypeContext) isTypeReference(nodeID ast.NodeID) bool {
 	switch kind := c.ast.Node(nodeID).Kind.(type) {
+	case ast.SimpleType:
+		return true
 	case ast.Ident:
 		binding, ok := c.lookup(nodeID, kind.Name, -1)
 		if !ok {
 			return false
 		}
 		switch c.ast.Node(binding.Decl).Kind.(type) {
-		case ast.Struct, ast.Union, ast.Shape:
+		case ast.Struct, ast.Union, ast.Shape, ast.Enum:
 			return true
 		}
 	case ast.FieldAccess:
 		if b, ok := c.env.PathBinding(nodeID); ok {
 			switch c.ast.Node(b.Decl).Kind.(type) {
-			case ast.Struct, ast.Union, ast.Shape:
+			case ast.Struct, ast.Union, ast.Shape, ast.Enum:
 				return true
 			}
 		}

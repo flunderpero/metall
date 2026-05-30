@@ -354,6 +354,50 @@ Block: Str
 union01 = Foo = Int | Bool
 ```
 
+**Match all guarded arms still allows else**
+
+A guarded arm covers no variant, so when every arm is guarded the match is not
+exhaustive and an else is still allowed.
+
+```metall
+{
+    union Foo = Int | Bool
+    let x = Foo(42)
+    match x {
+        case Int n if n > 0: "pos int"
+        case Bool b if b: "true bool"
+        else: "other"
+    }
+}
+```
+
+```types
+Block: Str
+  Union: union01
+    SimpleType: ?
+    SimpleType: ?
+  Var: void
+    TypeConstruction: union01
+      Ident: union01
+      Int: Int
+  Match: Str
+    Ident: union01
+    SimpleType: Int
+    Binary: Bool
+      Ident: Int
+      Int: Int
+    Block: Str
+      String: Str
+    SimpleType: Bool
+    Ident: Bool
+    Block: Str
+      String: Str
+    Block: Str
+      String: Str
+---
+union01 = Foo = Int | Bool
+```
+
 **Match else binding single remaining variant**
 
 When all variants except one are covered, the else binding has the remaining variant's type.
@@ -449,6 +493,175 @@ scope04:
 union01 = Tri = Str | Int | Bool
 ```
 
+**Closed enum match is exhaustive over its variants**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red: 1
+        case Color.green: 2
+        case Color.blue: 3
+    }
+}
+```
+
+```error
+```
+
+**Open enum match with a subset arm, a variant arm, and else**
+
+```metall
+{
+    enum AppErr U32
+    enum IOErr AppErr = file_not_found | broken_pipe
+    let e AppErr = IOErr.file_not_found
+    match e {
+        case IOErr.file_not_found: 1
+        case IOErr io: 2
+        else: 3
+    }
+}
+```
+
+```error
+```
+
+**Enum match binds the subset type, else binds the root**
+
+```metall
+{
+    enum AppErr U32
+    enum IOErr AppErr = file_not_found | broken_pipe
+    let e AppErr = IOErr.file_not_found
+    match e {
+        case IOErr io: let got = io
+        else other: let got = other
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Enum: scope02
+    SimpleType: scope03
+  Enum: scope02
+    SimpleType: scope04
+    EnumVariant: scope04
+    EnumVariant: scope04
+  Var: scope02
+    SimpleType: scope02
+    Ident: scope02
+  Match: scope02
+    Ident: scope02
+    SimpleType: scope02
+    Block: scope02
+      Var: scope05
+        Ident: scope05
+    Block: scope02
+      Var: scope06
+        Ident: scope06
+---
+scope01:
+scope02:
+  AppErr: enum01
+  IOErr: enum02
+  IOErr.broken_pipe: enum02
+  IOErr.file_not_found: enum02
+  e: enum01
+scope03:
+scope04:
+scope05:
+  got: enum02
+  io: enum02
+scope06:
+  got: enum01
+  other: enum01
+enum01 = AppErr
+enum02 = IOErr = file_not_found | broken_pipe
+```
+
+**try narrows an open enum to a subset**
+
+```metall
+{
+    enum AppErr U32
+    enum IOErr AppErr = file_not_found | broken_pipe
+    fun narrow(e AppErr) AppErr {
+        let io = try e is IOErr
+        io
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Enum: scope02
+    SimpleType: scope03
+  Enum: scope02
+    SimpleType: scope04
+    EnumVariant: scope04
+    EnumVariant: scope04
+  Fun: scope02
+    FunParam: scope05
+      SimpleType: scope05
+    SimpleType: scope05
+    Block: scope05
+      Var: scope06
+        Match: scope06
+          Ident: scope06
+          SimpleType: scope06
+          Block: scope06
+            Ident: scope07
+          Block: scope06
+            Return: scope08
+              Ident: scope08
+      Ident: scope06
+---
+scope01:
+scope02:
+  AppErr: enum01
+  IOErr: enum02
+  IOErr.broken_pipe: enum02
+  IOErr.file_not_found: enum02
+  narrow: fun01
+scope03:
+scope04:
+scope05:
+  e: enum01
+scope06:
+  io: enum02
+scope07:
+  __try: enum02
+scope08:
+  __try_e: enum01
+enum01 = AppErr
+enum02 = IOErr = file_not_found | broken_pipe
+fun01  = sync fun(enum01) enum01
+```
+
+**Enum match with guard chaining a variant to an unguarded arm**
+
+A guarded arm proves nothing, so an unguarded arm for the same variant still
+satisfies exhaustiveness.
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red if true: 1
+        case Color.red: 2
+        case Color.green: 3
+        case Color.blue: 4
+    }
+}
+```
+
+```error
+```
+
 ## Errors
 
 **Match on non-union**
@@ -461,7 +674,7 @@ union01 = Tri = Str | Int | Bool
 ```
 
 ```error
-test.met:3:11: match expression must be a union type, got Int
+test.met:3:11: match expression must be a union or enum type, got Int
         let x = 42
         match x { case Int: 1 }
               ^
@@ -598,6 +811,36 @@ test.met:4:5: non-exhaustive match: missing variant Int
     }
 ```
 
+**Match redundant else on exhaustive union**
+
+An else over a union match that already covers every variant is redundant and
+rejected, mirroring the closed-enum rule.
+
+```metall
+{
+    union Foo = Int | Str
+    let x = Foo(42)
+    match x {
+        case Int: "i"
+        case Str: "s"
+        else: "other"
+    }
+}
+```
+
+```error
+test.met:4:5: else is not allowed in a match on Foo; it is exhaustive
+        let x = Foo(42)
+        match x {
+        ^
+            case Int: "i"
+            case Str: "s"
+            else: "other"
+        }
+        ^
+    }
+```
+
 **Match all arms diverge cannot assign**
 
 ```metall
@@ -639,7 +882,7 @@ fun foo() Int {
 ```
 
 ```error
-test.met:2:17: match expression must be a union type, got Int
+test.met:2:17: match expression must be a union or enum type, got Int
     fun foo() Int {
         let x = try 42
                     ^^
@@ -706,4 +949,200 @@ test.met:4:28: try else block must break control flow
             }
             ^
         }
+```
+
+**Non-exhaustive closed enum match**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red: 1
+        case Color.green: 2
+    }
+}
+```
+
+```error
+test.met:4:5: non-exhaustive match: missing variant Color.blue
+        let c = Color.red
+        match c {
+        ^
+            case Color.red: 1
+            case Color.green: 2
+        }
+        ^
+    }
+```
+
+**Else not allowed on closed enum match**
+
+```metall
+{
+    enum Color U8 = red | green
+    let c = Color.red
+    match c {
+        case Color.red: 1
+        case Color.green: 2
+        else: 3
+    }
+}
+```
+
+```error
+test.met:4:5: else is not allowed in a match on closed enum Color; it is exhaustive
+        let c = Color.red
+        match c {
+        ^
+            case Color.red: 1
+            case Color.green: 2
+            else: 3
+        }
+        ^
+    }
+```
+
+**Open enum match requires else**
+
+```metall
+{
+    enum AppErr U32
+    enum IOErr AppErr = a | b
+    let e AppErr = IOErr.a
+    match e {
+        case IOErr.a: 1
+        case IOErr.b: 2
+    }
+}
+```
+
+```error
+test.met:5:5: non-exhaustive match on open enum AppErr: an else arm is required
+        let e AppErr = IOErr.a
+        match e {
+        ^
+            case IOErr.a: 1
+            case IOErr.b: 2
+        }
+        ^
+    }
+```
+
+**Match arm variant from a different enum**
+
+```metall
+{
+    enum Color U8 = red | green
+    enum Size U8 = small | big
+    let c = Color.red
+    match c {
+        case Color.red: 1
+        case Size.small: 2
+    }
+}
+```
+
+```error
+test.met:7:14: Size.small is not a variant of Color
+            case Color.red: 1
+            case Size.small: 2
+                 ^^^^^^^^^^
+        }
+```
+
+**Unreachable enum match arm**
+
+```metall
+{
+    enum AppErr U32
+    enum IOErr AppErr = a | b
+    let e AppErr = IOErr.a
+    match e {
+        case IOErr e2: 1
+        case IOErr.a: 2
+        else: 3
+    }
+}
+```
+
+```error
+test.met:7:14: unreachable match arm: all variants already covered
+            case IOErr e2: 1
+            case IOErr.a: 2
+                 ^^^^^^^
+            else: 3
+```
+
+**Closed enum non-exhaustive when a variant is only guarded**
+
+A guarded arm proves nothing, so it cannot satisfy exhaustiveness, and a closed
+enum has no else to fall back on.
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red if true: 1
+        case Color.green: 2
+        case Color.blue: 3
+    }
+}
+```
+
+```error
+test.met:4:5: non-exhaustive match: missing variant Color.red
+        let c = Color.red
+        match c {
+        ^
+            case Color.red if true: 1
+            case Color.green: 2
+            case Color.blue: 3
+        }
+        ^
+    }
+```
+
+**Bare try on an enum is rejected**
+
+An enum value has no payload to unwrap, so bare `try` has nothing to bind.
+
+```metall
+{
+    enum AppErr U32
+    enum IOErr AppErr = a | b
+    fun f(e AppErr) AppErr {
+        let x = try e
+        e
+    }
+}
+```
+
+```error
+test.met:5:17: `try` on an enum requires a subset pattern, e.g. `try e is IOErr`
+        fun f(e AppErr) AppErr {
+            let x = try e
+                    ^^^
+            e
+```
+
+**try on a closed enum has no subset to narrow to**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    fun f(c Color) Color {
+        try c is Color else { return c }
+        c
+    }
+}
+```
+
+```error
+test.met:4:18: Color is not a subset of Color
+        fun f(c Color) Color {
+            try c is Color else { return c }
+                     ^^^^^
+            c
 ```

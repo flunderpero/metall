@@ -1,0 +1,3 @@
+pub enum Ordering U8 = less | equal | greater
+pub enum AppErr U32
+pub enum IOErr AppErr = file_not_found | broken_pipe
