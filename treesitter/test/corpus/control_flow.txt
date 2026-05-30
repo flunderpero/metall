@@ -8,13 +8,17 @@ fun f() Int { if a { 1 } else { 2 } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
-    return_type: (simple_type (type_identifier))
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (if_expression
         condition: (identifier)
-        then: (block (integer_literal))
-        else: (block (integer_literal))))))
+        then: (block
+          (integer_literal))
+        else: (block
+          (integer_literal))))))
 
 ================================================================================
 If without else
@@ -26,12 +30,14 @@ fun f() void { if a { 1 } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
       (if_expression
         condition: (identifier)
-        then: (block (integer_literal))))))
+        then: (block
+          (integer_literal))))))
 
 ================================================================================
 For loop with condition
@@ -43,15 +49,20 @@ fun f() void { for i != 10 { i = i + 1 } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
       (for_expression
-        condition: (binary_expression (identifier) (integer_literal))
+        condition: (binary_expression
+          (identifier)
+          (integer_literal))
         body: (block
           (assignment
             target: (identifier)
-            value: (binary_expression (identifier) (integer_literal))))))))
+            value: (binary_expression
+              (identifier)
+              (integer_literal))))))))
 
 ================================================================================
 Unconditional for loop
@@ -63,10 +74,13 @@ fun f() void { for { break } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
-      (for_expression body: (block (break_expression))))))
+      (for_expression
+        body: (block
+          (break_expression))))))
 
 ================================================================================
 When expression
@@ -84,8 +98,10 @@ fun f() Int {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
-    return_type: (simple_type (type_identifier))
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (when_expression
         (when_case
@@ -107,16 +123,20 @@ fun f() void { for i in 0..10 { print_int(i) } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
       (for_expression
         binding: (identifier)
-        range: (range lo: (integer_literal) hi: (integer_literal))
+        range: (range
+          lo: (integer_literal)
+          hi: (integer_literal))
         body: (block
           (call_expression
             callee: (identifier)
-            arguments: (argument_list (identifier))))))))
+            arguments: (argument_list
+              (identifier))))))))
 
 ================================================================================
 For-in inclusive range
@@ -128,16 +148,20 @@ fun f() void { for i in 0..=10 { print_int(i) } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
       (for_expression
         binding: (identifier)
-        range: (range lo: (integer_literal) hi: (integer_literal))
+        range: (range
+          lo: (integer_literal)
+          hi: (integer_literal))
         body: (block
           (call_expression
             callee: (identifier)
-            arguments: (argument_list (identifier))))))))
+            arguments: (argument_list
+              (identifier))))))))
 
 ================================================================================
 For-in range with expressions
@@ -149,16 +173,20 @@ fun f() void { for i in start..end { print_int(i) } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
       (for_expression
         binding: (identifier)
-        range: (range lo: (identifier) hi: (identifier))
+        range: (range
+          lo: (identifier)
+          hi: (identifier))
         body: (block
           (call_expression
             callee: (identifier)
-            arguments: (argument_list (identifier))))))))
+            arguments: (argument_list
+              (identifier))))))))
 
 ================================================================================
 Match exhaustive
@@ -175,15 +203,27 @@ fun f(x AB) Int {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (simple_type (type_identifier))))
-    return_type: (simple_type (type_identifier))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (match_expression
         subject: (identifier)
-        (match_arm pattern: (simple_type (type_identifier)) binding: (identifier) (identifier))
-        (match_arm pattern: (simple_type (type_identifier)) (integer_literal))))))
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          binding: (identifier)
+          (identifier))
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          (integer_literal))))))
 
 ================================================================================
 Match with else
@@ -200,23 +240,30 @@ fun f(x ABC) void {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (simple_type (type_identifier))))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
     return_type: (simple_type)
     body: (block
       (match_expression
         subject: (identifier)
         (match_arm
-          pattern: (simple_type (type_identifier))
+          pattern: (simple_type
+            (type_identifier))
           binding: (identifier)
           (call_expression
             callee: (identifier)
-            arguments: (argument_list (identifier))))
+            arguments: (argument_list
+              (identifier))))
         (match_else
           (call_expression
             callee: (identifier)
-            arguments: (argument_list (string_literal))))))))
+            arguments: (argument_list
+              (string_literal))))))))
 
 ================================================================================
 Match with else binding
@@ -233,24 +280,31 @@ fun f(x AB) void {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (simple_type (type_identifier))))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
     return_type: (simple_type)
     body: (block
       (match_expression
         subject: (identifier)
         (match_arm
-          pattern: (simple_type (type_identifier))
+          pattern: (simple_type
+            (type_identifier))
           binding: (identifier)
           (call_expression
             callee: (identifier)
-            arguments: (argument_list (identifier))))
+            arguments: (argument_list
+              (identifier))))
         (match_else
           binding: (identifier)
           (call_expression
             callee: (identifier)
-            arguments: (argument_list (string_literal))))))))
+            arguments: (argument_list
+              (string_literal))))))))
 
 ================================================================================
 Match with guard
@@ -268,20 +322,34 @@ fun f(x AB) Str {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (simple_type (type_identifier))))
-    return_type: (simple_type (type_identifier))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (match_expression
         subject: (identifier)
         (match_arm
-          pattern: (simple_type (type_identifier))
+          pattern: (simple_type
+            (type_identifier))
           binding: (identifier)
-          guard: (binary_expression (identifier) (integer_literal))
+          guard: (binary_expression
+            (identifier)
+            (integer_literal))
           (string_literal))
-        (match_arm pattern: (simple_type (type_identifier)) (string_literal))
-        (match_arm pattern: (simple_type (type_identifier)) (string_literal))))))
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          (string_literal))
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          (string_literal))))))
 
 ================================================================================
 Match as expression
@@ -299,21 +367,30 @@ fun f(x AB) Int {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (simple_type (type_identifier))))
-    return_type: (simple_type (type_identifier))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (let_binding
         name: (identifier)
         value: (match_expression
           subject: (identifier)
           (match_arm
-            pattern: (simple_type (type_identifier))
+            pattern: (simple_type
+              (type_identifier))
             binding: (identifier)
-            (binary_expression (identifier) (integer_literal)))
+            (binary_expression
+              (identifier)
+              (integer_literal)))
           (match_arm
-            pattern: (simple_type (type_identifier))
+            pattern: (simple_type
+              (type_identifier))
             (integer_literal))))
       (identifier))))
 
@@ -327,11 +404,17 @@ fun f() Int { return 1  for { continue  break } }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
-    return_type: (simple_type (type_identifier))
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
-      (return_expression (integer_literal))
-      (for_expression body: (block (continue_expression) (break_expression))))))
+      (return_expression
+        (integer_literal))
+      (for_expression
+        body: (block
+          (continue_expression)
+          (break_expression))))))
 
 ================================================================================
 Try short form
@@ -346,13 +429,16 @@ fun f() R {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
-    return_type: (simple_type (type_identifier))
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (let_binding
         name: (identifier)
         value: (try_expression
-          expr: (call_expression callee: (identifier))))
+          expr: (call_expression
+            callee: (identifier))))
       (identifier))))
 
 ================================================================================
@@ -368,16 +454,22 @@ fun f() E {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
-    return_type: (simple_type (type_identifier))
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (let_binding
         name: (identifier)
         value: (try_expression
-          expr: (call_expression callee: (identifier))
-          type: (simple_type (type_identifier))
+          expr: (call_expression
+            callee: (identifier))
+          type: (simple_type
+            (type_identifier))
           binding: (identifier)
-          body: (block (return_expression (identifier)))))
+          body: (block
+            (return_expression
+              (identifier)))))
       (identifier))))
 
 ================================================================================
@@ -393,12 +485,101 @@ fun f() Str {
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
-    return_type: (simple_type (type_identifier))
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
     body: (block
       (let_binding
         name: (identifier)
         value: (try_expression
-          expr: (call_expression callee: (identifier))
-          body: (block (return_expression (string_literal)))))
+          expr: (call_expression
+            callee: (identifier))
+          body: (block
+            (return_expression
+              (string_literal)))))
       (identifier))))
+================================================================================
+Match with enum variant and subset patterns
+================================================================================
+
+fun classify(e AppErr) Int {
+    match e {
+        case Color.red: 1
+        case IOErr io: 2
+        else: 3
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm
+          pattern: (enum_variant_pattern
+            type: (simple_type
+              (type_identifier))
+            variant: (identifier))
+          (integer_literal))
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          binding: (identifier)
+          (integer_literal))
+        (match_else
+          (integer_literal))))))
+
+
+================================================================================
+Match arm with trailing if then else
+================================================================================
+
+fun f(x AB) void {
+    match x {
+        case Int v: if v > 0 { foo() }
+        else other: bar()
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type)
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          binding: (identifier)
+          (if_expression
+            condition: (binary_expression
+              (identifier)
+              (integer_literal))
+            then: (block
+              (call_expression
+                callee: (identifier)))))
+        (match_else
+          binding: (identifier)
+          (call_expression
+            callee: (identifier)))))))

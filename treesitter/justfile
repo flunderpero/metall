@@ -3,8 +3,30 @@ all: generate test build
 generate:
     tree-sitter generate
 
-test:
+# Run both the corpus tests and the .met parse check.
+test: test-treesitter test-met
+
+test-treesitter:
     tree-sitter test
+
+# Parse every .met file in the repo and fail if any has a syntax error.
+test-met:
+    #!/usr/bin/env bash
+    set -uo pipefail
+
+    failed=0
+    while IFS= read -r f; do
+        if ! tree-sitter parse "$f" --quiet >/dev/null 2>&1; then
+            echo ">>> $f FAILED"
+            tree-sitter parse "$f" 2>&1 | grep -nE "ERROR|MISSING" | head -n 5
+            failed=1
+        fi
+    done < <(find .. -name '*.met' ! -path '*/.git/*' ! -path '*/.llvm/*' | sort)
+    if [ "$failed" -ne 0 ]; then
+        echo "At least one .met file failed to parse"
+        exit 1
+    fi
+    echo "All .met files parsed cleanly"
 
 build:
     mkdir -p parser

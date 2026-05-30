@@ -28,7 +28,7 @@ fun show<T Showable>(t T) void { t }
   (function_declaration
     name: (function_name (identifier))
     type_parameters: (type_parameters
-      (type_parameter name: (type_identifier) constraint: (type_identifier)))
+      (type_parameter name: (type_identifier) constraint: (simple_type (type_identifier))))
     parameters: (parameter_list
       (parameter name: (identifier) type: (simple_type (type_identifier))))
     return_type: (simple_type)

@@ -177,3 +177,44 @@ fun f() void { [] }
     return_type: (simple_type)
     body: (block
       (empty_slice))))
+
+================================================================================
+Sub-slice expressions
+================================================================================
+
+fun f() void { let a = xs[1..3] let b = xs[..2] let c = xs[1..] let d = xs[..] let e = xs[0..=2] }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (let_binding
+        name: (identifier)
+        value: (sub_slice
+          object: (identifier)
+          lo: (integer_literal)
+          hi: (integer_literal)))
+      (let_binding
+        name: (identifier)
+        value: (sub_slice
+          object: (identifier)
+          hi: (integer_literal)))
+      (let_binding
+        name: (identifier)
+        value: (sub_slice
+          object: (identifier)
+          lo: (integer_literal)))
+      (let_binding
+        name: (identifier)
+        value: (sub_slice
+          object: (identifier)))
+      (let_binding
+        name: (identifier)
+        value: (sub_slice
+          object: (identifier)
+          lo: (integer_literal)
+          hi: (integer_literal))))))

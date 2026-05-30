@@ -8,9 +8,15 @@ fun f(a [5]Int) void {}
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (array_type (integer_literal) (simple_type (type_identifier)))))
+      (parameter
+        name: (identifier)
+        type: (array_type
+          (integer_literal)
+          (simple_type
+            (type_identifier)))))
     return_type: (simple_type)
     body: (block)))
 
@@ -24,9 +30,14 @@ fun f(a []Str) void {}
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (slice_type (simple_type (type_identifier)))))
+      (parameter
+        name: (identifier)
+        type: (slice_type
+          (simple_type
+            (type_identifier)))))
     return_type: (simple_type)
     body: (block)))
 
@@ -40,9 +51,14 @@ fun f(a []mut Int) void {}
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (slice_type (simple_type (type_identifier)))))
+      (parameter
+        name: (identifier)
+        type: (slice_type
+          (simple_type
+            (type_identifier)))))
     return_type: (simple_type)
     body: (block)))
 
@@ -56,11 +72,157 @@ fun f(a &Int, b &mut [5]Int) &Int {}
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     parameters: (parameter_list
-      (parameter name: (identifier) type: (reference_type (simple_type (type_identifier))))
       (parameter
         name: (identifier)
-        type: (reference_type (array_type (integer_literal) (simple_type (type_identifier))))))
-    return_type: (reference_type (simple_type (type_identifier)))
+        type: (reference_type
+          (simple_type
+            (type_identifier))))
+      (parameter
+        name: (identifier)
+        type: (reference_type
+          (array_type
+            (integer_literal)
+            (simple_type
+              (type_identifier))))))
+    return_type: (reference_type
+      (simple_type
+        (type_identifier)))
+    body: (block)))
+================================================================================
+Optional and result type sugar
+================================================================================
+
+fun f(a ?Int, b !Str) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (optional_type
+          (simple_type
+            (type_identifier))))
+      (parameter
+        name: (identifier)
+        type: (result_type
+          (simple_type
+            (type_identifier)))))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+Function type parameter
+================================================================================
+
+fun each(cb fun(noescape &mut T) void) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (function_type
+          (reference_type
+            (simple_type
+              (type_identifier)))
+          return_type: (simple_type))))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+Associated type
+================================================================================
+
+fun value_of(e T) T.Item {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier)
+      (type_identifier))
+    body: (block)))
+
+
+================================================================================
+Module-qualified type
+================================================================================
+
+fun f(m map.Map<Str, Bool>, p ffi.Ptr<U8>) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (identifier)
+          (type_identifier)
+          (type_arguments
+            (simple_type
+              (type_identifier))
+            (simple_type
+              (type_identifier)))))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (identifier)
+          (type_identifier)
+          (type_arguments
+            (simple_type
+              (type_identifier))))))
+    return_type: (simple_type)
+    body: (block)))
+
+================================================================================
+Type parameter with generic constraint
+================================================================================
+
+fun collect<A, I Iter<A>>(it I) void {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier))
+      (type_parameter
+        name: (type_identifier)
+        constraint: (simple_type
+          (type_identifier)
+          (type_arguments
+            (simple_type
+              (type_identifier))))))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type)
     body: (block)))

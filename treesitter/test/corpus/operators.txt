@@ -137,3 +137,21 @@ fun f() Int { (1 + 2) * 3 }
       (binary_expression
         (grouped_expression (binary_expression (integer_literal) (integer_literal)))
         (integer_literal)))))
+
+================================================================================
+Unary minus
+================================================================================
+
+fun f() Int { -x }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block
+      (unary_expression
+        (identifier)))))

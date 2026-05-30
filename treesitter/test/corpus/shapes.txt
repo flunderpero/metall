@@ -70,3 +70,35 @@ shape Empty {}
 (source_file
   (shape_declaration
     name: (type_identifier)))
+
+================================================================================
+Generic shape
+================================================================================
+
+shape LPattern<T> {
+    fun LPattern.find(p LPattern, s T) Bool
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shape_declaration
+    name: (type_identifier)
+    type_parameters: (type_parameters
+      (type_parameter
+        name: (type_identifier)))
+    (fun_signature
+      name: (function_name
+        (type_identifier)
+        (identifier))
+      parameters: (parameter_list
+        (parameter
+          name: (identifier)
+          type: (simple_type
+            (type_identifier)))
+        (parameter
+          name: (identifier)
+          type: (simple_type
+            (type_identifier))))
+      return_type: (simple_type
+        (type_identifier)))))

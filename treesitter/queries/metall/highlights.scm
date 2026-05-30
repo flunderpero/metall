@@ -5,6 +5,7 @@
   "struct"
   "shape"
   "union"
+  "enum"
   "use"
   "let"
   "pub"
@@ -55,7 +56,6 @@
 ; >>> Generics
 
 (type_parameter name: (type_identifier) @type.definition)
-(type_parameter constraint: (type_identifier) @type)
 (type_arguments (simple_type (type_identifier) @type))
 
 ; >>> Functions
@@ -95,6 +95,20 @@
 ; >>> Unions
 
 (union_declaration name: (type_identifier) @type.definition)
+
+; >>> Enums
+
+(enum_declaration name: (type_identifier) @type.definition)
+(enum_variant name: (identifier) @constant)
+(enum_variant_pattern variant: (identifier) @constant)
+
+; >>> Function types
+
+(function_type "fun" @keyword.function)
+
+; >>> Top-level macro invocation
+
+(macro_invocation module: (identifier) @module)
 
 ; >>> Conditional compilation — placed after the generic identifier/keyword
 ; fallbacks so the `#if ... #end` overrides win (tree-sitter picks the
@@ -167,7 +181,7 @@
 
 ; >>> Operators
 
-["+" "-" "*" "/" "%" "==" "!=" "<" "<=" ">" ">=" "=" ".." "..=" "|" "^" "&" "<<" ">>" "~"] @operator
+["+" "-" "*" "/" "%" "==" "!=" "<" "<=" ">" ">=" "=" ".." "..=" "|" "^" "&" "<<" "~"] @operator
 
 ; >>> Punctuation
 

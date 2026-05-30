@@ -1,0 +1,197 @@
+================================================================================
+Closed enum, compiler-assigned
+================================================================================
+
+enum Ordering U8 = less | equal | greater
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    backing: (simple_type
+      (type_identifier))
+    variants: (enum_variants
+      (enum_variants
+        (enum_variants
+          (enum_variant
+            name: (identifier)))
+        (enum_variant
+          name: (identifier)))
+      (enum_variant
+        name: (identifier)))))
+
+================================================================================
+Closed enum with a leading pipe
+================================================================================
+
+enum Ordering U8 =
+    | less
+    | equal
+    | greater
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    backing: (simple_type
+      (type_identifier))
+    variants: (enum_variants
+      (enum_variants
+        (enum_variants
+          (enum_variant
+            name: (identifier)))
+        (enum_variant
+          name: (identifier)))
+      (enum_variant
+        name: (identifier)))))
+
+================================================================================
+Enum with associated data and explicit discriminants
+================================================================================
+
+enum Color(name Str, rgb U32) U8 = red("Red", 1) = 1 | green("Green", 2) = 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    parameters: (enum_parameters
+      (parameter_list
+        (parameter
+          name: (identifier)
+          type: (simple_type
+            (type_identifier)))
+        (parameter
+          name: (identifier)
+          type: (simple_type
+            (type_identifier)))))
+    backing: (simple_type
+      (type_identifier))
+    variants: (enum_variants
+      (enum_variants
+        (enum_variant
+          name: (identifier)
+          (argument_list
+            (string_literal)
+            (integer_literal))
+          discriminant: (integer_literal)))
+      (enum_variant
+        name: (identifier)
+        (argument_list
+          (string_literal)
+          (integer_literal))
+        discriminant: (integer_literal)))))
+
+================================================================================
+Open root, no body
+================================================================================
+
+enum AppErr U32
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    backing: (simple_type
+      (type_identifier))))
+
+================================================================================
+Open root with associated-data schema
+================================================================================
+
+enum AppErr(posix_code ?I32) U32
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    parameters: (enum_parameters
+      (parameter_list
+        (parameter
+          name: (identifier)
+          type: (optional_type
+            (simple_type
+              (type_identifier))))))
+    backing: (simple_type
+      (type_identifier))))
+
+================================================================================
+Closed subset of an open root
+================================================================================
+
+enum IOErr AppErr = file_not_found(2) | broken_pipe(32)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    backing: (simple_type
+      (type_identifier))
+    variants: (enum_variants
+      (enum_variants
+        (enum_variant
+          name: (identifier)
+          (argument_list
+            (integer_literal))))
+      (enum_variant
+        name: (identifier)
+        (argument_list
+          (integer_literal))))))
+
+================================================================================
+Negative discriminants
+================================================================================
+
+enum Temp I8 = cold = -1 | mild = 0 | hot = 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    backing: (simple_type
+      (type_identifier))
+    variants: (enum_variants
+      (enum_variants
+        (enum_variants
+          (enum_variant
+            name: (identifier)
+            discriminant: (integer_literal)))
+        (enum_variant
+          name: (identifier)
+          discriminant: (integer_literal)))
+      (enum_variant
+        name: (identifier)
+        discriminant: (integer_literal)))))
+
+================================================================================
+Local enum inside a function
+================================================================================
+
+fun main() void { enum Local U8 = a | b }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (enum_declaration
+        name: (type_identifier)
+        backing: (simple_type
+          (type_identifier))
+        variants: (enum_variants
+          (enum_variants
+            (enum_variant
+              name: (identifier)))
+          (enum_variant
+            name: (identifier)))))))
+

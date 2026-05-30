@@ -34,13 +34,28 @@ module.exports = grammar({
     [$.simple_type],
     [$.call_expression],
     [$.function_declaration],
+    // A trailing `if`/`try` (no else block) in a match arm / when case body can
+    // be followed by the match/when `else`. GLR explores attaching `else` to the
+    // if/try vs the enclosing match/when; the block-vs-`:` shape decides.
+    [$.if_expression],
+    [$.try_expression],
   ],
 
   rules: {
     source_file: ($) => seq(repeat($.import_declaration), repeat($._declaration)),
 
     _declaration: ($) =>
-      choice($.function_declaration, $.extern_function_declaration, $.export_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.let_binding, $.compile_if_declaration),
+      choice($.function_declaration, $.extern_function_declaration, $.export_declaration, $.struct_declaration, $.shape_declaration, $.union_declaration, $.enum_declaration, $.let_binding, $.compile_if_declaration, $.macro_invocation),
+
+    // A top-level macro call like `mod.macro(args)`. A dedicated rule (rather than
+    // reusing call_expression) keeps declarations out of the callee position.
+    macro_invocation: ($) =>
+      seq(
+        field("module", $.identifier),
+        repeat1(seq(".", $.identifier)),
+        optional(field("type_arguments", $.type_arguments)),
+        "(", field("arguments", optional($.argument_list)), ")",
+      ),
 
     // >>> Conditional compilation
 
@@ -113,7 +128,9 @@ module.exports = grammar({
 
     // >>> Identifiers
 
-    identifier: (_) => /[a-z][a-zA-Z0-9_]*/,
+    // A leading underscore covers the `_` discard target and compiler builtins
+    // like `__errno`.
+    identifier: (_) => /[a-z_][a-zA-Z0-9_]*/,
 
     type_identifier: (_) => /[A-Z][a-zA-Z0-9_]*/,
 
@@ -157,7 +174,7 @@ module.exports = grammar({
     type_parameter: ($) => seq(
       optional(choice("sync", "unsync")),
       field("name", $.type_identifier),
-      field("constraint", optional($.type_identifier)),
+      optional(field("constraint", $.simple_type)),
       optional(seq("=", field("default", $._type))),
     ),
 
@@ -171,10 +188,47 @@ module.exports = grammar({
     // >>> Types
 
     _type: ($) =>
-      choice($.simple_type, $.array_type, $.slice_type, $.reference_type),
+      choice(
+        $.simple_type,
+        $.array_type,
+        $.slice_type,
+        $.reference_type,
+        $.optional_type,
+        $.result_type,
+        $.function_type,
+      ),
 
+    // `?T` is `Option<T>`; `!T` is `Result<T>`.
+    optional_type: ($) => seq("?", $._type),
+
+    result_type: ($) => seq("!", $._type),
+
+    // A `sync`/`unsync` function type only appears as a parameter type in
+    // practice (`f sync fun() T`), where the parameter modifier captures it, so
+    // the function type itself does not carry one.
+    function_type: ($) =>
+      seq(
+        "fun",
+        "(",
+        optional(seq(
+          seq(optional("noescape"), $._type),
+          repeat(seq(",", optional("noescape"), $._type)),
+        )),
+        ")",
+        optional("noescape"),
+        field("return_type", $._type),
+      ),
+
+    // An optional lowercase prefix is a module qualifier (`map.Map`). A dotted
+    // chain of uppercase segments covers nested and associated types (`T.Item`).
+    // A `.lowercase` (e.g. an enum variant) stops the chain for the caller.
     simple_type: ($) => choice(
-      seq($.type_identifier, optional($.type_arguments)),
+      seq(
+        optional(seq($.identifier, ".")),
+        $.type_identifier,
+        repeat(seq(".", $.type_identifier)),
+        optional($.type_arguments),
+      ),
       "void",
       "never",
     ),
@@ -203,6 +257,7 @@ module.exports = grammar({
 
     extern_function_declaration: ($) =>
       seq(
+        optional("pub"),
         "extern",
         optional(seq("(", field("link_name", $.string_literal), ")")),
         "fun",
@@ -231,7 +286,8 @@ module.exports = grammar({
         seq($.type_identifier, ".", $.identifier),
       ),
 
-    parameter_list: ($) => seq($.parameter, repeat(seq(",", $.parameter))),
+    // The comma between parameters is optional (`a Int, b Str` or `a Int b Str`).
+    parameter_list: ($) => seq($.parameter, repeat(seq(optional(","), $.parameter)), optional(",")),
 
     parameter: ($) =>
       seq(
@@ -268,6 +324,7 @@ module.exports = grammar({
         optional("pub"),
         "shape",
         field("name", $.type_identifier),
+        optional(field("type_parameters", $.type_parameters)),
         "{",
         repeat($.struct_field),
         repeat($.fun_signature),
@@ -302,6 +359,46 @@ module.exports = grammar({
     union_variants: ($) =>
       prec.left(seq($._type, repeat1(seq("|", $._type)))),
 
+    // >>> Enum declaration
+    // `enum Name (schema)? Backing (= variant (| variant)*)?`. The backing is an
+    // unsigned int type for a standalone/open enum, or an open root's name for a
+    // closed subset. No body means an open root.
+
+    enum_declaration: ($) =>
+      seq(
+        optional("pub"),
+        "enum",
+        field("name", $.type_identifier),
+        optional(field("parameters", $.enum_parameters)),
+        field("backing", $._type),
+        optional(seq(
+          "=",
+          optional("|"),
+          field("variants", $.enum_variants),
+        )),
+      ),
+
+    enum_parameters: ($) => seq("(", optional($.parameter_list), ")"),
+
+    // A local enum is an expression, and its lowercase variant names are also
+    // valid expressions, so the variant list competes with bit-or and the
+    // discriminant `=` with assignment. Left recursion with precedence above
+    // PREC.BIT_OR / PREC.ASSIGN makes the greedy enum reading win.
+    enum_variants: ($) =>
+      prec.left(PREC.BIT_OR + 1, choice(
+        $.enum_variant,
+        seq($.enum_variants, "|", $.enum_variant),
+      )),
+
+    enum_variant: ($) =>
+      prec(PREC.ASSIGN + 1, seq(
+        field("name", $.identifier),
+        // Immediate `(` (no space) marks associated data, mirroring how it is
+        // always written and disambiguating from a following grouped expression.
+        optional(seq(token.immediate("("), optional($.argument_list), ")")),
+        optional(seq("=", optional("-"), field("discriminant", $.integer_literal))),
+      )),
+
     // >>> Blocks
 
     block: ($) => seq("{", repeat($._expression), "}"),
@@ -329,6 +426,7 @@ module.exports = grammar({
         $.struct_declaration,
         $.shape_declaration,
         $.union_declaration,
+        $.enum_declaration,
 
         // Type-prefixed expressions.
         $.qualified_name,
@@ -348,6 +446,7 @@ module.exports = grammar({
         $.call_expression,
         $.field_access,
         $.index_expression,
+        $.sub_slice,
         $.reference,
         $.dereference,
 
@@ -389,11 +488,11 @@ module.exports = grammar({
 
     let_binding: ($) =>
       prec.right(PREC.ASSIGN,
-        seq("let", field("name", $.identifier), "=", field("value", $._expression))),
+        seq(optional("pub"), "let", field("name", $.identifier), optional(field("type", $._type)), "=", field("value", $._expression))),
 
     mut_binding: ($) =>
       prec.right(PREC.ASSIGN,
-        seq("mut", field("name", $.identifier), "=", field("value", $._expression))),
+        seq("mut", field("name", $.identifier), optional(field("type", $._type)), "=", field("value", $._expression))),
 
     allocator_binding: ($) =>
       prec.right(PREC.ASSIGN, seq(
@@ -432,7 +531,9 @@ module.exports = grammar({
         prec.left(PREC.COMPARE, seq($._expression, ">", $._expression)),
         prec.left(PREC.COMPARE, seq($._expression, ">=", $._expression)),
         prec.left(PREC.SHIFT, seq($._expression, "<<", $._expression)),
-        prec.left(PREC.SHIFT, seq($._expression, ">>", $._expression)),
+        // Right-shift is two adjacent `>` rather than one token, so a nested
+        // generic close like `Foo<Bar<T>>` can consume them as two `>`.
+        prec.left(PREC.SHIFT, seq($._expression, ">", token.immediate(">"), $._expression)),
         prec.left(PREC.ADD, seq($._expression, "+", $._expression)),
         prec.left(PREC.ADD, seq($._expression, "-", $._expression)),
         prec.left(PREC.ADD, seq($._expression, "+%", $._expression)),
@@ -447,6 +548,7 @@ module.exports = grammar({
       choice(
         prec.right(PREC.UNARY, seq("not", $._expression)),
         prec.right(PREC.UNARY, seq("~", $._expression)),
+        prec.right(PREC.UNARY, seq("-", $._expression)),
       ),
 
     // >>> Postfix expressions
@@ -460,7 +562,7 @@ module.exports = grammar({
       )),
 
     argument_list: ($) =>
-      seq($._expression, repeat(seq(",", $._expression))),
+      seq($._expression, repeat(seq(",", $._expression)), optional(",")),
 
     field_access: ($) =>
       prec.left(PREC.POSTFIX, seq(
@@ -475,6 +577,17 @@ module.exports = grammar({
         "[", field("index", $._expression), "]",
       )),
 
+    // `a[lo..hi]`, `a[lo..]`, `a[..hi]`, `a[..]`, `a[lo..=hi]`. Bounds optional.
+    sub_slice: ($) =>
+      prec(PREC.POSTFIX, seq(
+        field("object", $._expression),
+        "[",
+        optional(field("lo", $._expression)),
+        choice("..", "..="),
+        optional(field("hi", $._expression)),
+        "]",
+      )),
+
     reference: ($) => prec(PREC.UNARY, seq("&", optional("mut"), $._expression)),
 
     dereference: ($) =>
@@ -483,12 +596,12 @@ module.exports = grammar({
     // >>> Control flow
 
     if_expression: ($) =>
-      prec.right(seq(
+      seq(
         "if",
         field("condition", $._expression),
         field("then", $.block),
         optional(seq("else", field("else", $.block))),
-      )),
+      ),
 
     when_expression: ($) =>
       seq(
@@ -551,12 +664,19 @@ module.exports = grammar({
     match_arm: ($) =>
       seq(
         "case",
-        field("pattern", $._type),
+        field("pattern", $._match_pattern),
         optional(field("binding", $.identifier)),
         optional(seq("if", field("guard", $._expression))),
         ":",
         repeat($._expression),
       ),
+
+    // A union variant or whole enum subset (a type), or a qualified enum variant
+    // like `Color.red`.
+    _match_pattern: ($) => choice($._type, $.enum_variant_pattern),
+
+    enum_variant_pattern: ($) =>
+      seq(field("type", $._type), ".", field("variant", $.identifier)),
 
     match_else: ($) =>
       seq(
@@ -569,7 +689,7 @@ module.exports = grammar({
     // >>> Try expression
 
     try_expression: ($) =>
-      prec.right(seq(
+      seq(
         "try",
         field("expr", $._expression),
         optional(seq("is", field("type", $._type))),
@@ -578,7 +698,7 @@ module.exports = grammar({
           optional(field("binding", $.identifier)),
           field("body", $.block),
         )),
-      )),
+      ),
 
     return_expression: ($) =>
       prec.right(PREC.ASSIGN, seq("return", $._expression)),

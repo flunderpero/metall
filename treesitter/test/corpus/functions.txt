@@ -246,3 +246,64 @@ let f = fun(a, b Int) { b }
         (function_literal_parameter name: (identifier))
         (function_literal_parameter name: (identifier) type: (simple_type (type_identifier))))
       body: (block (identifier)))))
+
+================================================================================
+Comma-less parameters
+================================================================================
+
+fun f(s []T pattern P) Bool {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (slice_type
+          (simple_type
+            (type_identifier))))
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block)))
+
+================================================================================
+Top-level macro invocation
+================================================================================
+
+macro_macro.apply("hello")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (macro_invocation
+    module: (identifier)
+    (identifier)
+    arguments: (argument_list
+      (string_literal))))
+
+================================================================================
+Public extern function
+================================================================================
+
+pub extern fun abs(n I32) I32
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (extern_function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))))
