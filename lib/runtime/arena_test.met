@@ -191,7 +191,7 @@ fun verify(p ffi.PtrMut<U8>, n Int) !void {
     for i in 0..n {
         let read = unsafe p.read()
         if read != i.to_u8_wrapping() {
-            return Err("unexpected byte")
+            return test.AssertErr.mismatch
         }
         p = p.offset(1)
     }

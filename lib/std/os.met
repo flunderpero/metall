@@ -1,6 +1,7 @@
 use std.ffi
 use std.posix
 use std.fs
+use std.io
 
 pub struct RunResult {
     pub status Int
@@ -30,7 +31,12 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
         ffi.slice_ptr(popen_mode),
     )
     if f.is_null() {
-        return Err(posix.errno_str())
+        let errno = posix.errno()
+        if errno.value == posix.ErrnoKind.einval.tag {
+            -- This should never happen.
+            panic("popen returned einval")
+        }
+        return io.IOErr.from_errno(errno)
     }
     let out = StrBuilder.new(4096, @a)
     let buf = unsafe @a.slice_uninit<U8>(4096)
@@ -40,21 +46,29 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
         let bytes_read = unsafe fread(buf_ptr, 1, buf.len, f)
         if bytes_read <= 0 {
             let errno = posix.errno()
-            if errno == 0 {
+            if errno.value == 0 {
                 break
             }
-            return Err(posix.errno_str())
+            return io.IOErr.from_errno(errno)
         }
         out.utf8_lossy(buf[0..bytes_read])
     }
     posix.reset_errno()
     let raw_status = unsafe pclose(f)
     if raw_status < 0 {
-        return Err(posix.errno_str())
+        return io.IOErr.from_errno(posix.errno())
     }
-    let status = ((raw_status >> 8) & 0xFF).to_int()  -- WEXITSTATUS(raw_status)
+    let sig = raw_status & 0x7F
+    let status = if sig != 0 {
+        -- Killed by signal: 128+N is the shell convention.
+        128 + sig.to_int()
+    } else {
+        ((raw_status >> 8) & 0xFF).to_int()
+    }
     RunResult(status, out.as_str())
 }
+
+pub enum ShellErr Err = failed
 
 --- Run a program in the system's shell to completion and capture its stdout/stderr.
 
@@ -64,7 +78,7 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
 pub fun shell_output(cmd []Str, @a Arena) !Str {
     let result = try shell(cmd, @a)
     if result.status != 0 {
-        return Err("non-zero exit code")
+        return ShellErr.failed
     }
     result.output
 }
@@ -77,7 +91,7 @@ pub fun shell_output(cmd []Str, @a Arena) !Str {
 pub fun shell_checked(cmd []Str, @a Arena) !void {
     let result = try shell(cmd, @a)
     if result.status != 0 {
-        return Err("non-zero exit code")
+        return ShellErr.failed
     }
 }
 
@@ -87,7 +101,7 @@ pub fun chdir(dir fs.Path) !void {
     posix.reset_errno()
     let res = unsafe c_chdir(ffi.cstr(dir.as_bytes(), @local)) 
     if res != 0 {
-        return Err(posix.errno_str())
+        return io.IOErr.from_errno(posix.errno())
     }
 }
 

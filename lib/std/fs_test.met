@@ -1,5 +1,6 @@
 use std.test
 use std.fs
+use std.io
 use std.os
 use std.iter
 
@@ -90,12 +91,12 @@ fun main() void {
         let content = "this is a test"
 
         -- write file
-        mut sut = try fs.File.open(path, "w", @local)
+        mut sut = try fs.File.open(path, fs.FileOpenMode.write, @local)
         _ = try sut.write(content.as_bytes())
         try sut.close()
 
         -- read it again
-        sut = try fs.File.open(path, "r", @local)
+        sut = try fs.File.open(path, fs.FileOpenMode.read, @local)
         let buf = unsafe @local.slice_uninit<U8>(1024)
         let read_bytes = try sut.read(buf)
         let read_str = Str.from_utf8_lossy(read_bytes, @local)
@@ -104,9 +105,9 @@ fun main() void {
     })
     file_suite.test("read non-existing file", fun() !void {
         let @local = Arena()
-        match fs.File.open(fs.Path.from_str("does not exist i think.met"), "r", @local) {
-            case Err e: try test.contains_str(e.msg, "No such file")
-            else: return Err("expected an error")
+        match fs.File.open(fs.Path.from_str("does not exist i think.met"), fs.FileOpenMode.read, @local) {
+            case Err e: try test.eq(io.IOErr.not_found, e)
+            else: return test.AssertErr.not_an_error
         }
     })
     file_suite.test("read_file and write_file", fun() !void {
@@ -163,7 +164,7 @@ fun main() void {
             files)
     })
     read_dir_suite.test("dir not found", fun[@local]() !void {
-        try test.err(fs.read_dir(fs.Path.from_str("does not exist at all"), @local), "No such file or director")
+        try test.err(fs.read_dir(fs.Path.from_str("does not exist at all"), @local), io.IOErr.not_found)
     })
     _= read_dir_suite.run()
 }

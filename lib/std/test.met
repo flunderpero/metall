@@ -58,7 +58,10 @@ pub fun Suite.run(s &mut Suite) SuiteResult {
     SuiteResult(s.tests.len - failed, failed)
 }
 
-let assertion_failed_err = Err("assertion failed")
+pub enum AssertErr Err = 
+    | mismatch
+    | not_an_error
+    | not_found
 
 shape HasEqFmt {
     pub fun HasEqFmt.eq(e HasEqFmt, other HasEqFmt) Bool
@@ -68,14 +71,14 @@ shape HasEqFmt {
 pub fun ok(b Bool, msg Str = "") !void { 
     if not b { 
         print_assert_err_msg(msg, "want: true, got: false")
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
 pub fun not_ok(b Bool, msg Str = "") !void { 
     if b { 
         print_assert_err_msg(msg, "want: false, got: true")
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -89,7 +92,7 @@ pub fun contains_str(haystack Str, needle Str, msg Str = "") !void {
         sb.str(needle)
         sb.str("'")
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.not_found
     }
 }
 
@@ -102,7 +105,7 @@ pub fun eq<T HasEqFmt>(want T, got T, msg Str = "") !void {
         sb.str(", got ")
         sb.fmt<T>(got)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -115,7 +118,7 @@ pub fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
         sb.str("not to equal ")
         sb.fmt<T>(got)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -128,7 +131,7 @@ pub fun gt_int(left Int, right Int, msg Str = "") !void {
         sb.str(" > ")
         sb.int(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -141,7 +144,7 @@ pub fun gte_int(left Int, right Int, msg Str = "") !void {
         sb.str(" >= ")
         sb.int(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -154,7 +157,7 @@ pub fun lt_int(left Int, right Int, msg Str = "") !void {
         sb.str(" < ")
         sb.int(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -167,7 +170,7 @@ pub fun lte_int(left Int, right Int, msg Str = "") !void {
         sb.str(" <= ")
         sb.int(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -180,7 +183,7 @@ pub fun gt_u64(left U64, right U64, msg Str = "") !void {
         sb.str(" > ")
         sb.u64(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -193,7 +196,7 @@ pub fun gte_u64(left U64, right U64, msg Str = "") !void {
         sb.str(" >= ")
         sb.u64(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -206,7 +209,7 @@ pub fun lt_u64(left U64, right U64, msg Str = "") !void {
         sb.str(" < ")
         sb.u64(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
@@ -219,26 +222,25 @@ pub fun lte_u64(left U64, right U64, msg Str = "") !void {
         sb.str(" <= ")
         sb.u64(right)
         print_assert_err_msg(msg, sb.as_str())
-        return assertion_failed_err
+        return AssertErr.mismatch
     }
 }
 
-pub fun err<T>(obj !T, err_msg_contains Str, msg Str = "") !void {
+pub fun err<T>(obj !T, expected Err, msg Str = "") !void {
     match obj {
-        case Err e: 
-            if not e.msg.contains(err_msg_contains) {
-                let @local = Arena()
-                let sb = StrBuilder.new(32, @local)
-                sb.str("want error to contain '")
-                sb.str(err_msg_contains)
-                sb.str("', but got: ")
-                sb.str(e.msg)
-                print_assert_err_msg(msg, sb.as_str())
-                return assertion_failed_err
-            }
+        case Err e if e == expected: 
+        case Err e if e != expected: 
+            let @local = Arena()
+            let sb = StrBuilder.new(32, @local)
+            sb.str("want error to be '")
+            sb.str(expected.debug_name)
+            sb.str("', but got: ")
+            sb.str(e.debug_name)
+            print_assert_err_msg(msg, sb.as_str())
+            return AssertErr.mismatch
         else: 
             print_assert_err_msg(msg, "want an error")
-            return assertion_failed_err
+            return AssertErr.not_an_error
     }
 }
 

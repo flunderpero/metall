@@ -3622,25 +3622,27 @@ fun main() void {
 **void as union type argument**
 
 ```metall
+enum UnicodeErr Err = surrogate
+
 fun main() void {
-    fun might_fail(ok Bool) Result<void> {
-        if ok { void } else { Err("something went wrong") }
+    fun validate(valid Bool) Result<void> {
+        if valid { void } else { UnicodeErr.surrogate }
     }
 
-    match might_fail(true) {
+    match validate(true) {
         case void: DebugIntern.print_str("ok")
-        case Err e: DebugIntern.print_str(e.msg)
+        case Err e: DebugIntern.print_str(e.debug_name)
     }
-    match might_fail(false) {
+    match validate(false) {
         case void: DebugIntern.print_str("ok")
-        case Err e: DebugIntern.print_str(e.msg)
+        case Err e: DebugIntern.print_str(e.debug_name)
     }
 }
 ```
 
 ```output
 ok
-something went wrong
+test.UnicodeErr.surrogate
 ```
 
 **union auto-wrap deeply nested showcase**
@@ -4288,32 +4290,34 @@ fun main() void {
 **Option and Result sugar**
 
 ```metall
-fun maybe(x Bool) ?Int {
-    if x { Option(42) }
+enum UnicodeErr Err = malformed_utf8
+
+fun lookup(found Bool) ?Int {
+    if found { Option(42) }
     else { Option(None()) }
 }
 
-fun try_it(x Bool) !Int {
-    if x { Result(1) }
-    else { Result(Err("nope")) }
+fun decode(valid Bool) !Int {
+    if valid { Result(1) }
+    else { Result(UnicodeErr.malformed_utf8) }
 }
 
 fun main() void {
-    match maybe(true) {
+    match lookup(true) {
         case Int i: DebugIntern.print_int(i)
         case None: DebugIntern.print_str("none")
     }
-    match maybe(false) {
+    match lookup(false) {
         case Int: DebugIntern.print_str("int")
         case None: DebugIntern.print_str("none")
     }
-    match try_it(true) {
+    match decode(true) {
         case Int i: DebugIntern.print_int(i)
-        case Err e: DebugIntern.print_str(e.msg)
+        case Err e: DebugIntern.print_str(e.debug_name)
     }
-    match try_it(false) {
+    match decode(false) {
         case Int: DebugIntern.print_str("int")
-        case Err e: DebugIntern.print_str(e.msg)
+        case Err e: DebugIntern.print_str(e.debug_name)
     }
 }
 ```
@@ -4322,7 +4326,7 @@ fun main() void {
 42
 none
 1
-nope
+test.UnicodeErr.malformed_utf8
 ```
 
 ## Try
@@ -4330,47 +4334,49 @@ nope
 **try expression**
 
 ```metall
+enum UnicodeErr Err = malformed_utf8 | truncated | surrogate | overlong
+
 fun main() void {
-    fun might_fail(ok Bool) Result<Int> {
-        if ok { 42 } else { Err("fail") }
+    fun decode(valid Bool) Result<Int> {
+        if valid { 42 } else { UnicodeErr.malformed_utf8 }
     }
 
     fun short_form() Result<Int> {
-        let x = try might_fail(true)
+        let x = try decode(true)
         DebugIntern.print_int(x)
-        try might_fail(false)
+        try decode(false)
     }
     match short_form() {
         case Int: DebugIntern.print_str("int")
-        case Err e: DebugIntern.print_str(e.msg)
+        case Err e: DebugIntern.print_str(e.debug_name)
     }
 
     fun with_else() Str {
-        let x = try might_fail(false) else e { return e.msg }
+        let x = try decode(false) else e { return e.debug_name }
         DebugIntern.print_int(x)
         "ok"
     }
     DebugIntern.print_str(with_else())
 
     fun with_is() Err {
-        let n = try might_fail(true) is Int else e { return e }
+        let n = try decode(true) is Int else e { return e }
         DebugIntern.print_int(n)
-        Err("done")
+        UnicodeErr.truncated
     }
-    DebugIntern.print_str(with_is().msg)
+    DebugIntern.print_str(with_is().debug_name)
 
     fun with_void() Err {
-        fun check(ok Bool) Result<void> {
-            if ok { void } else { Err("void fail") }
+        fun check(valid Bool) Result<void> {
+            if valid { void } else { UnicodeErr.surrogate }
         }
         try check(true)
         try check(false)
-        Err("all ok")
+        UnicodeErr.overlong
     }
-    DebugIntern.print_str(with_void().msg)
+    DebugIntern.print_str(with_void().debug_name)
 
     fun no_binding() Str {
-        let n = try might_fail(false) else { return "no binding" }
+        let n = try decode(false) else { return "no binding" }
         DebugIntern.print_int(n)
         "ok"
     }
@@ -4380,11 +4386,11 @@ fun main() void {
 
 ```output
 42
-fail
-fail
+test.UnicodeErr.malformed_utf8
+test.UnicodeErr.malformed_utf8
 42
-done
-void fail
+test.UnicodeErr.truncated
+test.UnicodeErr.surrogate
 no binding
 ```
 
@@ -4697,15 +4703,17 @@ test.met:5:15: c
 **panic in try else**
 
 ```metall
+enum UnicodeErr Err = malformed_utf8
+
 fun main() void {
-    fun fail() Result<Int> { Err("fail") }
-    let x = try fail() else { panic("boom") }
+    fun decode() Result<Int> { UnicodeErr.malformed_utf8 }
+    let x = try decode() else { panic("boom") }
     DebugIntern.print_int(x)
 }
 ```
 
 ```panic
-test.met:3:31: boom
+test.met:5:33: boom
 ```
 
 **panic in loop body**
@@ -5119,13 +5127,15 @@ fun main() !void {}
 **main returns !void error**
 
 ```metall
+enum UnicodeErr Err = malformed_utf8
+
 fun main() !void {
-    Err("something went wrong")
+    UnicodeErr.malformed_utf8
 }
 ```
 
 ```panic
-something went wrong
+failed: test.UnicodeErr.malformed_utf8
 ```
 
 **main returns !void error but panics**
@@ -5915,4 +5925,42 @@ eq
 neq
 family-eq
 family-neq
+```
+
+**signed backing: negative discriminants, .tag, and from_tag round-trip**
+
+```metall
+use std.enums
+
+enum Cmp I8 = less = -1 | equal = 0 | greater = 1
+
+fun label(c Cmp) Str {
+    match c {
+        case Cmp.less: "less"
+        case Cmp.equal: "equal"
+        case Cmp.greater: "greater"
+    }
+}
+
+fun main() void {
+    DebugIntern.print_int(Cmp.less.tag.to_int())
+    DebugIntern.print_int(Cmp.greater.tag.to_int())
+    DebugIntern.print_str(label(Cmp.less))
+    match enums.from_tag<Cmp>(-1) {
+        case None: DebugIntern.print_str("none")
+        else c: DebugIntern.print_str(c.debug_name)
+    }
+    match enums.from_tag<Cmp>(2) {
+        case None: DebugIntern.print_str("out of range")
+        else c: DebugIntern.print_str("BAD")
+    }
+}
+```
+
+```output
+-1
+1
+less
+less
+out of range
 ```

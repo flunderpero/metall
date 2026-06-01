@@ -9,25 +9,21 @@
 
 @__main_newline = private constant [1 x i8] c"\0A"
 @__panic_sep = private constant [2 x i8] c": "
+@__main_failed_prefix = private constant [8 x i8] c"failed: "
 @__str_true.data = private constant [4 x i8] c"true"
 @__str_false.data = private constant [5 x i8] c"false"
 
-; Result<void> = {i64 tag, {%Str}}: tag != 0 => Err, print msg and exit 1.
-define internal i32 @__main_check_result(ptr %result) alwaysinline {
-    %tag_ptr = getelementptr {i64, %Str}, ptr %result, i32 0, i32 0
-    %tag = load i64, ptr %tag_ptr
-    %is_err = icmp ne i64 %tag, 0
-    br i1 %is_err, label %err, label %ok
-err:
-    %msg_ptr = getelementptr {i64, %Str}, ptr %result, i32 0, i32 1, i32 0, i32 0
-    %msg_data = load ptr, ptr %msg_ptr
-    %len_ptr = getelementptr {i64, %Str}, ptr %result, i32 0, i32 1, i32 0, i32 1
-    %msg_len = load i64, ptr %len_ptr
-    call i64 @write(i32 2, ptr %msg_data, i64 %msg_len)
+; When main returns an error, the generated entry code resolves the error's
+; debug_name and passes it here to print "failed: <debug_name>" to stderr.
+define internal void @__main_print_failed(ptr %name) {
+    call i64 @write(i32 2, ptr @__main_failed_prefix, i64 8)
+    %data_ptr = getelementptr %Str, ptr %name, i32 0, i32 0, i32 0
+    %data = load ptr, ptr %data_ptr
+    %len_ptr = getelementptr %Str, ptr %name, i32 0, i32 0, i32 1
+    %len = load i64, ptr %len_ptr
+    call i64 @write(i32 2, ptr %data, i64 %len)
     call i64 @write(i32 2, ptr @__main_newline, i64 1)
-    ret i32 1
-ok:
-    ret i32 0
+    ret void
 }
 
 define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn alwaysinline cold {

@@ -80,54 +80,54 @@ fun main() void {
         try test.eq(Result(""), Str.from_utf8_checked(empty))
 
         -- bare continuation at start
-        try test.err(Str.from_utf8_checked([U8(128), 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(128), 65][..]), UnicodeErr.malformed_utf8)
         -- bare continuation in middle
-        try test.err(Str.from_utf8_checked([U8(65), 128, 66][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 128, 66][..]), UnicodeErr.malformed_utf8)
         -- bare continuation at end
-        try test.err(Str.from_utf8_checked([U8(65), 191][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 191][..]), UnicodeErr.malformed_utf8)
         -- multiple consecutive continuations
-        try test.err(Str.from_utf8_checked([U8(128), 191][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(128), 191][..]), UnicodeErr.malformed_utf8)
 
         -- invalid lead byte 248
-        try test.err(Str.from_utf8_checked([U8(248), 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(248), 65][..]), UnicodeErr.malformed_utf8)
         -- invalid lead byte 255
-        try test.err(Str.from_utf8_checked([U8(255)][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(255)][..]), UnicodeErr.malformed_utf8)
 
         -- truncated 2-byte: lead at end
-        try test.err(Str.from_utf8_checked([U8(65), 195][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 195][..]), UnicodeErr.malformed_utf8)
         -- truncated 2-byte: continuation replaced by ascii
-        try test.err(Str.from_utf8_checked([U8(195), 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(195), 65][..]), UnicodeErr.malformed_utf8)
         -- truncated 2-byte: continuation replaced by lead
-        try test.err(Str.from_utf8_checked([U8(226), 195, 164][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(226), 195, 164][..]), UnicodeErr.malformed_utf8)
 
         -- truncated 3-byte: no continuations
-        try test.err(Str.from_utf8_checked([U8(65), 226][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 226][..]), UnicodeErr.malformed_utf8)
         -- truncated 3-byte: one continuation then end
-        try test.err(Str.from_utf8_checked([U8(65), 226, 130][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 226, 130][..]), UnicodeErr.malformed_utf8)
         -- truncated 3-byte: second continuation replaced by ascii
-        try test.err(Str.from_utf8_checked([U8(226), 130, 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(226), 130, 65][..]), UnicodeErr.malformed_utf8)
 
         -- truncated 4-byte: no continuations
-        try test.err(Str.from_utf8_checked([U8(65), 240][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 240][..]), UnicodeErr.malformed_utf8)
         -- truncated 4-byte: one continuation
-        try test.err(Str.from_utf8_checked([U8(65), 240, 157][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 240, 157][..]), UnicodeErr.malformed_utf8)
         -- truncated 4-byte: two continuations
-        try test.err(Str.from_utf8_checked([U8(65), 240, 157, 132][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 240, 157, 132][..]), UnicodeErr.malformed_utf8)
         -- truncated 4-byte: third continuation replaced by ascii
-        try test.err(Str.from_utf8_checked([U8(240), 157, 132, 65][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(240), 157, 132, 65][..]), UnicodeErr.malformed_utf8)
 
         -- surrogate U+D800
-        try test.err(Str.from_utf8_checked([U8(237), 160, 128][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(237), 160, 128][..]), UnicodeErr.malformed_utf8)
         -- surrogate U+DFFF
-        try test.err(Str.from_utf8_checked([U8(237), 191, 191][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(237), 191, 191][..]), UnicodeErr.malformed_utf8)
         -- surrogate in middle, valid chars around it
-        try test.err(Str.from_utf8_checked([U8(65), 237, 160, 128, 66][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(65), 237, 160, 128, 66][..]), UnicodeErr.malformed_utf8)
 
         -- overlong: U+0000 encoded as 2-byte [192, 128]
-        try test.err(Str.from_utf8_checked([U8(192), 128][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(192), 128][..]), UnicodeErr.malformed_utf8)
 
         -- above U+10FFFF: [244, 144, 128, 128]
-        try test.err(Str.from_utf8_checked([U8(244), 144, 128, 128][..]), "invalid utf8 sequence")
+        try test.err(Str.from_utf8_checked([U8(244), 144, 128, 128][..]), UnicodeErr.malformed_utf8)
     })
     suite.test("from_utf8_lossy", fun() !void {
         let @local = Arena()

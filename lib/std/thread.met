@@ -1,5 +1,7 @@
 use std.ffi
 use std.posix
+use std.io
+use std.enums
 use std.list
 
 pub unsync struct Thread<T> {
@@ -20,7 +22,7 @@ pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
     let status = unsafe pthread_create(
         ffi.ref_ptr_mut<U64>(&mut thread), ffi.Ptr.null<void>(), fun_ptr.fun_ptr, fun_ptr.data_ptr)
     if status != 0 {
-        return Err(posix.strerror(status))
+        return io.IOErr.from_errno(posix.Errno(status))
     }
     Thread<T>(thread, res_ptr.as_ptr())
 }
@@ -28,7 +30,7 @@ pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
 pub fun Thread.join(t Thread) !T {
     let status = unsafe pthread_join(t.thread, ffi.PtrMut.null<ffi.Ptr<void>>()) 
     if status != 0 {
-        return Err(posix.strerror(status))
+        return io.IOErr.from_errno(posix.Errno(status))
     }
     unsafe t.result.read()
 }
@@ -74,7 +76,7 @@ pub fun Mutex.new(value T, @a Arena) Mutex {
     if res != 0 {
         -- pthread_mutex_init always succeeds:
         -- https://man7.org/linux/man-pages/man3/pthread_mutex_lock.3.html 
-        panic(posix.strerror(res))
+        panic(posix.Errno(res).to_str())
     }
     let value_ref = @a.new(value)
     Mutex<T>(lock_ptr, value_ref)
@@ -83,28 +85,28 @@ pub fun Mutex.new(value T, @a Arena) Mutex {
 pub fun Mutex.with_lock<sync E>(m Mutex, f fun(noescape &mut T) E) !E {
     let res = unsafe pthread_mutex_lock(m.lock_ptr)
     if res != 0 {
-        return Err(posix.strerror(res))
+        return io.IOErr.from_errno(posix.Errno(res))
     }
     let result = f(m.value)
     let res2 = unsafe pthread_mutex_unlock(m.lock_ptr)
     if res2 != 0 {
-        return Err(posix.strerror(res2))
+        return io.IOErr.from_errno(posix.Errno(res2))
     }
     result
 }
 
 pub fun Mutex.with_try_lock<sync E>(m Mutex, f fun(noescape &mut T) E) !?E {
     let res = unsafe pthread_mutex_trylock(m.lock_ptr)
-    if res == posix.ebusy {
+    if res == posix.ErrnoKind.ebusy.tag {
         return Result<?E>(Option<E>(None()))
     }
     if res != 0 {
-        return Err(posix.strerror(res))
+        return io.IOErr.from_errno(posix.Errno(res))
     }
     let result = f(m.value)
     let res2 = unsafe pthread_mutex_unlock(m.lock_ptr)
     if res2 != 0 {
-        return Err(posix.strerror(res2))
+        return io.IOErr.from_errno(posix.Errno(res2))
     }
     Option(result)
 }

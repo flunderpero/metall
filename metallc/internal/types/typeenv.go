@@ -412,7 +412,7 @@ func (e *TypeEnv) EnumFamilyVariants(enumTypeID TypeID) []EnumVariantInfo {
 			all = append(all, sub.Variants...)
 		}
 	}
-	slices.SortFunc(all, func(a, b EnumVariantInfo) int { return a.Discriminant.Cmp(b.Discriminant) })
+	slices.SortFunc(all, func(a, b EnumVariantInfo) int { return a.Tag.Cmp(b.Tag) })
 	return all
 }
 
@@ -693,7 +693,7 @@ func (e *TypeEnv) enumFamilyRoot(typeID TypeID) TypeID {
 	return typeID
 }
 
-// sameEnumFamily reports whether two enum types share one discriminant pool, so
+// sameEnumFamily reports whether two enum types share one tag pool, so
 // their values are comparable. True for a subset and its root, sibling subsets,
 // or the same closed enum.
 func (e *TypeEnv) sameEnumFamily(a, b TypeID) bool {

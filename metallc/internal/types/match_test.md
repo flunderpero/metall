@@ -1003,6 +1003,22 @@ test.met:4:5: else is not allowed in a match on closed enum Color; it is exhaust
     }
 ```
 
+**Else allowed on partial closed enum match**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red: 1
+        else: 2
+    }
+}
+```
+
+```error
+```
+
 **Open enum match requires else**
 
 ```metall

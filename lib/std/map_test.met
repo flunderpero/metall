@@ -25,12 +25,12 @@ fun main() void {
         -- set
         sut.set(1, "hello")
         try test.eq(1, sut.len)
-        try test.eq("hello", try sut.get(1) else { return Err("key not found") })
+        try test.eq("hello", try sut.get(1) else { return test.AssertErr.not_found })
         try test.eq(true, sut.has(1))
 
         -- overwrite
         sut.set(1, "there")
-        try test.eq("there", try sut.get(1) else { return Err("key not found") })
+        try test.eq("there", try sut.get(1) else { return test.AssertErr.not_found })
         try test.eq(1, sut.len)
 
         -- delete

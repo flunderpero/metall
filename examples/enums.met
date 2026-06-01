@@ -21,9 +21,13 @@ pub fun Ordering.flip(o Ordering) Ordering {
     }
 }
 
---- Explicit discriminants. They are all-or-none (no mixing). The backing type
-    is always an unsigned integer (U8, U16, U32, U64). ---
+--- Explicit discriminants. They are all-or-none (no mixing). The backing can be
+    any integer type. ---
 enum HttpStatus U16 = ok = 200 | not_found = 404 | teapot = 418
+
+--- A signed backing allows negative discriminants, which suits C-style three-way
+    comparison results. `.tag` reads a variant's discriminant as the backing int. ---
+enum Sign I8 = negative = -1 | zero = 0 | positive = 1
 
 --- Associated data, Java-enum style. The schema is declared in parens on the
     type. Values follow function-call semantics and must be compile-time
@@ -107,6 +111,11 @@ fun main() void {
 
     -- Explicit discriminant.
     io.println(HttpStatus.teapot.debug_name)
+
+    -- Signed backing stores negative discriminants verbatim; `.tag` reads one.
+    let sb6 = StrBuilder.new(16, @a)
+    sb6.i8(Sign.negative.tag)
+    io.println(sb6.as_str())
 
     -- Associated data, read from a variant constant and from a value.
     io.println(describe_color(Color.green, @a))

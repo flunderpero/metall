@@ -111,40 +111,41 @@ pub nocopy unsync struct File {
     closed Bool
 }
 
---- Open a file.
-
-    mode:
-       r      Open text file for reading.  The stream is positioned at
-              the beginning of the file.
-
-       r+     Open for reading and writing.  The stream is positioned at
-              the beginning of the file.
-
-       w      Truncate file to zero length or create text file for
-              writing.  The stream is positioned at the beginning of the
-              file.
-
-       w+     Open for reading and writing.  The file is created if it
-              does not exist, otherwise it is truncated.  The stream is
-              positioned at the beginning of the file.
-
-       a      Open for appending (writing at end of file).  The file is
-              created if it does not exist.  The stream is positioned at
-              the end of the file.
-
-       a+     Open for reading and appending (writing at end of file).
-              The file is created if it does not exist.  Output is always
-              appended to the end of the file.
-              The read position is undefined. ---
-pub fun File.open(path Path, mode Str, @a Arena) !&mut File {
+pub enum FileOpenMode(mode_str Str) U8 =
+    --- Open file for reading.
+        The stream is positioned at the beginning of the file. ---
+    | read("rb")
+    --- Open for reading and writing.
+        The stream is positioned at the beginning of the file. ---
+    | read_write("r+b")
+    --- Truncate file to zero length or create file for writing.  
+        The stream is positioned at the beginning of the file. ---
+    | write("w")
+    --- Open for reading and writing.
+        The file is created if it does not exist, otherwise it is truncated.
+        The stream is positioned at the beginning of the file. ---
+    | read_write_create("w+b")
+    --- Open for appending (writing at end of file).
+        The file is created if it does not exist.
+        The stream is positioned at the end of the file. ---
+    | append_create("ab")
+    --- Open for reading and appending (writing at end of file).
+        The file is created if it does not exist.
+        Output is always appended to the end of the file.
+        The stream position is undefined. ---
+    | read_append_create("a+b")
+--- Open a file. ---
+pub fun File.open(path Path, mode FileOpenMode, @a Arena) !&mut File {
     let @local = Arena()
-    if not (mode.eq("r") or mode.eq("w") or mode.eq("a") or mode.eq("r+") or mode.eq("w+") or mode.eq("a+")) {
-        return Err("invalid open mode")
-    }
     posix.reset_errno()
-    let file_ptr = unsafe fopen(ffi.cstr(path.raw, @local), ffi.cstr(mode.as_bytes(), @local))
+    let file_ptr = unsafe fopen(ffi.cstr(path.raw, @local), ffi.cstr(mode.mode_str.as_bytes(), @local))
     if file_ptr.is_null() {
-        return Err(posix.errno_str())
+        let errno = posix.errno()
+        if errno.value == posix.ErrnoKind.einval.tag {
+            -- einval is only returned if the mode str was invalid and that cannot be.
+            panic("fopen returned einval")
+        }
+        return io.IOErr.from_errno(errno)
     }
     let file = @a.new(File(file_ptr, false))
     file
@@ -152,12 +153,12 @@ pub fun File.open(path Path, mode Str, @a Arena) !&mut File {
 
 pub fun File.write(f &mut File, data []U8) !Int {
     if f.closed {
-        return Err("file is closed")
+        panic("file is closed")
     }
     posix.reset_errno()
     let bytes_written = unsafe fwrite(ffi.slice_ptr(data), 1, data.len, f.file_ptr)
     if bytes_written != data.len {
-        return Err(posix.errno_str())
+        return io.IOErr.from_errno(posix.errno())
     }
     bytes_written
 }
@@ -167,16 +168,16 @@ pub fun File.write(f &mut File, data []U8) !Int {
     `buf` can be uninitialized. ---
 pub fun File.read(f &mut File, buf []mut U8) ![]mut U8 {
     if f.closed {
-        return Err("file is closed")
+        panic("file is closed")
     }
     posix.reset_errno()
     let bytes_read = unsafe fread(ffi.slice_ptr_mut(buf), 1, buf.len, f.file_ptr)
     if bytes_read < buf.len {
         let errno = posix.errno()
-        if errno == 0 {
+        if errno.value == 0 {
             return buf[0..bytes_read]
         }
-        return Err(posix.errno_str())
+        return io.IOErr.from_errno(errno)
     }
     buf[0..bytes_read]
 }
@@ -190,26 +191,23 @@ pub fun File.close(f &mut File) !void {
     let res = unsafe fclose(f.file_ptr)
     f.closed = true
     if res != 0 {
-        return Err(posix.errno_str())
+        return io.IOErr.from_errno(posix.errno())
     }
 }
 
 --- Overwrite the file with the given data. ---
 pub fun write_file(path Path, data []U8) !void {
     let @local = Arena()
-    let f = try File.open(path, "w", @local)
+    let f = try File.open(path, FileOpenMode.write, @local)
     defer { _ = f.close() }
-    let written = try f.write(data)
-    if written != data.len {
-        return Err("not all bytes were written")
-    }
+    _ = try f.write(data)
 }
 
 --- Read the entire file. ---
 pub fun read_file(path Path, @a Arena) ![]mut U8 {
     let @local = Arena()
     -- The file is closed by `io.read_all`.
-    let f = try File.open(path, "r", @local)
+    let f = try File.open(path, FileOpenMode.read, @local)
     -- todo: Add optimized path by stat-ing the file size before.
     io.read_all(f, -1, @a)
 }
@@ -255,16 +253,17 @@ pub fun ReadDirIter.close(it ReadDirIter) void {
 
 pub fun ReadDirIter.next(it &mut ReadDirIter) ?!DirEntry {
     if it.closed.* {
-        return Result<DirEntry>(Err("read_dir iterator already closed"))
+        return None()
     }
     posix.reset_errno()
     let entry_ptr = unsafe readdir(it.dir)
     if entry_ptr.is_null() {
         it.*.close()        
-        if posix.errno() == 0 {
+        let errno = posix.errno()
+        if errno.value == 0 {
             return None()
         }
-        return Result<DirEntry>(Err(posix.errno_str()))
+        return Result<DirEntry>(io.IOErr.from_errno(errno))
     }
     -- todo: This copies the whole struct. We should access the fields we are interested in
     --       directly either via hardcoded Ptr.offset or better 
@@ -290,7 +289,7 @@ pub fun read_dir(path Path, @a Arena) !ReadDirIter {
     posix.reset_errno()
     let dir = unsafe opendir(ffi.cstr(path.raw, @local))
     if dir.is_null() {
-        return Err(posix.errno_str())
+        return io.IOErr.from_errno(posix.errno())
     }
     let closed = @a.new(false)
     ReadDirIter(dir, closed, @a)

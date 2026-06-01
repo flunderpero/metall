@@ -1840,21 +1840,61 @@ For()
 **Break**
 
 ```metall
-break
+for { break }
 ```
 
 ```ast
-Break()
+For()
+  body=Block()
+    exprs=Break()
 ```
 
 **Continue**
 
 ```metall
-continue
+for { continue }
 ```
 
 ```ast
-Continue()
+For()
+  body=Block()
+    exprs=Continue()
+```
+
+**break is rejected inside an expression**
+
+```metall
+1 + break
+```
+
+```error
+test.met:1:5: break may only be used as a statement, not inside an expression
+    1 + break
+        ^^^^^
+```
+
+**continue is rejected inside an expression**
+
+```metall
+1 + continue
+```
+
+```error
+test.met:1:5: continue may only be used as a statement, not inside an expression
+    1 + continue
+        ^^^^^^^^
+```
+
+**return is rejected inside an expression**
+
+```metall
+1 + return 0
+```
+
+```error
+test.met:1:5: return may only be used as a statement, not inside an expression
+    1 + return 0
+        ^^^^^^
 ```
 
 **For in range**
@@ -2500,7 +2540,7 @@ test.met:1:15: enum Empty: expected at least one variant after '='
                   ^
 ```
 
-**Closed enum, explicit and negative discriminants**
+**Closed enum, explicit and negative tags**
 
 ```metall
 enum Temp I8 = cold = -1 | mild = 0 | hot = 1
@@ -2510,11 +2550,11 @@ enum Temp I8 = cold = -1 | mild = 0 | hot = 1
 Enum(name="Temp")
   backing=SimpleType(name="I8")
   variants[0]=EnumVariant(name="cold")
-    discriminant=Int(value=-1)
+    tag=Int(value=-1)
   variants[1]=EnumVariant(name="mild")
-    discriminant=Int(value=0)
+    tag=Int(value=0)
   variants[2]=EnumVariant(name="hot")
-    discriminant=Int(value=1)
+    tag=Int(value=1)
 ```
 
 **Open root, no body**
@@ -2557,7 +2597,7 @@ Enum(name="IOErr")
     args=Int(value=32)
 ```
 
-**Associated data with discriminant**
+**Associated data with tag**
 
 ```metall
 enum Color(name Str, rgb U32) U8 = red("Red", 0xff0000) = 1 | green("Green", 0x00ff00) = 2
@@ -2573,11 +2613,11 @@ Enum(name="Color")
   variants[0]=EnumVariant(name="red")
     args[0]=String(value="Red")
     args[1]=Int(value=16711680)
-    discriminant=Int(value=1)
+    tag=Int(value=1)
   variants[1]=EnumVariant(name="green")
     args[0]=String(value="Green")
     args[1]=Int(value=65280)
-    discriminant=Int(value=2)
+    tag=Int(value=2)
 ```
 
 **Enum reserved word**

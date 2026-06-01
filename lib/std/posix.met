@@ -7,31 +7,372 @@ extern("__error") fun __errno() ffi.PtrMut<I32>
 extern("__errno_location") fun __errno() ffi.PtrMut<I32>
 #end
 
+#if not os.wasm
 extern("strerror") fun strerror_(e I32) ffi.Ptr<U8>
 extern fun strlen(s ffi.Ptr<U8>) Int
+#end
 
--- todo: These are platform specific
-pub let eperm I32 = 1
-pub let ebusy I32 = 16
-pub let einval I32 = 22
-pub let edeadlk I32 = 11
+--- Posix `errno` representation. 
+
+    Why not just use the enum `ErrnoKind`? Because the list of errno
+    constants might change.
+---
+pub struct Errno {
+    pub value I32
+}
+
+pub fun Errno.from_kind(e ErrnoKind) Errno {
+    Errno(e.tag)
+}
+
+pub fun Errno.eq(e Errno, o Errno) Bool { e.value == o.value }
+
+pub fun Errno.hash(e Errno) U64 { e.value.hash() }
+
+pub fun Errno.fmt(e Errno, sb &mut StrBuilder) void {
+    sb.str(e.to_str())
+}
+
+pub fun Errno.to_str(e Errno) Str {
+    #if os.wasm
+    "Errno.to_str() not supported on wasm"
+    #end
+    #if not os.wasm
+    -- todo: Make the first character lower case.
+    let cstr = unsafe strerror_(e.value)
+    let l = unsafe strlen(cstr)
+    try Str.from_utf8_checked(unsafe cstr.as_slice(l)) else e { panic(e.debug_name) }
+    #end
+}
+
+#if os.darwin
+-- All errno values from macOS <sys/errno.h>.
+pub enum ErrnoKind I32 =
+    | eperm = 1
+    | enoent = 2
+    | esrch = 3
+    | eintr = 4
+    | eio = 5
+    | enxio = 6
+    | e2big = 7
+    | enoexec = 8
+    | ebadf = 9
+    | echild = 10
+    | edeadlk = 11
+    | enomem = 12
+    | eacces = 13
+    | efault = 14
+    | enotblk = 15
+    | ebusy = 16
+    | eexist = 17
+    | exdev = 18
+    | enodev = 19
+    | enotdir = 20
+    | eisdir = 21
+    | einval = 22
+    | enfile = 23
+    | emfile = 24
+    | enotty = 25
+    | etxtbsy = 26
+    | efbig = 27
+    | enospc = 28
+    | espipe = 29
+    | erofs = 30
+    | emlink = 31
+    | epipe = 32
+    | edom = 33
+    | erange = 34
+    | eagain = 35
+    | einprogress = 36
+    | ealready = 37
+    | enotsock = 38
+    | edestaddrreq = 39
+    | emsgsize = 40
+    | eprototype = 41
+    | enoprotoopt = 42
+    | eprotonosupport = 43
+    | esocktnosupport = 44
+    | enotsup = 45
+    | epfnosupport = 46
+    | eafnosupport = 47
+    | eaddrinuse = 48
+    | eaddrnotavail = 49
+    | enetdown = 50
+    | enetunreach = 51
+    | enetreset = 52
+    | econnaborted = 53
+    | econnreset = 54
+    | enobufs = 55
+    | eisconn = 56
+    | enotconn = 57
+    | eshutdown = 58
+    | etoomanyrefs = 59
+    | etimedout = 60
+    | econnrefused = 61
+    | eloop = 62
+    | enametoolong = 63
+    | ehostdown = 64
+    | ehostunreach = 65
+    | enotempty = 66
+    | eproclim = 67
+    | eusers = 68
+    | edquot = 69
+    | estale = 70
+    | eremote = 71
+    | ebadrpc = 72
+    | erpcmismatch = 73
+    | eprogunavail = 74
+    | eprogmismatch = 75
+    | eprocunavail = 76
+    | enolck = 77
+    | enosys = 78
+    | eftype = 79
+    | eauth = 80
+    | eneedauth = 81
+    | epwroff = 82
+    | edeverr = 83
+    | eoverflow = 84
+    | ebadexec = 85
+    | ebadarch = 86
+    | eshlibvers = 87
+    | ebadmacho = 88
+    | ecanceled = 89
+    | eidrm = 90
+    | enomsg = 91
+    | eilseq = 92
+    | enoattr = 93
+    | ebadmsg = 94
+    | emultihop = 95
+    | enodata = 96
+    | enolink = 97
+    | enosr = 98
+    | enostr = 99
+    | eproto = 100
+    | etime = 101
+    | eopnotsupp = 102
+    | enopolicy = 103
+    | enotrecoverable = 104
+    | eownerdead = 105
+    | eqfull = 106
+    | enotcapable = 107
+    -- In Linux's errno space but not macOS's. Synthetic values, never returned by errno() here.
+    | echrng = 1000
+    | el2nsync = 1001
+    | el3hlt = 1002
+    | el3rst = 1003
+    | elnrng = 1004
+    | eunatch = 1005
+    | enocsi = 1006
+    | el2hlt = 1007
+    | ebade = 1008
+    | ebadr = 1009
+    | exfull = 1010
+    | enoano = 1011
+    | ebadrqc = 1012
+    | ebadslt = 1013
+    | ebfont = 1014
+    | enonet = 1015
+    | enopkg = 1016
+    | eadv = 1017
+    | esrmnt = 1018
+    | ecomm = 1019
+    | edotdot = 1020
+    | enotuniq = 1021
+    | ebadfd = 1022
+    | eremchg = 1023
+    | elibacc = 1024
+    | elibbad = 1025
+    | elibscn = 1026
+    | elibmax = 1027
+    | elibexec = 1028
+    | erestart = 1029
+    | estrpipe = 1030
+    | euclean = 1031
+    | enotnam = 1032
+    | enavail = 1033
+    | eisnam = 1034
+    | eremoteio = 1035
+    | enomedium = 1036
+    | emediumtype = 1037
+    | enokey = 1038
+    | ekeyexpired = 1039
+    | ekeyrevoked = 1040
+    | ekeyrejected = 1041
+    | erfkill = 1042
+    | ehwpoison = 1043
+#end
+#if os.linux or os.wasm
+-- All errno values from the Linux asm-generic uapi headers
+-- (include/uapi/asm-generic/errno-base.h and errno.h).
+pub enum ErrnoKind I32 =
+    | eperm = 1
+    | enoent = 2
+    | esrch = 3
+    | eintr = 4
+    | eio = 5
+    | enxio = 6
+    | e2big = 7
+    | enoexec = 8
+    | ebadf = 9
+    | echild = 10
+    | eagain = 11
+    | enomem = 12
+    | eacces = 13
+    | efault = 14
+    | enotblk = 15
+    | ebusy = 16
+    | eexist = 17
+    | exdev = 18
+    | enodev = 19
+    | enotdir = 20
+    | eisdir = 21
+    | einval = 22
+    | enfile = 23
+    | emfile = 24
+    | enotty = 25
+    | etxtbsy = 26
+    | efbig = 27
+    | enospc = 28
+    | espipe = 29
+    | erofs = 30
+    | emlink = 31
+    | epipe = 32
+    | edom = 33
+    | erange = 34
+    | edeadlk = 35
+    | enametoolong = 36
+    | enolck = 37
+    | enosys = 38
+    | enotempty = 39
+    | eloop = 40
+    | enomsg = 42
+    | eidrm = 43
+    | echrng = 44
+    | el2nsync = 45
+    | el3hlt = 46
+    | el3rst = 47
+    | elnrng = 48
+    | eunatch = 49
+    | enocsi = 50
+    | el2hlt = 51
+    | ebade = 52
+    | ebadr = 53
+    | exfull = 54
+    | enoano = 55
+    | ebadrqc = 56
+    | ebadslt = 57
+    | ebfont = 59
+    | enostr = 60
+    | enodata = 61
+    | etime = 62
+    | enosr = 63
+    | enonet = 64
+    | enopkg = 65
+    | eremote = 66
+    | enolink = 67
+    | eadv = 68
+    | esrmnt = 69
+    | ecomm = 70
+    | eproto = 71
+    | emultihop = 72
+    | edotdot = 73
+    | ebadmsg = 74
+    | eoverflow = 75
+    | enotuniq = 76
+    | ebadfd = 77
+    | eremchg = 78
+    | elibacc = 79
+    | elibbad = 80
+    | elibscn = 81
+    | elibmax = 82
+    | elibexec = 83
+    | eilseq = 84
+    | erestart = 85
+    | estrpipe = 86
+    | eusers = 87
+    | enotsock = 88
+    | edestaddrreq = 89
+    | emsgsize = 90
+    | eprototype = 91
+    | enoprotoopt = 92
+    | eprotonosupport = 93
+    | esocktnosupport = 94
+    | eopnotsupp = 95
+    | epfnosupport = 96
+    | eafnosupport = 97
+    | eaddrinuse = 98
+    | eaddrnotavail = 99
+    | enetdown = 100
+    | enetunreach = 101
+    | enetreset = 102
+    | econnaborted = 103
+    | econnreset = 104
+    | enobufs = 105
+    | eisconn = 106
+    | enotconn = 107
+    | eshutdown = 108
+    | etoomanyrefs = 109
+    | etimedout = 110
+    | econnrefused = 111
+    | ehostdown = 112
+    | ehostunreach = 113
+    | ealready = 114
+    | einprogress = 115
+    | estale = 116
+    | euclean = 117
+    | enotnam = 118
+    | enavail = 119
+    | eisnam = 120
+    | eremoteio = 121
+    | edquot = 122
+    | enomedium = 123
+    | emediumtype = 124
+    | ecanceled = 125
+    | enokey = 126
+    | ekeyexpired = 127
+    | ekeyrevoked = 128
+    | ekeyrejected = 129
+    | eownerdead = 130
+    | enotrecoverable = 131
+    | erfkill = 132
+    | ehwpoison = 133
+    -- In macOS's errno space but not Linux's. Synthetic values, never returned by errno() here.
+    | enotsup = 1000
+    | eproclim = 1001
+    | ebadrpc = 1002
+    | erpcmismatch = 1003
+    | eprogunavail = 1004
+    | eprogmismatch = 1005
+    | eprocunavail = 1006
+    | eftype = 1007
+    | eauth = 1008
+    | eneedauth = 1009
+    | epwroff = 1010
+    | edeverr = 1011
+    | ebadexec = 1012
+    | ebadarch = 1013
+    | eshlibvers = 1014
+    | ebadmacho = 1015
+    | enoattr = 1016
+    | enopolicy = 1017
+    | eqfull = 1018
+    | enotcapable = 1019
+#end
 
 pub fun reset_errno() void {
+    #if not os.wasm
     let e = unsafe __errno()
     unsafe e.write(0)
+    #end
 }
 
-pub fun errno() I32 {
-    let e = unsafe __errno()
-    unsafe e.read()
-}
-
-pub fun errno_str() Str {
-    strerror(errno())
-}
-
-pub fun strerror(code I32) Str {
-    let s = unsafe strerror_(code)
-    let l = unsafe strlen(s)
-    try Str.from_utf8_checked(unsafe s.as_slice(l)) else e { panic(e.msg) }
+--- Return the posix `errno` value or panic if it is not set (0). ---
+pub fun errno() Errno {
+    #if os.wasm
+    Errno(0)
+    #end
+    #if not os.wasm
+    let raw = unsafe (unsafe __errno()).read()
+    Errno(raw)
+    #end
 }

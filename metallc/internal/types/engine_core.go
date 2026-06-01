@@ -361,7 +361,7 @@ func (c *TypeContext) isAssignableTo(got TypeID, expected TypeID) bool {
 		}
 	case EnumType:
 		// A subset of an open enum widens to its root (a no-op: same backing int
-		// and the same whole-program discriminant).
+		// and the same whole-program tag).
 		return gotKind.Root != InvalidTypeID && gotKind.Root == expected
 	}
 	return false

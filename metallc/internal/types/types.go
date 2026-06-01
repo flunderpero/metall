@@ -123,10 +123,10 @@ type UnionType struct {
 func (UnionType) isTypeKind() {}
 
 type EnumVariantInfo struct {
-	Name         string
-	Discriminant *big.Int     // assigned by the discriminant pass, nil before then
-	AssocArgs    []ast.NodeID // one expr per param (0 = none), nil if no params
-	DebugName    string       // bare name for closed enums, dotted FQN for open
+	Name      string
+	Tag       *big.Int     // assigned by the tag pass, nil before then
+	AssocArgs []ast.NodeID // one expr per param (0 = none), nil if no params
+	DebugName string       // bare name for closed enums, dotted FQN for open
 }
 
 type EnumType struct {

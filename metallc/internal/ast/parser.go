@@ -604,7 +604,7 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 			if t.Kind == token.HashIf {
 				expr, ok = p.parseCompIf(parseBody)
 			} else {
-				expr, ok = p.ParseExpr(0)
+				expr, ok = p.parseStmtExpr()
 			}
 			if !ok {
 				return nil, false
@@ -898,11 +898,11 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = for_
 	case token.Break:
-		p.next()
-		expr = p.NewBreak(t.Span)
+		p.diagnostic(t.Span, "break may only be used as a statement, not inside an expression")
+		return ParseFailed, false
 	case token.Continue:
-		p.next()
-		expr = p.NewContinue(t.Span)
+		p.diagnostic(t.Span, "continue may only be used as a statement, not inside an expression")
+		return ParseFailed, false
 	case token.Defer:
 		p.next()
 		block, ok := p.ParseBlock()
@@ -911,11 +911,8 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		}
 		expr = p.NewDefer(block, t.Span.Combine(p.span()))
 	case token.Return:
-		return_, ok := p.ParseReturn()
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = return_
+		p.diagnostic(t.Span, "return may only be used as a statement, not inside an expression")
+		return ParseFailed, false
 	case token.Ident:
 		ident, ok := p.ParseIdent()
 		if !ok {
@@ -1805,7 +1802,7 @@ func (p *Parser) parseEnumVariant() (NodeID, bool) {
 			return ParseFailed, false
 		}
 	}
-	var discriminant *NodeID
+	var tag *NodeID
 	if next, ok := p.mayPeek(); ok && next.Kind == token.Eq {
 		p.next()
 		// A bare int literal, not an expression: `|` would otherwise be parsed as bit-or.
@@ -1813,9 +1810,9 @@ func (p *Parser) parseEnumVariant() (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
-		discriminant = &num
+		tag = &num
 	}
-	return p.NewEnumVariant(name, args, discriminant, span.Combine(p.span())), true
+	return p.NewEnumVariant(name, args, tag, span.Combine(p.span())), true
 }
 
 // parseMatchPattern parses a match arm pattern: a type (union variant or whole
@@ -1886,11 +1883,35 @@ func (p *Parser) parseCaseBody() ([]NodeID, bool) {
 		if !ok || t.Kind == token.RCurly || t.Kind == token.Case || t.Kind == token.Else {
 			return exprs, true
 		}
-		expr, ok := p.ParseExpr(0)
+		expr, ok := p.parseStmtExpr()
 		if !ok {
 			return nil, false
 		}
 		exprs = append(exprs, expr)
+	}
+}
+
+// parseStmtExpr parses an expression in statement position: a block element or a
+// match/when arm body. break, continue, and return are control flow that may
+// only appear here, never nested inside a larger expression. ParsePrimaryExpr
+// rejects them, so `return break`, `x + break`, `f(continue)`, etc. are parse
+// errors rather than producing ill-formed code.
+func (p *Parser) parseStmtExpr() (NodeID, bool) {
+	t, ok := p.mayPeek()
+	if !ok {
+		return p.ParseExpr(0)
+	}
+	switch t.Kind { //nolint:exhaustive
+	case token.Break:
+		p.next()
+		return p.NewBreak(t.Span), true
+	case token.Continue:
+		p.next()
+		return p.NewContinue(t.Span), true
+	case token.Return:
+		return p.ParseReturn()
+	default:
+		return p.ParseExpr(0)
 	}
 }
 

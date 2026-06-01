@@ -138,18 +138,13 @@ func (e *Engine) checkEnumCompleteType(
 	}
 	switch k := e.env.Type(backingTypeID).Kind.(type) {
 	case IntType:
-		if k.Signed {
-			e.diag(e.ast.Node(enumNode.Backing).Span,
-				"enum %s backing type must be an unsigned integer, got %s", enumNode.Name.Name, k.Name)
-			return TypeFailed, enumType
-		}
 		enumType.Backing = backingTypeID
 		params, status := e.resolveEnumParams(enumNode)
 		if status.Failed() {
 			return status, enumType
 		}
 		enumType.Params = params
-		enumType.AssociatedDataStruct = e.synthesizeAssocStruct(enumType.Name, params, node.Span)
+		enumType.AssociatedDataStruct = e.synthesizeAssocStruct(enumType.Name, enumType.Backing, params, node.Span)
 	case EnumType:
 		if !k.IsOpen {
 			e.diag(e.ast.Node(enumNode.Backing).Span,
@@ -246,7 +241,7 @@ func (e *Engine) isOptionType(typeID TypeID) bool {
 
 // assocValueReadsEnumMember finds a field access reading a member (debug_name or
 // an associated field) off an enum value. A bare variant reference lowers to a
-// constant discriminant and is fine; only a read off a value loads the table.
+// constant tag and is fine; only a read off a value loads the table.
 func (e *Engine) assocValueReadsEnumMember(nodeID ast.NodeID) (ast.NodeID, bool) {
 	var found ast.NodeID
 	var walk func(id ast.NodeID)
@@ -283,11 +278,13 @@ func (e *Engine) bindEnumVariants(node *ast.Node, enumNode ast.Enum, enumType En
 	}
 }
 
-// synthesizeAssocStruct builds the per-variant struct { debug_name, params... }
-// so associated-data access reuses the struct field-access path.
-func (e *Engine) synthesizeAssocStruct(name string, params []StructField, span base.Span) TypeID {
-	fields := make([]StructField, 0, len(params)+1)
+// synthesizeAssocStruct builds the per-variant struct { debug_name, tag, params... }
+// so associated-data access reuses the struct field-access path. `tag` is the
+// variant's backing integer.
+func (e *Engine) synthesizeAssocStruct(name string, backing TypeID, params []StructField, span base.Span) TypeID {
+	fields := make([]StructField, 0, len(params)+2)
 	fields = append(fields, StructField{Name: "debug_name", Type: e.strTyp, Pub: true})
+	fields = append(fields, StructField{Name: "tag", Type: backing, Pub: true})
 	fields = append(fields, params...)
 	return e.env.newType(StructType{Name: name + "$assoc", Fields: fields, TypeArgs: nil}, 0, span, TypeOK)
 }
@@ -299,8 +296,8 @@ func (e *Engine) resolveEnumParams(enumNode ast.Enum) ([]StructField, TypeStatus
 	fields := make([]StructField, len(enumNode.Params))
 	for i, paramNodeID := range enumNode.Params {
 		paramNode := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
-		if paramNode.Name.Name == "debug_name" {
-			e.diag(paramNode.Name.Span, "debug_name is a reserved associated-data field name")
+		if paramNode.Name.Name == "debug_name" || paramNode.Name.Name == "tag" {
+			e.diag(paramNode.Name.Span, "%s is a reserved associated-data field name", paramNode.Name.Name)
 			return nil, TypeFailed
 		}
 		if paramNode.Default != nil {
@@ -339,29 +336,29 @@ func (e *Engine) resolveEnumVariants(
 		}
 		seen[v.Name.Name] = true
 		info := EnumVariantInfo{
-			Name:         v.Name.Name,
-			DebugName:    enumVariantDebugName(enumType, isSubset, v.Name.Name),
-			Discriminant: nil,
-			AssocArgs:    nil,
+			Name:      v.Name.Name,
+			DebugName: enumVariantDebugName(enumType, isSubset, v.Name.Name),
+			Tag:       nil,
+			AssocArgs: nil,
 		}
-		if v.Discriminant != nil {
+		if v.Tag != nil {
 			if isSubset {
-				e.diag(e.ast.Node(*v.Discriminant).Span,
-					"subset enum variant %s cannot have an explicit discriminant", v.Name.Name)
+				e.diag(e.ast.Node(*v.Tag).Span,
+					"subset enum variant %s cannot have an explicit tag", v.Name.Name)
 				return nil, TypeFailed
 			}
-			value := base.Cast[ast.Int](e.ast.Node(*v.Discriminant).Kind).Value
+			value := base.Cast[ast.Int](e.ast.Node(*v.Tag).Kind).Value
 			if value.Cmp(backing.Min) < 0 || value.Cmp(backing.Max) > 0 {
-				e.diag(e.ast.Node(*v.Discriminant).Span,
-					"discriminant %s does not fit backing type %s", value, backing.Name)
+				e.diag(e.ast.Node(*v.Tag).Span,
+					"tag %s does not fit backing type %s", value, backing.Name)
 				return nil, TypeFailed
 			}
 			if seenValue[value.String()] {
-				e.diag(e.ast.Node(*v.Discriminant).Span, "duplicate enum discriminant: %s", value)
+				e.diag(e.ast.Node(*v.Tag).Span, "duplicate enum tag: %s", value)
 				return nil, TypeFailed
 			}
 			seenValue[value.String()] = true
-			info.Discriminant = value
+			info.Tag = value
 			explicitCount++
 		}
 		assoc, status := e.resolveEnumAssocArgs(v, enumType.Params)
@@ -372,11 +369,11 @@ func (e *Engine) resolveEnumVariants(
 		variants[i] = info
 	}
 	if explicitCount > 0 && explicitCount < len(variants) {
-		e.diag(node.Span, "enum %s: discriminants must be all-or-none", enumNode.Name.Name)
+		e.diag(node.Span, "enum %s: tags must be all-or-none", enumNode.Name.Name)
 		return nil, TypeFailed
 	}
 	// Standalone closed enums get a self-contained 0..n numbering. Subset
-	// discriminants come from the whole-program pool (AssignEnumDiscriminants).
+	// tags come from the whole-program pool (AssignEnumTags).
 	if !isSubset && explicitCount == 0 {
 		if big.NewInt(int64(len(variants)-1)).Cmp(backing.Max) > 0 {
 			e.diag(node.Span, "enum %s has %d variants, exceeding backing type %s",
@@ -384,7 +381,7 @@ func (e *Engine) resolveEnumVariants(
 			return nil, TypeFailed
 		}
 		for i := range variants {
-			variants[i].Discriminant = big.NewInt(int64(i))
+			variants[i].Tag = big.NewInt(int64(i))
 		}
 	}
 	return variants, TypeOK

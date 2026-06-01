@@ -251,9 +251,9 @@ type Union struct {
 func (Union) isKind() {}
 
 type EnumVariant struct {
-	Name         Name
-	Args         []NodeID // associated-data args, nil if no "(...)"
-	Discriminant *NodeID  // explicit `= N`, nil if compiler-assigned
+	Name Name
+	Args []NodeID // associated-data args, nil if no "(...)"
+	Tag  *NodeID  // explicit `= N`, nil if compiler-assigned
 }
 
 func (EnumVariant) isKind() {}
@@ -727,8 +727,8 @@ func (a *AST) NewEnum(
 	)
 }
 
-func (a *AST) NewEnumVariant(name Name, args []NodeID, discriminant *NodeID, span base.Span) NodeID {
-	return a.node(EnumVariant{Name: name, Args: args, Discriminant: discriminant}, span)
+func (a *AST) NewEnumVariant(name Name, args []NodeID, tag *NodeID, span base.Span) NodeID {
+	return a.node(EnumVariant{Name: name, Args: args, Tag: tag}, span)
 }
 
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
@@ -1004,8 +1004,8 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
 		}
-		if kind.Discriminant != nil {
-			f(*kind.Discriminant)
+		if kind.Tag != nil {
+			f(*kind.Tag)
 		}
 	case TypeParam:
 		if kind.Constraint != nil {
@@ -1483,11 +1483,11 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 				addChild("args", kind.Args...)
 			}
 		}
-		if kind.Discriminant != nil {
+		if kind.Tag != nil {
 			if !children {
-				addAttr("discriminant", nodeIDKind(*kind.Discriminant))
+				addAttr("tag", nodeIDKind(*kind.Tag))
 			} else {
-				addChild("discriminant", *kind.Discriminant)
+				addChild("tag", *kind.Tag)
 			}
 		}
 	case TypeParam:
@@ -1830,8 +1830,8 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 		parent.Kind = k
 	case EnumVariant:
 		k.Args = removeFromSlice(k.Args)
-		if k.Discriminant != nil && *k.Discriminant == childID {
-			k.Discriminant = nil
+		if k.Tag != nil && *k.Tag == childID {
+			k.Tag = nil
 		}
 		parent.Kind = k
 	case TypeParam:

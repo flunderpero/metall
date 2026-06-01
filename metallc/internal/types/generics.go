@@ -313,6 +313,12 @@ func (g *Generics) lookupMethod(nodeID ast.NodeID, targetTyp *Type, methodName s
 			}
 		}
 	}
+	if !ok {
+		// A subset enum inherits methods defined on its open root.
+		if enumKind, isEnum := targetTyp.Kind.(EnumType); isEnum && enumKind.Root != InvalidTypeID {
+			return g.lookupMethod(nodeID, g.env.Type(enumKind.Root), methodName)
+		}
+	}
 	return binding, ok
 }
 
@@ -632,6 +638,10 @@ func (g *Generics) lookupMethodBinding(
 		binding, ok = g.lookupInTypeModule(lookupType, lookupName)
 	}
 	if !ok || binding.Decl == 0 {
+		// A subset enum inherits methods defined on its open root.
+		if enumKind, isEnum := lookupType.Kind.(EnumType); isEnum && enumKind.Root != InvalidTypeID {
+			return g.lookupMethodBinding(scopeNodeID, enumKind.Root, methodName)
+		}
 		return nil, false
 	}
 	return binding, true
@@ -1648,7 +1658,16 @@ func (g *Generics) inferTypeBindings(
 	switch patternKind := patternType.Kind.(type) {
 	case TypeParamType:
 		if bound, ok := bindings[patternTypeID]; ok {
-			return bound == concreteTypeID
+			if bound == concreteTypeID {
+				return true
+			}
+			// Args of one enum family unify to their shared open root, so
+			// eq(IOErr, AppErr) infers T = AppErr regardless of arg order.
+			if g.env.sameEnumFamily(bound, concreteTypeID) {
+				bindings[patternTypeID] = g.env.enumFamilyRoot(bound)
+				return true
+			}
+			return false
 		}
 		bindings[patternTypeID] = concreteTypeID
 		return true

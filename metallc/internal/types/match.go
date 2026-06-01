@@ -253,7 +253,7 @@ func (e *Engine) checkEnumMatchArms( //nolint:funlen
 		}
 		if arm.Guard != nil {
 			// A guarded arm proves nothing. It may fall through, so it covers no
-			// discriminants, mirroring the union rule.
+			// tags, mirroring the union rule.
 			if status := e.checkGuard(*arm.Guard); status.Failed() {
 				return InvalidTypeID, status
 			}
@@ -279,17 +279,25 @@ func (e *Engine) checkEnumMatchArms( //nolint:funlen
 			return InvalidTypeID, TypeFailed
 		}
 	} else {
-		if match.Else != nil {
-			e.diag(span, "else is not allowed in a match on closed enum %s; it is exhaustive",
-				e.env.TypeDisplay(enumTypeID))
-			return InvalidTypeID, TypeFailed
-		}
+		missing := ""
 		for _, v := range enum.Variants {
 			if !covered[enum.Name+"."+v.Name] {
-				e.diag(span, "non-exhaustive match: missing variant %s.%s",
-					e.env.TypeDisplay(enumTypeID), v.Name)
+				missing = v.Name
+				break
+			}
+		}
+		if match.Else != nil {
+			// A `try` desugars to an else that propagates, so it is never redundant.
+			// Otherwise an else over an already-exhaustive match is.
+			if !match.Try && missing == "" {
+				e.diag(span, "else is not allowed in a match on closed enum %s; it is exhaustive",
+					e.env.TypeDisplay(enumTypeID))
 				return InvalidTypeID, TypeFailed
 			}
+		} else if missing != "" {
+			e.diag(span, "non-exhaustive match: missing variant %s.%s",
+				e.env.TypeDisplay(enumTypeID), missing)
+			return InvalidTypeID, TypeFailed
 		}
 	}
 	if match.Else != nil {

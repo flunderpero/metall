@@ -116,8 +116,10 @@ ok
 **defer and arena cleanup with try early return**
 
 ```metall
+enum UnicodeErr Err = malformed_utf8
+
 fun fallible(fail Bool) !Int {
-    if fail { return Err("fail") }
+    if fail { return UnicodeErr.malformed_utf8 }
     Result(42)
 }
 

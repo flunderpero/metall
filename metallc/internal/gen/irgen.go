@@ -439,13 +439,7 @@ func (g *IRFunGen) genUnionConstruction(
 	g.Gen(lit.Args[0])
 	argReg := g.lookupCode(lit.Args[0])
 	argTypeID := g.typeIDOfNode(lit.Args[0])
-	tag := -1
-	for i, variantID := range union.Variants {
-		if argTypeID == variantID {
-			tag = i
-			break
-		}
-	}
+	tag := g.unionVariantTag(argTypeID, union)
 	if tag < 0 {
 		panic(base.Errorf("union construction: variant not found"))
 	}
@@ -459,6 +453,21 @@ func (g *IRFunGen) genUnionConstruction(
 	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", payloadPtr, unionIRType, reg)
 	g.storeValue(argReg, payloadPtr, argTypeID)
 	g.setCode(id, reg)
+}
+
+// unionVariantTag finds the variant the arg fills. A subset enum widens to its
+// open root, so it matches the root variant rather than by exact identity.
+func (g *IRFunGen) unionVariantTag(argTypeID types.TypeID, union types.UnionType) int {
+	for i, variantID := range union.Variants {
+		if argTypeID == variantID {
+			return i
+		}
+		if enumKind, ok := g.env.Type(argTypeID).Kind.(types.EnumType); ok &&
+			enumKind.Root != types.InvalidTypeID && enumKind.Root == variantID {
+			return i
+		}
+	}
+	return -1
 }
 
 func (g *IRFunGen) genUnionAutoWrap(id ast.NodeID, unionTypeID types.TypeID, tag int) {
@@ -693,7 +702,7 @@ func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 }
 
 // genEnumFieldAccess reads a generated member (debug_name or an associated-data
-// field) by mapping the value's discriminant to its assoc-struct row, then doing
+// field) by mapping the value's tag to its assoc-struct row, then doing
 // a normal struct field access.
 func (g *IRFunGen) genEnumFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 	g.Gen(fieldAccess.Target)
@@ -707,10 +716,10 @@ func (g *IRFunGen) genEnumFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess
 	g.setCode(id, g.loadValue(fieldPtr, assoc.Fields[fieldIdx].Type))
 }
 
-// genEnumRowPtr maps the discriminant in discriminantReg to a pointer into the owning
-// enum's assoc-struct table via a switch + phi (handles sparse discriminants).
+// genEnumRowPtr maps the tag in tagReg to a pointer into the owning
+// enum's assoc-struct table via a switch + phi (handles sparse tags).
 func (g *IRFunGen) genEnumRowPtr(
-	id ast.NodeID, enumTypeID types.TypeID, enum types.EnumType, discriminantReg string,
+	id ast.NodeID, enumTypeID types.TypeID, enum types.EnumType, tagReg string,
 ) string {
 	tableOwner := enumTypeID
 	if enum.Root != types.InvalidTypeID {
@@ -721,7 +730,7 @@ func (g *IRFunGen) genEnumRowPtr(
 	tableGlobal := fmt.Sprintf("@enum.%s", tableOwner)
 	ordOf := map[string]int{}
 	for i, v := range rootVars {
-		ordOf[v.Discriminant.String()] = i
+		ordOf[v.Tag.String()] = i
 	}
 	switchVars := g.env.EnumFamilyVariants(enumTypeID)
 	intIR := g.irType(enumTypeID)
@@ -729,10 +738,10 @@ func (g *IRFunGen) genEnumRowPtr(
 	defaultLabel := g.label("enumdefault", id)
 	caseLabels := make([]Label, len(switchVars))
 	sb := strings.Builder{}
-	fmt.Fprintf(&sb, "switch %s %s, label %%%s [", intIR, discriminantReg, defaultLabel)
+	fmt.Fprintf(&sb, "switch %s %s, label %%%s [", intIR, tagReg, defaultLabel)
 	for i, v := range switchVars {
 		caseLabels[i] = g.label(fmt.Sprintf("enumcase_%d", i), id)
-		fmt.Fprintf(&sb, " %s %s, label %%%s", intIR, v.Discriminant.String(), caseLabels[i])
+		fmt.Fprintf(&sb, " %s %s, label %%%s", intIR, v.Tag.String(), caseLabels[i])
 	}
 	sb.WriteString(" ]")
 	g.write(sb.String())
@@ -745,7 +754,7 @@ func (g *IRFunGen) genEnumRowPtr(
 	entries := make([]entry, len(switchVars))
 	for i, v := range switchVars {
 		g.writeLabel(caseLabels[i])
-		row := g.fieldPtr(tableIR, tableGlobal, ordOf[v.Discriminant.String()])
+		row := g.fieldPtr(tableIR, tableGlobal, ordOf[v.Tag.String()])
 		entries[i] = entry{row, g.lastLabel}
 		g.write("br label %%%s", contLabel)
 	}
@@ -776,7 +785,7 @@ func (g *IRFunGen) calleeTypeArgs(call ast.Call) []ast.NodeID {
 }
 
 // genEnumVariants lowers enums.variants<T>() to a rodata slice of every
-// variant's discriminant (an enum value is its backing int).
+// variant's tag (an enum value is its backing int).
 func (g *IRFunGen) genEnumVariants(id ast.NodeID, call ast.Call) {
 	enumTypeID := g.typeIDOfNode(g.calleeTypeArgs(call)[0])
 	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
@@ -787,7 +796,7 @@ func (g *IRFunGen) genEnumVariants(id ast.NodeID, call ast.Call) {
 	dataName := fmt.Sprintf("@__enum_variants_%d", cid)
 	elems := make([]string, len(variants))
 	for i, v := range variants {
-		elems[i] = fmt.Sprintf("%s %s", elemIR, v.Discriminant.String())
+		elems[i] = fmt.Sprintf("%s %s", elemIR, v.Tag.String())
 	}
 	fmt.Fprintf(&g.constGlobals, "%s.data = private constant [%d x %s] [%s]\n",
 		dataName, len(variants), elemIR, strings.Join(elems, ", "))
@@ -801,9 +810,9 @@ func (g *IRFunGen) genEnumVariants(id ast.NodeID, call ast.Call) {
 	g.setCode(id, reg)
 }
 
-// genFromValue lowers enums.from_value<T>(v) to a checked int-to-enum: the
-// result is Some(v) when v is one of T's discriminants, else None.
-func (g *IRFunGen) genFromValue(id ast.NodeID, call ast.Call) {
+// genFromTag lowers enums.from_tag<T>(v) to a checked int-to-enum: the
+// result is Some(v) when v is one of T's tags, else None.
+func (g *IRFunGen) genFromTag(id ast.NodeID, call ast.Call) {
 	enumTypeID := g.typeIDOfNode(g.calleeTypeArgs(call)[0])
 	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
 	intIR := g.irType(enum.Backing)
@@ -827,13 +836,13 @@ func (g *IRFunGen) genFromValue(id ast.NodeID, call ast.Call) {
 	optReg := g.reg()
 	g.writeAlloca(optReg, optionIR)
 	g.write("store %s zeroinitializer, ptr %s", optionIR, optReg)
-	someLabel := g.label("from_value_some", id)
-	noneLabel := g.label("from_value_none", id)
-	contLabel := g.label("from_value_cont", id)
+	someLabel := g.label("from_tag_some", id)
+	noneLabel := g.label("from_tag_none", id)
+	contLabel := g.label("from_tag_cont", id)
 	sb := strings.Builder{}
 	fmt.Fprintf(&sb, "switch %s %s, label %%%s [", intIR, vReg, noneLabel)
 	for _, v := range variants {
-		fmt.Fprintf(&sb, " %s %s, label %%%s", intIR, v.Discriminant.String(), someLabel)
+		fmt.Fprintf(&sb, " %s %s, label %%%s", intIR, v.Tag.String(), someLabel)
 	}
 	sb.WriteString(" ]")
 	g.write(sb.String())
@@ -1031,10 +1040,8 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	g.writeLabel(g.funRetLabel)
 	switch {
 	case isMain:
-		if _, isUnion := g.env.Type(fun.Return).Kind.(types.UnionType); isUnion {
-			exitCode := g.reg()
-			g.write("%s = call i32 @__main_check_result(ptr %s)", exitCode, g.funRetReg)
-			g.write("ret i32 %s", exitCode)
+		if union, isUnion := g.env.Type(fun.Return).Kind.(types.UnionType); isUnion {
+			g.genMainResultCheck(astFun.Block, fun.Return, union)
 		} else {
 			g.write("ret i32 0")
 		}
@@ -1050,6 +1057,46 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	}
 	g.indent--
 	g.write("}\n")
+}
+
+// genMainResultCheck renders main's `!void` result: success exits 0, an error
+// prints "failed: <debug_name>" to stderr and exits 1. It is generated per
+// program because resolving the error's debug_name walks that enum family's
+// associated-data table, which a static runtime function cannot reference.
+func (g *IRFunGen) genMainResultCheck(id ast.NodeID, unionTypeID types.TypeID, union types.UnionType) {
+	unionIR := g.irType(unionTypeID)
+	tagPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, unionIR, g.funRetReg)
+	tag := g.reg()
+	g.write("%s = load i64, ptr %s", tag, tagPtr)
+	errLabel := g.label("main_err", id)
+	okLabel := g.label("main_ok", id)
+	isErr := g.reg()
+	g.write("%s = icmp ne i64 %s, 0", isErr, tag)
+	g.write("br i1 %s, label %%%s, label %%%s", isErr, errLabel, okLabel)
+	g.writeLabel(errLabel)
+	errTypeID := types.InvalidTypeID
+	for _, v := range union.Variants {
+		if _, ok := g.env.Type(v).Kind.(types.EnumType); ok {
+			errTypeID = v
+			break
+		}
+	}
+	// An empty error family means no error value can be constructed: the branch
+	// is dead but must stay valid IR, so just exit non-zero without a name.
+	if errTypeID != types.InvalidTypeID && len(g.env.EnumFamilyVariants(errTypeID)) > 0 {
+		errEnum := base.Cast[types.EnumType](g.env.Type(errTypeID).Kind)
+		assoc := base.Cast[types.StructType](g.env.Type(errEnum.AssociatedDataStruct).Kind)
+		payloadPtr := g.reg()
+		g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", payloadPtr, unionIR, g.funRetReg)
+		discrReg := g.loadValue(payloadPtr, errTypeID)
+		rowPtr := g.genEnumRowPtr(id, errTypeID, errEnum, discrReg)
+		namePtr := g.fieldPtr(g.irType(errEnum.AssociatedDataStruct), rowPtr, indexOfStructField(assoc, "debug_name"))
+		g.write("call void @__main_print_failed(ptr %s)", namePtr)
+	}
+	g.write("ret i32 1")
+	g.writeLabel(okLabel)
+	g.write("ret i32 0")
 }
 
 func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
@@ -1490,7 +1537,7 @@ func (g *IRFunGen) emitMatchPhi(id ast.NodeID, contLabel Label, entries []matchP
 }
 
 // genEnumMatch lowers an enum match as a linear chain. It tries each arm in
-// source order, and the first whose discriminant matches and whose guard holds
+// source order, and the first whose tag matches and whose guard holds
 // wins. Any miss falls through to the next arm, then to else (or `unreachable`
 // for an exhaustive closed enum). A guarded arm proves nothing, so it falls
 // through on guard failure exactly like a non-matching one. This also lowers
@@ -1519,19 +1566,19 @@ func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types
 			miss = testLabels[i+1]
 		}
 		g.writeLabel(testLabels[i])
-		g.genEnumArmBinding(arm.Body, arm.Binding, discrReg, intIR)
-		// Gather the discriminants this arm matches (one for a variant, every
+		g.genEnumArmBinding(arm.Body, arm.Binding, arm.Guard != nil, discrReg, intIR)
+		// Gather the tags this arm matches (one for a variant, every
 		// variant of a subset for a bare subset pattern), then test whether the
 		// value equals any of them.
 		var discrs []string
 		if refEnumID, variant, ok := g.env.EnumVariantRef(arm.Pattern); ok {
 			refEnum := base.Cast[types.EnumType](g.env.Type(refEnumID).Kind)
-			discrs = []string{refEnum.Variants[refEnum.VariantIndex(variant)].Discriminant.String()}
+			discrs = []string{refEnum.Variants[refEnum.VariantIndex(variant)].Tag.String()}
 		} else {
 			patEnum := base.Cast[types.EnumType](g.typeOfNode(arm.Pattern).Kind)
 			discrs = make([]string, len(patEnum.Variants))
 			for di, v := range patEnum.Variants {
-				discrs[di] = v.Discriminant.String()
+				discrs[di] = v.Tag.String()
 			}
 		}
 		matchReg := g.reg()
@@ -1562,7 +1609,7 @@ func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types
 
 	g.writeLabel(elseLabel)
 	if match.Else != nil {
-		g.genEnumArmBinding(match.Else.Body, match.Else.Binding, discrReg, intIR)
+		g.genEnumArmBinding(match.Else.Body, match.Else.Binding, false, discrReg, intIR)
 		g.Gen(match.Else.Body)
 		if !g.breaksControlFlow(match.Else.Body) {
 			g.write("br label %%%s", contLabel)
@@ -1574,11 +1621,13 @@ func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types
 	g.emitMatchPhi(id, contLabel, phiEntries)
 }
 
-// genEnumArmBinding binds the scrutinee's discriminant (the enum value) to the
+// genEnumArmBinding binds the scrutinee's tag (the enum value) to the
 // arm's binding name.
-func (g *IRFunGen) genEnumArmBinding(bodyID ast.NodeID, binding *ast.Name, discrReg, intIR string) {
+func (g *IRFunGen) genEnumArmBinding(bodyID ast.NodeID, binding *ast.Name, hasGuard bool, discrReg, intIR string) {
 	body := base.Cast[ast.Block](g.ast.Node(bodyID).Kind)
-	if binding == nil || len(body.Exprs) == 0 {
+	// An empty body never reads the binding, but a guard still can, so bind it
+	// whenever the arm is guarded even if the body is empty.
+	if binding == nil || (len(body.Exprs) == 0 && !hasGuard) {
 		return
 	}
 	allocReg := g.reg()
@@ -1589,7 +1638,9 @@ func (g *IRFunGen) genEnumArmBinding(bodyID ast.NodeID, binding *ast.Name, discr
 
 func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
 	body := base.Cast[ast.Block](g.ast.Node(arm.Body).Kind)
-	if arm.Binding == nil || len(body.Exprs) == 0 {
+	// An empty body never reads the binding, but a guard still can, so bind it
+	// whenever the arm is guarded even if the body is empty.
+	if arm.Binding == nil || (len(body.Exprs) == 0 && arm.Guard == nil) {
 		return
 	}
 	g.genMatchBinding(ast.BindingID(arm.Body), arm.Binding.Name, g.typeIDOfNode(arm.Pattern), payloadPtr)
@@ -2090,13 +2141,8 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	case "enums::variants":
 		g.genEnumVariants(id, call)
 		return true
-	case "enums::value_of":
-		// An enum value is its backing integer, so value_of is the identity.
-		g.Gen(call.Args[0])
-		g.setCode(id, g.lookupCode(call.Args[0]))
-		return true
-	case "enums::from_value":
-		g.genFromValue(id, call)
+	case "enums::from_tag":
+		g.genFromTag(id, call)
 		return true
 	}
 	if method, fa, ok := g.arenaAllocMethod(call); ok {
@@ -2290,7 +2336,7 @@ func (g *IRFunGen) genIdent(id ast.NodeID, ident ast.Ident) {
 	g.setCode(id, ident.Name)
 }
 
-// tryGenEnumVariantRef emits the discriminant for a variant reference
+// tryGenEnumVariantRef emits the tag for a variant reference
 // (`Color.red` or `mod.Color.red`), recorded during type checking.
 func (g *IRFunGen) tryGenEnumVariantRef(id ast.NodeID) bool {
 	enumTypeID, variant, ok := g.env.EnumVariantRef(id)
@@ -2298,7 +2344,7 @@ func (g *IRFunGen) tryGenEnumVariantRef(id ast.NodeID) bool {
 		return false
 	}
 	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
-	g.setCode(id, enum.Variants[enum.VariantIndex(variant)].Discriminant.String())
+	g.setCode(id, enum.Variants[enum.VariantIndex(variant)].Tag.String())
 	return true
 }
 
@@ -3129,11 +3175,13 @@ func (g *IRFunGen) fillEnumTable(ew types.TypeWork) {
 			switch {
 			case fieldIdx == 0:
 				valReg = g.addStrConst(v.DebugName)
-			case v.AssocArgs[fieldIdx-1] == 0:
+			case fieldIdx == 1:
+				valReg = v.Tag.String()
+			case v.AssocArgs[fieldIdx-2] == 0:
 				valReg = g.genNoneValue(field.Type)
 			default:
-				g.Gen(v.AssocArgs[fieldIdx-1])
-				valReg = g.lookupCode(v.AssocArgs[fieldIdx-1])
+				g.Gen(v.AssocArgs[fieldIdx-2])
+				valReg = g.lookupCode(v.AssocArgs[fieldIdx-2])
 			}
 			g.storeValue(valReg, g.fieldPtr(assocIR, rowPtr, fieldIdx), field.Type)
 		}

@@ -175,7 +175,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	for _, id := range runtimeModuleIDs {
 		engine.Query(id)
 	}
-	engine.AssignEnumDiscriminants()
+	engine.AssignEnumTags()
 	timingListener.OnTypeCheck(engine, engine.Diagnostics())
 	if listener != nil && !listener.OnTypeCheck(engine, engine.Diagnostics()) {
 		return ErrAbort

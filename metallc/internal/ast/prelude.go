@@ -71,6 +71,11 @@ func updateMinimalPrelude(a *AST) {
 				kind.Name.Name = s
 				node.Kind = kind
 			}
+		case Enum:
+			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
+				kind.Name.Name = s
+				node.Kind = kind
+			}
 		case Fun:
 			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
 				kind.Name.Name = s

@@ -476,7 +476,7 @@ clubs
 diamonds
 ```
 
-**value_of and from_value convert between an enum and its backing integer**
+**tag and from_tag convert between an enum and its backing integer**
 
 ```metall
 use std.io
@@ -485,12 +485,12 @@ use std.enums
 enum Color U8 = red | green | blue
 
 fun main() void {
-    io.println(enums.value_of(Color.green))
-    match enums.from_value<Color>(2) {
+    io.println(Color.green.tag)
+    match enums.from_tag<Color>(2) {
         case None: io.println("none")
         else c: io.println(c.debug_name)
     }
-    match enums.from_value<Color>(7) {
+    match enums.from_tag<Color>(7) {
         case None: io.println("out of range")
         else c: io.println("BAD")
     }

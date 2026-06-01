@@ -7,12 +7,12 @@ fun main() void {
     suite.test("from_u32_lossy", fun() !void {
         try test.eq('A', Rune.from_u32_lossy(65))
         try test.eq('\u{FFFD}', Rune.from_u32_lossy(123456789))
-        try test.eq('\u{FFFD}', Rune.from_u32_lossy(55296)) -- 0xD800
+        try test.eq('\u{FFFD}', Rune.from_u32_lossy(0xD800))
     })
     suite.test("from_u32_checked", fun() !void {
         try test.eq(Result('A'), Rune.from_u32_checked(65))
-        try test.err(Rune.from_u32_checked(123456789), "rune out of range")
-        try test.err(Rune.from_u32_checked(55296), "rune in invalid surrogate range") -- 0xD800
+        try test.err(Rune.from_u32_checked(123456789), UnicodeErr.out_of_range)
+        try test.err(Rune.from_u32_checked(0xD800), UnicodeErr.surrogate)
     })
     suite.test("to_bytes", fun() !void {
         let @local = Arena()

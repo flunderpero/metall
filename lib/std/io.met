@@ -1,5 +1,39 @@
 use std.ffi
 use std.list
+use std.posix
+
+pub enum IOErr Err =
+    | not_found
+    | permission_denied
+    | already_exists
+    | not_a_directory
+    | is_a_directory
+    | no_space
+    | name_too_long
+    | too_many_open_files
+    | read_only_fs
+    | would_block
+    | out_of_memory
+    | other  
+
+pub fun IOErr.from_errno(e posix.Errno) IOErr {
+    when {
+    case e.value == posix.ErrnoKind.enoent.tag: IOErr.not_found
+    case e.value == posix.ErrnoKind.eacces.tag or e.value == posix.ErrnoKind.eperm.tag: IOErr.permission_denied
+    case e.value == posix.ErrnoKind.eexist.tag: IOErr.already_exists
+    case e.value == posix.ErrnoKind.enotdir.tag: IOErr.not_a_directory
+    case e.value == posix.ErrnoKind.eisdir.tag: IOErr.is_a_directory
+    case e.value == posix.ErrnoKind.enospc.tag: IOErr.no_space
+    case e.value == posix.ErrnoKind.enametoolong.tag: IOErr.name_too_long
+    case e.value == posix.ErrnoKind.emfile.tag: IOErr.too_many_open_files
+    case e.value == posix.ErrnoKind.enfile.tag: IOErr.too_many_open_files
+    case e.value == posix.ErrnoKind.erofs.tag: IOErr.read_only_fs
+    case e.value == posix.ErrnoKind.eagain.tag: IOErr.would_block
+    case e.value == posix.ErrnoKind.enomem.tag: IOErr.out_of_memory
+    -- todo: Find a way to also return the raw errno.
+    else: IOErr.other
+    }
+}
 
 pub shape Reader<T> {
     --- Read up to `buf.len` items into the give `buf` and returns a slice

@@ -25,7 +25,7 @@ fun main() void {
         }
         {
             let res = os.shell_output(["this_does_not_exist"][..], @local)
-            try test.err(res, "non-zero exit code")
+            try test.err(res, os.ShellErr.failed)
         }
     })
     shell_suite.test("shell_checked", fun() !void {
@@ -35,7 +35,7 @@ fun main() void {
         }
         {
             let res = os.shell_checked(["this_does_not_exist"][..], @local)
-            try test.err(res, "non-zero exit code")
+            try test.err(res, os.ShellErr.failed)
         }
     })
     _ = shell_suite.run()

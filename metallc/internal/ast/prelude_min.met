@@ -122,9 +122,6 @@ pub struct None_ {}
 --- A placeholder type for the builtin `Option` type. ---
 pub union Option_<T> = T | None
 
---- A placeholder type for the builtin `Err` type. ---
-pub struct Err_ { pub msg Str }
-
 --- A placeholder type for the builtin `Result` type. ---
 pub union Result_<T> = T | Err
 
@@ -133,6 +130,9 @@ pub struct Slice_<T> {}
 
 --- Built-in constraint satisfied by any enum. `T.Item` is the backing int. ---
 pub shape Enum<Item> {}
+
+--- Built-in error enum. ---
+pub enum Err_(code ?Int, description ?Str) U32
 
 --- A placeholder for all internal debug functions. ---
 pub struct DebugIntern_ {}

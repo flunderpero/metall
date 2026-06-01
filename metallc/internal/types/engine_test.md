@@ -6865,6 +6865,141 @@ fun03   = fun(T) Int
 fun04   = fun(Int) Int
 ```
 
+**Subset enum inherits methods and satisfies shapes via its open root**
+
+```metall
+{
+    shape Labeled {
+        fun Labeled.label(self Labeled) Str
+    }
+    enum AppErr U32
+    enum IOErr AppErr = file_not_found | broken_pipe
+    fun AppErr.label(e AppErr) Str { e.debug_name }
+    fun describe<T Labeled>(t T) Str { t.label() }
+    _ = IOErr.file_not_found.label()
+    describe<IOErr>(IOErr.broken_pipe)
+}
+```
+
+```types
+Block: Str
+  Shape: shape01
+    FunDecl: ?
+      FunParam: shape01
+        SimpleType: shape01
+      SimpleType: Str
+  Enum: enum01
+    SimpleType: U32
+  Enum: enum02
+    SimpleType: enum01
+    EnumVariant: ?
+    EnumVariant: ?
+  Fun: fun01
+    FunParam: enum01
+      SimpleType: enum01
+    SimpleType: Str
+    Block: Str
+      FieldAccess: Str
+        Ident: enum01
+  Fun: fun02
+    TypeParam: T
+      SimpleType: shape01
+    FunParam: T
+      SimpleType: T
+    SimpleType: Str
+    Block: Str
+      Call: Str
+        FieldAccess: fun03
+          Ident: T
+  Assign: void
+    Ident: ?
+    Call: Str
+      FieldAccess: fun01
+        Ident: enum02
+  Call: Str
+    Ident: fun04
+    Ident: enum02
+---
+shape01 = Labeled {  }
+enum01  = AppErr
+enum02  = IOErr = file_not_found | broken_pipe
+fun01   = sync fun(enum01) Str
+fun02   = fun(T) Str
+fun03   = fun(T) Str
+fun04   = fun(enum02) Str
+```
+
+**Generic type param unifies same-family enum args to their open root**
+
+```metall
+{
+    shape HasEq {
+        fun HasEq.eq(e HasEq, other HasEq) Bool
+    }
+    enum AppErr U32
+    enum IOErr AppErr = file_not_found | broken_pipe
+    fun AppErr.eq(e AppErr, other AppErr) Bool { e == other }
+    fun check<T HasEq>(want T, got T) Bool { want.eq(got) }
+    let e AppErr = IOErr.file_not_found
+    check(IOErr.file_not_found, e)
+}
+```
+
+```types
+Block: Bool
+  Shape: shape01
+    FunDecl: ?
+      FunParam: shape01
+        SimpleType: shape01
+      FunParam: shape01
+        SimpleType: shape01
+      SimpleType: Bool
+  Enum: enum01
+    SimpleType: U32
+  Enum: enum02
+    SimpleType: enum01
+    EnumVariant: ?
+    EnumVariant: ?
+  Fun: fun01
+    FunParam: enum01
+      SimpleType: enum01
+    FunParam: enum01
+      SimpleType: enum01
+    SimpleType: Bool
+    Block: Bool
+      Binary: Bool
+        Ident: enum01
+        Ident: enum01
+  Fun: fun02
+    TypeParam: T
+      SimpleType: shape01
+    FunParam: T
+      SimpleType: T
+    FunParam: T
+      SimpleType: T
+    SimpleType: Bool
+    Block: Bool
+      Call: Bool
+        FieldAccess: fun03
+          Ident: T
+        Ident: T
+  Var: void
+    SimpleType: enum01
+    Ident: enum02
+  Call: Bool
+    Ident: fun04
+    Ident: enum02
+    Ident: enum01
+---
+shape01 = HasEq {  }
+enum01  = AppErr
+enum02  = IOErr = file_not_found | broken_pipe
+fun01   = sync fun(enum01, enum01) Bool
+fun02   = fun(T, T) Bool
+fun03   = fun(T, T) Bool
+fun04   = fun(enum01, enum01) Bool
+```
+
 **Type param satisfies its own constraint**
 
 ```metall
@@ -9658,15 +9793,15 @@ Module: test
           Ident: void
         Block: never
           Return: never
-            Ident: struct01
+            Ident: enum01
   Fun: fun02
     SimpleType: void
     Block: void
 ---
-struct01 = Err { msg Str }
-union01  = Result<void> = void | struct01
-fun01    = sync fun() union01
-fun02    = sync fun() void
+enum01  = Err
+union01 = Result<void> = void | enum01
+fun01   = sync fun() union01
+fun02   = sync fun() void
 ```
 
 ## Module Constants
@@ -10897,27 +11032,24 @@ test.met:1:9: parameter type 'void' is not exportable to C
 
 ## Enums
 
-**Signed backing type is rejected**
+**Signed backing with negative discriminants**
 
 ```metall
-{ enum Bad I8 = a | b }
+{ enum Cmp I8 = less = -1 | equal = 0 | greater = 1 }
 ```
 
 ```error
-test.met:1:12: enum Bad backing type must be an unsigned integer, got I8
-    { enum Bad I8 = a | b }
-               ^^
 ```
 
 
-**Mixed explicit and implicit discriminants**
+**Mixed explicit and implicit tags**
 
 ```metall
 { enum Mix U8 = a = 1 | b }
 ```
 
 ```error
-test.met:1:3: enum Mix: discriminants must be all-or-none
+test.met:1:3: enum Mix: tags must be all-or-none
     { enum Mix U8 = a = 1 | b }
       ^^^^^^^^^^^^^^^^^^^^^^^
 ```
@@ -10946,7 +11078,7 @@ test.met:1:24: enum Bad must be backed by an integer type or an open enum, got S
                            ^
 ```
 
-**Subset variant cannot have an explicit discriminant**
+**Subset variant cannot have an explicit tag**
 
 ```metall module
 enum Root U32
@@ -10954,20 +11086,20 @@ enum Sub Root = a = 5 | b = 6
 ```
 
 ```error
-test.met:2:21: subset enum variant a cannot have an explicit discriminant
+test.met:2:21: subset enum variant a cannot have an explicit tag
     enum Root U32
     enum Sub Root = a = 5 | b = 6
                         ^
 ```
 
-**Duplicate explicit discriminant value**
+**Duplicate explicit tag value**
 
 ```metall
 { enum E U8 = a = 5 | b = 5 }
 ```
 
 ```error
-test.met:1:27: duplicate enum discriminant: 5
+test.met:1:27: duplicate enum tag: 5
     { enum E U8 = a = 5 | b = 5 }
                               ^
 ```
@@ -11064,16 +11196,28 @@ test.met:1:10: associated-data field defaults are not supported; use ?T for an o
              ^
 ```
 
-**Explicit discriminant out of backing range**
+**Explicit tag out of backing range**
 
 ```metall
 { enum C U8 = a = 300 }
 ```
 
 ```error
-test.met:1:19: discriminant 300 does not fit backing type U8
+test.met:1:19: tag 300 does not fit backing type U8
     { enum C U8 = a = 300 }
                       ^^^
+```
+
+**Explicit tag below signed backing range**
+
+```metall
+{ enum C I8 = a = -200 }
+```
+
+```error
+test.met:1:19: tag -200 does not fit backing type I8
+    { enum C I8 = a = -200 }
+                      ^^^^
 ```
 
 **Subset cannot declare its own associated-data params**

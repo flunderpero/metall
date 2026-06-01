@@ -142,7 +142,7 @@ pub fun sleep(d Duration) void {
             panic("failed to sleep")
             #end
             #if os.linux or os.darwin
-            panic(posix.errno_str())
+            panic(posix.Errno(res).to_str())
             #end
         }
         remaining = until - Instant.new().nsec
@@ -164,16 +164,13 @@ let clock_id_realtime = I32(0)
 let clock_id_monotonic_raw = I32(4)
 
 fun call_clock_gettime(ts &mut TimeSpec, clock_id I32) void {
-    #if os.linux or os.darwin
-    posix.reset_errno()
-    #end
     let res = unsafe clock_gettime(clock_id, ffi.ref_ptr_mut<TimeSpec>(ts))
     if res != 0 {
         #if os.wasm
         panic("failed to call clock_gettime")
         #end
         #if os.linux or os.darwin
-        panic(posix.errno_str())
+        panic(posix.Errno(res).to_str())
         #end
     }
 }

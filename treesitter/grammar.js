@@ -361,7 +361,7 @@ module.exports = grammar({
 
     // >>> Enum declaration
     // `enum Name (schema)? Backing (= variant (| variant)*)?`. The backing is an
-    // unsigned int type for a standalone/open enum, or an open root's name for a
+    // integer type for a standalone/open enum, or an open root's name for a
     // closed subset. No body means an open root.
 
     enum_declaration: ($) =>

@@ -17,11 +17,11 @@ func enumVariantDebugName(enumType EnumType, isSubset bool, variantName string) 
 	return variantName
 }
 
-// AssignEnumDiscriminants packs every open enum's subset variants into one
-// dense, whole-program discriminant pool sized by the root's integer type.
+// AssignEnumTags packs every open enum's subset variants into one
+// dense, whole-program tag pool sized by the root's integer type.
 // Standalone closed enums are numbered at declaration time, so they are left
 // untouched here. Runs after type checking and before IR generation.
-func (e *Engine) AssignEnumDiscriminants() {
+func (e *Engine) AssignEnumTags() {
 	rootSubsets := map[TypeID][]TypeID{}
 	for typeID, cached := range e.env.reg.types {
 		et, ok := cached.Type.Kind.(EnumType)
@@ -47,7 +47,7 @@ func (e *Engine) assignRootPool(root TypeID, subsets []TypeID) {
 	for _, subsetID := range subsets {
 		et := base.Cast[EnumType](e.env.Type(subsetID).Kind)
 		for i := range et.Variants {
-			et.Variants[i].Discriminant = big.NewInt(counter)
+			et.Variants[i].Tag = big.NewInt(counter)
 			counter++
 		}
 	}
