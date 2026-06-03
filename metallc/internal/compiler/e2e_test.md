@@ -1275,6 +1275,37 @@ fun main() void {
 22
 ```
 
+**allocator unwrapped from option and result**
+
+A `try` on `?Arena` / `!Arena` materializes the allocator through a match arm.
+The unwrapped arena must reach `arena_alloc` as the loaded pointer, not the
+stack slot it was bound into.
+
+```metall
+fun via_option(@maybe ?Arena, v Int) &mut Int {
+    let @x = try @maybe else { panic("none") }
+    @x.new<Int>(v)
+}
+
+fun via_result(@maybe !Arena, v Int) &mut Int {
+    let @x = try @maybe else { panic("err") }
+    @x.new<Int>(v)
+}
+
+fun main() void {
+    let @owned = Arena()
+    let a = via_option(@owned, 33)
+    let b = via_result(@owned, 44)
+    DebugIntern.print_int(a.*)
+    DebugIntern.print_int(b.*)
+}
+```
+
+```output
+33
+44
+```
+
 **int array**
 
 ```metall

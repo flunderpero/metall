@@ -1596,7 +1596,7 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 		e.diag(span, "cannot assign expression of type '%s' to a variable", e.env.TypeDisplay(exprTypeID))
 		return InvalidTypeID, TypeFailed
 	}
-	if _, ok := e.env.Type(exprTypeID).Kind.(AllocatorType); ok {
+	if e.holdsAllocator(exprTypeID) {
 		e.diag(span, "allocators must be bound to an @-identifier (e.g. `let @%s = ...`)", varNode.Name.Name)
 		return InvalidTypeID, TypeFailed
 	}
@@ -1635,7 +1635,7 @@ func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, sp
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	if _, ok := e.env.Type(exprTypeID).Kind.(AllocatorType); !ok {
+	if !e.holdsAllocator(exprTypeID) {
 		e.diag(e.ast.Node(alloc.Expr).Span,
 			"allocator binding '%s' must be initialized with an allocator, got %s",
 			alloc.Name.Name, e.env.TypeDisplay(exprTypeID))
@@ -1645,17 +1645,30 @@ func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, sp
 	return e.voidTyp, TypeOK
 }
 
-// checkAllocatorNaming enforces that allocator-typed bindings use an
-// @-identifier and that @-identifiers only ever name allocators.
+// holdsAllocator reports whether the type is an allocator, or a union (e.g.
+// `?Arena`, `!Arena`) one of whose variants holds an allocator. Allocator
+// capabilities stay marked by an @-identifier even through such wrappers.
+func (e *Engine) holdsAllocator(typeID TypeID) bool {
+	switch kind := e.env.Type(typeID).Kind.(type) {
+	case AllocatorType:
+		return true
+	case UnionType:
+		return slices.ContainsFunc(kind.Variants, e.holdsAllocator)
+	}
+	return false
+}
+
+// checkAllocatorNaming enforces that allocator-holding bindings use an
+// @-identifier and that @-identifiers only ever name allocator-holding values.
 func (e *Engine) checkAllocatorNaming(name ast.Name, typeID TypeID) bool {
-	_, isAlloc := e.env.Type(typeID).Kind.(AllocatorType)
+	isAlloc := e.holdsAllocator(typeID)
 	hasAt := strings.HasPrefix(name.Name, "@")
 	if isAlloc && !hasAt {
 		e.diag(name.Span, "allocator '%s' must be bound to an @-identifier", name.Name)
 		return false
 	}
 	if hasAt && !isAlloc {
-		e.diag(name.Span, "@-identifier '%s' must have an allocator type, got %s",
+		e.diag(name.Span, "@-identifier '%s' must hold an allocator, got %s",
 			name.Name, e.env.TypeDisplay(typeID))
 		return false
 	}

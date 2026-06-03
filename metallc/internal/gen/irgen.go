@@ -1663,7 +1663,10 @@ func (g *IRFunGen) genMatchElseBinding(match ast.Match, payloadPtr string) {
 func (g *IRFunGen) genMatchBinding(bindID ast.BindingID, name string, typeID types.TypeID, ptr string) {
 	valReg := g.loadValue(ptr, typeID)
 	irTyp := g.irType(typeID)
-	if irTyp == "{}" || g.isAggregateType(typeID) {
+	// An allocator binding must hold the arena pointer directly, never a stack
+	// slot: genIdent's allocator branch returns the symbol reg without a load.
+	_, isAlloc := g.env.Type(typeID).Kind.(types.AllocatorType)
+	if irTyp == "{}" || isAlloc || g.isAggregateType(typeID) {
 		g.setSymbol(bindID, name, valReg, "ptr")
 		return
 	}

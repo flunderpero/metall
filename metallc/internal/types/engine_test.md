@@ -3537,7 +3537,7 @@ test.met:1:11: allocator 'a' must be bound to an @-identifier
 ```
 
 ```error
-test.met:1:11: @-identifier '@x' must have an allocator type, got Int
+test.met:1:11: @-identifier '@x' must hold an allocator, got Int
     { fun foo(@x Int) void {} }
               ^^
 ```
@@ -3549,9 +3549,33 @@ test.met:1:11: @-identifier '@x' must have an allocator type, got Int
 ```
 
 ```error
-test.met:1:16: @-identifier '@x' must have an allocator type, got Int
+test.met:1:16: @-identifier '@x' must hold an allocator, got Int
     { struct Foo { @x Int } }
                    ^^
+```
+
+**Optional allocator must be bound to an @-identifier**
+
+An allocator stays an allocator capability through `?` / `!`, so it must keep its
+@-identifier.
+
+```metall
+{ fun foo(maybe ?Arena) void {} }
+```
+
+```error
+test.met:1:11: allocator 'maybe' must be bound to an @-identifier
+    { fun foo(maybe ?Arena) void {} }
+              ^^^^^
+```
+
+**@-identifier may hold an optional or result allocator**
+
+```metall
+{ fun foo(@maybe ?Arena, @res !Arena) void {} }
+```
+
+```error
 ```
 
 ## Arrays and Slices
