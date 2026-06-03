@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
@@ -466,7 +467,7 @@ func skipToClosingQuote(source *base.Source, idx int, quote rune) int {
 }
 
 func lexStringBody(source *base.Source, idx int, span base.Span, kind TokenKind) Token {
-	value := []rune{}
+	value := []byte{}
 	for idx < len(source.Content) {
 		c := source.Content[idx]
 		if c == '"' {
@@ -479,11 +480,16 @@ func lexStringBody(source *base.Source, idx int, span base.Span, kind TokenKind)
 				span.End = skipToClosingQuote(source, idx+1, '"')
 				return Token{Error, errMsg, span}
 			}
-			value = append(value, r)
+			// In a bytes literal `\xNN` is a raw byte instead of a utf-8 encoded rune.
+			if kind == Bytes && source.Content[idx+1] == 'x' {
+				value = append(value, byte(r))
+			} else {
+				value = utf8.AppendRune(value, r)
+			}
 			idx = newIdx
 		} else {
 			idx += 1
-			value = append(value, c)
+			value = utf8.AppendRune(value, c)
 		}
 	}
 	return Token{EOF, "", span}

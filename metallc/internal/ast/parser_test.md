@@ -669,7 +669,7 @@ b"\n\t\xFF"
 ```
 
 ```ast
-String(value="\n\tÿ",bytes=true)
+String(value="\n\t\xff",bytes=true)
 ```
 
 ## If

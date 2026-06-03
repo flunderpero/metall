@@ -180,7 +180,11 @@ func TestLexer(t *testing.T) {
 		{"bytes", `b"abc"`, []want{{Bytes, "abc", "1:1-1:6"}}},
 		{"bytes empty", `b""`, []want{{Bytes, "", "1:1-1:3"}}},
 		{"bytes escape newline", `b"\n"`, []want{{Bytes, "\n", "1:1-1:5"}}},
-		{"bytes escape hex", `b"\xFF"`, []want{{Bytes, "ÿ", "1:1-1:7"}}},
+		{"bytes escape hex", `b"\xFF"`, []want{{Bytes, "\xff", "1:1-1:7"}}},
+		{"bytes escape hex high byte", `b"1234\xc0"`, []want{{Bytes, "1234\xc0", "1:1-1:11"}}},
+		// A bytes `\xNN` is a raw byte, but the same escape in a Str is a code
+		// point, so the Str keeps valid UTF-8 (0xC0 -> 0xC3 0x80).
+		{"string escape hex high byte stays utf8", `"\xc0"`, []want{{String, "\xc3\x80", "1:1-1:6"}}},
 		{"bytes escape unicode", `b"\u{20AC}"`, []want{{Bytes, "€", "1:1-1:11"}}},
 		{"bytes invalid hex escape", `b"\xGG"`, []want{{Error, "invalid byte escape sequence", "1:1-1:7"}}},
 		{"bytes not prefix on identifier", `boo"x"`, []want{
