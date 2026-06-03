@@ -29,14 +29,20 @@ module.exports = grammar({
 
   word: ($) => $.identifier,
 
+  // Two GLR conflicts the grammar cannot resolve without unbounded lookahead:
+  //
+  // - `function_declaration`: inside a block, `unsafe fun ...` could be a
+  //   `function_declaration` with an `unsafe` modifier, or an `unsafe_call`
+  //   whose callee is a function_declaration (the trailing `(...)` never
+  //   arrives, but tree-sitter can't see that).
+  //
+  // - `simple_type`: after a bare `TypeId`, a following `.` could continue the
+  //   `TypeId.TypeId` associated-type chain or stop the type and start an
+  //   enum-variant pattern (`Color.red`). The casing of the next ident decides,
+  //   but GLR needs to explore both interpretations.
   conflicts: ($) => [
-    [$.qualified_name],
-    [$.simple_type],
-    [$.call_expression],
     [$.function_declaration],
-    // A trailing `if`/`try` (no else block) in a match arm / when case body can
-    // be followed by the match/when `else`. GLR explores attaching `else` to the
-    // if/try vs the enclosing match/when; the block-vs-`:` shape decides.
+    [$.simple_type],
     [$.if_expression],
     [$.try_expression],
   ],
@@ -174,7 +180,7 @@ module.exports = grammar({
     type_parameter: ($) => seq(
       optional(choice("sync", "unsync")),
       field("name", $.type_identifier),
-      optional(field("constraint", $.simple_type)),
+      optional(field("constraint", choice($.simple_type, $.module_qualified_type))),
       optional(seq("=", field("default", $._type))),
     ),
 
@@ -190,6 +196,7 @@ module.exports = grammar({
     _type: ($) =>
       choice(
         $.simple_type,
+        $.module_qualified_type,
         $.array_type,
         $.slice_type,
         $.reference_type,
@@ -208,6 +215,7 @@ module.exports = grammar({
     // the function type itself does not carry one.
     function_type: ($) =>
       seq(
+        optional(choice("sync", "unsync")),
         "fun",
         "(",
         optional(seq(
@@ -222,9 +230,13 @@ module.exports = grammar({
     // An optional lowercase prefix is a module qualifier (`map.Map`). A dotted
     // chain of uppercase segments covers nested and associated types (`T.Item`).
     // A `.lowercase` (e.g. an enum variant) stops the chain for the caller.
+    // A bare `TypeId` chain (associated types) optionally followed by `<Args>`.
+    // A leading lowercase module qualifier lives in the separate
+    // `module_qualified_type` rule, which keeps `simple_type` free of the
+    // identifier-then-dot prefix that otherwise collides with field_access in
+    // expression contexts.
     simple_type: ($) => choice(
       seq(
-        optional(seq($.identifier, ".")),
         $.type_identifier,
         repeat(seq(".", $.type_identifier)),
         optional($.type_arguments),
@@ -232,6 +244,9 @@ module.exports = grammar({
       "void",
       "never",
     ),
+
+    module_qualified_type: ($) =>
+      seq($.identifier, ".", $.simple_type),
 
     array_type: ($) => seq("[", $.integer_literal, "]", $._type),
 
@@ -242,9 +257,9 @@ module.exports = grammar({
     // >>> Function declaration
 
     function_declaration: ($) =>
-      seq(
+      prec.right(PREC.POSTFIX + 1, seq(
         optional("pub"),
-        optional("unsync"),
+        optional(choice("sync", "unsync")),
         optional("unsafe"),
         "fun",
         field("name", $.function_name),
@@ -253,7 +268,7 @@ module.exports = grammar({
         optional("noescape"),
         field("return_type", $._type),
         field("body", $.block),
-      ),
+      )),
 
     extern_function_declaration: ($) =>
       seq(
@@ -292,7 +307,7 @@ module.exports = grammar({
     parameter: ($) =>
       seq(
         field("name", choice($.identifier, $.allocator_identifier)),
-        optional(choice("sync", "noescape")),
+        optional("noescape"),
         field("type", $._type),
         optional(seq("=", field("default", $._expression))),
       ),
@@ -444,6 +459,7 @@ module.exports = grammar({
 
         // Postfix.
         $.call_expression,
+        $.unsafe_call,
         $.field_access,
         $.index_expression,
         $.sub_slice,
@@ -465,15 +481,16 @@ module.exports = grammar({
         $.return_expression,
         $.break_expression,
         $.continue_expression,
+        $.defer_expression,
       ),
 
     // >>> Type-prefixed expressions
 
-    // TypeName.methodName or TypeName.methodName<Args>
+    // TypeName.methodName. Trailing `<Args>` (if any) is attached by the
+    // postfix call_expression so that there is one way to spell `Foo.bar<T>(...)`.
     qualified_name: ($) =>
       prec(PREC.POSTFIX, seq(
         $.type_identifier, ".", $.identifier,
-        optional($.type_arguments),
       )),
 
     // TypeName(args...) or TypeName<Args>(args...)
@@ -499,8 +516,7 @@ module.exports = grammar({
         "let",
         field("name", $.allocator_identifier),
         "=",
-        field("type", $.type_identifier),
-        "(", field("arguments", optional($.argument_list)), ")",
+        field("value", $._expression),
       )),
 
     // >>> Assignment
@@ -555,11 +571,16 @@ module.exports = grammar({
 
     call_expression: ($) =>
       prec(PREC.POSTFIX, seq(
-        optional("unsafe"),
         field("callee", $._expression),
         optional(field("type_arguments", $.type_arguments)),
         "(", field("arguments", optional($.argument_list)), ")",
       )),
+
+    // `unsafe foo(args)`. A dedicated rule (rather than an optional modifier on
+    // call_expression) keeps `unsafe` attached to exactly one parse, so the
+    // grammar stays conflict-free.
+    unsafe_call: ($) =>
+      prec.right(PREC.UNARY, seq("unsafe", $.call_expression)),
 
     argument_list: ($) =>
       seq($._expression, repeat(seq(",", $._expression)), optional(",")),
@@ -707,6 +728,8 @@ module.exports = grammar({
 
     continue_expression: (_) => "continue",
 
+    defer_expression: ($) => seq("defer", field("body", $.block)),
+
     // >>> Function literal / Closure
 
     function_literal: ($) =>
@@ -724,7 +747,7 @@ module.exports = grammar({
     function_literal_parameter: ($) =>
       seq(
         field("name", choice($.identifier, $.allocator_identifier)),
-        optional(seq(optional(choice("sync", "noescape")), field("type", $._type))),
+        optional(seq(optional("noescape"), field("type", $._type))),
         optional(seq("=", field("default", $._expression))),
       ),
 

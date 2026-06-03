@@ -47,8 +47,9 @@ fun main() void { unsafe danger() }
     name: (function_name (identifier))
     return_type: (simple_type)
     body: (block
-      (call_expression
-        callee: (identifier)))))
+      (unsafe_call
+        (call_expression
+          callee: (identifier))))))
 
 ================================================================================
 Simple function

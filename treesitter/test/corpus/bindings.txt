@@ -63,7 +63,7 @@ fun f() void { let x = 1  mut y = 2 }
 Allocator binding
 ================================================================================
 
-fun f() void { let @a = Arena(4096) }
+fun f() void { let @a = Arena() let @b = h.@a }
 
 --------------------------------------------------------------------------------
 
@@ -75,9 +75,13 @@ fun f() void { let @a = Arena(4096) }
     body: (block
       (allocator_binding
         name: (allocator_identifier)
-        type: (type_identifier)
-        arguments: (argument_list
-          (integer_literal))))))
+        value: (type_construction
+          type: (type_identifier)))
+      (allocator_binding
+        name: (allocator_identifier)
+        value: (field_access
+          object: (identifier)
+          field: (allocator_identifier))))))
 
 ================================================================================
 Assignment to variable, field, index, deref

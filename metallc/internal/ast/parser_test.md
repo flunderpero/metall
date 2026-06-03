@@ -1164,12 +1164,25 @@ Block()
 **Allocator var**
 
 ```metall
-let @myalloc = Arena(123)
+let @myalloc = Arena()
 ```
 
 ```ast
-AllocatorVar(name=@myalloc,allocator=Arena)
-  args=Int(value=123)
+AllocatorVar(name=@myalloc)
+  expr=TypeConstruction()
+    target=Ident(name="Arena")
+```
+
+**Allocator var from an arbitrary expression**
+
+```metall
+let @b = x.@myalloc
+```
+
+```ast
+AllocatorVar(name=@b)
+  expr=FieldAccess(field=@myalloc)
+    target=Ident(name="x")
 ```
 
 **Heap alloc**

@@ -13,11 +13,11 @@ pub struct Never_ {}
 --- A placeholder type for the builtin `Arena` type. ---
 pub struct Arena_ {}
 
-pub fun Arena.new<T>(self Arena, value T) &mut T {}
-pub fun Arena.slice<T>(self Arena, len Int, default T) []mut T {}
-pub unsafe fun Arena.slice_uninit<T>(self Arena, len Int) []mut T {}
-pub fun Arena.grow<T>(self Arena, s []T, new_len Int, default T) []mut T {}
-pub unsafe fun Arena.grow_uninit<T>(self Arena, s []T, new_len Int) []mut T {}
+pub fun Arena.new<T>(@a Arena, value T) &mut T {}
+pub fun Arena.slice<T>(@a Arena, len Int, default T) []mut T {}
+pub unsafe fun Arena.slice_uninit<T>(@a Arena, len Int) []mut T {}
+pub fun Arena.grow<T>(@a Arena, s []T, new_len Int, default T) []mut T {}
+pub unsafe fun Arena.grow_uninit<T>(@a Arena, s []T, new_len Int) []mut T {}
 
 --- A placeholder type for the builtin `Bool` type. ---
 pub struct Bool_ {}

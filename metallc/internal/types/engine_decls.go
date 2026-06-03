@@ -419,6 +419,9 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
+		if !e.checkAllocatorNaming(paramNode.Name, paramTypeID) {
+			return InvalidTypeID, TypeFailed
+		}
 		paramTypeIDs[i] = paramTypeID
 		if paramNode.Noescape {
 			noescapeParams[i] = true

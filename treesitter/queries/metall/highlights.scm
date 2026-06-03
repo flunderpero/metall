@@ -9,9 +9,13 @@
   "use"
   "let"
   "pub"
+  "extern"
+  "export"
   "nocopy"
+  "noescape"
   "sync"
   "unsync"
+  "unsafe"
   "if"
   "else"
   "for"
@@ -22,6 +26,7 @@
   "try"
   "is"
   "return"
+  "defer"
   "and"
   "or"
   "not"
@@ -49,24 +54,26 @@
 ; >>> Types
 
 (simple_type (type_identifier) @type)
-(simple_type "void" @type)
 (simple_type "never" @type)
+(module_qualified_type (identifier) @module)
 (reference_type "&" @operator)
 
 ; >>> Generics
 
 (type_parameter name: (type_identifier) @type.definition)
 (type_arguments (simple_type (type_identifier) @type))
+(type_parameters ["<" ">"] @punctuation.bracket)
+(type_arguments ["<" ">"] @punctuation.bracket)
+
+; Comparison operators (binary_expression uses bare "<" / ">").
+(binary_expression "<" @operator)
+(binary_expression ">" @operator)
 
 ; >>> Functions
 
-(function_declaration "unsafe" @keyword)
 (function_declaration "fun" @keyword.function)
-(extern_function_declaration "extern" @keyword)
 (extern_function_declaration "fun" @keyword.function)
-(export_declaration "export" @keyword)
 (export_declaration name: (identifier) @function)
-(call_expression "unsafe" @keyword)
 (function_name (identifier) @function)
 (function_name (type_identifier) @type)
 
@@ -134,7 +141,6 @@
 (let_binding name: (identifier) @variable)
 (mut_binding name: (identifier) @variable)
 (allocator_binding name: (allocator_identifier) @attribute)
-(allocator_binding type: (type_identifier) @type)
 
 ; >>> For-in binding
 
@@ -181,11 +187,11 @@
 
 ; >>> Operators
 
-["+" "-" "*" "/" "%" "==" "!=" "<" "<=" ">" ">=" "=" ".." "..=" "|" "^" "&" "<<" "~"] @operator
+["+" "-" "*" "/" "%" "+%" "-%" "*%" "==" "!=" "<=" ">=" "=" ".." "..=" "|" "^" "&" "<<" "~" "?" "!"] @operator
 
 ; >>> Punctuation
 
-["(" ")" "{" "}" "[" "]" "<" ">"] @punctuation.bracket
+["(" ")" "{" "}" "[" "]"] @punctuation.bracket
 ["," "." ":"] @punctuation.delimiter
 
 ; >>> Conditional compilation overrides (last so they win)

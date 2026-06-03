@@ -178,22 +178,24 @@ fun f(m map.Map<Str, Bool>, p ffi.Ptr<U8>) void {}
     parameters: (parameter_list
       (parameter
         name: (identifier)
-        type: (simple_type
+        type: (module_qualified_type
           (identifier)
-          (type_identifier)
-          (type_arguments
-            (simple_type
-              (type_identifier))
-            (simple_type
-              (type_identifier)))))
+          (simple_type
+            (type_identifier)
+            (type_arguments
+              (simple_type
+                (type_identifier))
+              (simple_type
+                (type_identifier))))))
       (parameter
         name: (identifier)
-        type: (simple_type
+        type: (module_qualified_type
           (identifier)
-          (type_identifier)
-          (type_arguments
-            (simple_type
-              (type_identifier))))))
+          (simple_type
+            (type_identifier)
+            (type_arguments
+              (simple_type
+                (type_identifier)))))))
     return_type: (simple_type)
     body: (block)))
 

@@ -3120,10 +3120,14 @@ let @myalloc = Arena()
 
 ```types
 AllocatorVar: void
+  TypeConstruction: Arena
+    Ident: Arena
 ```
 
 ```bindings
 AllocatorVar: scope01
+  TypeConstruction: scope01
+    Ident: scope01
 ---
 scope01:
   @myalloc: Arena
@@ -3138,6 +3142,8 @@ scope01:
 ```types
 Block: &mut struct01
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Struct: struct01
     StructField: ?
       SimpleType: ?
@@ -3169,6 +3175,8 @@ Block: void
     SimpleType: void
     Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Call: void
     Ident: fun01
     Ident: Arena
@@ -3185,6 +3193,8 @@ fun01 = fun(Arena) void
 ```types
 Block: &mut struct01
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Struct: struct01
     StructField: ?
       SimpleType: ?
@@ -3209,6 +3219,8 @@ fun01    = fun(Arena, struct01) &mut struct01
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
@@ -3230,6 +3242,8 @@ Block: void
     StructField: ?
       SimpleType: ?
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     TypeConstruction: struct01
       Ident: struct01
@@ -3253,6 +3267,8 @@ Block: void
     StructField: ?
       SimpleType: ?
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     TypeConstruction: struct02
       Ident: struct02
@@ -3281,6 +3297,8 @@ fun01    = fun(Arena, struct01) &mut struct01
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
@@ -3299,6 +3317,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
@@ -3318,6 +3338,8 @@ fun01 = fun(Arena, Int, Int) []mut Int
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
@@ -3336,6 +3358,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
@@ -3355,6 +3379,8 @@ fun01 = fun(Arena, Int, Int) []mut Int
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3379,6 +3405,8 @@ Block: void
     StructField: ?
       SimpleType: ?
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut struct01
       FieldAccess: fun01
@@ -3399,6 +3427,8 @@ fun01    = fun(Arena, Int) []mut struct01
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Bool
       FieldAccess: fun01
@@ -3408,6 +3438,120 @@ Block: void
       Bool: Bool
 ---
 fun01 = fun(Arena, Int, Bool) []mut Bool
+```
+
+**Allocator alias from another allocator**
+
+```metall
+{ let @a = Arena() let @b = @a }
+```
+
+```types
+Block: void
+  AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
+  AllocatorVar: void
+    Ident: Arena
+```
+
+```bindings
+Block: scope01
+  AllocatorVar: scope02
+    TypeConstruction: scope02
+      Ident: scope02
+  AllocatorVar: scope02
+    Ident: scope02
+---
+scope01:
+scope02:
+  @a: Arena
+  @b: Arena
+```
+
+**Allocator alias from struct field**
+
+```metall
+{ struct Foo { @a Arena } fun get(f &Foo) void { let @b = f.@a } }
+```
+
+```types
+Block: fun01
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    FunParam: &struct01
+      RefType: &struct01
+        SimpleType: struct01
+    SimpleType: void
+    Block: void
+      AllocatorVar: void
+        FieldAccess: Arena
+          Ident: &struct01
+---
+struct01 = Foo { @a Arena }
+fun01    = fun(&struct01) void
+```
+
+**Allocator var must be an allocator**
+
+```metall
+let @x = 42
+```
+
+```error
+test.met:1:10: allocator binding '@x' must be initialized with an allocator, got Int
+    let @x = 42
+             ^^
+```
+
+**Allocator must be bound to an @-identifier**
+
+```metall
+{ let @a = Arena() let x = @a }
+```
+
+```error
+test.met:1:20: allocators must be bound to an @-identifier (e.g. `let @x = ...`)
+    { let @a = Arena() let x = @a }
+                       ^^^^^^^^^^
+```
+
+**Allocator param must be an @-identifier**
+
+```metall
+{ fun foo(a Arena) void {} }
+```
+
+```error
+test.met:1:11: allocator 'a' must be bound to an @-identifier
+    { fun foo(a Arena) void {} }
+              ^
+```
+
+**@-identifier param must be an allocator**
+
+```metall
+{ fun foo(@x Int) void {} }
+```
+
+```error
+test.met:1:11: @-identifier '@x' must have an allocator type, got Int
+    { fun foo(@x Int) void {} }
+              ^^
+```
+
+**@-identifier struct field must be an allocator**
+
+```metall
+{ struct Foo { @x Int } }
+```
+
+```error
+test.met:1:16: @-identifier '@x' must have an allocator type, got Int
+    { struct Foo { @x Int } }
+                   ^^
 ```
 
 ## Arrays and Slices
@@ -3615,6 +3759,8 @@ Block: Int
 ```types
 Block: Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3637,6 +3783,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3661,6 +3809,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3682,6 +3832,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Fun: fun01
     FunParam: []Int
       SliceType: []Int
@@ -3714,6 +3866,8 @@ fun02 = fun(Arena, Int) []mut Int
 ```types
 Block: []Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Fun: fun01
     FunParam: []Int
       SliceType: []Int
@@ -3745,6 +3899,8 @@ fun02 = fun(Arena, Int) []mut Int
 ```types
 Block: Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Struct: struct01
     StructField: ?
       SliceType: ?
@@ -3777,6 +3933,8 @@ fun01    = fun(Arena, Int) []mut Int
 ```types
 Block: &[]mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3798,6 +3956,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3823,6 +3983,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3847,6 +4009,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3874,6 +4038,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Call: []mut Int
     FieldAccess: fun01
       Ident: Arena
@@ -3892,6 +4058,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Fun: fun01
     FunParam: []Int
       SliceType: []Int
@@ -3924,6 +4092,8 @@ fun02 = fun(Arena, Int) []mut Int
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3968,6 +4138,8 @@ Block: []mut Int
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -3992,6 +4164,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: []mut Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -4019,6 +4193,8 @@ fun01 = fun(Arena, Int) []mut Int
 ```types
 Block: []Int
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -4069,6 +4245,8 @@ Block: []Int
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut []Int
       FieldAccess: fun01
@@ -4090,6 +4268,8 @@ fun01 = fun(Arena, Int, []Int) []mut []Int
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Int
       FieldAccess: fun01
@@ -4152,6 +4332,8 @@ struct01 = Foo { items []Int }
 ```types
 Block: void
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut []Int
       FieldAccess: fun01
@@ -5845,6 +6027,8 @@ Block: Int
         FieldAccess: fun03
           Ident: &struct03
   AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
   Var: void
     Call: []mut Str
       FieldAccess: fun04

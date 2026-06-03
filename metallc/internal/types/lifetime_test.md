@@ -627,6 +627,70 @@ test.met:6:9: reference escaping its allocation scope (via block result)
         }
 ```
 
+**aliased inner allocator heap alloc escapes**
+
+An alias inherits its source's taint. Aliasing the *inner* arena and letting the
+allocated value reach the outer binding `x` must be rejected.
+
+```metall
+{
+    struct Foo { one Str }
+    let @outer = Arena()
+    let x = {
+        let @inner = Arena()
+        let @alias = @inner
+        @alias.new<Foo>(Foo("hello"))
+    }
+}
+```
+
+```error
+test.met:7:9: reference escaping its allocation scope (via block result)
+            let @alias = @inner
+            @alias.new<Foo>(Foo("hello"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        }
+```
+
+**aliased outer allocator heap alloc valid**
+
+The matched opposite: same shape, but `@alias` targets the *outer* arena, so the
+value lives as long as `@outer` and may reach the outer binding `x`.
+
+```metall
+{
+    struct Foo { one Str }
+    let @outer = Arena()
+    let x = {
+        let @alias = @outer
+        @alias.new<Foo>(Foo("hello"))
+    }
+}
+```
+
+```error
+```
+
+**aliased param allocator heap alloc valid**
+
+An alias of a parameter arena carries the caller's taint, so a value allocated
+through it may escape the function.
+
+```metall
+{
+    struct Foo { one Str }
+    fun foo(@a Arena) &Foo {
+        let @b = @a
+        @b.new<Foo>(Foo("hello"))
+    }
+    let @a = Arena()
+    let x = foo(@a)
+}
+```
+
+```error
+```
+
 **heap alloc ref assignment escapes**
 
 ```metall

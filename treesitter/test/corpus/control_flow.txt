@@ -583,3 +583,22 @@ fun f(x AB) void {
           binding: (identifier)
           (call_expression
             callee: (identifier)))))))
+
+================================================================================
+Defer block
+================================================================================
+
+fun f() void { defer { cleanup() } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (defer_expression
+        body: (block
+          (call_expression
+            callee: (identifier)))))))

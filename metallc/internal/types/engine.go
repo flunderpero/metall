@@ -1596,6 +1596,10 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 		e.diag(span, "cannot assign expression of type '%s' to a variable", e.env.TypeDisplay(exprTypeID))
 		return InvalidTypeID, TypeFailed
 	}
+	if _, ok := e.env.Type(exprTypeID).Kind.(AllocatorType); ok {
+		e.diag(span, "allocators must be bound to an @-identifier (e.g. `let @%s = ...`)", varNode.Name.Name)
+		return InvalidTypeID, TypeFailed
+	}
 	if !e.checkNocopy(varNode.Expr, exprTypeID, e.ast.Node(varNode.Expr).Span) {
 		return InvalidTypeID, TypeFailed
 	}
@@ -1627,16 +1631,35 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 }
 
 func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, span base.Span) (TypeID, TypeStatus) {
-	if alloc.Allocator.Name != "Arena" {
-		e.diag(alloc.Allocator.Span, "unknown allocator type: %s", alloc.Allocator.Name)
+	exprTypeID, status := e.Query(alloc.Expr)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if _, ok := e.env.Type(exprTypeID).Kind.(AllocatorType); !ok {
+		e.diag(e.ast.Node(alloc.Expr).Span,
+			"allocator binding '%s' must be initialized with an allocator, got %s",
+			alloc.Name.Name, e.env.TypeDisplay(exprTypeID))
 		return InvalidTypeID, TypeFailed
 	}
-	if len(alloc.Args) != 0 {
-		e.diag(span, "argument count mismatch: expected %d, got %d", 0, len(alloc.Args))
-		return InvalidTypeID, TypeFailed
-	}
-	e.bind(nodeID, alloc.Name.Name, false, e.arenaTyp, span, e.blockExprsIndex)
+	e.bind(nodeID, alloc.Name.Name, false, exprTypeID, span, e.blockExprsIndex)
 	return e.voidTyp, TypeOK
+}
+
+// checkAllocatorNaming enforces that allocator-typed bindings use an
+// @-identifier and that @-identifiers only ever name allocators.
+func (e *Engine) checkAllocatorNaming(name ast.Name, typeID TypeID) bool {
+	_, isAlloc := e.env.Type(typeID).Kind.(AllocatorType)
+	hasAt := strings.HasPrefix(name.Name, "@")
+	if isAlloc && !hasAt {
+		e.diag(name.Span, "allocator '%s' must be bound to an @-identifier", name.Name)
+		return false
+	}
+	if hasAt && !isAlloc {
+		e.diag(name.Span, "@-identifier '%s' must have an allocator type, got %s",
+			name.Name, e.env.TypeDisplay(typeID))
+		return false
+	}
+	return true
 }
 
 func (e *Engine) checkArrayType(nodeID ast.NodeID, array ast.ArrayType, span base.Span) (TypeID, TypeStatus) {
@@ -1808,6 +1831,12 @@ func (e *Engine) dispatchTypeConstruction(
 		return e.checkStructConstruction(kind, targetTypeID, lit, span)
 	case UnionType:
 		return e.checkUnionConstruction(kind, targetTypeID, lit, span)
+	case AllocatorType:
+		if len(lit.Args) != 0 {
+			e.diag(span, "argument count mismatch: expected %d, got %d", 0, len(lit.Args))
+			return InvalidTypeID, TypeFailed
+		}
+		return targetTypeID, TypeOK
 	default:
 		calleeSpan := e.ast.Node(lit.Target).Span
 		e.diag(calleeSpan, "not a struct or union: %s", e.env.TypeDisplay(targetTypeID))
@@ -1908,6 +1937,9 @@ func (e *Engine) checkStructField(structField ast.StructField) (TypeID, TypeStat
 	typeID, status := e.Query(structField.Type)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
+	}
+	if !e.checkAllocatorNaming(structField.Name, typeID) {
+		return InvalidTypeID, TypeFailed
 	}
 	return typeID, TypeOK
 }
@@ -2171,13 +2203,7 @@ func (e *Engine) isFreshValue(nodeID ast.NodeID) bool {
 	case ast.Call:
 		return true
 	case ast.AllocatorVar:
-		// @a.new(Struct{...}) is fresh; @a.new(existing_val) is a copy.
-		for _, arg := range kind.Args {
-			if _, ok := e.ast.Node(arg).Kind.(ast.TypeConstruction); ok {
-				return true
-			}
-		}
-		return false
+		return e.isFreshValue(kind.Expr)
 	case ast.Block:
 		if len(kind.Exprs) > 0 {
 			return e.isFreshValue(kind.Exprs[len(kind.Exprs)-1])

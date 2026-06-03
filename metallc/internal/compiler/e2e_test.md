@@ -1243,6 +1243,38 @@ x
 hello
 ```
 
+**allocator aliasing**
+
+```metall
+struct Holder {
+    @a Arena
+}
+
+fun alloc_from_field(h &Holder, v Int) &mut Int {
+    let @b = h.@a
+    @b.new<Int>(v)
+}
+
+fun alloc_from_param(@a Arena, v Int) &mut Int {
+    let @b = @a
+    @b.new<Int>(v)
+}
+
+fun main() void {
+    let @owned = Arena()
+    let h = Holder(@owned)
+    let x = alloc_from_field(&h, 11)
+    let y = alloc_from_param(@owned, 22)
+    DebugIntern.print_int(x.*)
+    DebugIntern.print_int(y.*)
+}
+```
+
+```output
+11
+22
+```
+
 **int array**
 
 ```metall

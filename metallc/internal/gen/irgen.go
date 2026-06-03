@@ -415,6 +415,10 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 }
 
 func (g *IRFunGen) genTypeConstructionOnStack(id ast.NodeID, lit ast.TypeConstruction) {
+	if _, ok := g.typeOfNode(id).Kind.(types.AllocatorType); ok {
+		g.genArenaConstruction(id)
+		return
+	}
 	targetTyp := g.typeOfNode(lit.Target)
 	if _, ok := targetTyp.Kind.(types.IntType); ok {
 		g.Gen(lit.Target)
@@ -2635,6 +2639,15 @@ func (g *IRFunGen) genDeref(id ast.NodeID, deref ast.Deref) {
 }
 
 func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
+	g.Gen(alloc.Expr)
+	reg := g.lookupCode(alloc.Expr)
+	g.setCode(id, reg)
+	g.setSymbol(ast.BindingID(id), alloc.Name.Name, reg, "ptr")
+}
+
+// genArenaConstruction emits a fresh arena on the stack and registers it for
+// destruction at the end of the current block scope.
+func (g *IRFunGen) genArenaConstruction(id ast.NodeID) {
 	reg := g.reg()
 	bufSize := g.opts.ArenaStackBufSize
 	// ArenaAllocator struct hard coded, see `lib/runtime/arena.met`
@@ -2657,7 +2670,6 @@ func (g *IRFunGen) genAllocatorVar(id ast.NodeID, alloc ast.AllocatorVar) {
 	top := len(g.arenaRegStack) - 1
 	g.arenaRegStack[top] = append(g.arenaRegStack[top], reg)
 	g.setCode(id, reg)
-	g.setSymbol(ast.BindingID(id), alloc.Name.Name, reg, "ptr")
 }
 
 func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {

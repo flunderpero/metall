@@ -1097,22 +1097,16 @@ func (p *Parser) ParseAllocatorVar(span base.Span) (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	_, ok = p.expect(token.Eq)
-	if !ok {
+	if _, ok = p.expect(token.Eq); !ok {
 		return ParseFailed, false
 	}
-	allocator, ok := p.expect(token.TypeIdent)
-	if !ok {
-		return ParseFailed, false
-	}
-	args, ok := p.ParseCallArgs()
+	expr, ok := p.ParseExpr(0)
 	if !ok {
 		return ParseFailed, false
 	}
 	return p.NewAllocatorVar(
 		Name{Name: name.Value, Span: name.Span},
-		Name{Name: allocator.Value, Span: allocator.Span},
-		args,
+		expr,
 		span.Combine(p.span()),
 	), true
 }

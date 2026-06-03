@@ -373,9 +373,8 @@ type Var struct {
 func (Var) isKind() {}
 
 type AllocatorVar struct {
-	Name      Name
-	Allocator Name
-	Args      []NodeID
+	Name Name
+	Expr NodeID
 }
 
 func (AllocatorVar) isKind() {}
@@ -739,8 +738,8 @@ func (a *AST) NewIdent(name string, typeArgs []NodeID, span base.Span) NodeID {
 	return a.node(Ident{Name: name, TypeArgs: typeArgs}, span)
 }
 
-func (a *AST) NewAllocatorVar(name Name, allocator Name, args []NodeID, span base.Span) NodeID {
-	return a.node(AllocatorVar{Name: name, Allocator: allocator, Args: args}, span)
+func (a *AST) NewAllocatorVar(name Name, expr NodeID, span base.Span) NodeID {
+	return a.node(AllocatorVar{Name: name, Expr: expr}, span)
 }
 
 func (a *AST) NewInt(value *big.Int, span base.Span) NodeID {
@@ -1027,9 +1026,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 			f(kind.Args[i])
 		}
 	case AllocatorVar:
-		for i := range len(kind.Args) {
-			f(kind.Args[i])
-		}
+		f(kind.Expr)
 	case ArrayType:
 		f(kind.Elem)
 	case SliceType:
@@ -1529,11 +1526,10 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case AllocatorVar:
 		addAttr("name", kind.Name.Name)
-		addAttr("allocator", kind.Allocator.Name)
 		if !children {
-			addAttr("args", nodeIDList(kind.Args))
+			addAttr("expr", nodeIDKind(kind.Expr))
 		} else {
-			addChild("args", kind.Args...)
+			addChild("expr", kind.Expr)
 		}
 	case FieldAccess:
 		if !children {
@@ -1854,8 +1850,7 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 		k.Args = removeFromSlice(k.Args)
 		parent.Kind = k
 	case AllocatorVar:
-		k.Args = removeFromSlice(k.Args)
-		parent.Kind = k
+		required(k.Expr)
 	case ArrayType:
 		required(k.Elem)
 	case SliceType:

@@ -392,15 +392,40 @@ func (a *LifetimeCheck) isModuleFieldAccess(_ ast.NodeID, fa ast.FieldAccess) bo
 func (a *LifetimeCheck) analyzeAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar) {
 	a.ast.Walk(nodeID, a.Check)
 	ss := a.scopeState(nodeID)
-	ss.Vars[alloc.Name.Name] = &VarTaint{
-		nodeID, ss.ScopeTaint,
-		Flow{Taints: TaintSet{ss.ScopeTaint}, PointsTo: nil},
+	// A freshly constructed arena (`let @a = Arena()`) is owned by this scope.
+	// An aliased allocator (`let @b = h.@a`) borrows storage that lives
+	// elsewhere, so it inherits the source's flow and owns no storage.
+	storageTaint := TaintID(0)
+	if a.isArenaConstruction(alloc.Expr) {
+		storageTaint = ss.ScopeTaint
 	}
+	ss.Vars[alloc.Name.Name] = &VarTaint{nodeID, storageTaint, a.flow(alloc.Expr)}
+}
+
+// isArenaConstruction reports whether the expression freshly constructs an
+// allocator (e.g. `Arena()`) rather than aliasing an existing one.
+func (a *LifetimeCheck) isArenaConstruction(nodeID ast.NodeID) bool {
+	if _, ok := a.ast.Node(nodeID).Kind.(ast.TypeConstruction); !ok {
+		return false
+	}
+	typ := a.env.TypeOfNode(nodeID)
+	if typ == nil {
+		return false
+	}
+	_, ok := typ.Kind.(AllocatorType)
+	return ok
 }
 
 // analyzeTypeConstruction: `Foo(a, b)` merges all argument flows.
 func (a *LifetimeCheck) analyzeTypeConstruction(nodeID ast.NodeID, lit ast.TypeConstruction) {
 	a.ast.Walk(nodeID, a.Check)
+	// A fresh arena lives in the scope where it is constructed.
+	if a.isArenaConstruction(nodeID) {
+		ss := a.scopeState(nodeID)
+		a.flows[nodeID] = Flow{Taints: TaintSet{ss.ScopeTaint}, PointsTo: nil}
+		a.debug(1, nodeID, "analyzeTypeConstruction (arena): %s", a.flows[nodeID])
+		return
+	}
 	merged := Flow{}
 	for _, argNodeID := range lit.Args {
 		merged = merged.Merge(a.flow(argNodeID))
