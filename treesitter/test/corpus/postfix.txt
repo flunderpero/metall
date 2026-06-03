@@ -111,6 +111,27 @@ fun f() void { &mut y }
       (reference (identifier)))))
 
 ================================================================================
+Mutable reference binding followed by a statement
+================================================================================
+
+fun f() void { let x = &mut y  x.go() }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (let_binding
+        name: (identifier)
+        value: (reference (identifier)))
+      (call_expression
+        callee: (field_access
+          object: (identifier)
+          field: (identifier))))))
+
+================================================================================
 Reference to temporary
 ================================================================================
 
