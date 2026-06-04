@@ -458,4 +458,196 @@ fun main() void {
         try test.err(U64.from_ascii_str("3".as_bytes(), 2), NumParseErr.malformed)
     })
     _ = from_ascii_str_suite.run()
+
+    let fmt_into_suite = test.Suite.new("fmt_into", @local)
+    fmt_into_suite.test("Int.fmt_into (happy path)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(4), 1234.fmt_into(buf))
+        try test.eq("1234", Str.from_utf8_lossy(buf[0..4], @local))
+
+        try test.eq(Option(5), -1234.fmt_into(buf))
+        try test.eq("-1234", Str.from_utf8_lossy(buf[0..5], @local))
+
+        try test.eq(Option(1), 0.fmt_into(buf))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+    })
+    fmt_into_suite.test("Int.fmt_into (dst too small)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(2, 0)
+
+        try test.eq(Option<Int>(None()), 1234.fmt_into(buf))
+        try test.eq([U8(0), 0][..], buf)
+    })
+    fmt_into_suite.test("Int.fmt_into (min_width)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        -- Less that actual width is just ignored.
+        try test.eq(Option(4), 1234.fmt_into(buf, 10, false, 3))
+        try test.eq("1234", Str.from_utf8_lossy(buf[0..4], @local))
+
+        try test.eq(Option(8), 1234.fmt_into(buf, 10, false, 8))
+        try test.eq("00001234", Str.from_utf8_lossy(buf[0..8], @local))
+
+        try test.eq(Option(8), -1234.fmt_into(buf, 10, false, 8))
+        try test.eq("-0001234", Str.from_utf8_lossy(buf[0..8], @local))
+
+        try test.eq(Option(4), 0.fmt_into(buf, 10, false, 4))
+        try test.eq("0000", Str.from_utf8_lossy(buf[0..4], @local))
+    })
+    fmt_into_suite.test("Int.fmt_into (min and max, all bases)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        -- Max value, all bases.
+        try test.eq(Option(63), Int(0x7FFF_FFFF_FFFF_FFFF).fmt_into(buf, 2))
+        try test.eq(
+            "111111111111111111111111111111111111111111111111111111111111111",
+            Str.from_utf8_lossy(buf[0..63], @local))
+        try test.eq(Option(21), Int(0x7FFF_FFFF_FFFF_FFFF).fmt_into(buf, 8))
+        try test.eq("777777777777777777777", Str.from_utf8_lossy(buf[0..21], @local))
+        try test.eq(Option(19), Int(0x7FFF_FFFF_FFFF_FFFF).fmt_into(buf, 10))
+        try test.eq("9223372036854775807", Str.from_utf8_lossy(buf[0..19], @local))
+        try test.eq(Option(16), Int(0x7FFF_FFFF_FFFF_FFFF).fmt_into(buf, 16))
+        try test.eq("7fffffffffffffff", Str.from_utf8_lossy(buf[0..16], @local))
+        try test.eq(Option(16), Int(0x7FFF_FFFF_FFFF_FFFF).fmt_into(buf, 16, true))
+        try test.eq("7FFFFFFFFFFFFFFF", Str.from_utf8_lossy(buf[0..16], @local))
+
+        -- Min value, all bases.
+        try test.eq(Option(65), Int(-0x8000_0000_0000_0000).fmt_into(buf, 2))
+        try test.eq(
+            "-1000000000000000000000000000000000000000000000000000000000000000",
+            Str.from_utf8_lossy(buf[0..65], @local))
+        try test.eq(Option(23), Int(-0x8000_0000_0000_0000).fmt_into(buf, 8))
+        try test.eq("-1000000000000000000000", Str.from_utf8_lossy(buf[0..23], @local))
+        try test.eq(Option(20), Int(-0x8000_0000_0000_0000).fmt_into(buf, 10))
+        try test.eq("-9223372036854775808", Str.from_utf8_lossy(buf[0..20], @local))
+        try test.eq(Option(17), Int(-0x8000_0000_0000_0000).fmt_into(buf, 16))
+        try test.eq("-8000000000000000", Str.from_utf8_lossy(buf[0..17], @local))
+        try test.eq(Option(17), Int(-0x8000_0000_0000_0000).fmt_into(buf, 16, true))
+        try test.eq("-8000000000000000", Str.from_utf8_lossy(buf[0..17], @local))
+    })
+    fmt_into_suite.test("U64.fmt_into (happy path)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(4), U64(1234).fmt_into(buf))
+        try test.eq("1234", Str.from_utf8_lossy(buf[0..4], @local))
+
+        try test.eq(Option(1), U64(0).fmt_into(buf))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+    })
+    fmt_into_suite.test("U64.fmt_into (dst too small)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(2, 0)
+
+        try test.eq(Option<Int>(None()), U64(1234).fmt_into(buf))
+        try test.eq([U8(0), 0][..], buf)
+    })
+    fmt_into_suite.test("U64.fmt_into (min_width)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        -- Less that actual width is just ignored.
+        try test.eq(Option(4), U64(1234).fmt_into(buf, 10, false, 3))
+        try test.eq("1234", Str.from_utf8_lossy(buf[0..4], @local))
+
+        try test.eq(Option(8), U64(1234).fmt_into(buf, 10, false, 8))
+        try test.eq("00001234", Str.from_utf8_lossy(buf[0..8], @local))
+
+        try test.eq(Option(4), U64(0).fmt_into(buf, 10, false, 4))
+        try test.eq("0000", Str.from_utf8_lossy(buf[0..4], @local))
+    })
+    fmt_into_suite.test("U64.fmt_into (min and max, all bases)", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        -- Min value (0), all bases.
+        try test.eq(Option(1), U64(0).fmt_into(buf, 2))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+        try test.eq(Option(1), U64(0).fmt_into(buf, 8))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+        try test.eq(Option(1), U64(0).fmt_into(buf, 10))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+        try test.eq(Option(1), U64(0).fmt_into(buf, 16))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+
+        -- Max value, all bases.
+        try test.eq(Option(64), U64(0xFFFF_FFFF_FFFF_FFFF).fmt_into(buf, 2))
+        try test.eq(
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            Str.from_utf8_lossy(buf[0..64], @local))
+        try test.eq(Option(22), U64(0xFFFF_FFFF_FFFF_FFFF).fmt_into(buf, 8))
+        try test.eq("1777777777777777777777", Str.from_utf8_lossy(buf[0..22], @local))
+        try test.eq(Option(20), U64(0xFFFF_FFFF_FFFF_FFFF).fmt_into(buf, 10))
+        try test.eq("18446744073709551615", Str.from_utf8_lossy(buf[0..20], @local))
+        try test.eq(Option(16), U64(0xFFFF_FFFF_FFFF_FFFF).fmt_into(buf, 16))
+        try test.eq("ffffffffffffffff", Str.from_utf8_lossy(buf[0..16], @local))
+        try test.eq(Option(16), U64(0xFFFF_FFFF_FFFF_FFFF).fmt_into(buf, 16, true))
+        try test.eq("FFFFFFFFFFFFFFFF", Str.from_utf8_lossy(buf[0..16], @local))
+    })
+    fmt_into_suite.test("I8.fmt_into", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(3), I8(127).fmt_into(buf))
+        try test.eq("127", Str.from_utf8_lossy(buf[0..3], @local))
+
+        try test.eq(Option(4), -128.fmt_into(buf))
+        try test.eq("-128", Str.from_utf8_lossy(buf[0..4], @local))
+    })
+    fmt_into_suite.test("I16.fmt_into", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(5), I16(32767).fmt_into(buf))
+        try test.eq("32767", Str.from_utf8_lossy(buf[0..5], @local))
+
+        try test.eq(Option(6), -32768.fmt_into(buf))
+        try test.eq("-32768", Str.from_utf8_lossy(buf[0..6], @local))
+    })
+    fmt_into_suite.test("I32.fmt_into", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(10), I32(2147483647).fmt_into(buf))
+        try test.eq("2147483647", Str.from_utf8_lossy(buf[0..10], @local))
+
+        try test.eq(Option(11), -2147483648.fmt_into(buf))
+        try test.eq("-2147483648", Str.from_utf8_lossy(buf[0..11], @local))
+    })
+    fmt_into_suite.test("U8.fmt_into", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(3), U8(255).fmt_into(buf))
+        try test.eq("255", Str.from_utf8_lossy(buf[0..3], @local))
+
+        try test.eq(Option(1), U8(0).fmt_into(buf))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+    })
+    fmt_into_suite.test("U16.fmt_into", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(5), U16(65535).fmt_into(buf))
+        try test.eq("65535", Str.from_utf8_lossy(buf[0..5], @local))
+
+        try test.eq(Option(1), U16(0).fmt_into(buf))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+    })
+    fmt_into_suite.test("U32.fmt_into", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(66, 0)
+
+        try test.eq(Option(10), U32(4294967295).fmt_into(buf))
+        try test.eq("4294967295", Str.from_utf8_lossy(buf[0..10], @local))
+
+        try test.eq(Option(1), U32(0).fmt_into(buf))
+        try test.eq("0", Str.from_utf8_lossy(buf[0..1], @local))
+    })
+
+    _ = fmt_into_suite.run()
 }

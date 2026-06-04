@@ -484,7 +484,7 @@ pub fun Str.hash(s Str) U64 {
 pub struct StrLMatchesIter<P LPattern<[]U8>> {
     data []U8
     pattern P
-}
+} 
 
 pub fun StrLMatchesIter.next(it &mut StrLMatchesIter) ?Str {
     match it.data.lfind(it.pattern) {
@@ -628,7 +628,7 @@ pub fun Str.rsplit<P RPattern<[]U8>>(s Str, pattern P, max_splits ?Int = None())
 }
 
 --- A convenient way to build strings. ---
-pub struct StrBuilder {
+pub nocopy struct StrBuilder {
     out []mut U8
     pub len Int
     @a Arena
@@ -640,72 +640,17 @@ pub fun StrBuilder.new(capacity Int, @a Arena) &mut StrBuilder {
 }
 
 pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    if base != 2 and base != 8 and base != 10 and base != 16 {
-        panic("invalid base")
-    }
-    if v == 0 {
-        sb.rune('0')
-        return void
-    }
-    let ubase = base.to_u64_wrapping()
-    let digits = if upper {
-        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
-    } else {
-        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
-    }
-    mut x = v
-    mut result = [
-        U8('0'), '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
-    mut i = 19
-    for x > 0 {
-        let digit = digits[(x % ubase).to_int_wrapping()]
-        result[i] = digit
-        i = i - 1
-        x = x / ubase
-    }
-    i = i + 1
-    if i >= result.len - min_width {
-        i = result.len - min_width - 1
-    }
-    sb.slice_raw(result[i..result.len - 1])
+    let cap = if min_width < 64 { 64 } else { min_width }
+    sb.ensure_capacity(cap)
+    let len = try v.fmt_into(sb.out[sb.len..], base, upper, min_width) else { panic("reserved too few bytes") }
+    sb.len = sb.len + len
 }
 
 pub fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    if base != 2 and base != 8 and base != 10 and base != 16 {
-        panic("invalid base")
-    }
-    if v == 0 {
-        sb.rune('0')
-        return void
-    }
-    mut x = v
-    if v < 0 {
-        x = x * -1
-    }
-    let digits = if upper {
-        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
-    } else {
-        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
-    }
-    mut result = [
-        U8('0'), '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
-    mut i = 19
-    for x > 0 {
-        let digit = digits[(x % base)]
-        result[i] = digit
-        i = i - 1
-        x = x / base
-    }
-    let min_width = if v < 0 { min_width } else { min_width + 1}
-    if i >= result.len - min_width {
-        i = result.len - min_width - 1
-    }
-    if v < 0 {
-        result[i] = '-'
-        i = i - 1
-    }
-    i = i + 1
-    sb.slice_raw(result[i..result.len - 1])
+    let cap = if min_width < 65 { 65 } else { min_width }
+    sb.ensure_capacity(cap)
+    let len = try v.fmt_into(sb.out[sb.len..], base, upper, min_width) else { panic("reserved too few bytes") }
+    sb.len = sb.len + len
 }
 
 pub fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false, min_width Int = 0) void { 
@@ -839,7 +784,8 @@ pub fun StrBuilder.as_cstr(sb &mut StrBuilder) []U8 {
 }
 
 pub fun StrBuilder.utf8_lossy(sb &mut StrBuilder, bytes []U8) void {
-    let s = Str.from_utf8_lossy(bytes, sb.@a)
+    let @local = Arena()
+    let s = Str.from_utf8_lossy(bytes, @local)
     sb.str(s)
 }
 
@@ -1591,4 +1537,150 @@ pub fun U16.from_ascii_str(s []U8, base Int = 10) !U16 {
 }
 pub fun U32.from_ascii_str(s []U8, base Int = 10) !U32 {
     try (try U64.from_ascii_str(s, base)).to_u32_checked() else { return NumParseErr.out_of_range }
+}
+
+--- Format the integer value as a string and write it into `dst`.
+
+    Return `None()` if the stringified value wouldn't fit `dst`. ---
+pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    if base != 2 and base != 8 and base != 10 and base != 16 {
+        panic("invalid base")
+    }
+    if v == 0 {
+        let len = if min_width > 1 { min_width } else { 1 }
+        if dst.len < len {
+            return None()
+        }
+        dst[0] = '0'
+        for i in 1..len {
+            dst[i] = '0'
+        }
+        return len
+    }
+    mut x U64 = {
+        when {
+        case v == -0x8000_0000_0000_0000:
+           0x8000_0000_0000_0000 
+        case v < 0:
+            (v * -1).to_u64_wrapping()
+        else:
+            v.to_u64_wrapping()
+        }
+    }
+    let base = base.to_u64_wrapping()
+    -- Pre-calculate the length.
+    let len = {
+        mut x = x
+        mut len = 0
+        for x > 0 { 
+            len = len + 1
+            x = x / base
+        }
+        if v < 0 {
+            len = len + 1
+        }
+        if len < min_width {
+            min_width
+        } else {
+            len
+        }
+    }
+    if len > dst.len {
+        return None()
+    }
+    let digits = if upper {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
+    } else {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
+    }
+    mut i = len - 1
+    for x > 0 {
+        let digit = digits[(x % base).to_int_wrapping()]
+        dst[i] = digit
+        i = i - 1
+        x = x / base
+    }
+    for i >= 0 {
+        dst[i] = '0'
+        i = i - 1
+    }
+    if v < 0 {
+        dst[0] = '-'
+    }
+    len
+}
+
+--- Format the integer value as a string and write it into `dst`.
+
+    Return `None()` if the stringified value wouldn't fit `dst`. ---
+pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    if base != 2 and base != 8 and base != 10 and base != 16 {
+        panic("invalid base")
+    }
+    if v == 0 {
+        let len = if min_width > 1 { min_width } else { 1 }
+        if dst.len < len {
+            return None()
+        }
+        dst[0] = '0'
+        for i in 1..len {
+            dst[i] = '0'
+        }
+        return len
+    }
+    let base = base.to_u64_wrapping()
+    -- Pre-calculate the length.
+    let len = {
+        mut x = v
+        mut len = 0
+        for x > 0 { 
+            len = len + 1
+            x = x / base
+        }
+        if len < min_width {
+            min_width
+        } else {
+            len
+        }
+    }
+    if len > dst.len {
+        return None()
+    }
+    let digits = if upper {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
+    } else {
+        [U8(48), 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
+    }
+    mut x = v
+    mut i = len - 1
+    for x > 0 {
+        let digit = digits[(x % base).to_int_wrapping()]
+        dst[i] = digit
+        i = i - 1
+        x = x / base
+    }
+    for i >= 0 {
+        dst[i] = '0'
+        i = i - 1
+    }
+    len
+}
+
+pub fun I8.fmt_into(v I8, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    v.to_int().fmt_into(dst, base, upper, min_width)
+}
+pub fun I16.fmt_into(v I16, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    v.to_int().fmt_into(dst, base, upper, min_width)
+}
+pub fun I32.fmt_into(v I32, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    v.to_int().fmt_into(dst, base, upper, min_width)
+}
+pub fun U8.fmt_into(v U8, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    v.to_u64().fmt_into(dst, base, upper, min_width)
+}
+pub fun U16.fmt_into(v U16, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    v.to_u64().fmt_into(dst, base, upper, min_width)
+}
+pub fun U32.fmt_into(v U32, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+    v.to_u64().fmt_into(dst, base, upper, min_width)
 }

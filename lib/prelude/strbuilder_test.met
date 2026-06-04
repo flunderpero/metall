@@ -5,9 +5,9 @@ fun main() void {
     let @local = Arena()
 
     let suite = test.Suite.new("StrBuilder", @local)
-    suite.test("u64", fun() !void {
+    suite.test("u64 (happy path)", fun() !void {
         let @local = Arena()
-        mut sut = StrBuilder.new(32, @local)
+        let sut = StrBuilder.new(32, @local)
         sut.u64(13370)
         sut.str(" ")
         sut.u64(13370, 2)
@@ -20,9 +20,11 @@ fun main() void {
         sut.str(" ")
         sut.u64(13370, 16, true)
         try test.eq("13370 11010000111010 32072 13370 343a 343A", sut.as_str())
+    })
+    suite.test("u64 (min_width)", fun() !void {
+        let @local = Arena()
+        mut sut = StrBuilder.new(32, @local)
 
-        -- min_width
-        sut = StrBuilder.new(32, @local)
         sut.u64(1, 10, false, 1)
         try test.eq("1", sut.as_str())
         sut = StrBuilder.new(32, @local)
@@ -35,12 +37,47 @@ fun main() void {
         sut.u64(23, 10, false, 5)
         try test.eq("00023", sut.as_str())
     })
-    suite.test("int", fun() !void {
+    suite.test("u64 (min and max, all bases)", fun() !void {
         let @local = Arena()
-        mut sut = StrBuilder.new(32, @local)
+
+        -- Min value (0), all bases.
+        mut sut = StrBuilder.new(66, @local)
+        sut.u64(0, 2)
+        try test.eq("0", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.u64(0, 8)
+        try test.eq("0", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.u64(0, 10)
+        try test.eq("0", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.u64(0, 16)
+        try test.eq("0", sut.as_str())
+
+        -- Max value, all bases.
+        sut = StrBuilder.new(66, @local)
+        sut.u64(U64(0xFFFF_FFFF_FFFF_FFFF), 2)
+        try test.eq("1111111111111111111111111111111111111111111111111111111111111111", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.u64(U64(0xFFFF_FFFF_FFFF_FFFF), 8)
+        try test.eq("1777777777777777777777", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.u64(U64(0xFFFF_FFFF_FFFF_FFFF), 10)
+        try test.eq("18446744073709551615", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.u64(U64(0xFFFF_FFFF_FFFF_FFFF), 16)
+        try test.eq("ffffffffffffffff", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.u64(U64(0xFFFF_FFFF_FFFF_FFFF), 16, true)
+        try test.eq("FFFFFFFFFFFFFFFF", sut.as_str())
+    })
+    suite.test("int (happy path)", fun() !void {
+        let @local = Arena()
+        let sut = StrBuilder.new(32, @local)
+
         sut.int(13370)
         sut.str(" ")
-        sut.int(0 - 13370)
+        sut.int(-13370)
         sut.str(" ")
         sut.int(13370, 2)
         sut.str(" ")
@@ -52,9 +89,11 @@ fun main() void {
         sut.str(" ")
         sut.int(13370, 16, true)
         try test.eq("13370 -13370 11010000111010 32072 13370 343a 343A", sut.as_str())
+    })
+    suite.test("int (min_width)", fun() !void {
+        let @local = Arena()
+        mut sut = StrBuilder.new(32, @local)
 
-        -- min_width
-        sut = StrBuilder.new(32, @local)
         sut.int(1, 10, false, 1)
         try test.eq("1", sut.as_str())
         sut = StrBuilder.new(32, @local)
@@ -69,6 +108,87 @@ fun main() void {
         sut = StrBuilder.new(32, @local)
         sut.int(-123, 10, false, 5)
         try test.eq("-0123", sut.as_str())
+    })
+    suite.test("int (min and max, all bases)", fun() !void {
+        let @local = Arena()
+
+        -- Zero.
+        mut sut = StrBuilder.new(66, @local)
+        sut.int(0)
+        try test.eq("0", sut.as_str())
+
+        -- Max value, all bases.
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(0x7FFF_FFFF_FFFF_FFFF), 2)
+        try test.eq("111111111111111111111111111111111111111111111111111111111111111", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(0x7FFF_FFFF_FFFF_FFFF), 8)
+        try test.eq("777777777777777777777", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(0x7FFF_FFFF_FFFF_FFFF), 10)
+        try test.eq("9223372036854775807", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(0x7FFF_FFFF_FFFF_FFFF), 16)
+        try test.eq("7fffffffffffffff", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(0x7FFF_FFFF_FFFF_FFFF), 16, true)
+        try test.eq("7FFFFFFFFFFFFFFF", sut.as_str())
+
+        -- Min value, all bases.
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(-0x8000_0000_0000_0000), 2)
+        try test.eq("-1000000000000000000000000000000000000000000000000000000000000000", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(-0x8000_0000_0000_0000), 8)
+        try test.eq("-1000000000000000000000", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(-0x8000_0000_0000_0000), 10)
+        try test.eq("-9223372036854775808", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(-0x8000_0000_0000_0000), 16)
+        try test.eq("-8000000000000000", sut.as_str())
+        sut = StrBuilder.new(66, @local)
+        sut.int(Int(-0x8000_0000_0000_0000), 16, true)
+        try test.eq("-8000000000000000", sut.as_str())
+    })
+    suite.test("other int types", fun() !void {
+        let @local = Arena()
+
+        mut sut = StrBuilder.new(32, @local)
+        sut.i8(I8(0x7F))
+        sut.str(" ")
+        sut.i8(I8(-0x80))
+        try test.eq("127 -128", sut.as_str())
+
+        sut = StrBuilder.new(32, @local)
+        sut.i16(I16(0x7FFF))
+        sut.str(" ")
+        sut.i16(I16(-0x8000))
+        try test.eq("32767 -32768", sut.as_str())
+
+        sut = StrBuilder.new(32, @local)
+        sut.i32(I32(0x7FFF_FFFF))
+        sut.str(" ")
+        sut.i32(I32(-0x8000_0000))
+        try test.eq("2147483647 -2147483648", sut.as_str())
+
+        sut = StrBuilder.new(32, @local)
+        sut.u8(U8(0xFF))
+        sut.str(" ")
+        sut.u8(U8(0))
+        try test.eq("255 0", sut.as_str())
+
+        sut = StrBuilder.new(32, @local)
+        sut.u16(U16(0xFFFF))
+        sut.str(" ")
+        sut.u16(U16(0))
+        try test.eq("65535 0", sut.as_str())
+
+        sut = StrBuilder.new(32, @local)
+        sut.u32(U32(0xFFFF_FFFF))
+        sut.str(" ")
+        sut.u32(U32(0))
+        try test.eq("4294967295 0", sut.as_str())
     })
     suite.test("slice", fun() !void {
         let @local = Arena()
