@@ -193,8 +193,8 @@ I16
 I32
 Rune
 struct Point
-union Shape
 2
+union Shape
 ```
 
 **fmtstr macro**

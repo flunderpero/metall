@@ -17,7 +17,16 @@ pub fun Ptr.as_u64(p Ptr) U64 {
     panic("this is implemented by the runtime")
 }
 
-pub unsafe fun Ptr.cast<U>(p Ptr) Ptr<U> {
+--- Reinterpret the raw pointer as a read-only reference to T.
+
+    The inverse of `ref_ptr`. The caller guarantees the pointer is valid,
+    correctly typed, and outlives the reference. ---
+pub unsafe fun Ptr.cast(p Ptr) &T {
+    panic("this is implemented by the runtime")
+}
+
+--- Reinterpret the raw pointer as a pointer to a different type. ---
+pub unsafe fun Ptr.cast_ptr<U>(p Ptr) Ptr<U> {
     panic("this is implemented by the runtime")
 }
 
@@ -56,7 +65,16 @@ pub fun PtrMut.as_u64(p PtrMut) U64 {
     panic("this is implemented by the runtime")
 }
 
-pub unsafe fun PtrMut.cast<U>(p PtrMut) PtrMut<U> {
+--- Reinterpret the raw pointer as a mutable reference to T.
+
+    The inverse of `ref_ptr_mut`. The caller guarantees the pointer is valid,
+    correctly typed, and outlives the reference. ---
+pub unsafe fun PtrMut.cast(p PtrMut) &mut T {
+    panic("this is implemented by the runtime")
+}
+
+--- Reinterpret the raw pointer as a mutable pointer to a different type. ---
+pub unsafe fun PtrMut.cast_ptr<U>(p PtrMut) PtrMut<U> {
     panic("this is implemented by the runtime")
 }
 
@@ -105,7 +123,7 @@ pub fun ref_ptr<T>(r &T) Ptr<T> {
     panic("this is implemented by the runtime")
 }
 
---- Convert the reference to a typed mutable raw pointer. 
+--- Convert the reference to a typed mutable raw pointer.
 
     This is just a stub, the actualy implementation is built-in.
 ---
@@ -184,8 +202,8 @@ pub fun cstr_mut(b []U8, @a Arena) PtrMut<U8> {
 --- Copy `n * sizeof<T>()` bytes from `src` to `dst`. ---
 pub unsafe fun memcopy<T>(dst PtrMut<T>, src Ptr<T>, n Int) void {
     let n = n * sizeof<T>()
-    let dst = unsafe dst.cast<U8>()
-    let src = unsafe src.cast<U8>()
+    let dst = unsafe dst.cast_ptr<U8>()
+    let src = unsafe src.cast_ptr<U8>()
     unsafe memcpy(dst, src, n, false)
 }
 

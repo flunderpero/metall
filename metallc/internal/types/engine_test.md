@@ -399,8 +399,10 @@ DebugIntern.print_str("hello")
 Call: void
   Ident: fun01
   String: Str
+  Int: Int
+  Bool: Bool
 ---
-fun01 = sync fun(Str) void
+fun01 = sync fun(Str, Int, Bool) void
 ```
 
 **Builtin print_int**
@@ -413,8 +415,10 @@ DebugIntern.print_int(123)
 Call: void
   Ident: fun01
   Int: Int
+  Int: Int
+  Bool: Bool
 ---
-fun01 = sync fun(Int) void
+fun01 = sync fun(Int, Int, Bool) void
 ```
 
 **Builtin print_bool**
@@ -427,8 +431,10 @@ DebugIntern.print_bool(true)
 Call: void
   Ident: fun01
   Bool: Bool
+  Int: Int
+  Bool: Bool
 ---
-fun01 = sync fun(Bool) void
+fun01 = sync fun(Bool, Int, Bool) void
 ```
 
 **Shadowing**

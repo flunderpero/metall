@@ -68,9 +68,10 @@ func (f *tagFlags) Set(value string) error {
 }
 
 func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolint:funlen
-	opts := compiler.CompileOpts{}.WithDefaults()
+	opts := compiler.NewCompileOptsWithDefaults()
 	var includes includeFlags
 	var tags tagFlags
+	var noErrtrace bool
 	flags := flag.NewFlagSet(command, flag.ExitOnError)
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: metallc %s [flags] <file.met>\n\n", command)
@@ -125,6 +126,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 	flags.IntVar(&opts.ArenaStackBufSize, "arena-stack", 0, "arena inline stack buffer size")
 	flags.IntVar(&opts.ArenaPageMinSize, "arena-min", 0, "arena min overflow page size")
 	flags.IntVar(&opts.ArenaPageMaxSize, "arena-max", 0, "arena max overflow page size")
+	flags.BoolVar(&noErrtrace, "no-errtrace", false, "disable automatic error return traces (on by default)")
 	if err := flags.Parse(flag.Args()[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "failed to parse flags:", err)
 		os.Exit(1)
@@ -145,6 +147,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 	opts.ProjectRoot = filepath.Dir(fileName)
 	opts.IncludePaths = includes
 	opts.Tags = tags
+	opts.ErrorTracing = !noErrtrace
 	opts.LLVMPasses = compiler.DefaultLLVMPasses
 	src, err := os.ReadFile(fileName)
 	if err != nil {

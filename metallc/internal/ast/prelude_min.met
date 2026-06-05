@@ -137,10 +137,10 @@ pub enum Err_(code ?Int, description ?Str) U32
 --- A placeholder for all internal debug functions. ---
 pub struct DebugIntern_ {}
 
-pub fun DebugIntern.print_str(s Str) void {}
-pub fun DebugIntern.print_int(n Int) void {}
-pub fun DebugIntern.print_uint(n U64) void {}
-pub fun DebugIntern.print_bool(b Bool) void {}
+pub fun DebugIntern.print_str(s Str, fd Int = 1, new_line Bool = true) void {}
+pub fun DebugIntern.print_int(n Int, fd Int = 1, new_line Bool = true) void {}
+pub fun DebugIntern.print_uint(n U64, fd Int = 1, new_line Bool = true) void {}
+pub fun DebugIntern.print_bool(b Bool, fd Int = 1, new_line Bool = true) void {}
 
 --- Print the message to stderr and abort the program immediately
     without unwinding the stack. ---

@@ -17,6 +17,7 @@ var builtinFuns = []string{ //nolint:gochecknoglobals
 	"std::ffi.fun_ptr_alloc",
 	"std::ffi.Ptr.as_u64",
 	"std::ffi.Ptr.cast",
+	"std::ffi.Ptr.cast_ptr",
 	"std::ffi.Ptr.is_null",
 	"std::ffi.Ptr.null",
 	"std::ffi.Ptr.read",
@@ -25,6 +26,7 @@ var builtinFuns = []string{ //nolint:gochecknoglobals
 	"std::ffi.PtrMut.as_u64",
 	"std::ffi.PtrMut.null",
 	"std::ffi.PtrMut.cast",
+	"std::ffi.PtrMut.cast_ptr",
 	"std::ffi.PtrMut.is_null",
 	"std::ffi.PtrMut.write",
 	"std::ffi.PtrMut.read",
@@ -96,7 +98,8 @@ func BuiltinFunEffects(name string) *FunEffects {
 			ReturnAliases: []int{0},
 			SideEffects:   nil,
 		}
-	case "ffi::Ptr.offset", "ffi::PtrMut.offset", "ffi::PtrMut.as_ptr", "ffi::Ptr.cast", "ffi::PtrMut.cast":
+	case "ffi::Ptr.offset", "ffi::PtrMut.offset", "ffi::PtrMut.as_ptr",
+		"ffi::Ptr.cast", "ffi::PtrMut.cast", "ffi::Ptr.cast_ptr", "ffi::PtrMut.cast_ptr":
 		// The receiver's lifetime flows to the return value (param 0 = receiver).
 		return &FunEffects{
 			ReturnTaints:  []int{0},

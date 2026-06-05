@@ -1574,6 +1574,7 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min
         mut len = 0
         for x > 0 { 
             len = len + 1
+            -- todo: This can be massively improved. We don't need to divide in each step.
             x = x / base
         }
         if v < 0 {
@@ -1598,6 +1599,7 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min
         let digit = digits[(x % base).to_int_wrapping()]
         dst[i] = digit
         i = i - 1
+        -- todo: This can be massively improved. We don't need to divide in each step.
         x = x / base
     }
     for i >= 0 {
@@ -1633,6 +1635,7 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min
     let len = {
         mut x = v
         mut len = 0
+        -- todo: This can be massively improved. We don't need to divide in each step.
         for x > 0 { 
             len = len + 1
             x = x / base
@@ -1657,6 +1660,7 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min
         let digit = digits[(x % base).to_int_wrapping()]
         dst[i] = digit
         i = i - 1
+        -- todo: This can be massively improved. We don't need to divide in each step.
         x = x / base
     }
     for i >= 0 {

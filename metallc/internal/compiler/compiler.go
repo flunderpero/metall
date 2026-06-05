@@ -95,6 +95,7 @@ type CompileOpts struct {
 	ArenaStackBufSize   int
 	ArenaPageMinSize    int
 	ArenaPageMaxSize    int
+	ErrorTracing        bool
 	MinimalPrelude      bool
 	Target              gen.Target
 	PrintTypesDebug     bool
@@ -106,7 +107,15 @@ type CompileOpts struct {
 	EmitTypeScript      bool
 }
 
-func (o CompileOpts) WithDefaults() CompileOpts {
+// NewCompileOptsWithDefaults returns CompileOpts with the runtime defaults set,
+// including error tracing on.
+func NewCompileOptsWithDefaults() CompileOpts {
+	return CompileOpts{ErrorTracing: true}.withArenaDefaults() //nolint:exhaustruct
+}
+
+// withArenaDefaults fills any unset (zero) arena size with its default, for
+// callers that build a partial CompileOpts.
+func (o CompileOpts) withArenaDefaults() CompileOpts {
 	if o.ArenaStackBufSize == 0 {
 		o.ArenaStackBufSize = 1024
 	}
@@ -120,7 +129,7 @@ func (o CompileOpts) WithDefaults() CompileOpts {
 }
 
 func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error { //nolint:funlen
-	opts = opts.WithDefaults()
+	opts = opts.withArenaDefaults()
 	if opts.EmitHeaderFile && opts.Target.IsWasm() {
 		return base.Errorf("--emit-header-file is only valid for the native target")
 	}
@@ -157,7 +166,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if len(postParseDiags) > 0 {
 		return postParseDiags
 	}
-	compTimeEnv := buildCompTimeEnv(targetTriple, opts.Tags)
+	compTimeEnv := buildCompTimeEnv(targetTriple, opts.Tags, opts.ErrorTracing)
 	moduleResolution, moduleDiags := resolveModules(parser.AST, opts, compTimeEnv)
 	timingListener.OnCompTime(parser.AST, moduleDiags)
 	if listener != nil && !listener.OnCompTime(parser.AST, moduleDiags) {
@@ -215,6 +224,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 			ArenaStackBufSize:       opts.ArenaStackBufSize,
 			ArenaPageMinSize:        opts.ArenaPageMinSize,
 			ArenaPageMaxSize:        opts.ArenaPageMaxSize,
+			ErrorTracing:            opts.ErrorTracing,
 			Target:                  opts.Target,
 		},
 	)
@@ -489,6 +499,11 @@ func addRuntimeModules(a *ast.AST, opts CompileOpts) ([]ast.NodeID, base.Diagnos
 	files := []struct{ rel, module string }{
 		{filepath.Join("runtime", "arena.met"), "runtime::arena"},
 	}
+	if opts.ErrorTracing {
+		files = append(files, struct{ rel, module string }{
+			filepath.Join("std", "errors.met"), "std::errors",
+		})
+	}
 	if opts.Target.IsWasm() {
 		// Provides malloc/realloc/free that arena.met aliases via extern.
 		files = append(files, struct{ rel, module string }{
@@ -577,7 +592,7 @@ func newMacroExpander(ctx context.Context, opts CompileOpts) types.MacroExpander
 	}
 }
 
-func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
+func buildCompTimeEnv(targetTriple string, tags []string, errorTracing bool) comptime.Env {
 	// Parse target triple: <arch>-<vendor>-<os> or <arch>-<vendor>-<os>-<env>
 	parts := strings.SplitN(targetTriple, "-", 4)
 	arch := ""
@@ -605,6 +620,9 @@ func buildCompTimeEnv(targetTriple string, tags []string) comptime.Env {
 		"endian": {
 			"little": true, // All currently supported targets are little-endian.
 			"big":    false,
+		},
+		"flags": {
+			"errtrace": errorTracing,
 		},
 		"tag": {},
 	}

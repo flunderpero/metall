@@ -1,0 +1,83 @@
+--- # Automatic error return traces.
+
+    The compiler records the path an error took as it propagated up the call
+    stack, to be printed for debugging. See `metallc/internal/gen/errtrace.go`.
+
+    The data structure and all logic live here. The code generator only emits
+    calls to `restart_trace`/`record_frame` (on the error edge of every error-leaving return)
+    and `dump` (on `main`'s failure path). The trace buffer is overlaid on a
+    per-thread, zero-initialized storage region reserved by the runtime
+    (`__errtrace_buf`).
+
+    This module is compiled implicitly whenever error tracing is enabled, so it
+    must comply with the minimal prelude.
+---
+use std.ffi
+
+let trace_depth = 32
+
+pub struct ETFrame {
+    loc Str
+    fn_name Str
+}
+
+--- A thread's error return trace. ---
+pub struct ETrace {
+    count Int
+    frames [32]ETFrame
+}
+
+--- Per-thread, zero-initialized buffer storage, reserved in builtins.ll. ---
+extern fun __errtrace_buf() ffi.PtrMut<U8>
+
+--- The trace buffer, overlaid on the reserved storage. ---
+fun trace_buffer() &mut ETrace {
+    let raw = unsafe __errtrace_buf()
+    let typed = unsafe raw.cast_ptr<ETrace>()
+    unsafe typed.cast()
+}
+
+--- Append a frame for an error propagating up through a function.
+
+    `count` counts past `trace_depth` so a truncated trace can report how many
+    frames it dropped. ---
+fun record_frame(loc Str, fn_name Str) void {
+    let t = trace_buffer()
+    if t.count < trace_depth {
+        t.frames[t.count] = ETFrame(loc, fn_name)
+    }
+    t.count = t.count + 1
+}
+
+--- Start a fresh trace for an error that originates here: reset, then record
+    this first frame, so an unrelated earlier error cannot leak in. ---
+fun restart_trace(loc Str, fn_name Str) void {
+    trace_buffer().count = 0
+    record_frame(loc, fn_name)
+}
+
+--- Print the current error return trace to stderr.
+
+    Useful in a handler that caught a propagating error. Prints nothing when no
+    error has been recorded. Notes how many frames were dropped if the chain was
+    deeper than `trace_depth`. ---
+pub fun dump() void {
+    let t = trace_buffer()
+    if t.count > 0 {
+        DebugIntern.print_str("error trace:\n", 2, false)
+        let n = if t.count > trace_depth { trace_depth } else { t.count }
+        for i in 0..n {
+            let f = t.frames[i]
+            DebugIntern.print_str("  ", 2, false)
+            DebugIntern.print_str(f.loc, 2, false)
+            DebugIntern.print_str(" in ", 2, false)
+            DebugIntern.print_str(f.fn_name, 2, false)
+            DebugIntern.print_str("\n", 2, false)
+        }
+        if t.count > trace_depth {
+            DebugIntern.print_str("  ... ", 2, false)
+            DebugIntern.print_int(t.count - trace_depth, 2, false)
+            DebugIntern.print_str(" more frames elided\n", 2, false)
+        }
+    }
+}

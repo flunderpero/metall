@@ -3,19 +3,50 @@ use std.posix
 use std.io
 use std.enums
 use std.list
+#if flags.errtrace
+use std.errors
+
+extern fun __errtrace_buf() ffi.PtrMut<U8>
+
+--- Copy the current error trace buffer into `dst` (sized for an `errors.ETrace`). ---
+fun snapshot_errtrace(dst ffi.PtrMut<U8>) void {
+    let src = unsafe __errtrace_buf()
+    unsafe ffi.memcopy<U8>(dst, src.as_ptr(), ffi.sizeof<errors.ETrace>())
+}
+
+--- Overwrite the current error trace buffer with the contents of `src`. ---
+fun restore_errtrace(src ffi.Ptr<U8>) void {
+    let dst = unsafe __errtrace_buf()
+    unsafe ffi.memcopy<U8>(dst, src, ffi.sizeof<errors.ETrace>())
+}
+#end
 
 pub unsync struct Thread<T> {
     thread U64
     result ffi.Ptr<T>
+    --- A copy of the spawned thread's error return trace, snapshotted before the
+        thread exits and restored into the joiner at `join`.
+
+        Null when error tracing is disabled. ---
+    error_trace ffi.PtrMut<U8>
 }
 
 pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
     let res_bytes = unsafe @a.slice_uninit<U8>(ffi.sizeof<T>())
-    let res_ptr = unsafe ffi.slice_ptr_mut<U8>(res_bytes).cast<T>()
-    let spawn_fun = fun[f, res_ptr]() void {
+    let res_ptr = unsafe ffi.slice_ptr_mut<U8>(res_bytes).cast_ptr<T>()
+    mut error_trace = ffi.PtrMut.null<U8>()
+    #if flags.errtrace
+    let error_trace_bytes = unsafe @a.slice_uninit<U8>(ffi.sizeof<errors.ETrace>())
+    error_trace = ffi.slice_ptr_mut<U8>(error_trace_bytes)
+    #end
+    let spawn_fun = fun[f, res_ptr, error_trace]() void {
         let res = f()
         let ptr = ffi.ref_ptr<T>(&res)
         unsafe res_ptr.write(unsafe ptr.read())
+        #if flags.errtrace
+        -- Carry this thread's error trace out before its thread-local buffer dies.
+        snapshot_errtrace(error_trace)
+        #end
     }
     let fun_ptr = ffi.fun_ptr_alloc(@a, spawn_fun)
     mut thread U64 = 0
@@ -24,14 +55,18 @@ pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
     if status != 0 {
         return io.IOErr.from_errno(posix.Errno(status))
     }
-    Thread<T>(thread, res_ptr.as_ptr())
+    Thread<T>(thread, res_ptr.as_ptr(), error_trace)
 }
 
 pub fun Thread.join(t Thread) !T {
-    let status = unsafe pthread_join(t.thread, ffi.PtrMut.null<ffi.Ptr<void>>()) 
+    let status = unsafe pthread_join(t.thread, ffi.PtrMut.null<ffi.Ptr<void>>())
     if status != 0 {
         return io.IOErr.from_errno(posix.Errno(status))
     }
+    #if flags.errtrace
+    -- Adopt the joined thread's error trace so a propagated error shows its origin.
+    restore_errtrace(t.error_trace.as_ptr())
+    #end
     unsafe t.result.read()
 }
 
@@ -71,7 +106,7 @@ pub sync struct Mutex<sync T> {
 pub fun Mutex.new(value T, @a Arena) Mutex {
     -- todo: The size of pthread_mutex_t is platform dependent.
     let lock = unsafe @a.slice_uninit<U8>(64)
-    let lock_ptr = unsafe ffi.slice_ptr_mut<U8>(lock).cast<void>()
+    let lock_ptr = unsafe ffi.slice_ptr_mut<U8>(lock).cast_ptr<void>()
     let res = unsafe pthread_mutex_init(lock_ptr, ffi.Ptr.null<void>())
     if res != 0 {
         -- pthread_mutex_init always succeeds:

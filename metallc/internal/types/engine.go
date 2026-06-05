@@ -431,7 +431,8 @@ func (e *Engine) checkModule( //nolint:funlen
 		if fun, ok := e.ast.Node(declNodeID).Kind.(ast.Fun); ok {
 			if fun.Name.Name == "main" ||
 				module.Name == "runtime::arena" ||
-				module.Name == "runtime::wasmalloc" {
+				module.Name == "runtime::wasmalloc" ||
+				module.Name == "std::errors" {
 				e.registerFun(declNodeID)
 			}
 		}

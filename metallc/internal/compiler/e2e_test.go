@@ -28,6 +28,12 @@ func TestE2EStdMD(t *testing.T) {
 	runE2ESuite(t, "e2e_std_test.md", e2eConfig{minimalPrelude: false, useEnvOptLevel: true})
 }
 
+func TestE2EErrorsMD(t *testing.T) {
+	t.Parallel()
+	runE2ESuite(t, "e2e_errors_test.md",
+		e2eConfig{prefix: "err_", minimalPrelude: false, useEnvOptLevel: true})
+}
+
 func TestE2ETemplateMD(t *testing.T) {
 	t.Parallel()
 	runE2ESuite(t, "e2e_template.md", e2eConfig{prefix: "template_", minimalPrelude: true, useEnvOptLevel: true})
@@ -159,6 +165,7 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 		LLVMPasses:       llvmPasses,
 		AddressSanitizer: true,
 		MinimalPrelude:   r.cfg.minimalPrelude,
+		ErrorTracing:     true,
 		// We deliberately use small stack buf sizes and small page sizes
 		// to force more allocations and stress test the allocator.
 		ArenaStackBufSize: 32,

@@ -90,17 +90,19 @@ type IRGen struct {
 type IRFunGen struct {
 	CodeWriter
 	*IRGen
-	env           *types.TypeEnv
-	funRetLabel   Label
-	funRetReg     string
-	lastLabel     Label
-	arenaRegStack [][]string     // stack of arena regs per block scope
-	deferStack    [][]ast.NodeID // stack of defer block IDs per block scope
-	loopStack     []LoopLabels
-	astCode       map[ast.NodeID]string
-	entryAllocas  strings.Builder
-	constInit     bool // true when generating module-level constant init
-	wrapperBuf    strings.Builder
+	env              *types.TypeEnv
+	funRetLabel      Label
+	funRetReg        string
+	lastLabel        Label
+	arenaRegStack    [][]string     // stack of arena regs per block scope
+	deferStack       [][]ast.NodeID // stack of defer block IDs per block scope
+	loopStack        []LoopLabels
+	astCode          map[ast.NodeID]string
+	entryAllocas     strings.Builder
+	constInit        bool // true when generating module-level constant init
+	wrapperBuf       strings.Builder
+	errtraceShape    []errTraceLevel // non-nil if this function's return can carry an Err
+	errtraceFuncName string
 }
 
 func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
@@ -913,6 +915,10 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		name = "main"
 	}
 	isClosure := len(astFun.Captures) > 0
+	if g.opts.ErrorTracing {
+		g.errtraceShape = g.errTraceShape(fun.Return)
+		g.errtraceFuncName = work.Name
+	}
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIRTyp := g.irType(fun.Return)
 	signatureIRTyp := retIRTyp
@@ -1039,6 +1045,7 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	lastCode := g.lookupCode(astFun.Block)
 	if !g.breaksControlFlow(astFun.Block) {
 		g.storeValue(lastCode, g.funRetReg, fun.Return)
+		g.recordErrTraceReturn(astFun.Block, g.tailExprSpan(astFun.Block), !g.tailExprIsCall(astFun.Block))
 		g.write("br label %%%s", g.funRetLabel)
 	}
 	g.writeLabel(g.funRetLabel)
@@ -1098,6 +1105,7 @@ func (g *IRFunGen) genMainResultCheck(id ast.NodeID, unionTypeID types.TypeID, u
 		namePtr := g.fieldPtr(g.irType(errEnum.AssociatedDataStruct), rowPtr, indexOfStructField(assoc, "debug_name"))
 		g.write("call void @__main_print_failed(ptr %s)", namePtr)
 	}
+	g.emitErrTraceMainDump()
 	g.write("ret i32 1")
 	g.writeLabel(okLabel)
 	g.write("ret i32 0")
@@ -1108,6 +1116,7 @@ func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
 	exprReg := g.lookupCode(return_.Expr)
 	retTyp := g.typeIDOfNode(return_.Expr)
 	g.storeValue(exprReg, g.funRetReg, retTyp)
+	g.recordErrTraceReturn(id, g.ast.Node(id).Span, !g.isTryPropagation(return_.Expr))
 	g.emitAllBlockCleanups(0)
 	g.write("br label %%%s", g.funRetLabel)
 	g.setCode(id, exprReg)
@@ -2004,7 +2013,10 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	case "ffi::Ptr.null", "ffi::PtrMut.null":
 		g.setCode(id, "null")
 		return true
-	case "ffi::Ptr.cast", "ffi::PtrMut.cast":
+	case "ffi::Ptr.cast", "ffi::PtrMut.cast",
+		"ffi::Ptr.cast_ptr", "ffi::PtrMut.cast_ptr", "ffi::PtrMut.as_ptr":
+		// Raw pointers (Ptr, PtrMut) and references share one IR representation,
+		// so reinterpreting between them is a pass-through of the receiver.
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
 			panic(fmt.Sprintf("expected a method call receiver for %s", name))
@@ -2013,16 +2025,10 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		g.setCode(id, g.lookupCode(receiver))
 		return true
 	case "ffi::ref_ptr", "ffi::ref_ptr_mut":
+		// References and raw pointers share the same IR representation, so
+		// these are pass-throughs.
 		g.Gen(call.Args[0])
 		g.setCode(id, g.lookupCode(call.Args[0]))
-		return true
-	case "ffi::PtrMut.as_ptr":
-		receiver, ok := g.env.MethodCallReceiver(id)
-		if !ok {
-			panic(fmt.Sprintf("expected a method call receiver for %s", name))
-		}
-		g.Gen(receiver)
-		g.setCode(id, g.lookupCode(receiver))
 		return true
 	case "ffi::slice_ptr", "ffi::slice_ptr_mut":
 		g.Gen(call.Args[0])
@@ -3043,6 +3049,7 @@ type IROpts struct {
 	ArenaStackBufSize       int
 	ArenaPageMinSize        int
 	ArenaPageMaxSize        int
+	ErrorTracing            bool
 	Target                  Target
 }
 
@@ -3057,6 +3064,8 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 	emitted := map[string]bool{
 		"write":             true,
 		"arena_debug_print": true,
+		// Defined in builtins.ll for error-return traces (std/errors.met).
+		"__errtrace_buf": true,
 	}
 	if g.opts.Target.IsWasm() {
 		emitted["fflush"] = true

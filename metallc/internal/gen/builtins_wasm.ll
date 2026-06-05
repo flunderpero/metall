@@ -30,20 +30,19 @@ define void @__wasmalloc_bump_set(ptr %p) {
     ret void
 }
 
-define internal void @__print_str(ptr %data, i64 %len) alwaysinline {
-    call i64 @write(i32 1, ptr %data, i64 %len)
+define internal void @__print_str(i32 %fd, i1 %nl, ptr %data, i64 %len) alwaysinline {
+    call i64 @write(i32 %fd, ptr %data, i64 %len)
+    br i1 %nl, label %nl_yes, label %fin
+nl_yes:
+    call i64 @write(i32 %fd, ptr @__wasm_newline, i64 1)
+    br label %fin
+fin:
     ret void
 }
 
-define internal void @__print_str_nl(ptr %data, i64 %len) alwaysinline {
-    call i64 @write(i32 1, ptr %data, i64 %len)
-    call i64 @write(i32 1, ptr @__wasm_newline, i64 1)
-    ret void
-}
-
-; Writes %n in decimal (no newline), digits built back-to-front in a
-; 24-byte stack buffer (big enough for u64.max).
-define internal void @__print_uint(i64 %n) {
+; Writes %n in decimal, digits built back-to-front in a 24-byte stack buffer
+; (big enough for u64.max), then an optional newline.
+define internal void @__print_uint(i32 %fd, i1 %nl, i64 %n) {
 entry:
     %buf = alloca [24 x i8], align 1
     %end = getelementptr inbounds [24 x i8], ptr %buf, i64 0, i64 24
@@ -63,33 +62,26 @@ write_out:
     %start_int = ptrtoint ptr %p_next to i64
     %end_int = ptrtoint ptr %end to i64
     %len = sub i64 %end_int, %start_int
-    call i64 @write(i32 1, ptr %p_next, i64 %len)
+    call i64 @write(i32 %fd, ptr %p_next, i64 %len)
+    br i1 %nl, label %nl_yes, label %fin
+nl_yes:
+    call i64 @write(i32 %fd, ptr @__wasm_newline, i64 1)
+    br label %fin
+fin:
     ret void
 }
 
-define internal void @__print_uint_nl(i64 %n) {
-    call void @__print_uint(i64 %n)
-    call i64 @write(i32 1, ptr @__wasm_newline, i64 1)
-    ret void
-}
-
-define internal void @__print_int(i64 %n) {
+define internal void @__print_int(i32 %fd, i1 %nl, i64 %n) {
 entry:
     %is_neg = icmp slt i64 %n, 0
     br i1 %is_neg, label %neg, label %pos
 neg:
-    call i64 @write(i32 1, ptr @__wasm_minus, i64 1)
+    call i64 @write(i32 %fd, ptr @__wasm_minus, i64 1)
     %n_abs = sub i64 0, %n
-    call void @__print_uint(i64 %n_abs)
+    call void @__print_uint(i32 %fd, i1 %nl, i64 %n_abs)
     ret void
 pos:
-    call void @__print_uint(i64 %n)
-    ret void
-}
-
-define internal void @__print_int_nl(i64 %n) {
-    call void @__print_int(i64 %n)
-    call i64 @write(i32 1, ptr @__wasm_newline, i64 1)
+    call void @__print_uint(i32 %fd, i1 %nl, i64 %n)
     ret void
 }
 

@@ -1,7 +1,7 @@
-; POSIX runtime: print primitives via libc printf, plus @__os_args_init
-; to marshal argv into @__os_args.
+; POSIX runtime: print primitives via libc dprintf (write to an explicit fd),
+; plus @__os_args_init to marshal argv into @__os_args.
 
-declare i32 @printf(ptr, ...)
+declare i32 @dprintf(i32, ptr, ...)
 declare i32 @fflush(ptr)
 declare i64 @write(i32, ptr, i64)
 declare i64 @strlen(ptr)
@@ -16,35 +16,22 @@ declare void @free(ptr)
 @__posix_fmt_uint = private constant [5 x i8] c"%llu\00"
 @__posix_fmt_uint_nl = private constant [6 x i8] c"%llu\0A\00"
 
-define internal void @__print_str(ptr %data, i64 %len) alwaysinline {
+define internal void @__print_str(i32 %fd, i1 %nl, ptr %data, i64 %len) alwaysinline {
     %len32 = trunc i64 %len to i32
-    call i32 (ptr, ...) @printf(ptr @__posix_fmt_str, i32 %len32, ptr %data)
+    %fmt = select i1 %nl, ptr @__posix_fmt_str_nl, ptr @__posix_fmt_str
+    call i32 (i32, ptr, ...) @dprintf(i32 %fd, ptr %fmt, i32 %len32, ptr %data)
     ret void
 }
 
-define internal void @__print_str_nl(ptr %data, i64 %len) alwaysinline {
-    %len32 = trunc i64 %len to i32
-    call i32 (ptr, ...) @printf(ptr @__posix_fmt_str_nl, i32 %len32, ptr %data)
+define internal void @__print_int(i32 %fd, i1 %nl, i64 %n) alwaysinline {
+    %fmt = select i1 %nl, ptr @__posix_fmt_int_nl, ptr @__posix_fmt_int
+    call i32 (i32, ptr, ...) @dprintf(i32 %fd, ptr %fmt, i64 %n)
     ret void
 }
 
-define internal void @__print_int(i64 %n) alwaysinline {
-    call i32 (ptr, ...) @printf(ptr @__posix_fmt_int, i64 %n)
-    ret void
-}
-
-define internal void @__print_int_nl(i64 %n) alwaysinline {
-    call i32 (ptr, ...) @printf(ptr @__posix_fmt_int_nl, i64 %n)
-    ret void
-}
-
-define internal void @__print_uint(i64 %n) alwaysinline {
-    call i32 (ptr, ...) @printf(ptr @__posix_fmt_uint, i64 %n)
-    ret void
-}
-
-define internal void @__print_uint_nl(i64 %n) alwaysinline {
-    call i32 (ptr, ...) @printf(ptr @__posix_fmt_uint_nl, i64 %n)
+define internal void @__print_uint(i32 %fd, i1 %nl, i64 %n) alwaysinline {
+    %fmt = select i1 %nl, ptr @__posix_fmt_uint_nl, ptr @__posix_fmt_uint
+    call i32 (i32, ptr, ...) @dprintf(i32 %fd, ptr %fmt, i64 %n)
     ret void
 }
 

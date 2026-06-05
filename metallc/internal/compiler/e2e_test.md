@@ -396,10 +396,10 @@ fun main() void {
 **free flowing fun builtin as value**
 
 ```metall
-fun apply(f fun(Int) void, x Int) void { f(x) }
+fun apply(f fun(Int, Int, Bool) void, x Int) void { f(x, 1, true) }
 fun main() void {
     let f = DebugIntern.print_int
-    f(42)
+    f(42, 1, true)
     apply(DebugIntern.print_int, 99)
 }
 ```
@@ -5197,6 +5197,8 @@ fun main() !void {
 
 ```panic
 failed: test.UnicodeErr.malformed_utf8
+error trace:
+  test.met:4:5 in test.main
 ```
 
 **main returns !void error but panics**

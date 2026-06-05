@@ -1,11 +1,20 @@
-; Platform-agnostic runtime. All printing goes through @__print_str,
-; @__print_str_nl, @__print_{int,uint}{,_nl}; each target provides them
-; in builtins_{posix,wasm}.ll along with declarations for @write,
-; @fflush, and @llvm.trap.
+; Platform-agnostic runtime. All printing goes through @__print_{str,int,uint},
+; each taking an fd and an i1 new_line; each target provides them in
+; builtins_{posix,wasm}.ll along with declarations for @write, @fflush, and
+; @llvm.trap.
 
 ; @__os_args_init is posix-only; on wasm the slice stays zero-init and
 ; os.args() returns empty.
 @__os_args = internal global {ptr, i64} zeroinitializer
+
+; Thread-local, zero-initialized storage that std/errors.met overlays its ETrace
+; on (16 KiB, must hold the ETrace). thread_local keeps concurrent error chains
+; from colliding.
+@__errtrace_storage = internal thread_local global [16384 x i8] zeroinitializer, align 16
+
+define ptr @__errtrace_buf() {
+    ret ptr @__errtrace_storage
+}
 
 @__main_newline = private constant [1 x i8] c"\0A"
 @__panic_sep = private constant [2 x i8] c": "
@@ -13,8 +22,8 @@
 @__str_true.data = private constant [4 x i8] c"true"
 @__str_false.data = private constant [5 x i8] c"false"
 
-; When main returns an error, the generated entry code resolves the error's
-; debug_name and passes it here to print "failed: <debug_name>" to stderr.
+; main resolves a returned error's debug_name and passes it here to print
+; "failed: <debug_name>\n" to stderr.
 define internal void @__main_print_failed(ptr %name) {
     call i64 @write(i32 2, ptr @__main_failed_prefix, i64 8)
     %data_ptr = getelementptr %Str, ptr %name, i32 0, i32 0, i32 0
@@ -31,44 +40,45 @@ define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn a
     %loc_data = load ptr, ptr %loc_data_field
     %loc_len_field = getelementptr %Str, ptr %loc, i32 0, i32 0, i32 1
     %loc_len = load i64, ptr %loc_len_field
-    call void @__print_str(ptr %loc_data, i64 %loc_len)
-    call void @__print_str(ptr @__panic_sep, i64 2)
+    call void @__print_str(i32 1, i1 false, ptr %loc_data, i64 %loc_len)
+    call void @__print_str(i32 1, i1 false, ptr @__panic_sep, i64 2)
     %s_data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
     %s_data = load ptr, ptr %s_data_field
     %s_len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
     %s_len = load i64, ptr %s_len_field
-    call void @__print_str_nl(ptr %s_data, i64 %s_len)
+    call void @__print_str(i32 1, i1 true, ptr %s_data, i64 %s_len)
     call i32 @fflush(ptr null)
     call void @llvm.trap()
     unreachable
 }
 
-define internal void @DebugIntern.print_str(ptr byval(%Str) %s) {
+define internal void @DebugIntern.print_str(ptr byval(%Str) %s, i64 %fd, i1 %nl) {
     %data_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 0
     %data = load ptr, ptr %data_field
     %len_field = getelementptr %Str, ptr %s, i32 0, i32 0, i32 1
     %len = load i64, ptr %len_field
-    call void @__print_str_nl(ptr %data, i64 %len)
+    %fd32 = trunc i64 %fd to i32
+    call void @__print_str(i32 %fd32, i1 %nl, ptr %data, i64 %len)
     ret void
 }
 
-define internal void @DebugIntern.print_int(i64 %n) {
-    call void @__print_int_nl(i64 %n)
+define internal void @DebugIntern.print_int(i64 %n, i64 %fd, i1 %nl) {
+    %fd32 = trunc i64 %fd to i32
+    call void @__print_int(i32 %fd32, i1 %nl, i64 %n)
     ret void
 }
 
-define internal void @DebugIntern.print_uint(i64 %n) {
-    call void @__print_uint_nl(i64 %n)
+define internal void @DebugIntern.print_uint(i64 %n, i64 %fd, i1 %nl) {
+    %fd32 = trunc i64 %fd to i32
+    call void @__print_uint(i32 %fd32, i1 %nl, i64 %n)
     ret void
 }
 
-define internal void @DebugIntern.print_bool(i1 %n) {
-    br i1 %n, label %true, label %false
-true:
-    call void @__print_str_nl(ptr @__str_true.data, i64 4)
-    ret void
-false:
-    call void @__print_str_nl(ptr @__str_false.data, i64 5)
+define internal void @DebugIntern.print_bool(i1 %b, i64 %fd, i1 %nl) {
+    %fd32 = trunc i64 %fd to i32
+    %str = select i1 %b, ptr @__str_true.data, ptr @__str_false.data
+    %len = select i1 %b, i64 4, i64 5
+    call void @__print_str(i32 %fd32, i1 %nl, ptr %str, i64 %len)
     ret void
 }
 
@@ -97,16 +107,16 @@ loop:
     %done = icmp eq i64 %i_next, 16
     br i1 %done, label %exit, label %loop
 exit:
-    call void @__print_str(ptr %buf, i64 16)
+    call void @__print_str(i32 1, i1 false, ptr %buf, i64 16)
     ret void
 }
 
 ; Prints "arena [0x<hex>] " then %fmt with "$1"/"$2" replaced by %arg1/%arg2.
 define internal i32 @arena_debug_print(ptr %fmt, i64 %fmt_len, i64 %arena_ptr, i64 %arg1, i64 %arg2) {
 entry:
-    call void @__print_str(ptr @__arena_dbg_open, i64 9)
+    call void @__print_str(i32 1, i1 false, ptr @__arena_dbg_open, i64 9)
     call void @__print_hex_u64(i64 %arena_ptr)
-    call void @__print_str(ptr @__arena_dbg_close, i64 2)
+    call void @__print_str(i32 1, i1 false, ptr @__arena_dbg_close, i64 2)
     br label %scan
 scan:
     %i = phi i64 [ 0, %entry ], [ %i_adv, %advance ], [ %i_after_ph, %emit_arg ]
@@ -136,11 +146,11 @@ emit_ph:
     br i1 %chunk_nonempty, label %flush_lit, label %emit_arg
 flush_lit:
     %chunk_ptr = getelementptr inbounds i8, ptr %fmt, i64 %start
-    call void @__print_str(ptr %chunk_ptr, i64 %chunk_len)
+    call void @__print_str(i32 1, i1 false, ptr %chunk_ptr, i64 %chunk_len)
     br label %emit_arg
 emit_arg:
     %arg_val = select i1 %is_1, i64 %arg1, i64 %arg2
-    call void @__print_uint(i64 %arg_val)
+    call void @__print_uint(i32 1, i1 false, i64 %arg_val)
     %i_after_ph = add i64 %i_plus1, 1
     br label %scan
 advance:
@@ -152,7 +162,7 @@ tail:
     br i1 %tail_nonempty, label %flush_tail, label %done
 flush_tail:
     %tail_ptr = getelementptr inbounds i8, ptr %fmt, i64 %start
-    call void @__print_str(ptr %tail_ptr, i64 %tail_len)
+    call void @__print_str(i32 1, i1 false, ptr %tail_ptr, i64 %tail_len)
     br label %done
 done:
     ret i32 0

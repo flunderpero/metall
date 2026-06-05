@@ -107,7 +107,7 @@ fun arena_create(
 
 fun init_page(a &mut ArenaAllocator, start_ptr ffi.PtrMut<U8>, size Int) void {
     -- Write the pointer to the previous page at the start of the new page.
-    let ptr = unsafe start_ptr.cast<ffi.PtrMut<U8>>()
+    let ptr = unsafe start_ptr.cast_ptr<ffi.PtrMut<U8>>()
     unsafe ptr.write(a.page_start)
     a.page_start = start_ptr
     a.page_end = start_ptr.offset(size)
@@ -203,7 +203,7 @@ fun arena_destroy(a &mut ArenaAllocator) Int {
     mut page = a.page_start
     for page.as_u64() != a.first_page.as_u64() {
         let prev_page = {
-            let ptr = unsafe page.cast<ffi.PtrMut<U8>>()
+            let ptr = unsafe page.cast_ptr<ffi.PtrMut<U8>>()
             unsafe ptr.read()
         }
         unsafe free(page)

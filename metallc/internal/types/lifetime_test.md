@@ -2490,6 +2490,52 @@ fun main() void { _ = get_slice() }
 ```error
 ```
 
+**Ptr.cast_ptr propagates the receiver's lifetime (escape caught)**
+
+```metall module
+use std.ffi
+
+fun leak() ffi.Ptr<U8> {
+    let @a = Arena()
+    let data = @a.slice<Int>(3, 0)
+    let p = ffi.slice_ptr<Int>(data)
+    unsafe p.cast_ptr<U8>()
+}
+
+fun main() void { _ = leak() }
+```
+
+```error
+test.met:7:12: reference escaping its allocation scope (via block result)
+        let p = ffi.slice_ptr<Int>(data)
+        unsafe p.cast_ptr<U8>()
+               ^^^^^^^^^^^^^^^^
+    }
+```
+
+**PtrMut.cast_ptr propagates the receiver's lifetime (escape caught)**
+
+```metall module
+use std.ffi
+
+fun leak() ffi.PtrMut<U8> {
+    let @a = Arena()
+    let data = @a.slice<Int>(3, 0)
+    let p = ffi.slice_ptr_mut<Int>(data)
+    unsafe p.cast_ptr<U8>()
+}
+
+fun main() void { _ = leak() }
+```
+
+```error
+test.met:7:12: reference escaping its allocation scope (via block result)
+        let p = ffi.slice_ptr_mut<Int>(data)
+        unsafe p.cast_ptr<U8>()
+               ^^^^^^^^^^^^^^^^
+    }
+```
+
 ## Shape
 
 **shape method ref escapes**

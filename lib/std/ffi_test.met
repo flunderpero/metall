@@ -53,4 +53,31 @@ fun main() void {
         try test.eq([1, 2, 3, 4, 5][..], b)
     })
     _ = memcopy_suite.run()
+
+    let cast_suite = test.Suite.new("cast", @local)
+    cast_suite.test("PtrMut.cast", fun() !void {
+        struct Point {
+            x Int
+            y Int
+        }
+        mut p = Point(1, 2)
+        let ptr = ffi.ref_ptr_mut<Point>(&mut p)
+        let r = unsafe ptr.cast()
+        r.x = 10
+        r.y = 20
+        try test.eq(10, p.x)
+        try test.eq(20, p.y)
+    })
+    cast_suite.test("Ptr.cast", fun() !void {
+        struct Point {
+            x Int
+            y Int
+        }
+        let p = Point(3, 4)
+        let ptr = ffi.ref_ptr<Point>(&p)
+        let r = unsafe ptr.cast()
+        try test.eq(3, r.x)
+        try test.eq(4, r.y)
+    })
+    _ = cast_suite.run()
 }
