@@ -20,7 +20,7 @@ pub fun Pattern.new(pattern Str) Pattern {
             continue
         }
         pend = i
-        i = i - 1
+        i -= 1
     }
     Pattern(text[0..pend])
 }

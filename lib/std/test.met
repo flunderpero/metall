@@ -46,7 +46,7 @@ pub fun Suite.run(s &mut Suite) SuiteResult {
         io.println(prefix)
         match test.f() {
             case Err e: 
-                failed = failed + 1
+                failed += 1
                 io.print(prefix)
                 io.println(" \x1b[31mFAILED\x1b[0m")
                 if s.bail {

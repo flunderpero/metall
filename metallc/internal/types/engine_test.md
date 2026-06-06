@@ -8789,6 +8789,42 @@ test.met:1:15: cannot assign to immutable variable: x
                   ^
 ```
 
+**Compound assign to non-integer**
+
+```metall
+{ mut s = "hi" s += "x" }
+```
+
+```error
+test.met:1:16: compound assignment '+=' expects an integer, got Str
+    { mut s = "hi" s += "x" }
+                   ^
+```
+
+**Compound assign rhs type mismatch**
+
+```metall
+{ mut x = 1 x += "no" }
+```
+
+```error
+test.met:1:18: type mismatch: expected Int, got Str
+    { mut x = 1 x += "no" }
+                     ^^^^
+```
+
+**Compound assign to immutable**
+
+```metall
+{ let x = 1 x += 2 }
+```
+
+```error
+test.met:1:13: cannot assign to immutable variable: x
+    { let x = 1 x += 2 }
+                ^
+```
+
 **Call wrong arg count**
 
 ```metall

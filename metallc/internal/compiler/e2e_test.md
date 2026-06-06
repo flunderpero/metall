@@ -84,6 +84,62 @@ fun main() void { mut x = 123 DebugIntern.print_int(x) x = 456 DebugIntern.print
 456
 ```
 
+**compound assignment**
+
+Exercises every compound operator family at runtime, signed `/=`, `%=`, and
+`>>=` (truncation toward zero, signed remainder, arithmetic shift), a compound
+write to a struct field, and that the place is evaluated exactly once (`bump`
+runs a single time even though `arr[bump(...)]` is both read and written).
+
+```metall
+fun bump(c &mut Int) Int { c.* += 1 c.* }
+
+fun main() void {
+    mut x = 10
+    x += 5
+    x -= 3
+    x *= 2
+    x /= 4
+    x %= 5
+    DebugIntern.print_int(x)
+    mut b = 0b1100
+    b &= 0b1010
+    b |= 0b0001
+    b ^= 0b1111
+    b <<= 1
+    b >>= 2
+    DebugIntern.print_int(b)
+    mut arr = [0, 0, 0]
+    mut counter = 0
+    arr[bump(&mut counter)] += 100
+    DebugIntern.print_int(counter)
+    DebugIntern.print_int(arr[1])
+    mut sd = -8
+    sd /= 3
+    DebugIntern.print_int(sd)
+    mut sm = -7
+    sm %= 3
+    DebugIntern.print_int(sm)
+    mut sr = -16
+    sr >>= 1
+    DebugIntern.print_int(sr)
+    mut w U8 = 250
+    w +%= 10
+    DebugIntern.print_uint(w.to_u64())
+}
+```
+
+```output
+1
+3
+1
+100
+-2
+-1
+-8
+4
+```
+
 **void is a value**
 
 ```metall
@@ -2348,6 +2404,22 @@ fun main() void {
 
 ```panic
 test.met:3:9: integer overflow
+```
+
+**compound assign overflow panics**
+
+The compound path reuses the same overflow check as the binary operator, with
+the panic located at the assignment.
+
+```metall !fast
+fun main() void {
+    mut x U8 = 250
+    x += 10
+}
+```
+
+```panic
+test.met:3:5: integer overflow
 ```
 
 **I8 overflow panics**

@@ -1698,6 +1698,10 @@ func (g *IRFunGen) writeLabel(label Label) {
 }
 
 func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) {
+	if assign.Op != nil {
+		g.genCompoundAssign(id, assign)
+		return
+	}
 	g.Gen(assign.RHS)
 	// `_ = expr` discards the result.
 	if ident, ok := g.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
@@ -1708,6 +1712,22 @@ func (g *IRFunGen) genAssign(id ast.NodeID, assign ast.Assign) {
 	ptrReg := g.genPlaceAddr(assign.LHS)
 	rhsTypeID := g.typeIDOfNode(assign.RHS)
 	g.storeValue(rhs, ptrReg, rhsTypeID)
+	g.setCode(id, voidValue)
+}
+
+// genCompoundAssign lowers `lhs op= rhs` to `lhs = lhs op rhs`. The place is
+// evaluated exactly once, so a side-effecting index like `arr[next()] += 1`
+// advances the iterator only once.
+func (g *IRFunGen) genCompoundAssign(id ast.NodeID, assign ast.Assign) {
+	ptrReg := g.genPlaceAddr(assign.LHS)
+	typeID := g.typeIDOfNode(assign.LHS)
+	cur := g.loadValue(ptrReg, typeID)
+	g.Gen(assign.RHS)
+	rhs := g.lookupCode(assign.RHS)
+	intTyp, isInt := g.typeOfNode(assign.LHS).Kind.(types.IntType)
+	signed := isInt && intTyp.Signed
+	result := g.emitArithBitOp(id, *assign.Op, g.irType(typeID), cur, rhs, signed, assign.LHS)
+	g.storeValue(result, ptrReg, typeID)
 	g.setCode(id, voidValue)
 }
 
@@ -1849,7 +1869,7 @@ func (g *IRFunGen) genUnary(id ast.NodeID, unary ast.Unary) {
 	g.setCode(id, reg)
 }
 
-func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
+func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	if binary.Op == ast.BinaryOpAnd || binary.Op == ast.BinaryOpOr {
 		g.genShortCircuit(id, binary)
 		return
@@ -1861,8 +1881,44 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 	irTyp := g.irTypeOfNode(binary.LHS)
 	intTyp, isInt := g.typeOfNode(binary.LHS).Kind.(types.IntType)
 	signed := isInt && intTyp.Signed
-	reg := g.reg()
 	switch binary.Op { //nolint:exhaustive
+	case ast.BinaryOpEq:
+		reg := g.reg()
+		g.write("%s = icmp eq %s %s, %s", reg, irTyp, lhs, rhs)
+		g.setCode(id, reg)
+	case ast.BinaryOpNeq:
+		reg := g.reg()
+		g.write("%s = icmp ne %s %s, %s", reg, irTyp, lhs, rhs)
+		g.setCode(id, reg)
+	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
+		cmpOp := map[ast.BinaryOp]string{
+			ast.BinaryOpLt:  "slt",
+			ast.BinaryOpLte: "sle",
+			ast.BinaryOpGt:  "sgt",
+			ast.BinaryOpGte: "sge",
+		}[binary.Op]
+		if !signed {
+			cmpOp = "u" + cmpOp[1:]
+		}
+		reg := g.reg()
+		g.write("%s = icmp %s %s %s, %s", reg, cmpOp, irTyp, lhs, rhs)
+		g.setCode(id, reg)
+	default:
+		g.setCode(id, g.emitArithBitOp(id, binary.Op, irTyp, lhs, rhs, signed, binary.LHS))
+	}
+}
+
+// emitArithBitOp emits a single arithmetic or bitwise binary operation on two
+// value registers and returns the result register. It applies the same
+// overflow, divide-by-zero, and Rune-range checks as the surface `lhs op rhs`
+// expression, so it is shared by genBinary and compound assignment
+// (`lhs op= rhs`). runeCheckNode is the operand whose type decides whether a
+// Rune-range check is needed.
+func (g *IRFunGen) emitArithBitOp(
+	id ast.NodeID, op ast.BinaryOp, irTyp, lhs, rhs string, signed bool, runeCheckNode ast.NodeID,
+) string {
+	reg := g.reg()
+	switch op { //nolint:exhaustive
 	case ast.BinaryOpAdd:
 		g.emitCheckedArithmeticOp(id, reg, irTyp, "add", lhs, rhs, signed)
 	case ast.BinaryOpSub:
@@ -1887,21 +1943,6 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 			remOp = "urem"
 		}
 		g.emitSafeIntOp(id, reg, irTyp, remOp, lhs, rhs)
-	case ast.BinaryOpEq:
-		g.write("%s = icmp eq %s %s, %s", reg, irTyp, lhs, rhs)
-	case ast.BinaryOpNeq:
-		g.write("%s = icmp ne %s %s, %s", reg, irTyp, lhs, rhs)
-	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
-		cmpOp := map[ast.BinaryOp]string{
-			ast.BinaryOpLt:  "slt",
-			ast.BinaryOpLte: "sle",
-			ast.BinaryOpGt:  "sgt",
-			ast.BinaryOpGte: "sge",
-		}[binary.Op]
-		if !signed {
-			cmpOp = "u" + cmpOp[1:]
-		}
-		g.write("%s = icmp %s %s %s, %s", reg, cmpOp, irTyp, lhs, rhs)
 	case ast.BinaryOpBitAnd:
 		g.write("%s = and %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpBitOr:
@@ -1917,15 +1958,10 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) { //nolint:funlen
 		}
 		g.write("%s = %s %s %s, %s", reg, shrOp, irTyp, lhs, rhs)
 	default:
-		panic(base.Errorf("unknown binary operator: %s", binary.Op))
+		panic(base.Errorf("not an arithmetic or bitwise operator: %s", op))
 	}
-	switch binary.Op { //nolint:exhaustive
-	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpDiv, ast.BinaryOpMul, ast.BinaryOpMod,
-		ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul,
-		ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
-		g.runeCheckIfNeeded(binary.LHS, reg)
-	}
-	g.setCode(id, reg)
+	g.runeCheckIfNeeded(runeCheckNode, reg)
+	return reg
 }
 
 func (g *IRFunGen) genShortCircuit(id ast.NodeID, binary ast.Binary) {

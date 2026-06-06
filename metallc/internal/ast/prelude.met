@@ -240,27 +240,27 @@ fun Str.rune_at(bytes []U8, index_out &mut Int) Rune {
     -- always contains valid utf8.
     mut index = index_out.*
     let b0 = bytes[index].to_u32()
-    index = index + 1
+    index += 1
     let rune = when {
     case b0 < 0x80:
         Rune(b0)
     case b0 < 0xE0:
         let b1 = bytes[index].to_u32()
-        index = index + 1
+        index += 1
         Rune((b0 & 0x1F) << 6 | (b1 & 0x3F))
     case b0 < 0xF0:
         let b1 = bytes[index].to_u32()
-        index = index + 1
+        index += 1
         let b2 = bytes[index].to_u32()
-        index = index + 1
+        index += 1
         Rune((b0 & 0x0F) << 12 | (b1 & 0x3F) << 6  | (b2 & 0x3F))
     case b0 < 0xF8:
         let b1 = bytes[index].to_u32()
-        index = index + 1
+        index += 1
         let b2 = bytes[index].to_u32()
-        index = index + 1
+        index += 1
         let b3 = bytes[index].to_u32()
-        index = index + 1
+        index += 1
         Rune((b0 & 0x07) << 18 | (b1 & 0x3F) << 12 | (b2 & 0x3F) << 6 | (b3 & 0x3F))
     else:
         panic("invalid utf8")
@@ -306,7 +306,7 @@ pub fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
                 copy = copy2
             }
             copy[copy_index] = bytes[i]
-            copy_index = copy_index + 1
+            copy_index += 1
         }
 	}
 	Str(copy[0..copy_index])
@@ -329,7 +329,7 @@ pub fun Str.from_utf8_checked(data []U8) !Str {
 fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
     mut index = index_out.*
     let b0 = data[index]
-    index = index + 1
+    index += 1
     mut valid = false
     when {
     case b0 < 0x80:
@@ -338,14 +338,14 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
         -- bare continuation byte, always invalid
     case b0 < 0xE0:
         if b0 >= 0xC2 and index < data.len and (data[index] & 0xC0) == 0x80 {
-            index = index + 1
+            index += 1
             valid = true
         }
     case b0 < 0xF0:
         if index < data.len and (data[index] & 0xC0) == 0x80 {
-            index = index + 1
+            index += 1
             if index < data.len and (data[index] & 0xC0) == 0x80 {
-                index = index + 1
+                index += 1
                  let cp = (b0.to_u32() & 0x0F) << 12
                     | (data[index - 2].to_u32() & 0x3F) << 6
                     | (data[index - 1].to_u32() & 0x3F)
@@ -356,11 +356,11 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
         }
     case b0 < 0xF8:
         if index < data.len and (data[index] & 0xC0) == 0x80 {
-            index = index + 1
+            index += 1
             if index < data.len and (data[index] & 0xC0) == 0x80 {
-                index = index + 1
+                index += 1
                 if index < data.len and (data[index] & 0xC0) == 0x80 {
-                    index = index + 1
+                    index += 1
                     let cp = (b0.to_u32() & 0x07) << 18
                         | (data[index - 3].to_u32() & 0x3F) << 12
                         | (data[index - 2].to_u32() & 0x3F) << 6
@@ -475,8 +475,8 @@ pub fun Str.as_bytes(s Str) []U8 {
 pub fun Str.hash(s Str) U64 {
     mut state = U64(0)
     for i in 0..s.data.len {
-        state = state ^ s.data[i].to_u64()
-        state = state *% 0x0517C_C1B7_2722_0A95
+        state ^= s.data[i].to_u64()
+        state *%= 0x0517C_C1B7_2722_0A95
     }
     state
 }
@@ -550,7 +550,7 @@ pub fun StrLSplitIter.next(it &mut StrLSplitIter) ?Str {
             s
         } else { None() }
     else range:
-        it.remaining = it.remaining - 1
+        it.remaining -= 1
         when {
             case it.remaining == 0: return Str(it.data)
             case it.remaining < 0: return None()
@@ -561,7 +561,7 @@ pub fun StrLSplitIter.next(it &mut StrLSplitIter) ?Str {
                 return None()
             }
             mut i = 1
-            for i < it.data.len and not Rune.is_valid_utf8(it.data[i]) { i = i + 1 }
+            for i < it.data.len and not Rune.is_valid_utf8(it.data[i]) { i += 1 }
             let s = Str(it.data[0..i])
             it.data = it.data[i..]
             return s
@@ -597,7 +597,7 @@ pub fun StrRSplitIter.next(it &mut StrRSplitIter) ?Str {
             s
         } else { None() }
     else range:
-        it.remaining = it.remaining - 1
+        it.remaining -= 1
         when {
             case it.remaining == 0: return Str(it.data)
             case it.remaining < 0: return None()
@@ -608,7 +608,7 @@ pub fun StrRSplitIter.next(it &mut StrRSplitIter) ?Str {
                 return None()
             }
             mut i = it.data.len - 1
-            for i >= 0 and not Rune.is_valid_utf8(it.data[i]) { i = i - 1 }
+            for i >= 0 and not Rune.is_valid_utf8(it.data[i]) { i -= 1 }
             let s = Str(it.data[i..])
             it.data = it.data[0..i]
             return s
@@ -643,14 +643,14 @@ pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = fa
     let cap = if min_width < 64 { 64 } else { min_width }
     sb.ensure_capacity(cap)
     let len = try v.fmt_into(sb.out[sb.len..], base, upper, min_width) else { panic("reserved too few bytes") }
-    sb.len = sb.len + len
+    sb.len += len
 }
 
 pub fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false, min_width Int = 0) void {
     let cap = if min_width < 65 { 65 } else { min_width }
     sb.ensure_capacity(cap)
     let len = try v.fmt_into(sb.out[sb.len..], base, upper, min_width) else { panic("reserved too few bytes") }
-    sb.len = sb.len + len
+    sb.len += len
 }
 
 pub fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false, min_width Int = 0) void { 
@@ -730,7 +730,7 @@ pub fun StrBuilder.slice<T HasFmt>(
             sb.len = start + max_len - 3
             -- walk back to the start of a rune
             for (sb.out[sb.len] & 0xC0) == 0x80 {
-                sb.len = sb.len - 1
+                sb.len -= 1
             }
             sb.str("...")
             if remaining {
@@ -792,13 +792,13 @@ pub fun StrBuilder.utf8_lossy(sb &mut StrBuilder, bytes []U8) void {
 fun StrBuilder.slice_raw(sb &mut StrBuilder, bytes []U8) void {
     sb.ensure_capacity(bytes.len)
     _ = sb.out[sb.len..].set(bytes)
-    sb.len = sb.len + bytes.len
+    sb.len += bytes.len
 }
 
 fun StrBuilder.byte_raw(sb &mut StrBuilder, b U8) void {
     sb.ensure_capacity(1)
     sb.out[sb.len] = b
-    sb.len = sb.len + 1
+    sb.len += 1
 }
 
 pub fun Slice.copy(s []T, @a Arena) []mut T {
@@ -814,7 +814,7 @@ pub fun Slice.set(dst []mut T, src []T) Int {
     mut i = 0
     for i < dst.len and i < src.len {
         dst[i] = src[i]
-        i = i + 1
+        i += 1
     }
     i
 }
@@ -864,7 +864,7 @@ pub fun Slice.rfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
         if found {
             return Range(i, i + needle.len)
         }
-        i = i - 1
+        i -= 1
     }
     None()
 }
@@ -947,7 +947,7 @@ pub fun SliceLSplitIter.next(it &mut SliceLSplitIter) ?[]T {
             s
         } else { None() }
     else range:
-        it.remaining = it.remaining - 1
+        it.remaining -= 1
         when {
             case it.remaining == 0: return it.data
             case it.remaining < 0: return None()
@@ -989,7 +989,7 @@ pub fun SliceRSplitIter.next(it &mut SliceRSplitIter) ?[]T {
             s
         } else { None() }
     else range:
-        it.remaining = it.remaining - 1
+        it.remaining -= 1
         when {
             case it.remaining == 0: return it.data
             case it.remaining < 0: return None()
@@ -1042,7 +1042,7 @@ pub fun Slice.ends_with<U HasEq>(s []U, other []U) Bool {
 pub fun Slice.concat(first []T, others [][]T, @a Arena) []mut T {
     mut len = first.len
     for i in 0..others.len {
-        len = len + others[i].len
+        len += others[i].len
     }
     mut new = unsafe @a.slice_uninit<T>(len)
     _ = new.set(first)
@@ -1050,7 +1050,7 @@ pub fun Slice.concat(first []T, others [][]T, @a Arena) []mut T {
     for i in 0..others.len {
         let s = others[i]
         _ = new[out..].set(s)
-        out = out + s.len
+        out += s.len
     }
     new
 }
@@ -1082,7 +1082,7 @@ pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Int) void {
                 let swap = s[i]
                 s[i] = s[j]
                 s[j] = swap
-                i = i + 1
+                i += 1
             }
         }
         let swap = s[i]
@@ -1129,7 +1129,7 @@ pub fun Slice.ltrim<U HasEq>(s []U, elems []U) []U {
         if not found {
             break
         }
-        i = i + 1
+        i += 1
     }
     s[i..]
 }
@@ -1148,7 +1148,7 @@ pub fun Slice.rtrim<U HasEq>(s []U, elems []U) []U {
         if not found {
             break
         }
-        i = i - 1
+        i -= 1
     }
     s[..=i]
 }
@@ -1220,7 +1220,7 @@ pub fun SliceIter.next(it &mut SliceIter) ?T {
         return None()
     }
     let e = it.data[it.pos]
-    it.pos = it.pos + 1
+    it.pos += 1
     e
 }
 
@@ -1502,14 +1502,14 @@ pub fun U64.from_ascii_str(s []U8, base Int = 10) !U64 {
                     if digit < U64('0') or digit > U64('9') {
                         return NumParseErr.malformed
                     }
-                    digit = digit - U64('0')
+                    digit -= U64('0')
                 }
             }
         } else {
             if digit < U64('0') or digit >= base_u64 + U64('0') {
                 return NumParseErr.malformed
             }
-            digit = digit - U64('0')
+            digit -= U64('0')
         }
         let result_before = result
         if result > (U64(0xFFFF_FFFF_FFFF_FFFF) - digit) / base_u64 {
@@ -1573,12 +1573,12 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min
         mut x = x
         mut len = 0
         for x > 0 { 
-            len = len + 1
+            len += 1
             -- todo: This can be massively improved. We don't need to divide in each step.
-            x = x / base
+            x /= base
         }
         if v < 0 {
-            len = len + 1
+            len += 1
         }
         if len < min_width {
             min_width
@@ -1598,13 +1598,13 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min
     for x > 0 {
         let digit = digits[(x % base).to_int_wrapping()]
         dst[i] = digit
-        i = i - 1
+        i -= 1
         -- todo: This can be massively improved. We don't need to divide in each step.
-        x = x / base
+        x /= base
     }
     for i >= 0 {
         dst[i] = '0'
-        i = i - 1
+        i -= 1
     }
     if v < 0 {
         dst[0] = '-'
@@ -1637,8 +1637,8 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min
         mut len = 0
         -- todo: This can be massively improved. We don't need to divide in each step.
         for x > 0 { 
-            len = len + 1
-            x = x / base
+            len += 1
+            x /= base
         }
         if len < min_width {
             min_width
@@ -1659,13 +1659,13 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min
     for x > 0 {
         let digit = digits[(x % base).to_int_wrapping()]
         dst[i] = digit
-        i = i - 1
+        i -= 1
         -- todo: This can be massively improved. We don't need to divide in each step.
-        x = x / base
+        x /= base
     }
     for i >= 0 {
         dst[i] = '0'
-        i = i - 1
+        i -= 1
     }
     len
 }

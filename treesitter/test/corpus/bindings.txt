@@ -116,6 +116,33 @@ fun f() void { x = 1  x.y = 2  x[0] = 3  x.* = 4 }
         value: (integer_literal)))))
 
 ================================================================================
+Compound assignment to variable, index, deref
+================================================================================
+
+fun f() void { x += 1  arr[0] >>= 2  x.* *%= 3 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (assignment
+        target: (identifier)
+        value: (integer_literal))
+      (assignment
+        target: (index_expression
+          object: (identifier)
+          index: (integer_literal))
+        value: (integer_literal))
+      (assignment
+        target: (dereference
+          (identifier))
+        value: (integer_literal)))))
+
+================================================================================
 Integer literal bases
 ================================================================================
 

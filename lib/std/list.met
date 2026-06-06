@@ -24,7 +24,7 @@ pub fun List.from_slice(slice []T, @a Arena) &mut List {
 pub fun List.push(l &mut List, v T) void {
     l.ensure_capacity(1)
     l.data[l.len] = v
-    l.len = l.len + 1
+    l.len += 1
 }
 
 
@@ -35,7 +35,7 @@ pub fun List.push(l &mut List, v T) void {
 pub fun List.push_all(l &mut List, v []T) void {
     l.ensure_capacity(v.len)
     _ = l.data[l.len..].set(v)
-    l.len = l.len + v.len
+    l.len += v.len
 }
 
 --- Make sure the list has room for `cap` elements. ---

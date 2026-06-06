@@ -57,7 +57,7 @@ fun main() void {
         let thread_fun = fun[sut]() !void {
             for i in 0..100 {
                 try sut.with_lock(fun(v) {
-                    v.* = v.* + 1
+                    v.* += 1
                 })
                 time.sleep(time.microsecond)
             }
@@ -76,7 +76,7 @@ fun main() void {
             for i in 0..100 {
                 -- todo: use an atomic counter to count the lock misses
                 _ = try sut.with_try_lock(fun(v) {
-                    v.* = v.* + 1
+                    v.* += 1
                 })
                 time.sleep(time.microsecond)
             }

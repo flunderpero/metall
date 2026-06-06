@@ -656,6 +656,28 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 		}
 		return p.NewAssign(lhs, rhs, span.Combine(p.span())), true
 	}
+	if op, ok := map[token.TokenKind]BinaryOp{
+		token.PlusEq:         BinaryOpAdd,
+		token.MinusEq:        BinaryOpSub,
+		token.StarEq:         BinaryOpMul,
+		token.SlashEq:        BinaryOpDiv,
+		token.PercentEq:      BinaryOpMod,
+		token.PlusPercentEq:  BinaryOpWrapAdd,
+		token.MinusPercentEq: BinaryOpWrapSub,
+		token.StarPercentEq:  BinaryOpWrapMul,
+		token.AmpEq:          BinaryOpBitAnd,
+		token.PipeEq:         BinaryOpBitOr,
+		token.CaretEq:        BinaryOpBitXor,
+		token.LtLtEq:         BinaryOpShl,
+		token.GtGtEq:         BinaryOpShr,
+	}[t.Kind]; ok {
+		p.next()
+		rhs, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewCompoundAssign(op, lhs, rhs, span.Combine(p.span())), true
+	}
 	for {
 		t, ok = p.mayPeek()
 		if !ok {

@@ -305,6 +305,9 @@ func (RuneLiteral) isKind() {}
 type Assign struct {
 	LHS NodeID
 	RHS NodeID
+	// Op is nil for a plain `lhs = rhs`. For a compound assignment like
+	// `lhs += rhs` it holds the arithmetic/bitwise operator (`lhs = lhs Op rhs`).
+	Op *BinaryOp
 }
 
 func (Assign) isKind() {}
@@ -528,7 +531,11 @@ func (a *AST) Merge(other *AST) (*AST, error) {
 }
 
 func (a *AST) NewAssign(lhs NodeID, value NodeID, span base.Span) NodeID {
-	return a.node(Assign{LHS: lhs, RHS: value}, span)
+	return a.node(Assign{LHS: lhs, RHS: value, Op: nil}, span)
+}
+
+func (a *AST) NewCompoundAssign(op BinaryOp, lhs NodeID, value NodeID, span base.Span) NodeID {
+	return a.node(Assign{LHS: lhs, RHS: value, Op: &op}, span)
 }
 
 func (a *AST) NewMatch(expr NodeID, arms []MatchArm, else_ *MatchElse, span base.Span) NodeID {
@@ -1130,6 +1137,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	}
 	switch kind := node.Kind.(type) {
 	case Assign:
+		if kind.Op != nil {
+			addAttr("op", string(*kind.Op))
+		}
 		if !children {
 			addAttr("lhs", nodeIDKind(kind.LHS))
 			addAttr("rhs", nodeIDKind(kind.RHS))

@@ -133,7 +133,7 @@ fun arena_alloc(a &mut ArenaAllocator, requested_size Int) ffi.PtrMut<U8> {
             -- The object would fit into a regular page, so allocate a regular page.
             let page_size = a.next_page_size
             -- Increase the page size up to `a.max_page_size` to minimize future allocations.
-            a.next_page_size = a.next_page_size * 2
+            a.next_page_size *= 2
             if a.next_page_size > a.max_page_size {
                 a.next_page_size = a.max_page_size
             }
@@ -207,7 +207,7 @@ fun arena_destroy(a &mut ArenaAllocator) Int {
             unsafe ptr.read()
         }
         unsafe free(page)
-        freed = freed + 1
+        freed += 1
         page = prev_page
     }
     if a.debug_enabled {

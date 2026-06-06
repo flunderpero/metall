@@ -46,7 +46,7 @@ fun record_frame(loc Str, fn_name Str) void {
     if t.count < trace_depth {
         t.frames[t.count] = ETFrame(loc, fn_name)
     }
-    t.count = t.count + 1
+    t.count += 1
 }
 
 --- Start a fresh trace for an error that originates here: reset, then record

@@ -94,7 +94,7 @@ pub fun TakeIter.next(t &mut TakeIter) PipeIterVal<A> {
             case None: None()
             case Skip: Skip()
             else v: 
-                t.left = t.left - 1
+                t.left -= 1
                 v
         }
     } else {
@@ -206,7 +206,7 @@ pub fun Pipeline.count(p Pipeline) Int {
         match (&mut it).next() {
             case None: break
             case Skip: 
-            else: count = count + 1
+            else: count += 1
         }
     }
     count
@@ -242,7 +242,7 @@ pub fun Pipeline.collect(p Pipeline, initial_capacity Int, @a Arena) []mut A {
                     slice_len = slice.len
                 }
                 slice[len] = v
-                len = len + 1
+                len += 1
         }
     }
     slice[0..len]

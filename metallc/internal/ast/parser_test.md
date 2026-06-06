@@ -29,6 +29,30 @@ Assign()
   rhs=Int(value=123)
 ```
 
+**Compound assign**
+
+```metall
+x += 5
+```
+
+```ast
+Assign(op=+)
+  lhs=Ident(name="x")
+  rhs=Int(value=5)
+```
+
+**Compound assign wrapping**
+
+```metall
+x +%= 5
+```
+
+```ast
+Assign(op=+%)
+  lhs=Ident(name="x")
+  rhs=Int(value=5)
+```
+
 **Let binding**
 
 ```metall
@@ -1380,6 +1404,20 @@ x[1] = 2
 
 ```ast
 Assign()
+  lhs=Index()
+    target=Ident(name="x")
+    index=Int(value=1)
+  rhs=Int(value=2)
+```
+
+**Index compound write**
+
+```metall
+x[1] <<= 2
+```
+
+```ast
+Assign(op=<<)
   lhs=Index()
     target=Ident(name="x")
     index=Int(value=1)

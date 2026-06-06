@@ -15,10 +15,12 @@ const (
 	AllocatorIdent TokenKind = iota + 1
 	Amp
 	AmpInfix
+	AmpEq
 	And
 	Break
 	Bytes
 	Caret
+	CaretEq
 	Case
 	Colon
 	Comma
@@ -42,6 +44,7 @@ const (
 	Gt
 	Gte
 	GtGt
+	GtGtEq
 	HashEnd
 	HashIf
 	Ident
@@ -59,7 +62,9 @@ const (
 	Lte
 	Match
 	Minus
+	MinusEq
 	MinusPercent
+	MinusPercentEq
 	Mut
 	Neq
 	Noescape
@@ -68,9 +73,13 @@ const (
 	Number
 	Or
 	Percent
+	PercentEq
 	Pipe
+	PipeEq
 	Plus
+	PlusEq
 	PlusPercent
+	PlusPercentEq
 	Pub
 	Question
 	RBracket
@@ -80,9 +89,13 @@ const (
 	Rune
 	Shape
 	LtLt
+	LtLtEq
 	Slash
+	SlashEq
 	Star
+	StarEq
 	StarPercent
+	StarPercentEq
 	String
 	Struct
 	Sync
@@ -103,10 +116,12 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AllocatorIdent:        "<allocator identifier>",
 	Amp:                   "&",
 	AmpInfix:              "<&infix>",
+	AmpEq:                 "&=",
 	And:                   "<and>",
 	Break:                 "<break>",
 	Bytes:                 "<bytes>",
 	Caret:                 "^",
+	CaretEq:               "^=",
 	Case:                  "<case>",
 	Colon:                 ":",
 	Comma:                 ",",
@@ -129,6 +144,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Gt:                    ">",
 	Gte:                   ">=",
 	GtGt:                  ">>",
+	GtGtEq:                ">>=",
 	Fun:                   "<fun>",
 	HashEnd:               "#end",
 	HashIf:                "#if",
@@ -147,7 +163,9 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Lte:                   "<=",
 	Match:                 "<match>",
 	Minus:                 "-",
+	MinusEq:               "-=",
 	MinusPercent:          "-%",
+	MinusPercentEq:        "-%=",
 	Mut:                   "<mut>",
 	Neq:                   "!=",
 	Nocopy:                "<nocopy>",
@@ -155,9 +173,13 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Number:                "<number>",
 	Or:                    "<or>",
 	Percent:               "%",
+	PercentEq:             "%=",
 	Pipe:                  "|",
+	PipeEq:                "|=",
 	Plus:                  "+",
+	PlusEq:                "+=",
 	PlusPercent:           "+%",
+	PlusPercentEq:         "+%=",
 	Pub:                   "<pub>",
 	Question:              "?",
 	RBracket:              "]",
@@ -167,9 +189,13 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Rune:                  "<rune>",
 	Shape:                 "<shape>",
 	LtLt:                  "<<",
+	LtLtEq:                "<<=",
 	Slash:                 "/",
+	SlashEq:               "/=",
 	Star:                  "*",
+	StarEq:                "*=",
 	StarPercent:           "*%",
+	StarPercentEq:         "*%=",
 	String:                "<string>",
 	Tilde:                 "~",
 	Noescape:              "<noescape>",
@@ -188,13 +214,9 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 }
 
 var simpleTokens = map[rune]TokenKind{ //nolint:gochecknoglobals
-	'^': Caret,
 	',': Comma,
 	'{': LCurly,
 	'(': LParen,
-	'%': Percent,
-	'/': Slash,
-	'|': Pipe,
 	'?': Question,
 	']': RBracket,
 	'}': RCurly,
@@ -304,13 +326,17 @@ func isBinDigit(c rune) bool {
 	return c == '0' || c == '1'
 }
 
+func peek(source *base.Source, idx int, r rune) bool {
+	return idx < len(source.Content) && source.Content[idx] == r
+}
+
 // lexNumber reads a number literal. start may point at '-' or at the leading
 // digit. Supported forms: decimal, hex (0x), octal (0o), binary (0b).
 // Underscores are allowed between digits as separators.
 func lexNumber(source *base.Source, start int) Token {
 	idx := start
 	value := []rune{}
-	if idx < len(source.Content) && source.Content[idx] == '-' {
+	if peek(source, idx, '-') {
 		value = append(value, '-')
 		idx++
 	}
@@ -388,7 +414,7 @@ func parseHexEscape(source *base.Source, idx int) (rune, int, bool) {
 
 // parseUnicodeEscape parses \u{NNNNNN} unicode escapes. idx points to the '{' after \u.
 func parseUnicodeEscape(source *base.Source, idx int) (rune, int, bool) {
-	if idx >= len(source.Content) || source.Content[idx] != '{' {
+	if !peek(source, idx, '{') {
 		return 0, idx, false
 	}
 	idx++ // skip {
@@ -506,7 +532,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	switch {
 	case c == '"':
 		return lexStringBody(source, idx, span, String)
-	case c == 'b' && idx < len(source.Content) && source.Content[idx] == '"':
+	case c == 'b' && peek(source, idx, '"'):
 		return lexStringBody(source, idx+1, span, Bytes)
 	case c == '\'':
 		if idx < len(source.Content) && source.Content[idx] != '\'' {
@@ -516,14 +542,14 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 					span.End = skipToClosingQuote(source, idx+1, '\'')
 					return Token{Error, errMsg, span}
 				}
-				if newIdx < len(source.Content) && source.Content[newIdx] == '\'' {
+				if peek(source, newIdx, '\'') {
 					span.End = newIdx
 					return Token{Rune, string([]rune{r}), span}
 				}
 			} else {
 				value := source.Content[idx]
 				idx += 1
-				if idx < len(source.Content) && source.Content[idx] == '\'' {
+				if peek(source, idx, '\'') {
 					span.End = idx
 					return Token{Rune, string([]rune{value}), span}
 				}
@@ -532,16 +558,19 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		return Token{Unknown, string(c), span}
 	case c == '=':
 		kind := Eq
-		if idx < len(source.Content) && source.Content[idx] == '=' {
+		if peek(source, idx, '=') {
 			kind = EqEq
 			span = base.NewSpan(source, start, idx)
 		}
 		return Token{Kind: kind, Value: "", Span: span}
 	case c == '<':
-		if idx < len(source.Content) && source.Content[idx] == '=' {
+		if peek(source, idx, '=') {
 			return Token{Kind: Lte, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		if idx < len(source.Content) && source.Content[idx] == '<' {
+		if peek(source, idx, '<') {
+			if peek(source, idx+1, '=') {
+				return Token{Kind: LtLtEq, Value: "", Span: base.NewSpan(source, start, idx+1)}
+			}
 			return Token{Kind: LtLt, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		kind := Lt
@@ -553,37 +582,78 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		return Token{Kind: kind, Value: "", Span: span}
 	case c == '>':
-		if idx < len(source.Content) && source.Content[idx] == '=' {
+		if peek(source, idx, '=') {
 			return Token{Kind: Gte, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		if idx < len(source.Content) && source.Content[idx] == '>' {
+		if peek(source, idx, '>') {
+			if peek(source, idx+1, '=') {
+				return Token{Kind: GtGtEq, Value: "", Span: base.NewSpan(source, start, idx+1)}
+			}
 			return Token{Kind: GtGt, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		return Token{Kind: Gt, Value: "", Span: span}
+	case c == '/':
+		if peek(source, idx, '=') {
+			return Token{Kind: SlashEq, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Slash, Value: "", Span: span}
+	case c == '%':
+		if peek(source, idx, '=') {
+			return Token{Kind: PercentEq, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Percent, Value: "", Span: span}
+	case c == '|':
+		if peek(source, idx, '=') {
+			return Token{Kind: PipeEq, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Pipe, Value: "", Span: span}
+	case c == '^':
+		if peek(source, idx, '=') {
+			return Token{Kind: CaretEq, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		return Token{Kind: Caret, Value: "", Span: span}
 	case c == '+':
-		if idx < len(source.Content) && source.Content[idx] == '%' {
+		if peek(source, idx, '%') {
+			if peek(source, idx+1, '=') {
+				return Token{Kind: PlusPercentEq, Value: "", Span: base.NewSpan(source, start, idx+1)}
+			}
 			return Token{Kind: PlusPercent, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		if peek(source, idx, '=') {
+			return Token{Kind: PlusEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		return Token{Kind: Plus, Value: "", Span: span}
 	case c == '*':
-		if idx < len(source.Content) && source.Content[idx] == '%' {
+		if peek(source, idx, '%') {
+			if peek(source, idx+1, '=') {
+				return Token{Kind: StarPercentEq, Value: "", Span: base.NewSpan(source, start, idx+1)}
+			}
 			return Token{Kind: StarPercent, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		if peek(source, idx, '=') {
+			return Token{Kind: StarEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		return Token{Kind: Star, Value: "", Span: span}
 	case c == '-':
-		if idx < len(source.Content) && source.Content[idx] == '%' {
+		if peek(source, idx, '%') {
+			if peek(source, idx+1, '=') {
+				return Token{Kind: MinusPercentEq, Value: "", Span: base.NewSpan(source, start, idx+1)}
+			}
 			return Token{Kind: MinusPercent, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
+		if peek(source, idx, '=') {
+			return Token{Kind: MinusEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		if idx < len(source.Content) && unicode.IsDigit(source.Content[idx]) {
 			return lexNumber(source, start)
 		}
-		if idx >= len(source.Content) || source.Content[idx] != '-' {
+		if !peek(source, idx, '-') {
 			return Token{Kind: Minus, Value: "", Span: span}
 		}
 		value := "--"
 		end := "\n"
 		idx += 1
-		if idx < len(source.Content) && source.Content[idx] == '-' {
+		if peek(source, idx, '-') {
 			idx += 1
 			value = "---"
 			end = "---"
@@ -598,18 +668,21 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		span.End = idx - 1
 		return Token{Kind: Comment, Value: value, Span: span}
 	case c == '.':
-		if idx < len(source.Content) && source.Content[idx] == '.' {
+		if peek(source, idx, '.') {
 			return Token{Kind: DotDot, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		return Token{Kind: Dot, Value: "", Span: span}
 	case c == ':':
 		return Token{Kind: Colon, Value: "", Span: span}
 	case c == '!':
-		if idx < len(source.Content) && source.Content[idx] == '=' {
+		if peek(source, idx, '=') {
 			return Token{Kind: Neq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		return Token{Kind: Excl, Value: "", Span: span}
 	case c == '&':
+		if peek(source, idx, '=') {
+			return Token{Kind: AmpEq, Value: "", Span: base.NewSpan(source, start, idx)}
+		}
 		kind := Amp
 		if idx < len(source.Content) && unicode.IsSpace(source.Content[idx]) {
 			kind = AmpInfix

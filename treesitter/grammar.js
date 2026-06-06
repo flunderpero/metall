@@ -587,10 +587,33 @@ module.exports = grammar({
 
     // >>> Assignment
 
+    // A plain `=` or a compound assignment like `+=`, `<<=` (sugar for
+    // `target = target op value`). The `>>=` operator is a single token: the
+    // lexer's longest match keeps a bare `>>` (generic close / right-shift)
+    // tokenizing as two `>` since `>>=` only matches the contiguous three chars.
     assignment: ($) =>
       prec.right(
         PREC.ASSIGN,
-        seq(field("target", $._assignable), "=", field("value", $._expression)),
+        seq(
+          field("target", $._assignable),
+          choice(
+            "=",
+            "+=",
+            "-=",
+            "*=",
+            "/=",
+            "%=",
+            "+%=",
+            "-%=",
+            "*%=",
+            "&=",
+            "|=",
+            "^=",
+            "<<=",
+            ">>=",
+          ),
+          field("value", $._expression),
+        ),
       ),
 
     _assignable: ($) =>

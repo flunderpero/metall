@@ -50,7 +50,7 @@ pub fun Map.set(m &mut Map, key K, value V) void {
     if desired_capacity > m.data.len {
         m.grow(m.data.len * 2)
     }
-    m.len = m.len + set(m.data, key, value)
+    m.len += set(m.data, key, value)
 }
 
 --- Get the value associated with the key.
@@ -109,7 +109,7 @@ pub fun Map.del(m &mut Map, key K) Bool {
         else existing:
             if existing.key.eq(key) {
                 m.data[pos] = true
-                m.len = m.len - 1
+                m.len -= 1
                 return true
             }
         }

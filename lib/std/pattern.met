@@ -59,7 +59,7 @@ pub fun Index.rfind_pattern(p Index, haystack []T) ?Range<Int> {
         if found {
             return Range(i, i + needle.len)
         }
-        i = i - 1
+        i -= 1
     }
     None()
 }
@@ -110,7 +110,7 @@ pub fun Pred.rfind_pattern(p Pred, haystack []T) ?Range<Int> {
         if p.predicate(haystack[i]) {
             return Range(i, i + 1)
         }
-        i = i - 1
+        i -= 1
     }
     None()
 }

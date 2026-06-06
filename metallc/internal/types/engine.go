@@ -1423,19 +1423,33 @@ func isTemporaryExpr(kind ast.Kind) bool {
 }
 
 func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
-	if ident, ok := e.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
-		rhsTypeID, status := e.Query(assign.RHS)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
+	if assign.Op == nil {
+		if ident, ok := e.ast.Node(assign.LHS).Kind.(ast.Ident); ok && ident.Name == "_" {
+			rhsTypeID, status := e.Query(assign.RHS)
+			if status.Failed() {
+				return InvalidTypeID, TypeDepFailed
+			}
+			if !e.isInstantiable(rhsTypeID) {
+				e.diag(
+					e.ast.Node(assign.RHS).Span,
+					"cannot discard expression of type %s",
+					e.env.TypeDisplay(rhsTypeID),
+				)
+				return InvalidTypeID, TypeFailed
+			}
+			return e.voidTyp, TypeOK
 		}
-		if !e.isInstantiable(rhsTypeID) {
-			e.diag(e.ast.Node(assign.RHS).Span, "cannot discard expression of type %s", e.env.TypeDisplay(rhsTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-		return e.voidTyp, TypeOK
 	}
 	lhsTypeID, status := e.typeOfPlace(assign.LHS)
 	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	// A compound assignment `lhs op= rhs` desugars to `lhs = lhs op rhs`, so the
+	// place must be an integer the operator accepts.
+	if assign.Op != nil && !e.env.isIntType(lhsTypeID) {
+		e.diag(e.ast.Node(assign.LHS).Span,
+			"compound assignment '%s=' expects an integer, got %s",
+			*assign.Op, e.env.TypeDisplay(lhsTypeID))
 		return InvalidTypeID, TypeDepFailed
 	}
 	rhsTypeID, status := e.queryWithHint(assign.RHS, &lhsTypeID)

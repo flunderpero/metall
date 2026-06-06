@@ -76,7 +76,7 @@ pub fun Buffer.write(b &mut Buffer, data []T) !Int {
 --- Implementation of `io.Reader`. ---
 pub fun Buffer.read(b &mut Buffer, buf []mut T) ![] mut T {
     let n = buf.set(b.data.as_slice()[b.read_pos..])
-    b.read_pos = b.read_pos + n
+    b.read_pos += n
     buf[0..n]
 }
 
