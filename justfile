@@ -11,8 +11,9 @@ precommit:
     just fmt
     just lint
     just test safe
-    just test safe wasm32 
+    just test safe wasm32
     just examples
+    just benchmarks compile-check
 
 lint:
     go tool golangci-lint run ./metallc/...

@@ -10,7 +10,7 @@ pub struct RangeIter {
 pub fun RangeIter.next(it &mut RangeIter) ?U64 {
     if it.current < it.end {
         let val = it.current
-        it.current = it.current + U64(1)
+        it.current += U64(1)
         return Option(val)
     }
     None()
@@ -22,10 +22,10 @@ pub fun range(start U64, end U64) RangeIter {
 
 pub fun hash(x U64) U64 {
     mut h = x ^ (x >> U64(30))
-    h = h *% U64(13787848793156543929) -- 0xbf58476d1ce4e5b9
-    h = h ^ (h >> U64(27))
-    h = h *% U64(10723151780598845931) -- 0x94d049bb133111eb
-    h = h ^ (h >> U64(31))
+    h *%= U64(0xbf58476d1ce4e5b9)
+    h ^= (h >> U64(27))
+    h *%= U64(0x94d049bb133111eb)
+    h ^= (h >> U64(31))
     h
 }
 
@@ -37,7 +37,7 @@ fun n() U64 {
     -- We don't really read it from the args, we should want to make sure this cannot
     -- be optimized away and the compiler knows that it's 500000000.
     if args.len > 10 { 
-        try U64.from_ascii_str(args[9].as_bytes()) else e { panic(e.msg) }
+        try U64.from_ascii_str(args[9].as_bytes()) else e { panic("unexpected") }
     } else { 
         U64(500000000)
     }

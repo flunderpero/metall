@@ -102,7 +102,8 @@ fun run(cmd []Str, @a Arena) !Str {
         sb.int(res.status)
         sb.str(": ")
         sb.str(res.output)
-        return Err(sb.as_str())
+        io.println(sb.as_str())
+        return io.IOErr.other
     }
     res.output
 }
@@ -133,10 +134,9 @@ fun main() !void {
             io.println("]\tSKIP")
             continue
         }
-        -- todo: The `else` should not be needed, but the runtime does not print the error (correctly).
-        let ok = try b.run(not b.group.eq(last_group), @local) else e { io.println(e.msg) return e }
+        let ok = try b.run(not b.group.eq(last_group), @local)
         if not ok {
-            failed = failed + 1
+            failed += 1
         }
         last_group = b.group
     }
