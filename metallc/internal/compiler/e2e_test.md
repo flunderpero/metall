@@ -2932,6 +2932,82 @@ fun main() void {
 99
 ```
 
+**for-in over slices, arrays, and references**
+
+```metall
+struct P {
+    x Int
+    y Int
+}
+
+fun double_all(s []mut Int) void {
+    for &mut v in s {
+        v.* = v.* * 2
+    }
+}
+
+fun main() void {
+    for v in [1, 2, 3] {
+        DebugIntern.print_int(v)
+    }
+    mut arr = [10, 20, 30]
+    for v, i in arr[..] {
+        DebugIntern.print_int(v + i)
+    }
+    double_all(arr[..])
+    for &v in arr {
+        DebugIntern.print_int(v.*)
+    }
+    mut ps = [P(1, 2), P(3, 4)]
+    for &mut p, i in ps {
+        p.x += i
+    }
+    for p in ps {
+        DebugIntern.print_int(p.x + p.y)
+    }
+}
+```
+
+```output
+1
+2
+3
+10
+21
+32
+20
+40
+60
+3
+8
+```
+
+**for-in over a slice with break, continue, and empty**
+
+```metall
+fun main() void {
+    for v, i in [5, 6, 7, 8] {
+        if i == 0 {
+            continue
+        }
+        if v == 8 {
+            break
+        }
+        DebugIntern.print_int(v)
+    }
+    for v in [1, 2, 3][0..0] {
+        DebugIntern.print_int(v)
+    }
+    DebugIntern.print_int(99)
+}
+```
+
+```output
+6
+7
+99
+```
+
 **integer types**
 
 ```metall

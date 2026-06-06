@@ -1371,7 +1371,7 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 	}
 }
 
-func (p *Parser) ParseFor() (NodeID, bool) {
+func (p *Parser) ParseFor() (NodeID, bool) { //nolint:funlen
 	t, ok := p.expect(token.For)
 	if !ok {
 		return ParseFailed, false
@@ -1381,27 +1381,53 @@ func (p *Parser) ParseFor() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	// `for x in <range> { ... }`
+	// Three forms:
+	//   for { ... }
+	//   for <cond> { ... }
+	//   for [&[mut]] x [, i] in <iterable> { ... }
+	// A leading `&` could be the start of a boolean-condition loop or an
+	// iterating loop.
+	forIn := t.Kind == token.Amp
 	if t.Kind == token.Ident {
-		if next, ok := p.mayPeek1(); ok && next.Kind == token.In {
-			ident := t
+		next, hasNext := p.mayPeek1()
+		forIn = hasNext && (next.Kind == token.In || next.Kind == token.Comma)
+	}
+	if forIn {
+		var ref, mut bool
+		if t.Kind == token.Amp {
 			p.next()
-			p.next()
-			binding := Name{Name: ident.Value, Span: ident.Span}
-			range_, isRange, ok := p.ParseRange()
-			if !ok {
-				return ParseFailed, false
+			ref = true
+			if m, ok := p.mayPeek(); ok && m.Kind == token.Mut {
+				p.next()
+				mut = true
 			}
-			if !isRange {
-				p.diagnostic(p.span(), "expected range expression (e.g. 0..10)")
-				return ParseFailed, false
-			}
-			body, ok := p.ParseBlock()
-			if !ok {
-				return ParseFailed, false
-			}
-			return p.NewFor(&binding, &range_, body, span.Combine(p.span())), true
 		}
+		bindTok, ok := p.expect(token.Ident)
+		if !ok {
+			return ParseFailed, false
+		}
+		binding := Name{Name: bindTok.Value, Span: bindTok.Span}
+		var index *Name
+		if comma, ok := p.mayPeek(); ok && comma.Kind == token.Comma {
+			p.next()
+			idx, ok := p.expect(token.Ident)
+			if !ok {
+				return ParseFailed, false
+			}
+			index = &Name{Name: idx.Value, Span: idx.Span}
+		}
+		if _, ok := p.expect(token.In); !ok {
+			return ParseFailed, false
+		}
+		iterable, _, ok := p.ParseRange()
+		if !ok {
+			return ParseFailed, false
+		}
+		body, ok := p.ParseBlock()
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewFor(&binding, ref, mut, index, &iterable, body, span.Combine(p.span())), true
 	}
 	var cond *NodeID
 	if t.Kind != token.LCurly {
@@ -1415,7 +1441,7 @@ func (p *Parser) ParseFor() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewFor(nil, cond, body, span.Combine(p.span())), true
+	return p.NewFor(nil, false, false, nil, cond, body, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseMatch() (NodeID, bool) {

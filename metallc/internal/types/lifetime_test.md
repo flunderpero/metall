@@ -94,6 +94,27 @@ test.met:9:19: reference escaping its allocation scope (via deref assignment)
             }
 ```
 
+**deref assign escapes from a nested block below the taint scope**
+
+```metall
+{
+    mut sink = &0
+    let pp = &mut sink
+    {
+        mut local = 777
+        { pp.* = &local }
+    }
+}
+```
+
+```error
+test.met:6:18: reference escaping its allocation scope (via deref assignment)
+            mut local = 777
+            { pp.* = &local }
+                     ^^^^^^
+        }
+```
+
 **valid same scope ref**
 
 ```metall
@@ -1703,6 +1724,285 @@ test.met:5:13: reference escaping its allocation scope (via mutation of outer va
             r = &i
                 ^^
         }
+```
+
+**for-in slice ref to element escapes via outer assignment**
+
+```metall
+{
+    mut x = 0
+    mut r = &x
+    for v in [1, 2, 3] {
+        r = &v
+    }
+}
+```
+
+```error
+test.met:5:13: reference escaping its allocation scope (via mutation of outer variable)
+        for v in [1, 2, 3] {
+            r = &v
+                ^^
+        }
+```
+
+**for &x binding escapes via outer assignment**
+
+```metall
+{
+    mut r = &0
+    for &x in [1, 2, 3] {
+        r = x
+    }
+}
+```
+
+```error
+test.met:4:9: reference escaping its allocation scope (via mutation of outer variable)
+        for &x in [1, 2, 3] {
+            r = x
+            ^^^^^
+        }
+```
+
+**for &mut x binding escapes via outer assignment**
+
+```metall
+{
+    mut arr = [1, 2, 3]
+    let s = arr[..]
+    mut r = &mut s[0]
+    for &mut x in s {
+        r = x
+    }
+}
+```
+
+```error
+test.met:6:9: reference escaping its allocation scope (via mutation of outer variable)
+        for &mut x in s {
+            r = x
+            ^^^^^
+        }
+```
+
+**for &x binding escapes via return**
+
+```metall
+{
+    fun first(s []Int, fb &Int) &Int {
+        for &x in s {
+            return x
+        }
+        fb
+    }
+}
+```
+
+```error
+test.met:4:20: reference escaping its allocation scope (via return)
+            for &x in s {
+                return x
+                       ^
+            }
+```
+
+**for &x binding escapes via outer struct field**
+
+```metall
+{
+    struct Box { p &Int }
+    mut b = Box(&0)
+    for &x in [1, 2, 3] {
+        b.p = x
+    }
+}
+```
+
+```error
+test.met:5:9: reference escaping its allocation scope (via mutation of outer variable)
+        for &x in [1, 2, 3] {
+            b.p = x
+            ^^^^^^^
+        }
+```
+
+**for &x binding escapes via nested block**
+
+```metall
+{
+    mut r = &0
+    for &x in [1, 2, 3] {
+        { r = x }
+    }
+}
+```
+
+```error
+test.met:4:11: reference escaping its allocation scope (via mutation of outer variable)
+        for &x in [1, 2, 3] {
+            { r = x }
+              ^^^^^
+        }
+```
+
+**for &x binding used only inside the loop is fine**
+
+```metall
+{
+    mut sum = 0
+    for &x in [1, 2, 3] {
+        sum = sum + x.*
+    }
+}
+```
+
+```error
+```
+
+**for &mut x writing through the ref inside the loop is fine**
+
+```metall
+{
+    mut arr = [1, 2, 3]
+    for &mut x in arr[..] {
+        x.* = 9
+    }
+}
+```
+
+```error
+```
+
+**for &x binding escapes via deref assignment**
+
+```metall
+{
+    mut sink = &0
+    let pp = &mut sink
+    for &x in [1, 2, 3] {
+        pp.* = x
+    }
+}
+```
+
+```error
+test.met:5:9: reference escaping its allocation scope (via deref assignment)
+        for &x in [1, 2, 3] {
+            pp.* = x
+            ^^^^^^^^
+        }
+```
+
+**for &x binding escapes via deref assignment from a nested block**
+
+```metall
+{
+    mut sink = &0
+    let pp = &mut sink
+    for &x in [1, 2, 3] {
+        { pp.* = x }
+    }
+}
+```
+
+```error
+test.met:5:11: reference escaping its allocation scope (via deref assignment)
+        for &x in [1, 2, 3] {
+            { pp.* = x }
+              ^^^^^^^^
+        }
+```
+
+**for &x ref to element field escapes via outer assignment**
+
+```metall
+{
+    struct P { a Int }
+    mut r = &0
+    for &p in [P(1), P(2)] {
+        r = &p.a
+    }
+}
+```
+
+```error
+test.met:5:13: reference escaping its allocation scope (via mutation of outer variable)
+        for &p in [P(1), P(2)] {
+            r = &p.a
+                ^^^^
+        }
+```
+
+**for &x ref to element field escapes via return**
+
+```metall
+{
+    struct P { a Int }
+    fun first(ps []P, fb &Int) &Int {
+        for &p in ps {
+            return &p.a
+        }
+        fb
+    }
+}
+```
+
+```error
+test.met:5:20: reference escaping its allocation scope (via return)
+            for &p in ps {
+                return &p.a
+                       ^^^^
+            }
+```
+
+**for &mut x writing through a field of the ref is fine**
+
+```metall
+{
+    struct P { a Int }
+    mut ps = [P(1), P(2)]
+    for &mut p in ps[..] {
+        p.a = p.a + 1
+    }
+}
+```
+
+```error
+```
+
+**for &mut x over a mutable array binding escapes via outer assignment**
+
+```metall
+{
+    mut arr = [1, 2, 3]
+    mut r = &mut arr[0]
+    for &mut x in arr {
+        r = x
+    }
+}
+```
+
+```error
+test.met:5:9: reference escaping its allocation scope (via mutation of outer variable)
+        for &mut x in arr {
+            r = x
+            ^^^^^
+        }
+```
+
+**for &mut x over a mutable array writing through the ref is fine**
+
+```metall
+{
+    mut arr = [1, 2, 3]
+    for &mut x in arr {
+        x.* = x.* + 1
+    }
+}
+```
+
+```error
 ```
 
 **match arm ref escapes via result**

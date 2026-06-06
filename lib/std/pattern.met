@@ -96,8 +96,8 @@ pub struct Pred<T> {
 }
 
 pub fun Pred.lfind_pattern(p Pred, haystack []T) ?Range<Int> {
-    for i in 0..haystack.len {
-        if p.predicate(haystack[i]) {
+    for elem, i in haystack {
+        if p.predicate(elem) {
             return Range(i, i + 1)
         }
     }

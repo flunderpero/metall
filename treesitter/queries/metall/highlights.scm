@@ -145,6 +145,7 @@
 ; >>> For-in binding
 
 (for_expression binding: (identifier) @variable)
+(for_expression index: (identifier) @variable)
 
 ; >>> Match bindings
 

@@ -121,8 +121,7 @@ fun main() !void {
     _ = try run(["mkdir", "-p", ".build"][..], @local)
     mut last_group = ""
     mut failed = 0
-    for i in 0..benchmarks.len {
-        let b = benchmarks[i]
+    for b in benchmarks {
         let name = if b.name.eq("") { b.group } else { b.group.concat("/", @local).concat(b.name, @local) }
         if not name.starts_with(filter) {
             io.print("[")

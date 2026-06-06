@@ -120,10 +120,10 @@ pub fun Map.del(m &mut Map, key K) Bool {
 
 pub fun Map.grow(m &mut Map, capacity Int) void {
     let new_data = m.@a.slice<MapSlot<K, V>>(capacity, false)
-    for i in 0..m.data.len {
-        match m.data[i] {
+    for slot in m.data {
+        match slot {
         case Bool:
-        else entry: 
+        else entry:
             _ = set(new_data, entry.key, entry.value)
         }
     }

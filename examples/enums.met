@@ -123,8 +123,8 @@ fun main() void {
     -- `variants<T>()` yields every variant of a closed enum as a slice.
     let sb = StrBuilder.new(64, @a)
     let all = enums.variants<Color>()
-    for i in 0..all.len {
-        sb.str(all[i].name)
+    for color in all {
+        sb.str(color.name)
         sb.str(" ")
     }
     io.println(sb.as_str())

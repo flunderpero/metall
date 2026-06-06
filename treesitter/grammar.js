@@ -750,9 +750,11 @@ module.exports = grammar({
         seq("for", field("condition", $._expression), field("body", $.block)),
         seq(
           "for",
+          optional(seq("&", optional("mut"))),
           field("binding", $.identifier),
+          optional(seq(",", field("index", $.identifier))),
           "in",
-          field("range", $.range),
+          field("iterable", choice($.range, $._expression)),
           field("body", $.block),
         ),
       ),

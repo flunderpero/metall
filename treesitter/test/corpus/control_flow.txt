@@ -129,7 +129,7 @@ fun f() void { for i in 0..10 { print_int(i) } }
     body: (block
       (for_expression
         binding: (identifier)
-        range: (range
+        iterable: (range
           lo: (integer_literal)
           hi: (integer_literal))
         body: (block
@@ -154,7 +154,7 @@ fun f() void { for i in 0..=10 { print_int(i) } }
     body: (block
       (for_expression
         binding: (identifier)
-        range: (range
+        iterable: (range
           lo: (integer_literal)
           hi: (integer_literal))
         body: (block
@@ -179,9 +179,103 @@ fun f() void { for i in start..end { print_int(i) } }
     body: (block
       (for_expression
         binding: (identifier)
-        range: (range
+        iterable: (range
           lo: (identifier)
           hi: (identifier))
+        body: (block
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list
+              (identifier))))))))
+
+================================================================================
+For-in slice
+================================================================================
+
+fun f() void { for x in xs { print_int(x) } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        binding: (identifier)
+        iterable: (identifier)
+        body: (block
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list
+              (identifier))))))))
+
+================================================================================
+For-in slice with index
+================================================================================
+
+fun f() void { for x, i in xs { print_int(x) } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        binding: (identifier)
+        index: (identifier)
+        iterable: (identifier)
+        body: (block
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list
+              (identifier))))))))
+
+================================================================================
+For-in by reference
+================================================================================
+
+fun f() void { for &x in xs { print_int(x) } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        binding: (identifier)
+        iterable: (identifier)
+        body: (block
+          (call_expression
+            callee: (identifier)
+            arguments: (argument_list
+              (identifier))))))))
+
+================================================================================
+For-in by mutable reference with index
+================================================================================
+
+fun f() void { for &mut x, i in xs { print_int(x) } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    return_type: (simple_type)
+    body: (block
+      (for_expression
+        binding: (identifier)
+        index: (identifier)
+        iterable: (identifier)
         body: (block
           (call_expression
             callee: (identifier)

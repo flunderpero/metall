@@ -396,8 +396,13 @@ func (If) isKind() {}
 
 type For struct {
 	Binding *Name
-	Cond    *NodeID
-	Body    NodeID
+	// Ref/Mut describe the element binding: `&x` sets Ref, `&mut x` sets Ref+Mut.
+	Ref bool
+	Mut bool
+	// Index is the optional loop-counter binding in `for x, i in xs`.
+	Index *Name
+	Cond  *NodeID
+	Body  NodeID
 }
 
 func (For) isKind() {}
@@ -554,8 +559,8 @@ func (a *AST) NewWhen(cases []WhenCase, else_ *NodeID, span base.Span) NodeID {
 	return a.node(When{Cases: cases, Else: else_}, span)
 }
 
-func (a *AST) NewFor(binding *Name, cond *NodeID, body NodeID, span base.Span) NodeID {
-	return a.node(For{Binding: binding, Cond: cond, Body: body}, span)
+func (a *AST) NewFor(binding *Name, ref, mut bool, index *Name, cond *NodeID, body NodeID, span base.Span) NodeID {
+	return a.node(For{Binding: binding, Ref: ref, Mut: mut, Index: index, Cond: cond, Body: body}, span)
 }
 
 func (a *AST) NewBreak(span base.Span) NodeID {
@@ -1234,6 +1239,15 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	case For:
 		if kind.Binding != nil {
 			addAttr("binding", kind.Binding.Name)
+		}
+		if kind.Ref {
+			addAttr("ref", "true")
+		}
+		if kind.Mut {
+			addAttr("mut", "true")
+		}
+		if kind.Index != nil {
+			addAttr("index", kind.Index.Name)
 		}
 		if !children {
 			if kind.Cond != nil {

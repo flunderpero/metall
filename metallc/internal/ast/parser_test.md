@@ -1978,16 +1978,70 @@ For(binding=x)
     exprs=Int(value=1)
 ```
 
-**For in missing dotdot should fail**
+**For in slice literal**
+
+```metall
+for x in [1, 2, 3] { 1 }
+```
+
+```ast
+For(binding=x)
+  cond=ArrayLiteral(len=3)
+    first=Int(value=1)
+  body=Block()
+    exprs=Int(value=1)
+```
+
+**For in with index binding**
+
+```metall
+for x, i in xs { 1 }
+```
+
+```ast
+For(binding=x,index=i)
+  cond=Ident(name="xs")
+  body=Block()
+    exprs=Int(value=1)
+```
+
+**For in over a plain expression parses (iterability is a type error)**
 
 ```metall
 for x in 0 { 1 }
 ```
 
-```error
-test.met:1:10: expected range expression (e.g. 0..10)
-    for x in 0 { 1 }
-             ^
+```ast
+For(binding=x)
+  cond=Int(value=0)
+  body=Block()
+    exprs=Int(value=1)
+```
+
+**For in by reference**
+
+```metall
+for &x in xs { 1 }
+```
+
+```ast
+For(binding=x,ref=true)
+  cond=Ident(name="xs")
+  body=Block()
+    exprs=Int(value=1)
+```
+
+**For in by mutable reference with index**
+
+```metall
+for &mut x, i in xs { 1 }
+```
+
+```ast
+For(binding=x,ref=true,mut=true,index=i)
+  cond=Ident(name="xs")
+  body=Block()
+    exprs=Int(value=1)
 ```
 
 **For in inclusive range without hi should fail**

@@ -655,17 +655,61 @@ func (e *Engine) checkWhen(when ast.When, typeHint *TypeID) (TypeID, TypeStatus)
 	return *resultType, TypeOK
 }
 
-func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) {
+func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) { //nolint:funlen
 	if for_.Binding != nil {
-		range_ := base.Cast[ast.Range](e.ast.Node(*for_.Cond).Kind)
-		if range_.Lo == nil || range_.Hi == nil {
-			e.diag(e.ast.Node(*for_.Cond).Span, "for-in range requires both lower and upper bound")
-			return InvalidTypeID, TypeFailed
+		cond := e.ast.Node(*for_.Cond)
+		if range_, ok := cond.Kind.(ast.Range); ok {
+			if range_.Lo == nil || range_.Hi == nil {
+				e.diag(cond.Span, "for-in range requires both lower and upper bound")
+				return InvalidTypeID, TypeFailed
+			}
+			if for_.Index != nil {
+				e.diag(for_.Index.Span, "for-in over a range cannot bind an index")
+				return InvalidTypeID, TypeFailed
+			}
+			if for_.Ref {
+				e.diag(for_.Binding.Span, "for-in over a range cannot bind a reference")
+				return InvalidTypeID, TypeFailed
+			}
+			if _, status := e.Query(*for_.Cond); status.Failed() {
+				return InvalidTypeID, status
+			}
+			e.bind(for_.Body, for_.Binding.Name, false, e.intTyp, for_.Binding.Span, -1)
+		} else {
+			iterTypeID, status := e.Query(*for_.Cond)
+			if status.Failed() {
+				return InvalidTypeID, status
+			}
+			var elemTypeID TypeID
+			var elemMut bool
+			switch k := e.env.Type(iterTypeID).Kind.(type) {
+			case ArrayType:
+				elemTypeID = k.Elem
+				_, elemMut = e.isPlaceMutable(*for_.Cond)
+			case SliceType:
+				elemTypeID = k.Elem
+				elemMut = k.Mut
+			default:
+				e.diag(cond.Span, "cannot iterate over %s", e.env.TypeDisplay(iterTypeID))
+				return InvalidTypeID, TypeFailed
+			}
+			bindTypeID := elemTypeID
+			if for_.Ref {
+				if for_.Mut && !elemMut {
+					e.diag(for_.Binding.Span,
+						"`for &mut` requires a mutable slice ([]mut T) or a mutable array, got %s",
+						e.env.TypeDisplay(iterTypeID))
+					return InvalidTypeID, TypeFailed
+				}
+				bindTypeID = e.env.buildRefType(nodeID, elemTypeID, for_.Mut, for_.Binding.Span)
+			}
+			e.bind(for_.Body, for_.Binding.Name, false, bindTypeID, for_.Binding.Span, -1)
+			if for_.Index != nil {
+				// Bindings are keyed by their decl node, so the index reuses the
+				// iterand node to get a distinct BindingID from the element.
+				e.bind(*for_.Cond, for_.Index.Name, false, e.intTyp, for_.Index.Span, -1)
+			}
 		}
-		if _, status := e.Query(*for_.Cond); status.Failed() {
-			return InvalidTypeID, status
-		}
-		e.bind(for_.Body, for_.Binding.Name, false, e.intTyp, for_.Binding.Span, -1)
 	} else if for_.Cond != nil {
 		condType, status := e.Query(*for_.Cond)
 		if status.Failed() {

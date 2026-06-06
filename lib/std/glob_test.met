@@ -66,8 +66,8 @@ fun GitSut.new() !GitSut {
     try os.shell_checked(["git", "config", "core.ignorecase", "false"][..], @local)
 	-- Tell Git to print unicode characters as-is.
 	try os.shell_checked(["git", "config", "core.quotepath", "false"][..], @local)
-    for i in 0..paths.len {
-        let full_path = dir.join(fs.Path.from_str(paths[i]), @local)
+    for path in paths {
+        let full_path = dir.join(fs.Path.from_str(path), @local)
     }
     GitSut(dir)
 }

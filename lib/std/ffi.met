@@ -181,8 +181,8 @@ pub fun FunPtr.call(f FunPtr) void {
 pub fun cstr(b []U8, @a Arena) Ptr<U8> {
     mut s = unsafe @a.slice_uninit<U8>(b.len + 1)
     -- We don't use `s.set(b)` to not depend on the full prelude.
-    for i in 0..b.len {
-        s[i] = b[i]
+    for byte, i in b {
+        s[i] = byte
     }
     s[s.len - 1] = 0
     slice_ptr<U8>(s)
@@ -192,8 +192,8 @@ pub fun cstr(b []U8, @a Arena) Ptr<U8> {
 pub fun cstr_mut(b []U8, @a Arena) PtrMut<U8> {
     mut s = unsafe @a.slice_uninit<U8>(b.len + 1)
     -- We don't use `s.set(b)` to not depend on the full prelude.
-    for i in 0..b.len {
-        s[i] = b[i]
+    for byte, i in b {
+        s[i] = byte
     }
     s[s.len - 1] = 0
     slice_ptr_mut<U8>(s)

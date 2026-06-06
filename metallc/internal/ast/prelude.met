@@ -297,15 +297,15 @@ pub fun Str.from_utf8_lossy(data []U8, @a Arena) Str {
         let sequence_start = index
         let valid = Str.check_rune_at(data, &mut index)
         let bytes = if valid { data[sequence_start..index] } else { replacement_rune }
-        for i in 0..bytes.len {
+        for b in bytes {
             if copy_index == copy.len {
                 mut copy2 = unsafe @a.slice_uninit<U8>(copy.len + 32)
-                for c in 0..copy.len {
-                    copy2[c] = copy[c]
+                for cb, c in copy {
+                    copy2[c] = cb
                 }
                 copy = copy2
             }
-            copy[copy_index] = bytes[i]
+            copy[copy_index] = b
             copy_index += 1
         }
 	}
@@ -378,11 +378,11 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
 
 pub fun Str.concat(s Str, other Str, @a Arena) Str {
     let data = unsafe @a.slice_uninit<U8>(s.data.len + other.data.len)
-    for i in 0..s.data.len {
-        data[i] = s.data[i]
+    for b, i in s.data {
+        data[i] = b
     }
-    for j in 0..other.data.len {
-        data[s.data.len + j] = other.data[j]
+    for b, j in other.data {
+        data[s.data.len + j] = b
     }
     Str(data)
 }
@@ -474,8 +474,8 @@ pub fun Str.as_bytes(s Str) []U8 {
 
 pub fun Str.hash(s Str) U64 {
     mut state = U64(0)
-    for i in 0..s.data.len {
-        state ^= s.data[i].to_u64()
+    for b in s.data {
+        state ^= b.to_u64()
         state *%= 0x0517C_C1B7_2722_0A95
     }
     state
@@ -721,11 +721,11 @@ pub fun StrBuilder.slice<T HasFmt>(
         return void
     }
     let start = sb.len
-    for i in 0..v.len {
+    for e, i in v {
         if i > 0 {
             sb.str(sep)
         }
-        sb.fmt<T>(v[i])
+        sb.fmt<T>(e)
         if max_len > 0 and sb.len - start > max_len - 3 {
             sb.len = start + max_len - 3
             -- walk back to the start of a rune
@@ -830,8 +830,8 @@ pub fun Slice.lfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
     -- todo(perf): This is a highly naive implementation.
     for i in 0..(haystack.len - needle.len + 1) {
         mut found = true
-        for j in 0..needle.len {
-            if not haystack[i+j].eq(needle[j]) {
+        for n, j in needle {
+            if not haystack[i+j].eq(n) {
                 found = false
                 break
             }
@@ -855,8 +855,8 @@ pub fun Slice.rfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
     mut i = haystack.len - needle.len
     for i >= 0 {
         mut found = true
-        for j in 0..needle.len {
-            if not haystack[i + j].eq(needle[j]) {
+        for n, j in needle {
+            if not haystack[i + j].eq(n) {
                 found = false
                 break
             }
@@ -1018,8 +1018,8 @@ pub fun Slice.starts_with<U HasEq>(s []U, other []U) Bool {
     if s.len < other.len {
         return false
     }
-    for i in 0..other.len {
-        if not s[i].eq(other[i]) {
+    for o, i in other {
+        if not s[i].eq(o) {
             return false
         }
     }
@@ -1031,8 +1031,8 @@ pub fun Slice.ends_with<U HasEq>(s []U, other []U) Bool {
         return false
     }
     let base = s.len - other.len
-    for i in 0..other.len {
-        if not s[i + base].eq(other[i]) {
+    for o, i in other {
+        if not s[i + base].eq(o) {
             return false
         }
     }
@@ -1041,14 +1041,13 @@ pub fun Slice.ends_with<U HasEq>(s []U, other []U) Bool {
 
 pub fun Slice.concat(first []T, others [][]T, @a Arena) []mut T {
     mut len = first.len
-    for i in 0..others.len {
-        len += others[i].len
+    for o in others {
+        len += o.len
     }
     mut new = unsafe @a.slice_uninit<T>(len)
     _ = new.set(first)
     mut out = first.len
-    for i in 0..others.len {
-        let s = others[i]
+    for s in others {
         _ = new[out..].set(s)
         out += s.len
     }
@@ -1065,8 +1064,8 @@ pub fun Slice.eq<U HasEq>(s []U, other []U) Bool {
     if s.len != other.len {
         return false
     }
-    for i in 0..s.len {
-        if not s[i].eq(other[i]) {
+    for e, i in s {
+        if not e.eq(other[i]) {
             return false
         }
     }
@@ -1106,8 +1105,8 @@ pub fun Slice.cmp<U HasCmp>(s []U, other []U) Int {
         case s.len > other.len: return -1
         case s.len < other.len: return 1
     }
-    for i in 0..s.len {
-        let res = s[i].cmp(other[i])
+    for e, i in s {
+        let res = e.cmp(other[i])
         if res != 0 {
             return res
         }
@@ -1120,8 +1119,8 @@ pub fun Slice.ltrim<U HasEq>(s []U, elems []U) []U {
     mut i = 0
     for i < s.len {
         mut found = false
-        for j in 0..elems.len {
-            if s[i].eq(elems[j]) {
+        for e in elems {
+            if s[i].eq(e) {
                 found = true
                 break
             }
@@ -1139,8 +1138,8 @@ pub fun Slice.rtrim<U HasEq>(s []U, elems []U) []U {
     mut i = s.len - 1
     for i >= 0 {
         mut found = false
-        for j in 0..elems.len {
-            if s[i].eq(elems[j]) {
+        for e in elems {
+            if s[i].eq(e) {
                 found = true
                 break
             }
@@ -1167,8 +1166,7 @@ pub fun Slice.ltrim_utf8(s []U8, runes []Rune = [' ', '\t', '\n', '\r'][..]) []U
     mut data = s
     for data.len > 0 {
         mut matched_any = false
-        for j in 0..rbs.len {
-            let rb = rbs[j]
+        for rb in rbs {
             if data.len >= rb.len and data[0..rb.len].eq(rb.bytes[0..rb.len]) {
                 matched_any = true
                 data = data[rb.len..]
@@ -1195,8 +1193,7 @@ pub fun Slice.rtrim_utf8(s []U8, runes [] Rune = [' ', '\t', '\n', '\r'][..]) []
     mut data = s
     for data.len > 0 {
         mut matched_any = false
-        for j in 0..rbs.len {
-            let rb = rbs[j]
+        for rb in rbs {
             if data.len >= rb.len and data[data.len - rb.len..].eq(rb.bytes[0..rb.len]) {
                 matched_any = true
                 data = data[0..data.len - rb.len]
@@ -1490,8 +1487,8 @@ pub fun U64.from_ascii_str(s []U8, base Int = 10) !U64 {
     }
     let base_u64 = base.to_u64_wrapping()
     mut result U64 = 0
-    for i in 0..s.len {
-        mut digit = s[i].to_u64()
+    for b in s {
+        mut digit = b.to_u64()
         if base_u64 == 16 {
             if digit >= U64('A') and digit <= U64('F') {
                 digit = digit - U64('A') + 10

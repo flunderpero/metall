@@ -283,6 +283,32 @@ func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 	if storageTaint != 0 {
 		taints = taints.Merge(TaintSet{storageTaint})
 	}
+	// A `&place` that projects through a reference (`&p.field`, `&p[i]`, `&p.*`)
+	// points into that reference's referent, so it inherits the reference's
+	// confinement taints. Without this a noescape element ref could leak via
+	// `&x.field` or `&x.*`.
+	root := ref.Target
+	for {
+		switch inner := a.ast.Node(root).Kind.(type) {
+		case ast.FieldAccess:
+			root = inner.Target
+			continue
+		case ast.Index:
+			root = inner.Target
+			continue
+		case ast.Deref:
+			root = inner.Expr
+			continue
+		}
+		break
+	}
+	if root != ref.Target {
+		if rootType := a.env.TypeOfNode(root); rootType != nil {
+			if _, ok := rootType.Kind.(RefType); ok {
+				taints = taints.Merge(a.flow(root).Taints)
+			}
+		}
+	}
 	for _, t := range taints {
 		if _, ok := a.taintOrigin[t]; !ok {
 			a.taintOrigin[t] = nodeID
@@ -785,7 +811,24 @@ func (a *LifetimeCheck) analyzeWhen(nodeID ast.NodeID, when ast.When) {
 func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
 	if forNode.Binding != nil {
 		forScope := a.scopeState(forNode.Body)
-		forScope.Vars[forNode.Binding.Name] = &VarTaint{nodeID, forScope.ScopeTaint, Flow{}}
+		bindFlow := Flow{}
+		if forNode.Ref {
+			// Model the element reference as `&elem` where elem is a fresh value
+			// local in the body block scope. The reference machinery then treats it
+			// as noescape body-local: writing through it (`x.f = v`) stays local,
+			// but moving the ref (or `&x.field`) out of the loop is an escape.
+			bodyScope := a.scopeByID(a.scopeGraph.IntroducedScope(forNode.Body).ID)
+			elemName := forNode.Binding.Name + " <elem>" // space: never a real identifier
+			bodyScope.Vars[elemName] = &VarTaint{nodeID, bodyScope.ScopeTaint, Flow{}}
+			bindFlow = Flow{
+				Taints:   TaintSet{bodyScope.ScopeTaint},
+				PointsTo: AliasSet{{bodyScope.ID, elemName}},
+			}
+		}
+		forScope.Vars[forNode.Binding.Name] = &VarTaint{nodeID, forScope.ScopeTaint, bindFlow}
+		if forNode.Index != nil {
+			forScope.Vars[forNode.Index.Name] = &VarTaint{nodeID, forScope.ScopeTaint, Flow{}}
+		}
 	}
 	a.ast.Walk(nodeID, a.Check)
 	outerScope := a.scopeGraph.NodeScope(nodeID)
@@ -1065,13 +1108,18 @@ func (a *LifetimeCheck) analyzeDerefAssign(nodeID ast.NodeID, deref ast.Deref, r
 	localScope := a.scopeState(nodeID)
 	for _, target := range targets {
 		targetScope := a.scopeByID(target.ScopeID)
-		if targetScope != localScope && rhs.Taints.ContainsAny(localScope.LocalTaints) {
-			a.diagEscape(
-				nodeID,
-				rhs.Taints,
-				localScope,
-				"via deref assignment",
-			)
+		// The write stores rhs into the target's (longer-lived) storage. rhs
+		// escapes if it carries a taint local to any scope between the assignment
+		// and the target's scope, so walk up like analyzeReturn rather than
+		// checking only the immediate scope.
+		if targetScope != localScope {
+			for scope := a.scopeGraph.NodeScope(nodeID); scope != nil && scope.ID != target.ScopeID; scope = scope.Parent {
+				ss := a.scopeByID(scope.ID)
+				if rhs.Taints.ContainsAny(ss.LocalTaints) {
+					a.diagEscape(nodeID, rhs.Taints, ss, "via deref assignment")
+					break
+				}
+			}
 		}
 		if vt, ok := targetScope.Vars[target.Name]; ok {
 			vt.Flow = rhs

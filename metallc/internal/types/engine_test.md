@@ -4886,6 +4886,198 @@ Block: void
     Block: void
 ```
 
+**For in slice binding is the element type**
+
+```metall
+{ for x in ["a", "b"] { let y = x } }
+```
+
+```types
+Block: void
+  For: void
+    ArrayLiteral: [2]Str
+      String: Str
+      String: Str
+    Block: void
+      Var: void
+        Ident: Str
+```
+
+**For in slice with index binds element and Int**
+
+```metall
+{ for x, i in [10, 20] { let y = x + i } }
+```
+
+```types
+Block: void
+  For: void
+    ArrayLiteral: [2]Int
+      Int: Int
+      Int: Int
+    Block: void
+      Var: void
+        Binary: Int
+          Ident: Int
+          Ident: Int
+```
+
+**For in over a slice value**
+
+```metall
+{ let s = [1, 2, 3][..] for x in s { let y = x + 1 } }
+```
+
+```types
+Block: void
+  Var: void
+    SubSlice: []Int
+      ArrayLiteral: [3]Int
+        Int: Int
+        Int: Int
+        Int: Int
+      Range: void
+  For: void
+    Ident: []Int
+    Block: void
+      Var: void
+        Binary: Int
+          Ident: Int
+          Int: Int
+```
+
+**For in over a non-iterable is rejected**
+
+```metall
+{ for x in 0 { } }
+```
+
+```error
+test.met:1:12: cannot iterate over Int
+    { for x in 0 { } }
+               ^
+```
+
+**For in index binding on a range is rejected**
+
+```metall
+{ for x, i in 0..10 { } }
+```
+
+```error
+test.met:1:10: for-in over a range cannot bind an index
+    { for x, i in 0..10 { } }
+             ^
+```
+
+**For in by reference binds an immutable ref**
+
+```metall
+{ for &x in [1, 2, 3] { let y = x } }
+```
+
+```types
+Block: void
+  For: void
+    ArrayLiteral: [3]Int
+      Int: Int
+      Int: Int
+      Int: Int
+    Block: void
+      Var: void
+        Ident: &Int
+```
+
+**For in by mutable reference over a mutable slice**
+
+```metall
+{ mut arr = [1, 2, 3] for &mut x in arr[..] { let y = x } }
+```
+
+```types
+Block: void
+  Var: void
+    ArrayLiteral: [3]Int
+      Int: Int
+      Int: Int
+      Int: Int
+  For: void
+    SubSlice: []mut Int
+      Ident: [3]Int
+      Range: void
+    Block: void
+      Var: void
+        Ident: &mut Int
+```
+
+**For in mutable reference over a mutable array binds an &mut element**
+
+```metall
+{ mut arr = [1, 2, 3] for &mut x in arr { let y = x } }
+```
+
+```types
+Block: void
+  Var: void
+    ArrayLiteral: [3]Int
+      Int: Int
+      Int: Int
+      Int: Int
+  For: void
+    Ident: [3]Int
+    Block: void
+      Var: void
+        Ident: &mut Int
+```
+
+**For in mutable reference over an immutable slice is rejected**
+
+```metall
+{ for &mut x in [1, 2, 3][..] { } }
+```
+
+```error
+test.met:1:12: `for &mut` requires a mutable slice ([]mut T) or a mutable array, got []Int
+    { for &mut x in [1, 2, 3][..] { } }
+               ^
+```
+
+**For in mutable reference over an immutable array binding is rejected**
+
+```metall
+{ let arr = [1, 2, 3] for &mut x in arr { } }
+```
+
+```error
+test.met:1:32: `for &mut` requires a mutable slice ([]mut T) or a mutable array, got [Int 3]
+    { let arr = [1, 2, 3] for &mut x in arr { } }
+                                   ^
+```
+
+**For in mutable reference over an array literal is rejected**
+
+```metall
+{ for &mut x in [1, 2, 3] { } }
+```
+
+```error
+test.met:1:12: `for &mut` requires a mutable slice ([]mut T) or a mutable array, got [Int 3]
+    { for &mut x in [1, 2, 3] { } }
+               ^
+```
+
+**For in reference over a range is rejected**
+
+```metall
+{ for &x in 0..3 { } }
+```
+
+```error
+test.met:1:8: for-in over a range cannot bind a reference
+    { for &x in 0..3 { } }
+           ^
+```
+
 ## Methods
 
 **Method call basic**

@@ -13,8 +13,8 @@ fun main() void {
         let slice = sut.as_slice()
         try test.eq(3, sut.len)
         try test.eq(3, slice.len)
-        for i in 0..slice.len {
-            try test.eq(i + 1, slice[i])
+        for val, i in slice {
+            try test.eq(i + 1, val)
             try test.eq(i + 1, sut.get(i))
         }
         sut.set(1, 42)

@@ -1176,7 +1176,11 @@ func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
 
 func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 	if forNode.Binding != nil {
-		g.genForIn(id, forNode)
+		if _, ok := g.ast.Node(*forNode.Cond).Kind.(ast.Range); ok {
+			g.genForInRange(id, forNode)
+		} else {
+			g.genForInSlice(id, forNode)
+		}
 		return
 	}
 	labelStart := g.label("for", id)
@@ -1198,7 +1202,7 @@ func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 	g.setCode(id, voidValue)
 }
 
-func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
+func (g *IRFunGen) genForInRange(id ast.NodeID, forNode ast.For) {
 	range_ := base.Cast[ast.Range](g.ast.Node(*forNode.Cond).Kind)
 	g.Gen(*range_.Lo)
 	g.Gen(*range_.Hi)
@@ -1235,6 +1239,84 @@ func (g *IRFunGen) genForIn(id ast.NodeID, forNode ast.For) {
 	incrReg := g.reg()
 	g.write("%s = add i64 %s, 1", incrReg, nextReg)
 	g.write("store i64 %s, ptr %s", incrReg, counterReg)
+	g.write("br label %%%s", labelCond)
+	g.writeLabel(labelEnd)
+	g.setCode(id, voidValue)
+}
+
+func (g *IRFunGen) genForInSlice(id ast.NodeID, forNode ast.For) { //nolint:funlen
+	g.Gen(*forNode.Cond)
+	targetReg := g.lookupCode(*forNode.Cond)
+	targetType := g.typeOfNode(*forNode.Cond)
+	var basePtrReg, lenReg string
+	var elemTypeID types.TypeID
+	switch kind := targetType.Kind.(type) {
+	case types.ArrayType:
+		elemTypeID = kind.Elem
+		arrIRType := g.irType(targetType.ID)
+		basePtrReg = g.reg()
+		g.write("%s = getelementptr %s, %s* %s, i64 0, i64 0", basePtrReg, arrIRType, arrIRType, targetReg)
+		lenReg = fmt.Sprintf("%d", kind.Len)
+	case types.SliceType:
+		elemTypeID = kind.Elem
+		basePtrReg = g.reg()
+		g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 0", basePtrReg, targetReg)
+		g.write("%s = load ptr, ptr %s_field", basePtrReg, basePtrReg)
+		lenReg = g.reg()
+		g.write("%s_field = getelementptr {ptr, i64}, ptr %s, i32 0, i32 1", lenReg, targetReg)
+		g.write("%s = load i64, ptr %s_field", lenReg, lenReg)
+	default:
+		panic(base.Errorf("genForSlice: unsupported target type %T", targetType.Kind))
+	}
+	elemIRType := g.irType(elemTypeID)
+
+	idxReg := g.reg()
+	g.writeAlloca(idxReg, "i64")
+	g.write("store i64 0, ptr %s", idxReg)
+	// A `&x` / `&mut x` binding holds a pointer into the storage; a plain `x`
+	// binding holds a per-iteration copy of the element.
+	xReg := g.reg()
+	xType := elemIRType
+	if forNode.Ref {
+		xType = "ptr"
+	}
+	g.writeAlloca(xReg, xType)
+	g.setSymbol(ast.BindingID(forNode.Body), forNode.Binding.Name, xReg, xType)
+	if forNode.Index != nil {
+		g.setSymbol(ast.BindingID(*forNode.Cond), forNode.Index.Name, idxReg, "i64")
+	}
+
+	labelCond := g.label("for", id)
+	labelBody := g.label("body", id)
+	labelIncr := g.label("incr", id)
+	labelEnd := g.label("endfor", id)
+	g.write("br label %%%s", labelCond)
+	g.writeLabel(labelCond)
+	iReg := g.reg()
+	g.write("%s = load i64, ptr %s", iReg, idxReg)
+	condReg := g.reg()
+	g.write("%s = icmp slt i64 %s, %s", condReg, iReg, lenReg)
+	g.write("br i1 %s, label %%%s, label %%%s", condReg, labelBody, labelEnd)
+	g.writeLabel(labelBody)
+	elemPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i64 %s", elemPtr, elemIRType, basePtrReg, iReg)
+	if forNode.Ref {
+		g.write("store ptr %s, ptr %s", elemPtr, xReg)
+	} else {
+		g.storeValue(g.loadValue(elemPtr, elemTypeID), xReg, elemTypeID)
+	}
+	g.loopStack = append(g.loopStack, LoopLabels{labelIncr, labelEnd, len(g.arenaRegStack)})
+	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
+	g.Gen(forNode.Body)
+	g.write("br label %%%s", labelIncr)
+	g.writeLabel(labelIncr)
+	nextReg := g.reg()
+	g.write("%s = load i64, ptr %s", nextReg, idxReg)
+	incrReg := g.reg()
+	// Plain add, no overflow check: the index only ever reaches len, which is
+	// itself an i64, so the increment can never overflow.
+	g.write("%s = add i64 %s, 1", incrReg, nextReg)
+	g.write("store i64 %s, ptr %s", incrReg, idxReg)
 	g.write("br label %%%s", labelCond)
 	g.writeLabel(labelEnd)
 	g.setCode(id, voidValue)
