@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -37,18 +38,16 @@ Usage:
 	}
 	switch flag.Arg(0) {
 	case "build":
-		opts, source := parseCommand("build")
+		opts, source, errorLimit := parseCommand("build")
 		err := compiler.Compile(context.Background(), source, opts)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to build:", err)
-			os.Exit(1)
+			reportError("failed to build:", err, errorLimit)
 		}
 	case "run":
-		opts, source := parseCommand("run")
+		opts, source, errorLimit := parseCommand("run")
 		exitCode, output, err := compiler.CompileAndRun(context.Background(), source, opts, false)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to run:", err)
-			os.Exit(1)
+			reportError("failed to run:", err, errorLimit)
 		}
 		fmt.Print(output)
 		os.Exit(exitCode)
@@ -59,6 +58,31 @@ Usage:
 	}
 }
 
+// reportError prints err to stderr and exits. Compiler diagnostics are
+// truncated to errorLimit entries (errorLimit <= 0 prints all of them),
+// followed by a summary of how many were hidden.
+func reportError(prefix string, err error, errorLimit int) {
+	var diags base.Diagnostics
+	if !errors.As(err, &diags) {
+		fmt.Fprintln(os.Stderr, prefix, err)
+		os.Exit(1)
+	}
+	hidden := 0
+	if errorLimit > 0 && len(diags) > errorLimit {
+		hidden = len(diags) - errorLimit
+		diags = diags[:errorLimit]
+	}
+	fmt.Fprintln(os.Stderr, prefix, diags.String())
+	if hidden > 0 {
+		plural := ""
+		if hidden > 1 {
+			plural = "s"
+		}
+		fmt.Fprintf(os.Stderr, "... %d more message%s (run with '--error-limit n' to see more)\n", hidden, plural)
+	}
+	os.Exit(1)
+}
+
 type tagFlags []string
 
 func (f *tagFlags) String() string { return fmt.Sprintf("%v", *f) }
@@ -67,11 +91,12 @@ func (f *tagFlags) Set(value string) error {
 	return nil
 }
 
-func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolint:funlen
+func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //nolint:funlen
 	opts := compiler.NewCompileOptsWithDefaults()
 	var includes includeFlags
 	var tags tagFlags
 	var noErrtrace bool
+	var errorLimit int
 	flags := flag.NewFlagSet(command, flag.ExitOnError)
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: metallc %s [flags] <file.met>\n\n", command)
@@ -127,6 +152,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 	flags.IntVar(&opts.ArenaPageMinSize, "arena-min", 0, "arena min overflow page size")
 	flags.IntVar(&opts.ArenaPageMaxSize, "arena-max", 0, "arena max overflow page size")
 	flags.BoolVar(&noErrtrace, "no-errtrace", false, "disable automatic error return traces (on by default)")
+	flags.IntVar(&errorLimit, "error-limit", 1, "maximum number of diagnostics to print, 0 for no limit")
 	if err := flags.Parse(flag.Args()[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "failed to parse flags:", err)
 		os.Exit(1)
@@ -156,5 +182,5 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source) { //nolin
 	}
 	moduleName := compiler.ModuleNameFromPath(fileName, includes)
 	source := base.NewSource(fileName, moduleName, true, []rune(string(src)))
-	return opts, source
+	return opts, source, errorLimit
 }
