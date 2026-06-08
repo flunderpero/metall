@@ -1,0 +1,85 @@
+use std.test
+use std.ffi
+use std.mem
+use std.io
+
+fun main() void {
+    let @local = Arena()
+    let pool_suite = test.Suite.new("Pool", @local)
+    pool_suite.test("happy path: primitive", fun() !void {
+        let @local = Arena()
+        let sut = mem.Pool.new<Int>(32, @local)
+
+        let handle = try sut.alloc(1)
+
+        let ref = try handle.get().or_err(test.AssertErr.mismatch)
+        try test.eq(1, ref.*)
+        ref.* = 123
+        try test.eq(123, ref.*)
+
+        -- Get a second reference, should be the same as the first one.
+        let ref2 = try handle.get().or_err(test.AssertErr.mismatch)
+        try test.eq(ffi.ref_ptr<Int>(ref).as_u64(), ffi.ref_ptr<Int>(ref2).as_u64())
+
+        -- Freeing the handle should invalidate it.
+        handle.free()
+        try test.eq(true, handle.get().is_none())
+    })
+    pool_suite.test("happy path: struct", fun() !void {
+        let @local = Arena()
+        struct Point {
+            x Int
+            y Int
+        }
+        let sut = mem.Pool.new<Point>(32, @local)
+
+        let handle = try sut.alloc(Point(1, 2))
+        let ref = try handle.get().or_err(test.AssertErr.mismatch)
+        try test.eq(1, ref.*.x)
+        try test.eq(2, ref.*.y)
+        ref.*.x = 100
+        ref.*.y = 200
+        try test.eq(100, ref.*.x)
+        try test.eq(200, ref.*.y)
+
+        let ref2 = try handle.get().or_err(test.AssertErr.mismatch)
+        try test.eq(100, ref2.*.x)
+        try test.eq(200, ref2.*.y)
+
+        ref.* = Point(1000, 2000)
+        try test.eq(1000, ref2.*.x)
+        try test.eq(2000, ref2.*.y)
+    })
+    pool_suite.test("reference leak", fun() !void {
+        let @local = Arena()
+        let sut = mem.Pool.new<Int>(32, @local)
+
+        let handle = try sut.alloc(1)
+        let ref = try handle.get().or_err(test.AssertErr.mismatch)
+
+        -- Free the handle and acquire a new one: 
+        -- Existing references should still be *valid* but now point to 
+        -- the new value.
+        handle.free()
+        let b = try sut.alloc(2)
+        let b_ref = try b.get().or_err(test.AssertErr.mismatch)
+        try test.eq(2, b_ref.*)
+
+        -- This is truly a pitfall: references returned by `PoolHandle.get()`
+        -- are valid for the current scope only (they are returned noescape)
+        -- but releasing the handle and acquiring a new one while the reference
+        -- still lives, gives you the new value.
+        try test.eq(2, ref.*)
+    })
+    pool_suite.test("exhaustion", fun() !void {
+        let @local = Arena()
+        let sut = mem.Pool.new<Int>(2, @local)
+
+        let a = try sut.alloc(1)
+        let b = try sut.alloc(2)
+        try test.err(sut.alloc(3), mem.PoolErr.exhausted)
+        b.free()
+        let c = try sut.alloc(4)
+    })
+    _ = pool_suite.run()
+}

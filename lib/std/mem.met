@@ -1,0 +1,81 @@
+use std.list
+
+pub enum PoolErr Err = exhausted
+
+--- A fixed sized memory pool. 
+
+    todo: Add dynamic resizing of the pool. Do this by splitting the backing arrays into
+          two dimensional arrays and let the handle index be two indexes. 
+          This way we don't need to re-allocate the backing slice preventing possible
+          stale ref bugs.
+---
+pub nocopy unsync struct Pool<T> {
+    @a Arena
+    slot_value []mut T
+    slot_gen []mut Int
+    free []mut Int
+    free_len Int
+}
+
+pub fun Pool.new(size Int, @a Arena) &mut Pool {
+    let slot_value = unsafe @a.slice_uninit<T>(size)
+    let slot_gen = @a.slice<Int>(size, 0)
+    let free = unsafe @a.slice_uninit<Int>(size)
+    for i in 0..size {
+        free[i] = i
+    }
+    @a.new(Pool(@a, slot_value, slot_gen, free, size))
+}
+
+--- Allocate a pool slot.
+
+    Return `PoolErr.exhausted` if the pool is full. ---
+pub fun Pool.alloc(p &mut Pool, value T) !PoolHandle<T> {
+    if p.free_len == 0 {
+        return PoolErr.exhausted
+    }
+    p.free_len -= 1
+    let index = p.free_len
+    p.slot_value[index] = value
+    let gen = p.slot_gen[index] + 1
+    p.slot_gen[index] = gen
+    PoolHandle(p, index, gen)
+}
+
+--- A handle to a pool value. ---
+pub unsync struct PoolHandle<T> {
+    pool &mut Pool<T>
+    index Int
+    gen Int
+}
+
+--- Return a mutable reference to the value.
+
+    The reference is only valid for the current scope to limit the possibilities
+    of misusing them. If you free the handle and acquire a new one during the 
+    lifetime of the returned reference, that reference will point to the new
+    handle. So don't do that. 
+
+    todo: We should be able to have a read-only Pool where this returns &T ---
+pub fun PoolHandle.get(ph PoolHandle) noescape ?&mut T {
+    let slot_gen = ph.pool.slot_gen[ph.index]
+    if slot_gen != ph.gen {
+        return None()
+    }
+    &mut ph.pool.slot_value[ph.index]
+}
+
+--- Release the handle back to the pool.
+
+    This function is idempotent and can be called multiple times. ---
+pub fun PoolHandle.free(ph PoolHandle) void {
+    let slot_gen = ph.pool.slot_gen[ph.index]
+    if slot_gen != ph.gen {
+        -- Already freed.
+        return void
+    }
+    ph.pool.slot_gen[ph.index] += 1
+    ph.pool.free[ph.pool.free_len] = ph.index
+    ph.pool.free_len += 1
+}
+
