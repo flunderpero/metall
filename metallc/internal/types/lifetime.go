@@ -1,23 +1,32 @@
 // Lifetime analysis prevents dangling references. A reference must not
-// outlive the allocation scope of its referent: stack refs must stay in
-// their block, heap refs must stay in the allocator's scope.
+// outlive the storage of its referent: stack refs must stay in their block,
+// heap refs must stay in the allocator's scope.
 //
-// The mechanism is taint propagation:
+// The model is a STORAGE DEREF CHAIN. Every value carries a Chain: chain[d] is
+// the set of scope taints whose STORAGE the value reaches after d derefs.
+// chain[0] is the value's own immediate borrow (for a ref, the slot it points
+// at). A scope taint identifies one lexical scope; inner scopes are shorter
+// lived. Heap is not special: `let @a = Arena()` in scope S makes allocations
+// from @a borrow S, so a heap value carries the arena's scope taint at depth 0.
 //
-//   - Each scope gets a unique TaintID (its "ScopeTaint").
-//   - Taking `&x` produces a ref that carries x's ScopeTaint.
-//   - Heap-allocated values (e.g. `new(@myalloc, Foo())`) don't carry a
-//     ScopeTaint because they outlive their declaring scope. Instead
-//     they carry the allocator's taint, so a ref to a heap value can
-//     escape the declaring function but not the allocator's scope.
-//   - Taints propagate through assignments, field writes, function calls.
-//   - When a value leaves a scope, we check if it carries that scope's
-//     taint. If so, it is an escape and we report a diagnostic.
+//   - Each scope gets a unique TaintID (its ScopeTaint).
+//   - `&x` PREPENDS {scope where x lives} to x's chain. For `mut z = &mut y`
+//     then `&z`, the chain is [{scope(z)}, {scope(y)}].
+//   - `x.*` DROPS the head: x.chain[1:]. The depth-d slot is chain[d].
+//   - A read of `x.f` carries the container's chain only if the result type
+//     contains a ref/alloc; a scalar read carries {}.
+//   - Writing `p.* = rhs` checks rhs against storageScopes(p.*), which is
+//     chain(p)[0] (where p points). `w.*.*` consults chain(w)[1], the depth-2
+//     slot, so the dangling write is caught at the exact depth.
+//   - Moving a value out of a scope (return, block result, capture) escapes
+//     if CarriedTaints (the union of all chain levels) contains a taint born
+//     in (local to) an exited scope.
 //
 // Key types:
 //
-//   - Flow: what an expression carries (a set of taints + a set of aliases).
-//   - VarTaint: per-variable state (its StorageTaint + its Flow).
+//   - TaintSet: scopes reached at one deref depth.
+//   - Chain: per-depth TaintSets; chain[d] is the depth-d storage.
+//   - VarTaint: per-variable state (its StorageTaint + its value Chain).
 //   - FunEffects: how a function's params flow into return / other params.
 package types
 
@@ -29,10 +38,25 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
+// A TaintID labels one source of borrowable STORAGE. A value "carries" a taint
+// when it might hold a reference into that storage; the whole analysis is just
+// bookkeeping of which taints flow where. Two kinds (both opaque integers):
+//
+//   - SCOPE taint: one per lexical scope (a block, function body, loop body),
+//     standing for storage that lives exactly as long as that scope. `mut a = 1`
+//     tags a slot with the enclosing scope's taint and `&a` borrows it. Inner
+//     scopes are shorter-lived, so a value carrying an inner scope's taint must
+//     not leave that scope, that leaving is the dangling-reference ESCAPE.
+//   - PARAM taint: one per reference-carrying function parameter, standing for
+//     caller-provided storage of UNKNOWN lifetime. It belongs to no scope, so it
+//     never escapes inside the body; whether it escapes is decided at call sites.
 type TaintID int
 
 func (t TaintID) String() string { return fmt.Sprintf("a%d", t) }
 
+// A TaintSet is the storage a value reaches at ONE deref depth (one level of a
+// Chain): `&a` reaches {scope(a)}; a value that could point at either of two
+// locals reaches {scope(x), scope(y)}.
 type TaintSet []TaintID
 
 func (t TaintSet) Merge(other TaintSet) TaintSet {
@@ -63,68 +87,118 @@ func (t TaintSet) Without(exclude TaintSet) TaintSet {
 	return result
 }
 
-// Alias identifies a variable that a reference may point to.
-//   - `let b = &a` --> b's PointsTo = [{scope(a), "a"}]
-//   - `let c = if cond { &a } else { &b }` --> c's PointsTo = [{..,"a"}, {..,"b"}]
-type Alias struct {
-	ScopeID ast.ScopeID
-	Name    string
-}
-
-type AliasSet []Alias
-
-func (r AliasSet) Merge(other AliasSet) AliasSet {
-	for _, target := range other {
-		if !slices.Contains(r, target) {
-			r = append(r, target)
-		}
-	}
-	return r
-}
-
-// Flow is the abstract value of an expression. It tracks which scope taints
-// the value carries and which variables it may alias (point to).
+// Chain is a value's storage by deref depth. chain[d] is the set of scopes
+// reached after dereferencing the value d times. chain[0] is the immediate
+// borrow (for a ref, the slot it points at).
 //
-//	let a = 1          --> flow(a) = {taints: {scope0}, pointsTo: {}}
-//	let b = &a         --> flow(&a) = {taints: {scope0}, pointsTo: {a}}
-//	let c = Foo(&a)    --> flow(Foo(&a)) merges all arg flows
-type Flow struct {
-	Taints   TaintSet
-	PointsTo AliasSet
+//	mut a = 1; &a       --> [{scope(a)}]
+//	mut z = &mut y; &z  --> [{scope(z)}, {scope(y)}]
+type Chain []TaintSet
+
+// Prepend builds `&x` from x's chain: the new head is the scope x lives in.
+//
+//	z.chain = [{scope(y)}]; (&z).chain = z.chain.Prepend({scope(z)})
+func (c Chain) Prepend(head TaintSet) Chain {
+	out := make(Chain, 0, len(c)+1)
+	out = append(out, head)
+	out = append(out, c...)
+	return out
 }
 
-func (f Flow) String() string {
-	return fmt.Sprintf("{taints=%s, pointsTo=%s}", f.Taints, f.PointsTo)
+// DropHead builds `x.*` from x's chain: drop the immediate borrow so chain[d]
+// becomes the depth-(d+1) storage of x.
+//
+//	w.chain = [{scope(z)}, {scope(y)}]; w.chain.DropHead() = [{scope(y)}]
+func (c Chain) DropHead() Chain {
+	if len(c) == 0 {
+		return nil
+	}
+	return slices.Clone(c[1:])
 }
 
-func (f Flow) Merge(o Flow) Flow {
-	return Flow{f.Taints.Merge(o.Taints), f.PointsTo.Merge(o.PointsTo)}
+// HeadTaintSet returns chain[0], the immediate storage a ref points at. An empty
+// chain (a scalar, borrowing nothing) yields {}.
+//
+//	storageScopes(Deref(p)) = chain(p).HeadTaintSet()
+func (c Chain) HeadTaintSet() TaintSet {
+	if len(c) == 0 {
+		return nil
+	}
+	return c[0]
+}
+
+// Merge unions two chains per depth, padding the shorter with {}. Used to
+// accumulate a write into a variable and to join if/match arms.
+//
+//	[{a}].Merge([{b},{c}]) = [{a,b}, {c}]
+func (c Chain) Merge(other Chain) Chain {
+	n := max(len(c), len(other))
+	out := make(Chain, n)
+	for i := range out {
+		var level TaintSet
+		if i < len(c) {
+			level = level.Merge(c[i])
+		}
+		if i < len(other) {
+			level = level.Merge(other[i])
+		}
+		out[i] = level
+	}
+	return out
+}
+
+// CarriedTaints flattens a chain into the union of every depth's scopes: the
+// conservative total reach of the value. Used for escape membership (block
+// result, return, capture) and as the rhs side of the write rule.
+//
+//	[{scope(z)}, {scope(y)}].CarriedTaints() = {scope(z), scope(y)}
+func (c Chain) CarriedTaints() TaintSet {
+	var out TaintSet
+	for _, level := range c {
+		out = out.Merge(level)
+	}
+	return out
+}
+
+// Without removes the given taints from every depth of a chain. Used to strip a
+// block's local scope taints from the value that leaves the block.
+func (c Chain) Without(exclude TaintSet) Chain {
+	out := make(Chain, len(c))
+	for i, level := range c {
+		out[i] = level.Without(exclude)
+	}
+	return out
 }
 
 // VarTaint is the abstract state of a single named variable during analysis.
 //
-//	mut a = 123          --> VarTaint{StorageTaint: scope_taint, Flow: {}}
-//	let b = &a           --> VarTaint{StorageTaint: scope_taint, Flow: {taints: {scope_taint}, pointsTo: {a}}}
-//	let c = @arena Foo() --> VarTaint{StorageTaint: 0, Flow: {taints: {arena_taint}}}
+//	mut a = 123          --> VarTaint{StorageTaint: scope(a), Chain: []}
+//	let b = &a           --> VarTaint{StorageTaint: scope(b), Chain: [{scope(a)}]}
+//	let c = &mut b       --> VarTaint{StorageTaint: scope(c), Chain: [{scope(b)},{scope(a)}]}
+//	let d = @arena Foo() --> VarTaint{StorageTaint: scope(d), Chain: [{arena}]}
 type VarTaint struct {
 	DiagNode     ast.NodeID // Node to blame in escape diagnostics.
-	StorageTaint TaintID    // Taint of the scope that owns this variable's memory.
-	Flow         Flow       // Taints and aliases carried by references in this variable.
+	StorageTaint TaintID    // Taint of the scope that owns this variable's slot.
+	Chain        Chain      // Per-depth storage the variable's value reaches.
 }
 
-// ScopeState tracks all variable taints and the scope's own taint for one
-// lexical scope. The ScopeTaint is added to LocalTaints and used as the
-// StorageTaint for variables declared in this scope.
+// ScopeState is the analysis state for one lexical scope: the taint state of the
+// variables declared in it plus the scope's own taint. The core escape rule
+// reads off LocalTaints: a value leaving the scope (as a block result, return,
+// or capture) escapes if it carries a taint in LocalTaints, i.e. a borrow of
+// storage that dies when this scope ends.
 type ScopeState struct {
-	ID          ast.ScopeID
-	Vars        map[string]*VarTaint
-	LocalTaints TaintSet // Taints born in this scope (just ScopeTaint).
-	ScopeTaint  TaintID  // The taint that represents this scope's storage lifetime.
+	Scope       *ast.Scope
+	Vars        map[string]*VarTaint // variable name --> its taint state here
+	LocalTaints TaintSet             // taints whose storage dies when this scope ends
+	ScopeTaint  TaintID              // this scope's own taint (its storage lifetime)
 }
 
-func newScopeState(id ast.ScopeID, scopeTaint TaintID) *ScopeState {
+func (s *ScopeState) ID() ast.ScopeID { return s.Scope.ID }
+
+func newScopeState(scope *ast.Scope, scopeTaint TaintID) *ScopeState {
 	return &ScopeState{
-		ID:          id,
+		Scope:       scope,
 		Vars:        map[string]*VarTaint{},
 		LocalTaints: TaintSet{scopeTaint},
 		ScopeTaint:  scopeTaint,
@@ -135,17 +209,19 @@ func newScopeState(id ast.ScopeID, scopeTaint TaintID) *ScopeState {
 // and into each other (side effects through &mut params).
 //
 //	fun foo(a &Int) &Int { a }
-//	  --> ReturnTaints:  [0]              (param 0's taints flow to return)
-//	  --> ReturnAliases: [0]              (return value may alias param 0)
+//	  --> ReturnTaints: [0]               (param 0 reaches the return value)
 //
-//	fun bar(a &mut Int, b &Int) void { *a = *b }
-//	  --> SideEffects: {0: [1]}            (param 1's taints flow into param 0)
+//	fun bar(a &mut Int, b &Int) void { a.* = b.* }
+//	  --> SideEffects: {0: [1]}           (param 1 flows into param 0)
 type FunEffects struct {
-	ReturnTaints  []int         // param indices whose taints appear in return value
-	ReturnAliases []int         // param indices whose aliases appear in return value
-	SideEffects   map[int][]int // target param --> source params: which params' taints flow into which
+	ReturnTaints []int         // param indices that reach the return value
+	SideEffects  map[int][]int // target param --> source params whose taints flow in
 }
 
+// analysisStatus is the per-node visitation state for the on-demand walk. Done
+// results are cached; InProgress means the node is currently on the call stack,
+// so a call that resolves back to it is a recursion cycle (handled pessimistically
+// rather than looping forever).
 type analysisStatus int
 
 const (
@@ -160,14 +236,25 @@ type LifetimeCheck struct {
 	ast            *ast.AST
 	env            *TypeEnv
 	scopeGraph     *ast.ScopeGraph
-	nextTaintID    TaintID
-	scopes         map[ast.ScopeID]*ScopeState
-	flows          map[ast.NodeID]Flow
-	funEffects     map[ast.NodeID]*FunEffects
-	taintOrigin    map[TaintID]ast.NodeID // Which &x created this taint (for diagnostics).
-	status         map[ast.NodeID]analysisStatus
+	nextTaintID    TaintID                       // next fresh param taint to hand out
+	scopes         map[ast.ScopeID]*ScopeState   // analysis state per lexical scope
+	scopeByTaint   map[TaintID]*ast.Scope        // scope taint --> its scope, for nesting checks
+	chains         map[ast.NodeID]Chain          // each analyzed node's result: the storage its value reaches
+	funEffects     map[ast.NodeID]*FunEffects    // each analyzed function's param-flow summary
+	closureResults map[ast.NodeID]Chain          // closure Fun node --> chain its BODY returns
+	taintOrigin    map[TaintID]ast.NodeID        // which &x created this taint (for blaming in diagnostics)
+	status         map[ast.NodeID]analysisStatus // visitation state per node (cache + cycle guard)
 	shapeContracts *shapeContractsCheck
-	emittedEscape  map[escapeDiagKey]bool
+	emittedEscape  map[escapeDiagKey]bool // spans already reported, to dedupe diagnostics
+
+	// Per-instance effects for generic calls. The generic body analyzed with an
+	// abstract type parameter loses borrows the parameter carries; re-analyzing
+	// each concrete instantiation (its FunWork.Env binds T to e.g. &Int) fixes it.
+	funWorkByType       map[TypeID]FunWork     // concrete instance type --> its monomorphization
+	instanceEffectCache map[TypeID]*FunEffects // concrete instance type --> its effects
+	instanceInProgress  map[TypeID]bool        // instances mid-analysis (cycle guard)
+	analyzingFun        []ast.NodeID           // decls whose body is on the current analysis stack
+	analyzingInstance   bool                   // true while re-analyzing a generic instance, not the decl
 }
 
 type escapeDiagKey struct {
@@ -177,8 +264,10 @@ type escapeDiagKey struct {
 
 func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []FunWork) *LifetimeCheck {
 	funWorks := map[ast.NodeID][]FunWork{}
+	funWorkByType := map[TypeID]FunWork{}
 	for _, fw := range funs {
 		funWorks[fw.NodeID] = append(funWorks[fw.NodeID], fw)
+		funWorkByType[fw.TypeID] = fw
 	}
 	lc := &LifetimeCheck{
 		Diagnostics:    nil,
@@ -188,12 +277,20 @@ func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []Fun
 		env:            env,
 		nextTaintID:    1,
 		scopes:         map[ast.ScopeID]*ScopeState{},
-		flows:          map[ast.NodeID]Flow{},
+		scopeByTaint:   map[TaintID]*ast.Scope{},
+		chains:         map[ast.NodeID]Chain{},
 		funEffects:     map[ast.NodeID]*FunEffects{},
+		closureResults: map[ast.NodeID]Chain{},
 		taintOrigin:    map[TaintID]ast.NodeID{},
 		status:         map[ast.NodeID]analysisStatus{},
 		shapeContracts: nil,
 		emittedEscape:  map[escapeDiagKey]bool{},
+
+		funWorkByType:       funWorkByType,
+		instanceEffectCache: map[TypeID]*FunEffects{},
+		instanceInProgress:  map[TypeID]bool{},
+		analyzingFun:        nil,
+		analyzingInstance:   false,
 	}
 	lc.shapeContracts = &shapeContractsCheck{LifetimeCheck: lc, funWorks: funWorks}
 	return lc
@@ -205,6 +302,10 @@ func (a *LifetimeCheck) VerifyShapeContracts() {
 	a.shapeContracts.verify()
 }
 
+// Check is the recursive entry point. It analyzes the subtree at nodeID,
+// dispatching on node kind to the analyzeX helper that computes and stores the
+// node's Chain (in a.chains). The status guard caches finished nodes and detects
+// recursion cycles (see analysisStatus).
 func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	if a.status[nodeID] == statusDone {
 		return
@@ -263,136 +364,241 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	}
 }
 
-// analyzeRef: `&<target>` or `&mut <target>`. The target is either a place
-// (ident, field, index, deref) or a temporary (any other expression,
-// materialized into a fresh stack slot in the current scope). The ref
-// carries the target's storage taint plus any taints the target already
-// holds, so it dies with that storage.
-//   - `mut a = 1; &a`           --> taints: {scope(a)}, pointsTo: {a}
-//   - `mut a = &b; &a`          --> taints: {scope(b), scope(a)}, pointsTo: {a}
-//   - `let s = Foo(1); &s.one`  --> taints: {scope(s)}, pointsTo: {s}
-//   - `&f()` (in scope S)       --> taints: {scope(S) + f()'s taints}, pointsTo: {}
+// analyzeRef: `&<target>` or `&mut <target>`. The result is placeChain(target):
+//
+//	mut a = 1; &a        --> [{scope(a)}]
+//	mut z = &mut y; &z   --> [{scope(z)}, {scope(y)}]  (z.chain = [{scope(y)}])
 func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 	a.ast.Walk(nodeID, a.Check)
-	targetFlow := a.flow(ref.Target)
-	storageTaint, pointsTo := a.placeStorage(ref.Target)
+	chain := a.placeChain(ref.Target)
+	// `&temp` materializes the temporary into a fresh slot in this scope:
+	//   &make()   --> [{scope of the &-expression}]
 	if isTemporaryExpr(a.ast.Node(ref.Target).Kind) {
-		storageTaint = a.scopeState(nodeID).ScopeTaint
+		chain = Chain{TaintSet{a.scopeState(nodeID).ScopeTaint}}
 	}
-	taints := targetFlow.Taints
-	if storageTaint != 0 {
-		taints = taints.Merge(TaintSet{storageTaint})
-	}
-	// A `&place` that projects through a reference (`&p.field`, `&p[i]`, `&p.*`)
-	// points into that reference's referent, so it inherits the reference's
-	// confinement taints. Without this a noescape element ref could leak via
-	// `&x.field` or `&x.*`.
-	root := ref.Target
-	for {
-		switch inner := a.ast.Node(root).Kind.(type) {
-		case ast.FieldAccess:
-			root = inner.Target
-			continue
-		case ast.Index:
-			root = inner.Target
-			continue
-		case ast.Deref:
-			root = inner.Expr
-			continue
-		}
-		break
-	}
-	if root != ref.Target {
-		if rootType := a.env.TypeOfNode(root); rootType != nil {
-			if _, ok := rootType.Kind.(RefType); ok {
-				taints = taints.Merge(a.flow(root).Taints)
-			}
-		}
-	}
-	for _, t := range taints {
+	for _, t := range chain.HeadTaintSet() {
 		if _, ok := a.taintOrigin[t]; !ok {
 			a.taintOrigin[t] = nodeID
 		}
 	}
-	flow := Flow{Taints: taints, PointsTo: pointsTo}
-	a.flows[nodeID] = flow
-	a.debug(1, nodeID, "analyzeRef: %s storageTaint=%s", flow, storageTaint)
+	a.chains[nodeID] = chain
+	a.debug(1, nodeID, "analyzeRef: %s", chain)
 }
 
-// placeStorage returns the storage taint and alias set for a place expression.
-// For `x` it returns x's storage taint and {x}. For `x.one` or `x[i]` it
-// returns x's storage taint (the field/element lives in x's allocation).
-// For `x.*` it follows the deref and returns the pointed-to storage.
-func (a *LifetimeCheck) placeStorage(nodeID ast.NodeID) (TaintID, AliasSet) {
+// projection classifies `x.f` / `x[i]`: it returns the container, whether the
+// container is reached through a ref (so the projection already points into the
+// referent), and ok=false for non-projections and for module member accesses
+// (which have no lifetime). placeChain and storageScopes share this so the
+// ref-vs-value branch is written once.
+func (a *LifetimeCheck) projection(nodeID ast.NodeID) (target ast.NodeID, throughRef, ok bool) {
 	switch kind := a.ast.Node(nodeID).Kind.(type) {
-	case ast.Ident:
-		vt, foundIn := a.lookupVarWithScope(nodeID, kind.Name)
-		if vt == nil {
-			return 0, nil
-		}
-		return vt.StorageTaint, AliasSet{{foundIn.ID, kind.Name}}
 	case ast.FieldAccess:
 		if a.isModuleFieldAccess(nodeID, kind) {
-			return 0, nil
+			return 0, false, false
 		}
-		// If the target is a ref, the field lives in the referent's storage,
-		// not in the ref variable's stack slot - auto-deref like analyzeFieldAccess.
-		if _, ok := a.env.TypeOfNode(kind.Target).Kind.(RefType); ok {
-			f := a.flow(kind.Target)
-			derefed := a.derefFlow(f.PointsTo)
-			return 0, derefed.PointsTo
-		}
-		return a.placeStorage(kind.Target)
+		target = kind.Target
 	case ast.Index:
-		return a.placeStorage(kind.Target)
-	case ast.Deref:
-		f := a.flow(kind.Expr)
-		derefed := a.derefFlow(f.PointsTo)
-		return 0, derefed.PointsTo
+		target = kind.Target
 	default:
-		return 0, nil
+		return 0, false, false
+	}
+	_, throughRef = a.env.TypeOfNode(target).Kind.(RefType)
+	return target, throughRef, true
+}
+
+// placeChain returns the chain that `&place` carries: chain[0] is the slot the
+// new ref points at, chain[1:] is whatever that slot's value reaches onward.
+//
+//	x          (var)      --> x.chain.Prepend({scope(x)})
+//	x.f / x[i] (x value)  --> root.chain.Prepend({storageScope(root)})
+//	x.f / x[i] (x a ref)  --> x.chain (the ref already points into the referent)
+//	x.*                   --> x.chain.DropHead() (one level past x's referent)
+func (a *LifetimeCheck) placeChain(nodeID ast.NodeID) Chain {
+	if target, throughRef, ok := a.projection(nodeID); ok {
+		// `&p.f` through a ref points at storage in the referent, same depth-0
+		// as p points at, and reaches whatever the referent reaches: p.chain.
+		if throughRef {
+			return a.flow(target)
+		}
+		return a.placeChain(target)
+	}
+	switch kind := a.ast.Node(nodeID).Kind.(type) {
+	case ast.Ident:
+		vt := a.lookupVar(nodeID, kind.Name)
+		if vt == nil {
+			return nil
+		}
+		return vt.Chain.Prepend(TaintSet{vt.StorageTaint})
+	case ast.Deref:
+		// `&x.*` points one level past x's referent: x.chain.DropHead().
+		return a.flow(kind.Expr).DropHead()
+	default:
+		return nil
 	}
 }
 
-// analyzeIdent: reading a variable propagates its flow.
+// storageScopes returns the TaintSet of the slot a write to `place` targets.
+//
+//	x          (var)      --> {scope(x)}
+//	x.f / x[i] (x value)  --> storageScopes(container) (same slot as container)
+//	x.f / x[i] (x a ref)  --> chain(ref)[0] (the slot the ref points at)
+//	x.*  (Deref(p))       --> chain(p)[0]. So w.*.* = Deref(Deref(w)) targets
+//	                          chain(Deref(w))[0] = chain(w)[1], the depth-2 slot.
+func (a *LifetimeCheck) storageScopes(nodeID ast.NodeID) TaintSet {
+	if target, throughRef, ok := a.projection(nodeID); ok {
+		if throughRef {
+			return a.flow(target).HeadTaintSet()
+		}
+		return a.storageScopes(target)
+	}
+	switch kind := a.ast.Node(nodeID).Kind.(type) {
+	case ast.Ident:
+		vt := a.lookupVar(nodeID, kind.Name)
+		if vt == nil {
+			return nil
+		}
+		return TaintSet{vt.StorageTaint}
+	case ast.Deref:
+		return a.flow(kind.Expr).HeadTaintSet()
+	default:
+		return nil
+	}
+}
+
+// analyzeIdent: reading a variable yields its value chain.
 func (a *LifetimeCheck) analyzeIdent(nodeID ast.NodeID, ident ast.Ident) {
 	a.ast.Walk(nodeID, a.Check)
 	vt := a.lookupVar(nodeID, ident.Name)
 	if vt == nil {
 		return
 	}
-	a.flows[nodeID] = vt.Flow
-	a.debug(1, nodeID, "analyzeIdent: %s %s", ident.Name, vt.Flow)
+	a.chains[nodeID] = vt.Chain
+	a.debug(1, nodeID, "analyzeIdent: %s %s", ident.Name, vt.Chain)
 }
 
-// analyzeDeref: `*x` follows x's aliases to find the target variable's flow.
-//   - `mut a = 1; mut b = &a; *b` --> flow of a
+// analyzeDeref: `x.*` drops x's head so chain[d] becomes x's depth-(d+1)
+// storage, gated by the result type so a scalar deref carries nothing:
+//
+//	sum + r.*   (r &Int)         --> [] : reading the Int does not poison sum
+//	w.* (w &mut &Int)            --> w.chain.DropHead() : still a ref chain
 func (a *LifetimeCheck) analyzeDeref(nodeID ast.NodeID, deref ast.Deref) {
 	a.ast.Walk(nodeID, a.Check)
-	flow := a.derefFlow(a.flow(deref.Expr).PointsTo)
-	a.flows[nodeID] = flow
-	a.debug(1, nodeID, "analyzeDeref: %s", flow)
+	if !a.nodeCanEscape(nodeID) {
+		a.chains[nodeID] = nil
+		a.debug(1, nodeID, "analyzeDeref: [] (gated)")
+		return
+	}
+	chain := a.flow(deref.Expr).DropHead()
+	a.chains[nodeID] = chain
+	a.debug(1, nodeID, "analyzeDeref: %s", chain)
 }
 
-// analyzeFieldAccess: `x.foo`.
-// If x is a ref, auto-deref through x's aliases first.
+// nodeCanEscape reports whether the value at nodeID has a type that can carry a
+// reference out (ref/alloc/slice/ffi ptr), OR is a closure that may carry
+// captured borrows. The type gate that makes a scalar read (`sum + x.f`, `r.*`
+// of an Int) carry nothing. A FunType is added on top of typeCanEscape (which is
+// left alone, the noescape checks depend on its current behavior) so that
+// reading a closure out of a struct field or array element carries the
+// container's chain (the captures live there).
+//
+//	struct Holder { f fun() &Int }; let fn = h.f
+//	  --> h.f carries Holder's chain, which holds the captured borrow.
+func (a *LifetimeCheck) nodeCanEscape(nodeID ast.NodeID) bool {
+	resultType := a.env.TypeOfNode(nodeID)
+	if resultType == nil {
+		return false
+	}
+	return a.typeCanEscape(resultType.ID) || a.typeReachesClosure(resultType.ID)
+}
+
+// typeReachesClosure reports whether typeID IS a function type or transitively
+// CONTAINS one (a closure stored in a struct field, union variant, array or
+// slice element). typeCanEscape is left alone (the noescape checks depend on its
+// behavior), so this is the extra gate that lets a struct/array READ which holds
+// a closure carry the container's chain, where the captures live.
+//
+//	struct Holder { f fun() &Int }; let fn = h.f
+//	  --> h.f reaches a closure, so it carries Holder's chain (the captured borrow).
+func (a *LifetimeCheck) typeReachesClosure(typeID TypeID) bool {
+	if typeID == InvalidTypeID {
+		return false
+	}
+	switch kind := a.env.Type(typeID).Kind.(type) {
+	case FunType:
+		return true
+	case StructType:
+		for _, field := range kind.Fields {
+			if a.typeReachesClosure(field.Type) {
+				return true
+			}
+		}
+	case UnionType:
+		return slices.ContainsFunc(kind.Variants, a.typeReachesClosure)
+	case ArrayType:
+		return a.typeReachesClosure(kind.Elem)
+	case SliceType:
+		return a.typeReachesClosure(kind.Elem)
+	}
+	return false
+}
+
+// typeContainsTypeParam reports whether typeID is, or transitively contains, a
+// type parameter (an abstract `T`). It gates the "meaningless noescape" check:
+// `noescape T` or `noescape ?T` is left alone because it MIGHT carry a reference
+// once T is bound (T = &Int), even though some instantiations (T = Int) make it
+// carry nothing. Only fully concrete types are judged.
+func (a *LifetimeCheck) typeContainsTypeParam(typeID TypeID) bool {
+	if typeID == InvalidTypeID {
+		return false
+	}
+	switch kind := a.env.Type(typeID).Kind.(type) {
+	case TypeParamType:
+		return true
+	case RefType:
+		return a.typeContainsTypeParam(kind.Type)
+	case StructType:
+		return slices.ContainsFunc(kind.TypeArgs, a.typeContainsTypeParam) ||
+			slices.ContainsFunc(kind.Fields, func(f StructField) bool {
+				return a.typeContainsTypeParam(f.Type)
+			})
+	case UnionType:
+		return slices.ContainsFunc(kind.TypeArgs, a.typeContainsTypeParam) ||
+			slices.ContainsFunc(kind.Variants, a.typeContainsTypeParam)
+	case ArrayType:
+		return a.typeContainsTypeParam(kind.Elem)
+	case SliceType:
+		return a.typeContainsTypeParam(kind.Elem)
+	case FunType:
+		return slices.ContainsFunc(kind.Params, a.typeContainsTypeParam) ||
+			a.typeContainsTypeParam(kind.Return)
+	}
+	return false
+}
+
+// analyzeFieldAccess: `x.f`. Type-gated like deref: a scalar field read carries
+// nothing, a ref/alloc-typed field read carries the container's taints. Module
+// member accesses have no lifetime.
 func (a *LifetimeCheck) analyzeFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess) {
-	// Skip module member accesses - no lifetime concerns for module references.
-	if a.isModuleFieldAccess(nodeID, fa) {
-		a.ast.Walk(nodeID, a.Check)
-		return
-	}
 	a.ast.Walk(nodeID, a.Check)
-	targetType := a.env.TypeOfNode(fa.Target)
-	if _, ok := targetType.Kind.(RefType); ok {
-		flow := a.derefFlow(a.flow(fa.Target).PointsTo)
-		a.flows[nodeID] = flow
-		a.debug(1, nodeID, "analyzeFieldAccess: .%s (deref) %s", fa.Field.Name, flow)
+	if a.isModuleFieldAccess(nodeID, fa) {
 		return
 	}
-	flow := a.flow(fa.Target)
-	a.flows[nodeID] = flow
-	a.debug(1, nodeID, "analyzeFieldAccess: .%s %s", fa.Field.Name, flow)
+	chain := a.gatedRead(nodeID, fa.Target)
+	a.chains[nodeID] = chain
+	a.debug(1, nodeID, "analyzeFieldAccess: .%s %s", fa.Field.Name, chain)
+}
+
+// gatedRead implements the TYPE-GATED read for `x.f`, `x[i]`. If the result
+// type can escape (ref/alloc/slice/ffi ptr), the read yields the container's
+// chain (conservative: the field reaches whatever the container reaches); a
+// scalar read yields []. This keeps scalar reads (`sum + x.f`) from poisoning
+// accumulators while still tracking borrowed storage that leaves through a
+// slice or ref field.
+func (a *LifetimeCheck) gatedRead(resultNodeID, containerNodeID ast.NodeID) Chain {
+	if !a.nodeCanEscape(resultNodeID) {
+		return nil
+	}
+	return a.flow(containerNodeID)
 }
 
 // isModuleFieldAccess returns true if the FieldAccess targets a module.
@@ -420,12 +626,8 @@ func (a *LifetimeCheck) analyzeAllocatorVar(nodeID ast.NodeID, alloc ast.Allocat
 	ss := a.scopeState(nodeID)
 	// A freshly constructed arena (`let @a = Arena()`) is owned by this scope.
 	// An aliased allocator (`let @b = h.@a`) borrows storage that lives
-	// elsewhere, so it inherits the source's flow and owns no storage.
-	storageTaint := TaintID(0)
-	if a.isArenaConstruction(alloc.Expr) {
-		storageTaint = ss.ScopeTaint
-	}
-	ss.Vars[alloc.Name.Name] = &VarTaint{nodeID, storageTaint, a.flow(alloc.Expr)}
+	// elsewhere, so it inherits the source's chain.
+	ss.Vars[alloc.Name.Name] = &VarTaint{nodeID, ss.ScopeTaint, a.flow(alloc.Expr)}
 }
 
 // isArenaConstruction reports whether the expression freshly constructs an
@@ -442,20 +644,17 @@ func (a *LifetimeCheck) isArenaConstruction(nodeID ast.NodeID) bool {
 	return ok
 }
 
-// analyzeTypeConstruction: `Foo(a, b)` merges all argument flows.
+// analyzeTypeConstruction: `Foo(a, b)` unions all argument chains per depth.
 func (a *LifetimeCheck) analyzeTypeConstruction(nodeID ast.NodeID, lit ast.TypeConstruction) {
 	a.ast.Walk(nodeID, a.Check)
 	// A fresh arena lives in the scope where it is constructed.
 	if a.isArenaConstruction(nodeID) {
 		ss := a.scopeState(nodeID)
-		a.flows[nodeID] = Flow{Taints: TaintSet{ss.ScopeTaint}, PointsTo: nil}
-		a.debug(1, nodeID, "analyzeTypeConstruction (arena): %s", a.flows[nodeID])
+		a.chains[nodeID] = Chain{TaintSet{ss.ScopeTaint}}
+		a.debug(1, nodeID, "analyzeTypeConstruction (arena): %s", a.chains[nodeID])
 		return
 	}
-	merged := Flow{}
-	for _, argNodeID := range lit.Args {
-		merged = merged.Merge(a.flow(argNodeID))
-	}
+	merged := a.mergeFlows(lit.Args)
 	// Check noescape for struct fields that are function types.
 	resultType := a.env.TypeOfNode(nodeID)
 	if resultType != nil {
@@ -467,7 +666,7 @@ func (a *LifetimeCheck) analyzeTypeConstruction(nodeID ast.NodeID, lit ast.TypeC
 			}
 		}
 	}
-	a.flows[nodeID] = merged
+	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeTypeConstruction: %s", merged)
 }
 
@@ -485,6 +684,9 @@ func (a *LifetimeCheck) isArenaAllocCall(nodeID ast.NodeID) bool {
 	return ok
 }
 
+// analyzeArenaAllocCall: `@a.new<T>(v)` / `@a.slice(...)` borrows @a's storage
+// plus the storage of any arg that itself carries refs/allocs. Scalar args
+// (e.g. a size) do not contribute.
 func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) {
 	fa := base.Cast[ast.FieldAccess](a.ast.Node(call.Callee).Kind)
 	result := a.flow(fa.Target)
@@ -493,26 +695,23 @@ func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) 
 			result = result.Merge(a.flow(argNodeID))
 		}
 	}
-	a.flows[nodeID] = result
+	a.chains[nodeID] = result
 	a.debug(1, nodeID, "analyzeArenaAllocCall: %s", result)
 }
 
 func (a *LifetimeCheck) analyzeArrayLiteral(nodeID ast.NodeID, lit ast.ArrayLiteral) {
 	a.ast.Walk(nodeID, a.Check)
-	merged := Flow{}
-	for _, elemNodeID := range lit.Elems {
-		merged = merged.Merge(a.flow(elemNodeID))
-	}
-	a.flows[nodeID] = merged
+	merged := a.mergeFlows(lit.Elems)
+	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeArrayLiteral: %s", merged)
 }
 
-// analyzeIndex: `arr[i]` propagates the array's flow (conservative: any element).
+// analyzeIndex: `arr[i]` reads an element. Type-gated like a field read.
 func (a *LifetimeCheck) analyzeIndex(nodeID ast.NodeID, index ast.Index) {
 	a.ast.Walk(nodeID, a.Check)
-	flow := a.flow(index.Target)
-	a.flows[nodeID] = flow
-	a.debug(1, nodeID, "analyzeIndex: %s", flow)
+	chain := a.gatedRead(nodeID, index.Target)
+	a.chains[nodeID] = chain
+	a.debug(1, nodeID, "analyzeIndex: %s", chain)
 }
 
 func (a *LifetimeCheck) isReferenceType(typeID TypeID) bool {
@@ -527,34 +726,83 @@ func (a *LifetimeCheck) isReferenceType(typeID TypeID) bool {
 	return false
 }
 
-// analyzeSubSlice: `arr[lo..hi]` produces a fat pointer into the target's storage.
-// Like a ref, it must carry the target's storage taint so it can't outlive the source.
+// analyzeSubSlice: `arr[lo..hi]` produces a fat pointer into the target's
+// storage. Subslicing a slice/ref does NOT add the local storage scope (the
+// result points at the same data); subslicing a value array does.
 func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 	a.ast.Walk(nodeID, a.Check)
-	targetFlow := a.flow(sub.Target)
-	storageTaint, _ := a.placeStorage(sub.Target)
-	taints := targetFlow.Taints
+	chain := a.flow(sub.Target)
 
-	// Slices and references are already reference types. Subslicing them
-	// produces a new slice pointing to the same data, so it doesn't depend
-	// on the storage of the reference variable itself.
-	isRef := a.isReferenceType(a.env.TypeOfNode(sub.Target).ID)
-	if storageTaint != 0 && !isRef {
-		taints = taints.Merge(TaintSet{storageTaint})
+	// Only a value array contributes its own storage scope at depth 0.
+	//   let s = arr[1..3]   (arr a value array) --> [{scope(arr)}] ++ arr.chain
+	//   slice[1..3]         (slice a ref)        --> what slice borrowed
+	if !a.isReferenceType(a.env.TypeOfNode(sub.Target).ID) {
+		chain = chain.Prepend(a.storageScopes(sub.Target))
 	}
-	for _, t := range taints {
+	for _, t := range chain.CarriedTaints() {
 		if _, ok := a.taintOrigin[t]; !ok {
 			a.taintOrigin[t] = nodeID
 		}
 	}
-	flow := Flow{Taints: taints, PointsTo: targetFlow.PointsTo}
-	a.flows[nodeID] = flow
-	a.debug(1, nodeID, "analyzeSubSlice: %s target=%s storageTaint=%s isRef=%v",
-		flow, a.ast.Debug(sub.Target, false, 0), storageTaint, isRef)
+	a.chains[nodeID] = chain
+	a.debug(1, nodeID, "analyzeSubSlice: %s target=%s", chain, a.ast.Debug(sub.Target, false, 0))
 }
 
-// analyzeCall applies the callee's FunEffects to map argument flows into
-// the call result's flow and into side-effected arguments.
+// callArgs returns a call's effective positional arguments, the method receiver
+// (if any) first, so index 0 lines up with param 0 of the callee. Defaults are
+// appended by the caller that needs them.
+func (a *LifetimeCheck) callArgs(nodeID ast.NodeID, call ast.Call) []ast.NodeID {
+	args := make([]ast.NodeID, 0, len(call.Args)+1)
+	if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
+		args = append(args, receiver)
+	}
+	return append(args, call.Args...)
+}
+
+// instanceEffects returns the effects of a generic call's CONCRETE instantiation.
+// The generic body analyzed with an abstract type parameter drops borrows the
+// parameter carries (e.g. `Option.or_err` returns its T, but for abstract T
+// typeContainsRefOrAlloc(T) is false so the borrow is lost). Re-analyzing the
+// instance with its concrete env (which binds T to e.g. &Int) restores them.
+// Returns nil for a non-generic call (use the generic path) or on a cycle.
+//
+//	or_err<&Int>(opt, err)  --> analyzed with T = &Int, so ReturnTaints = [0]
+func (a *LifetimeCheck) instanceEffects(typeID TypeID) *FunEffects {
+	if _, isInstance := a.env.GenericOrigin(typeID); !isInstance {
+		return nil
+	}
+	if eff, cached := a.instanceEffectCache[typeID]; cached {
+		return eff
+	}
+	fw, ok := a.funWorkByType[typeID]
+	if !ok {
+		return nil
+	}
+	fun, isFun := a.ast.Node(fw.NodeID).Kind.(ast.Fun)
+	if !isFun || fun.Builtin || fun.Extern {
+		return nil
+	}
+	if a.instanceInProgress[typeID] {
+		return nil // cycle: the caller falls back to pessimistic effects
+	}
+	a.instanceInProgress[typeID] = true
+	prevEnv := a.env
+	prevInstance := a.analyzingInstance
+	a.env = fw.Env
+	a.analyzingInstance = true
+	a.resetAnalysisStatus(fw.NodeID)
+	a.analyzeFun(fw.NodeID, fun)
+	a.analyzingInstance = prevInstance
+	a.env = prevEnv
+	delete(a.instanceInProgress, typeID)
+
+	eff := a.funEffects[fw.NodeID]
+	a.instanceEffectCache[typeID] = eff
+	return eff
+}
+
+// analyzeCall applies the callee's FunEffects to map argument taints into the
+// call result and into side-effected arguments.
 //
 // If the function hasn't been analyzed yet, we analyze it on demand.
 // If we detect a cycle (mutual recursion), we apply pessimistic effects.
@@ -592,19 +840,29 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 			}
 		}
 	}
-	effects, ok := a.funEffects[declID]
+	// A call resolving to a decl whose body is on the analysis stack is recursion
+	// (direct or mutual): its effects aren't computed yet, so fall back to
+	// pessimistic effects rather than recursing forever.
+	recursive := slices.Contains(a.analyzingFun, declID)
+	// For a generic call, use the CONCRETE instantiation's effects: the generic
+	// body analyzed with an abstract type parameter drops borrows the parameter
+	// carries. Falls back to the generic path for non-generic calls.
+	effects := a.instanceEffects(calleeType.ID)
+	ok := effects != nil
+	if !ok {
+		effects, ok = a.funEffects[declID]
+	}
 	if !ok && declID != 0 {
 		// Shape method declarations (FunDecl) have no body to analyze.
 		// Use the shape's expected effects contract instead.
 		if funDecl, isFunDecl := a.ast.Node(declID).Kind.(ast.FunDecl); isFunDecl {
 			effects = a.shapeContracts.expectedEffects(declID, funDecl, base.Cast[FunType](calleeType.Kind))
 			ok = true
+		} else if recursive {
+			a.debug(1, nodeID, "analyzeCall: cycle detected, pessimistic fallback")
+			a.applyPessimisticEffects(nodeID, call)
+			return
 		} else {
-			if a.status[declID] == statusInProgress {
-				a.debug(1, nodeID, "analyzeCall: cycle detected, pessimistic fallback")
-				a.applyPessimisticEffects(nodeID, call)
-				return
-			}
 			a.Check(declID)
 			effects, ok = a.funEffects[declID]
 		}
@@ -616,118 +874,159 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 
 	// Check noescape compatibility for function-typed arguments.
 	calleeFun := base.Cast[FunType](calleeType.Kind)
-	{
-		args := call.Args
-		if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
-			args = append([]ast.NodeID{receiver}, args...)
-		}
-		for i, argNodeID := range args {
-			if i < len(calleeFun.Params) {
-				a.checkNoescapeValueAssignment(argNodeID, calleeFun.Params[i])
-			}
+	for i, argNodeID := range a.callArgs(nodeID, call) {
+		if i < len(calleeFun.Params) {
+			a.checkNoescapeValueAssignment(argNodeID, calleeFun.Params[i])
 		}
 	}
 
 	// Build the effective argument list: receiver (if method) + explicit args + defaults.
-	args := make([]ast.NodeID, 0, len(call.Args)+2)
-	if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
-		args = append(args, receiver)
-	}
-	args = append(args, call.Args...)
+	args := a.callArgs(nodeID, call)
 	if defaults, ok := a.env.CallDefaults(nodeID); ok {
 		args = append(args, defaults...)
 	}
 
-	// Apply the effects: map param flows --> return flow.
-	result := Flow{}
+	// Map param chains into the return value (per-depth union).
+	var result Chain
 	for _, paramIdx := range effects.ReturnTaints {
-		result.Taints = result.Taints.Merge(a.flow(args[paramIdx]).Taints)
+		result = result.Merge(a.flow(args[paramIdx]))
 	}
-	for _, paramIdx := range effects.ReturnAliases {
-		result.PointsTo = result.PointsTo.Merge(a.flow(args[paramIdx]).PointsTo)
-	}
-	// Apply side effects: param-to-param taint flow.
-	//   fun swap(a &mut Int, b &Int) { *a = *b }
-	//   --> side effect: param 1's flow merges into param 0's target
+	// Apply side effects: write each source arg through its target arg.
+	//   fun foo(a &mut Foo, b &Int) { a.one = b }
+	//   --> foo(&mut y, &z) checks &z against y's storage and merges it in.
 	for targetIdx, srcIndices := range effects.SideEffects {
-		srcFlow := Flow{}
+		var srcChain Chain
 		for _, srcIdx := range srcIndices {
-			srcFlow = srcFlow.Merge(a.flow(args[srcIdx]))
+			srcChain = srcChain.Merge(a.flow(args[srcIdx]))
 		}
-		a.mergeIntoTarget(nodeID, args[targetIdx], srcFlow)
+		a.writeThroughArg(nodeID, args[targetIdx], srcChain)
 	}
-	// If the callee returns noescape, the result must not escape the caller's scope.
-	if calleeFun.NoescapeReturn {
-		ss := a.scopeState(nodeID)
-		result.Taints = result.Taints.Merge(TaintSet{ss.ScopeTaint})
+	// If the callee returns noescape, the result must not escape the scope where
+	// the call was made: tag it with that scope's taint (a LocalTaint), so it is
+	// caught the moment it reaches a longer-lived place (an outer binding, a
+	// store, a return). Flowing DOWN into child scopes or callees is fine. Only
+	// meaningful when the return can carry a reference; on a value return
+	// (`noescape Int`) nothing is reachable to dangle.
+	if calleeFun.NoescapeReturn && a.typeCanEscape(calleeFun.Return) {
+		result = result.Merge(Chain{TaintSet{a.scopeState(nodeID).ScopeTaint}})
 	}
-	a.flows[nodeID] = result
+	// Carry whatever the callee contributes through its OWN chain (not via any
+	// argument): the captures a closure returns, or a fun-typed param's
+	// caller-taint. See closureCallContribution for the precise-vs-fallback split.
+	//   fun bar() &Int { mut local = 99  let g = fun[&local]() &Int { local }  g() }
+	// g()'s result carries g's returned capture of `local`, so the dangle is caught.
+	result = result.Merge(a.closureCallContribution(nodeID, call.Callee, declID, calleeFun.Return))
+	a.chains[nodeID] = result
 	a.debug(1, nodeID, "analyzeCall: %s", result)
+}
+
+// closureCallContribution returns what a call carries through its CALLEE chain,
+// separate from any argument. Two cases:
+//
+//   - The callee resolves to a known closure Fun node (declID has a
+//     closureResults entry): carry the PRECISE chain its body returns, so an
+//     unreturned capture is not falsely flagged.
+//     fun bar(p &Int) &Int { mut local = 99  let g = fun[&local, p]() &Int { p }  g() }
+//     g returns p, not local, so g() carries only p's reach: no escape.
+//   - The callee is hidden behind a projection (`h.f`, `arr[i]`) or is a
+//     fun-typed param, so declID is not a known closure: conservatively carry
+//     flow(callee) when the return type can escape. For a projection that is the
+//     container's reach (which holds the captures, since nodeCanEscape lets a
+//     closure read carry them); for a fun-typed param it is the caller-taint that
+//     makes higher-order functions propagate.
+//
+// The fallback is skipped for METHOD calls: there the receiver is an explicit
+// argument already routed through effects.ReturnTaints, and the method-binding
+// callee (`r.read`) is a FieldAccess that nodeCanEscape now lets carry the
+// receiver's chain, so merging flow(callee) would double-count the receiver and
+// wrongly drag its taint into the result.
+//
+//	let read = try r.read(buf[0..n])   -- r.read is a method binding, not a closure read.
+func (a *LifetimeCheck) closureCallContribution(callID, callee, declID ast.NodeID, calleeReturn TypeID) Chain {
+	if chain, ok := a.closureResults[declID]; ok {
+		return chain
+	}
+	if _, isMethod := a.env.MethodCallReceiver(callID); isMethod {
+		return nil
+	}
+	if a.typeCanEscape(calleeReturn) {
+		return a.flow(callee)
+	}
+	return nil
 }
 
 // applyBuiltinEffects applies pre-defined lifetime effects for a builtin function call.
 func (a *LifetimeCheck) applyBuiltinEffects(nodeID ast.NodeID, call ast.Call, effects FunEffects) {
-	args := make([]ast.NodeID, 0, len(call.Args)+1)
-	if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
-		args = append(args, receiver)
-	}
-	args = append(args, call.Args...)
-	result := Flow{}
+	args := a.callArgs(nodeID, call)
+	var result Chain
 	for _, paramIdx := range effects.ReturnTaints {
-		result.Taints = result.Taints.Merge(a.flow(args[paramIdx]).Taints)
+		result = result.Merge(a.flow(args[paramIdx]))
 	}
-	for _, paramIdx := range effects.ReturnAliases {
-		result.PointsTo = result.PointsTo.Merge(a.flow(args[paramIdx]).PointsTo)
-	}
-	a.flows[nodeID] = result
+	a.chains[nodeID] = result
 }
 
 // applyPessimisticEffects: assume every arg flows into the return value and
-// into every &mut arg. Used when we can't determine the actual effects
-// (like in recursive calls).
+// into every &mut arg. Used when we can't determine the actual effects.
 func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call) {
-	args := call.Args
-	if target, ok := a.env.MethodCallReceiver(nodeID); ok {
-		args = make([]ast.NodeID, 0, 1+len(call.Args))
-		args = append(args, target)
-		args = append(args, call.Args...)
-	}
-	allArgs := Flow{}
-	for _, arg := range args {
-		allArgs = allArgs.Merge(a.flow(arg))
-	}
+	args := a.callArgs(nodeID, call)
+	allArgs := a.mergeFlows(args)
 	funType := base.Cast[FunType](a.env.TypeOfNode(call.Callee).Kind)
 	if a.typeContainsRefOrAlloc(funType.Return) {
 		result := allArgs
-		if funType.NoescapeReturn {
-			ss := a.scopeState(nodeID)
-			result.Taints = result.Taints.Merge(TaintSet{ss.ScopeTaint})
+		if funType.NoescapeReturn && a.typeCanEscape(funType.Return) {
+			result = result.Merge(Chain{TaintSet{a.scopeState(nodeID).ScopeTaint}})
 		}
-		a.flows[nodeID] = result
+		// Carry closure captures / fun-typed-param caller-taints through the
+		// call (see closureCallContribution). Empty for ordinary named/method calls.
+		declID, _ := a.env.FunDeclNode(call.Callee)
+		result = result.Merge(a.closureCallContribution(nodeID, call.Callee, declID, funType.Return))
+		a.chains[nodeID] = result
 	}
 	for _, arg := range args {
 		if ref, ok := a.env.TypeOfNode(arg).Kind.(RefType); ok && ref.Mut {
-			a.mergeIntoTarget(nodeID, arg, allArgs)
+			a.writeThroughArg(nodeID, arg, allArgs)
 		}
 	}
 }
 
+// writeThroughArg applies the WRITE RULE for a function side effect: the source
+// chain is written through a pointer argument (a `&mut` arg). The storage
+// written into is what the arg points at (chain(arg)[0]); the accumulation
+// goes into the variable the arg references.
+//
+//	fun foo(a &mut Foo, b &Int) { a.one = b }
+//	foo(&mut y, &z)   --> &z checked against scope(y), then merged into y
+func (a *LifetimeCheck) writeThroughArg(nodeID, arg ast.NodeID, src Chain) {
+	a.checkEscape(nodeID, src.CarriedTaints(), a.flow(arg).HeadTaintSet(), "via mutation of outer variable")
+	// Peel a leading `&`/`&mut` to find the referenced variable to accumulate
+	// into. A computed pointer (e.g. `identity(&mut y)`) has no root ident, so
+	// the escape check above is the only effect.
+	target := arg
+	if ref, ok := a.ast.Node(arg).Kind.(ast.Ref); ok {
+		target = ref.Target
+	}
+	a.accumulateIntoRoot(nodeID, a.placeRoot(target), src)
+}
+
+// analyzeMatch: the result is the union of the arm bodies (like analyzeIf). A
+// `case T v:` binding makes v carry the scrutinee's reach, so unwrapping a ref
+// out of an optional/union keeps the borrow (and a later escape of v is caught).
 func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	a.Check(match.Expr)
-	exprFlow := a.flow(match.Expr)
+	exprChain := a.flow(match.Expr)
 	for _, arm := range match.Arms {
 		a.Check(arm.Pattern)
 		if arm.Binding != nil {
-			ss := a.scopeByID(a.scopeGraph.IntroducedScope(arm.Body).ID)
+			ss := a.scopeFor(a.scopeGraph.IntroducedScope(arm.Body))
 			// Only propagate taint if the matched variant type can carry references.
-			// E.g., matching `case Err e:` on a union that also contains `&mut File`
+			// E.g. matching `case Err e:` on a union that also contains `&mut File`
 			// should not taint `e` since Err is a plain value type.
-			bindingFlow := exprFlow
+			bindingChain := exprChain
 			variantType := a.env.TypeOfNode(arm.Pattern)
 			if variantType != nil && !a.typeContainsRefOrAlloc(variantType.ID) {
-				bindingFlow = Flow{}
+				bindingChain = nil
 			}
-			ss.Vars[arm.Binding.Name] = &VarTaint{arm.Body, ss.ScopeTaint, bindingFlow}
+			ss.Vars[arm.Binding.Name] = &VarTaint{arm.Body, ss.ScopeTaint, bindingChain}
 		}
 		if arm.Guard != nil {
 			a.Check(*arm.Guard)
@@ -736,32 +1035,32 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	}
 	if match.Else != nil {
 		if match.Else.Binding != nil {
-			ss := a.scopeByID(a.scopeGraph.IntroducedScope(match.Else.Body).ID)
+			ss := a.scopeFor(a.scopeGraph.IntroducedScope(match.Else.Body))
 			// Only propagate taint if any uncovered variant can carry references.
-			bindingFlow := a.elseBindingFlow(match, exprFlow)
-			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, bindingFlow}
+			bindingChain := a.elseBindingChain(match, exprChain)
+			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, bindingChain}
 		}
 		a.Check(match.Else.Body)
 	}
-	merged := Flow{}
+	var merged Chain
 	for _, arm := range match.Arms {
 		merged = merged.Merge(a.flow(arm.Body))
 	}
 	if match.Else != nil {
 		merged = merged.Merge(a.flow(match.Else.Body))
 	}
-	a.flows[nodeID] = merged
+	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeMatch: %s", merged)
 }
 
-func (a *LifetimeCheck) elseBindingFlow(match ast.Match, exprFlow Flow) Flow {
+func (a *LifetimeCheck) elseBindingChain(match ast.Match, exprChain Chain) Chain {
 	exprType := a.env.TypeOfNode(match.Expr)
 	if exprType == nil {
-		return exprFlow
+		return exprChain
 	}
 	union, ok := exprType.Kind.(UnionType)
 	if !ok {
-		return exprFlow
+		return exprChain
 	}
 	covered := make([]bool, len(union.Variants))
 	for _, arm := range match.Arms {
@@ -774,122 +1073,108 @@ func (a *LifetimeCheck) elseBindingFlow(match ast.Match, exprFlow Flow) Flow {
 		}
 	}
 	if slices.ContainsFunc(uncoveredVariants(covered, union), a.typeContainsRefOrAlloc) {
-		return exprFlow
+		return exprChain
 	}
-	return Flow{}
+	return nil
 }
 
+// analyzeIf: an `if` used as an expression yields a value from one branch or the
+// other, so conservatively its chain is the union (Merge) of the branch chains.
 func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 	a.ast.Walk(nodeID, a.Check)
 	merged := a.flow(ifNode.Then)
 	if ifNode.Else != nil {
 		merged = merged.Merge(a.flow(*ifNode.Else))
 	}
-	a.flows[nodeID] = merged
+	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeIf: %s", merged)
 }
 
+// analyzeWhen: like analyzeIf, the result can come from any case (or the else),
+// so its chain is the union of all the branch chains.
 func (a *LifetimeCheck) analyzeWhen(nodeID ast.NodeID, when ast.When) {
 	a.ast.Walk(nodeID, a.Check)
-	merged := Flow{}
+	var merged Chain
 	for _, case_ := range when.Cases {
 		merged = merged.Merge(a.flow(case_.Body))
 	}
 	if when.Else != nil {
 		merged = merged.Merge(a.flow(*when.Else))
 	}
-	a.flows[nodeID] = merged
+	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeWhen: %s", merged)
 }
 
-// analyzeFor: `for cond { body }`.
-// The type checker creates a scope for the loop body (the body block has
-// CreateScope=false). We check for mutations to outer-scope variables
-// that carry the body-scope's taint, just like analyzeBlock does for
-// CreateScope=true blocks. For-loops are always void, so there is no
-// result flow to check.
+// analyzeFor: `for cond { body }`. The for-binding (and optional element ref
+// for `for &x in ...`) lives in the body scope. Writes to outer variables are
+// caught by the write rule at the assignment site; moving the binding out of
+// the loop is caught by the block-result / return checks.
 func (a *LifetimeCheck) analyzeFor(nodeID ast.NodeID, forNode ast.For) {
 	if forNode.Binding != nil {
 		forScope := a.scopeState(forNode.Body)
-		bindFlow := Flow{}
+		var bindChain Chain
 		if forNode.Ref {
-			// Model the element reference as `&elem` where elem is a fresh value
-			// local in the body block scope. The reference machinery then treats it
-			// as noescape body-local: writing through it (`x.f = v`) stays local,
-			// but moving the ref (or `&x.field`) out of the loop is an escape.
-			bodyScope := a.scopeByID(a.scopeGraph.IntroducedScope(forNode.Body).ID)
-			elemName := forNode.Binding.Name + " <elem>" // space: never a real identifier
-			bodyScope.Vars[elemName] = &VarTaint{nodeID, bodyScope.ScopeTaint, Flow{}}
-			bindFlow = Flow{
-				Taints:   TaintSet{bodyScope.ScopeTaint},
-				PointsTo: AliasSet{{bodyScope.ID, elemName}},
-			}
+			// `for &x in xs` binds x to `&elem`: it borrows where elem lives,
+			// a fresh body-local slot. Reading x stays local; moving it out
+			// of the loop is an escape.
+			bindChain = Chain{TaintSet{forScope.ScopeTaint}}
 		}
-		forScope.Vars[forNode.Binding.Name] = &VarTaint{nodeID, forScope.ScopeTaint, bindFlow}
+		forScope.Vars[forNode.Binding.Name] = &VarTaint{nodeID, forScope.ScopeTaint, bindChain}
 		if forNode.Index != nil {
-			forScope.Vars[forNode.Index.Name] = &VarTaint{nodeID, forScope.ScopeTaint, Flow{}}
+			forScope.Vars[forNode.Index.Name] = &VarTaint{nodeID, forScope.ScopeTaint, nil}
 		}
 	}
 	a.ast.Walk(nodeID, a.Check)
-	outerScope := a.scopeGraph.NodeScope(nodeID)
-	ss := a.scopeState(forNode.Body)
-	parentState := a.scopeByID(outerScope.ID)
-
-	innerScope := a.scopeGraph.NodeScope(forNode.Body)
-	for name, vt := range ss.Vars {
-		if _, foundIn, ok := innerScope.Lookup(name, -1); !ok || foundIn == innerScope {
-			continue
-		}
-		if forNode.Binding != nil && vt.Flow.Taints.ContainsAny(ss.LocalTaints) {
-			a.diagEscape(vt.DiagNode, vt.Flow.Taints, ss, "via mutation of outer variable")
-		}
-		if pvt, ok := parentState.Vars[name]; ok {
-			pvt.Flow = pvt.Flow.Merge(vt.Flow)
-		} else {
-			parentState.Vars[name] = &VarTaint{vt.DiagNode, 0, vt.Flow}
-		}
-	}
 }
 
-// analyzeVar: `let x = expr` or `mut x = expr`.
-// Arena-allocated vars get StorageTaint=0 because they outlive their scope.
+// analyzeVar: `let x = expr` or `mut x = expr`. The variable's slot lives in
+// this scope; its value carries whatever expr borrows. Heap allocs are not
+// special: the value carries the arena's scope taint, the slot carries this
+// scope's taint.
 func (a *LifetimeCheck) analyzeVar(nodeID ast.NodeID, varNode ast.Var) {
 	a.ast.Walk(nodeID, a.Check)
 	ss := a.scopeState(nodeID)
-	f := a.flow(varNode.Expr)
-	storageTaint := ss.ScopeTaint
-	if a.isArenaAllocCall(varNode.Expr) {
-		storageTaint = 0
-	}
+	chain := a.flow(varNode.Expr)
 	// Check noescape when the binding has an explicit function type with noescape.
 	if varNode.Type != nil {
 		if declType := a.env.TypeOfNode(*varNode.Type); declType != nil {
 			a.checkNoescapeValueAssignment(varNode.Expr, declType.ID)
 		}
 	}
-	ss.Vars[varNode.Name.Name] = &VarTaint{nodeID, storageTaint, f}
-	a.debug(1, nodeID, "analyzeVar: %s scope=%s storageTaint=%s %s", varNode.Name.Name, ss.ID, storageTaint, f)
+	ss.Vars[varNode.Name.Name] = &VarTaint{nodeID, ss.ScopeTaint, chain}
+	a.debug(1, nodeID, "analyzeVar: %s scope=%s %s", varNode.Name.Name, ss.ID(), chain)
 }
 
-// analyzeFunParam: function parameters with ref/alloc types carry a caller
-// taint (they came from outside), not the function's own scope taint.
-// A self-referencing alias is added so that side-effect tracking can find
-// the param by name.
+// analyzeFunParam: a param whose type can escape (ref, alloc, slice, ffi ptr)
+// gets a unique caller PARAM-TAINT (distinct from the function body's scope
+// taint). A param-taint is not any scope's LocalTaint, so a value carrying it
+// never escapes inside the body; escapes are only decided at call sites. Slices
+// get a param-taint so returning one is caught by noescape, but they are not
+// side-effect SOURCES (see analyzeFun). A `fun() &Int` param also gets a
+// param-taint so calling it carries an identity ReturnTaints can pick up: in
+// `fun apply(f fun() &Int) &Int { f() }`, `f()` must reach the return value.
 func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, param ast.FunParam) {
 	a.ast.Walk(nodeID, a.Check)
 	ss := a.scopeState(nodeID)
-	callerTaints := TaintSet{}
-	if a.typeContainsRefOrAlloc(a.env.TypeOfNode(nodeID).ID) {
-		callerTaints = TaintSet{a.newTaintID()}
+	var callerChain Chain
+	paramTypeID := a.env.TypeOfNode(nodeID).ID
+	if a.typeCanEscape(paramTypeID) || a.typeContainsRefOrAlloc(paramTypeID) ||
+		a.funTypeReturnCanEscape(paramTypeID) {
+		callerChain = Chain{TaintSet{a.newTaintID()}}
 	}
-	ss.Vars[param.Name.Name] = &VarTaint{
-		nodeID, ss.ScopeTaint,
-		Flow{
-			Taints:   callerTaints,
-			PointsTo: AliasSet{{ss.ID, param.Name.Name}},
-		},
+	ss.Vars[param.Name.Name] = &VarTaint{nodeID, ss.ScopeTaint, callerChain}
+	a.debug(1, nodeID, "analyzeFunParam: %s scope=%s callerChain=%s", param.Name.Name, ss.ID(), callerChain)
+}
+
+// funTypeReturnCanEscape reports whether typeID is a function type whose return
+// value can escape (e.g. `fun() &Int`). Such a param carries an identity so its
+// call result flows into ReturnTaints (the higher-order-function escape path).
+func (a *LifetimeCheck) funTypeReturnCanEscape(typeID TypeID) bool {
+	if typeID == InvalidTypeID {
+		return false
 	}
-	a.debug(1, nodeID, "analyzeFunParam: %s scope=%s callerTaints=%s", param.Name.Name, ss.ID, callerTaints)
+	funType, ok := a.env.Type(typeID).Kind.(FunType)
+	return ok && a.typeCanEscape(funType.Return)
 }
 
 // typeContainsRefOrAlloc returns true if the type is, or recursively contains,
@@ -989,7 +1274,9 @@ func (a *LifetimeCheck) typeCanEscape(typeID TypeID) bool {
 	}
 	typ := a.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
-	case RefType, AllocatorType, SliceType:
+	case RefType, AllocatorType, SliceType, FunType:
+		// A FunType (closure) can carry captured references, so a noescape return
+		// of one must be confined like any other reference-bearing value.
 		return true
 	case StructType:
 		if IsBuiltinPtrStruct(kind) {
@@ -1020,22 +1307,27 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 		if lhsKind.Name == "_" {
 			return // discard
 		}
-		// `x = expr` - replace x's flow, preserve its storage taint.
+		// `x = expr` REPLACES x's chain, preserving its storage taint. The escape
+		// check is the write rule applied to the variable place {scope(x)}.
 		ss := a.scopeState(nodeID)
 		storageTaint := ss.ScopeTaint
 		if vt := a.lookupVar(nodeID, lhsKind.Name); vt != nil {
 			storageTaint = vt.StorageTaint
 		}
+		a.checkEscape(nodeID, rhs.CarriedTaints(), TaintSet{storageTaint}, "via mutation of outer variable")
 		ss.Vars[lhsKind.Name] = &VarTaint{nodeID, storageTaint, rhs}
 	case ast.FieldAccess:
-		// `x.foo = expr` - merge into x.
-		a.mergeIntoTarget(nodeID, lhsKind.Target, rhs)
+		a.writeInto(nodeID, assign.LHS, rhs, "via mutation of outer variable")
 	case ast.Index:
-		// `x[i] = expr` - merge into x.
-		a.mergeIntoTarget(nodeID, lhsKind.Target, rhs)
+		a.writeInto(nodeID, assign.LHS, rhs, "via mutation of outer variable")
 	case ast.Deref:
-		// `*x = expr` - write through the pointer.
-		a.analyzeDerefAssign(nodeID, lhsKind, rhs)
+		// `p.* = expr` is check-only for the pointee: escape if rhs borrows a
+		// scope strictly nested inside the slot p points at (chain(p)[0]). For
+		// `w.*.*` that slot is chain(w)[1], so the deep write is caught at its
+		// exact depth. We accumulate rhs into the root pointer's chain but do not
+		// write back into the specific pointee (unobservable without aliases).
+		a.checkEscape(nodeID, rhs.CarriedTaints(), a.storageScopes(assign.LHS), "via deref assignment")
+		a.accumulateIntoRoot(nodeID, a.placeRoot(assign.LHS), rhs)
 	default:
 		panic(base.Errorf("unknown LHS kind: %T", lhsKind))
 	}
@@ -1045,181 +1337,143 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 	}
 }
 
-// mergeIntoTarget handles field/index writes like `foo.bar = expr` or `arr[i] = expr`.
+// writeInto implements the WRITE RULE for `place = rhs` where place is a
+// field/index projection. It checks rhs against the storage the place writes
+// into, then accumulates rhs into the root variable so the mutation is visible
+// everywhere (this replaces the block-end propagation pass).
 //
-// We track taints at the granularity of the root variable, not individual
-// fields/elements. So `foo.bar = &x` adds x's taint to foo's flow. A later
-// `foo.baz = "safe"` does NOT erase the taint from the first write - we merge.
+//	struct Foo { one &Int }
+//	mut y = Foo(&x); { mut z = 99; y.one = &z }  --> &z escapes y's scope
+func (a *LifetimeCheck) writeInto(nodeID ast.NodeID, place ast.NodeID, rhs Chain, detail string) {
+	a.checkEscape(nodeID, rhs.CarriedTaints(), a.storageScopes(place), detail)
+	root := a.placeRoot(place)
+	a.accumulateIntoRoot(nodeID, root, rhs)
+}
+
+// placeRoot peels field/index/deref projections to the root expression.
 //
-// If the root is a ref (e.g. `(&mut foo).bar = expr` via auto-deref), we follow
-// its aliases to find the actual variables being mutated.
-func (a *LifetimeCheck) mergeIntoTarget(nodeID ast.NodeID, target ast.NodeID, rhs Flow) {
-	// Peel off intermediate field/index access to find the root.
-	//   `foo.bar.baz` --> root is `foo`
-	//   `arr[0].field` --> root is `arr`
-	root := target
+//	foo.bar.baz  --> foo
+//	arr[0].field --> arr
+//	p.*.f        --> p
+func (a *LifetimeCheck) placeRoot(place ast.NodeID) ast.NodeID {
+	root := place
 	for {
 		switch inner := a.ast.Node(root).Kind.(type) {
 		case ast.FieldAccess:
 			root = inner.Target
-			continue
 		case ast.Index:
 			root = inner.Target
-			continue
+		case ast.Deref:
+			root = inner.Expr
+		default:
+			return root
 		}
-		break
-	}
-
-	// Resolve which variables the root refers to.
-	var aliases AliasSet
-	switch kind := a.ast.Node(root).Kind.(type) {
-	case ast.Ident:
-		aliases = AliasSet{{a.scopeState(root).ID, kind.Name}}
-		if vt := a.lookupVar(root, kind.Name); vt != nil && len(vt.Flow.PointsTo) > 0 {
-			aliases = vt.Flow.PointsTo
-		}
-	default:
-		aliases = a.flow(root).PointsTo
-	}
-
-	a.debug(1, nodeID, "mergeIntoTarget: root=%s aliases=%s", a.ast.Debug(root, false, 0), aliases)
-	ss := a.scopeState(nodeID)
-
-	for _, alias := range aliases {
-		storageTaint := ss.ScopeTaint
-		merged := rhs
-		if vt := a.lookupVar(nodeID, alias.Name); vt != nil {
-			storageTaint = vt.StorageTaint
-			merged = vt.Flow.Merge(rhs)
-		}
-		ss.Vars[alias.Name] = &VarTaint{nodeID, storageTaint, merged}
 	}
 }
 
-// analyzeDerefAssign handles `*x = expr`. The write goes into x's target,
-// not into x itself. If the target lives in an outer scope and the RHS
-// carries a local taint, that's an escape.
+// accumulateIntoRoot merges rhs into the root variable's chain (per depth),
+// writing into the variable's DECLARING scope so the mutation is visible
+// everywhere. This powers function SideEffects and closure capture writes, and
+// replaces the block-end propagation.
+func (a *LifetimeCheck) accumulateIntoRoot(nodeID ast.NodeID, root ast.NodeID, rhs Chain) {
+	ident, ok := a.ast.Node(root).Kind.(ast.Ident)
+	if !ok {
+		return
+	}
+	vt := a.lookupVar(root, ident.Name)
+	if vt == nil {
+		return
+	}
+	vt.Chain = vt.Chain.Merge(rhs)
+	a.debug(1, nodeID, "accumulateIntoRoot: %s += %s --> %s", ident.Name, rhs, vt.Chain)
+}
+
+// checkEscape reports an escape when rhs borrows storage that outlives the
+// place being written. An rhs taint escapes when its scope is strictly nested
+// inside a storage scope, or when the storage is a param-pointer (which outlives
+// the whole body) and rhs borrows a body-local scope.
 //
-//	{ mut a = 1; mut b = &mut a; { mut c = 2; *b = c } }
-//	--> *b writes into a (outer scope), c's taint escapes.
-func (a *LifetimeCheck) analyzeDerefAssign(nodeID ast.NodeID, deref ast.Deref, rhs Flow) {
-	targets := a.flow(deref.Expr).PointsTo
-	a.debug(1, nodeID, "analyzeDerefAssign: rhs=%s targets=%s", rhs, targets)
-	localScope := a.scopeState(nodeID)
-	for _, target := range targets {
-		targetScope := a.scopeByID(target.ScopeID)
-		// The write stores rhs into the target's (longer-lived) storage. rhs
-		// escapes if it carries a taint local to any scope between the assignment
-		// and the target's scope, so walk up like analyzeReturn rather than
-		// checking only the immediate scope.
-		if targetScope != localScope {
-			for scope := a.scopeGraph.NodeScope(nodeID); scope != nil && scope.ID != target.ScopeID; scope = scope.Parent {
-				ss := a.scopeByID(scope.ID)
-				if rhs.Taints.ContainsAny(ss.LocalTaints) {
-					a.diagEscape(nodeID, rhs.Taints, ss, "via deref assignment")
-					break
-				}
+//	{ mut a; { mut z; y.one = &z } }   --> scope(z) nests inside scope(a): escape
+//	fun caller(t &mut T) { let a; t.do(&a) }  --> &a written through param t: escape
+func (a *LifetimeCheck) checkEscape(nodeID ast.NodeID, rhs, storage TaintSet, detail string) {
+	for _, rt := range rhs {
+		if a.scopeByTaint[rt] == nil {
+			continue // param-taint or non-scope rhs: never the shorter-lived side
+		}
+		for _, st := range storage {
+			if rt == st {
+				continue
+			}
+			// A param-taint storage outlives every body scope, so a body-local
+			// rhs always escapes through it. Otherwise require strict nesting.
+			if a.scopeByTaint[st] == nil || a.strictlyNested(rt, st) {
+				a.diagEscapeTaint(nodeID, rt, detail)
+				return
 			}
 		}
-		if vt, ok := targetScope.Vars[target.Name]; ok {
-			vt.Flow = rhs
-		} else {
-			targetScope.Vars[target.Name] = &VarTaint{nodeID, 0, rhs}
-		}
 	}
 }
 
-// analyzeBlock checks the block result and any mutations to outer-scope
-// variables for escaping local taints.
+// strictlyNested reports whether scope(inner) is a strict descendant of
+// scope(outer): inner is shorter-lived than outer. Callers pass scope taints
+// (both map to a scope).
+func (a *LifetimeCheck) strictlyNested(inner, outer TaintID) bool {
+	scope := a.scopeByTaint[inner]
+	outerScope := a.scopeByTaint[outer]
+	for scope = scope.Parent; scope != nil; scope = scope.Parent {
+		if scope.ID == outerScope.ID {
+			return true
+		}
+	}
+	return false
+}
+
+// analyzeBlock checks the block result for escaping local taints, then strips
+// them. The block result escapes if it carries a taint born in this block (a
+// LocalTaint), which means a borrow of block-local storage is leaving.
 //
-//	{                          <-- outer scope
-//	    mut a = 1
-//	    {                      <-- inner scope
-//	        mut c = 2
-//	        a = &c             <-- mutation of outer var with inner taint --> escape!
-//	    }
-//	}
+//	let x = { let y = 123; &y }   --> &y borrows {scope(y)}, a block local: escape
 func (a *LifetimeCheck) analyzeBlock(nodeID ast.NodeID, block ast.Block) {
 	a.ast.Walk(nodeID, a.Check)
-	outerScope := a.scopeGraph.NodeScope(nodeID)
-	a.debug(0, nodeID, "analyzeBlock: scope=%s", outerScope.ID)
-	defer a.Debug.Indent()()
 	if len(block.Exprs) == 0 {
 		return
 	}
 	lastExpr := block.Exprs[len(block.Exprs)-1]
-	lastFlow := a.flow(lastExpr)
-
+	lastChain := a.flow(lastExpr)
+	lastTaints := lastChain.CarriedTaints()
 	ss := a.scopeState(lastExpr)
-	parentState := a.scopeByID(outerScope.ID)
-	a.debug(
-		1,
-		nodeID,
-		"analyzeBlock: scopeTaint=%s localTaints=%s lastFlow=%s",
-		ss.ScopeTaint,
-		ss.LocalTaints,
-		lastFlow,
-	)
 
-	// Propagate mutations to outer-scope variables back to the parent.
-	// Skip variables declared in this block's own scope (they shadow, not mutate).
-	innerScope := a.scopeGraph.NodeScope(lastExpr)
-	for name, vt := range ss.Vars {
-		if _, foundIn, ok := innerScope.Lookup(name, -1); !ok || foundIn == innerScope {
-			continue
-		}
-		a.debug(1, nodeID, "analyzeBlock: outer var %q %s localTaints=%s escape=%v",
-			name, vt.Flow, ss.LocalTaints, vt.Flow.Taints.ContainsAny(ss.LocalTaints))
-		if vt.Flow.Taints.ContainsAny(ss.LocalTaints) {
-			a.diagEscape(vt.DiagNode, vt.Flow.Taints, ss, "via mutation of outer variable")
-		}
-		if pvt, ok := parentState.Vars[name]; ok {
-			pvt.Flow = pvt.Flow.Merge(vt.Flow)
-		} else {
-			parentState.Vars[name] = &VarTaint{vt.DiagNode, 0, vt.Flow}
-		}
-	}
-
-	// Check the block result for escaping local taints, then strip them.
-	// Skip if the last expression is a return — analyzeReturn already checks for escapes.
+	// Skip if the last expression is a return: analyzeReturn already checked it.
 	_, lastIsReturn := a.ast.Node(lastExpr).Kind.(ast.Return)
-	escaped := !lastIsReturn && lastFlow.Taints.ContainsAny(ss.LocalTaints)
-	a.debug(
-		1,
-		nodeID,
-		"analyzeBlock: result escape=%v lastTaints=%s localTaints=%s",
-		escaped,
-		lastFlow.Taints,
-		ss.LocalTaints,
-	)
-	if escaped {
-		a.diagEscape(lastExpr, lastFlow.Taints, ss, "via block result")
+	if !lastIsReturn && lastTaints.ContainsAny(ss.LocalTaints) {
+		a.diagEscape(lastExpr, lastTaints, ss, "via block result")
 	}
-	resultFlow := Flow{lastFlow.Taints.Without(ss.LocalTaints), lastFlow.PointsTo}
-	a.flows[nodeID] = resultFlow
-	a.debug(1, nodeID, "analyzeBlock: resultFlow=%s", resultFlow)
+	resultChain := lastChain.Without(ss.LocalTaints)
+	a.chains[nodeID] = resultChain
+	a.debug(1, nodeID, "analyzeBlock: scope=%s result=%s", ss.ID(), resultChain)
 }
 
 func (a *LifetimeCheck) analyzeReturn(nodeID ast.NodeID, ret ast.Return) {
 	a.ast.Walk(nodeID, a.Check)
-	flow := a.flow(ret.Expr)
-	a.flows[nodeID] = flow
-	// Walk up scopes from the return to the enclosing function.
-	// At each scope, check if the return flow carries any local taints — if so, escape.
+	chain := a.flow(ret.Expr)
+	a.chains[nodeID] = chain
+	taints := chain.CarriedTaints()
+	// Walk up scopes from the return to the enclosing function. At each scope,
+	// the return escapes if it carries a taint local to that scope.
 	scope := a.scopeGraph.NodeScope(nodeID)
 	for scope != nil {
 		if _, isFun := a.ast.Node(scope.Node).Kind.(ast.Fun); isFun {
 			break
 		}
-		ss := a.scopeByID(scope.ID)
-		if flow.Taints.ContainsAny(ss.LocalTaints) {
-			a.diagEscape(ret.Expr, flow.Taints, ss, "via return")
+		ss := a.scopeFor(scope)
+		if taints.ContainsAny(ss.LocalTaints) {
+			a.diagEscape(ret.Expr, taints, ss, "via return")
 		}
 		scope = scope.Parent
 	}
 }
 
-// analyzeFun builds a FunEffects that describes how parameter flows map to the
+// analyzeFun builds a FunEffects that describes how parameter taints map to the
 // return value and to each other (side effects).
 //
 //nolint:funlen
@@ -1227,6 +1481,11 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	if fun.Builtin {
 		return
 	}
+	// Track the body on the analysis stack so a call inside it that resolves to
+	// this same decl is recognised as recursion (status timing is unreliable
+	// across the generic-body vs per-instance re-analysis).
+	a.analyzingFun = append(a.analyzingFun, nodeID)
+	defer func() { a.analyzingFun = a.analyzingFun[:len(a.analyzingFun)-1] }()
 	// Walk type params and return type (no special handling needed).
 	for _, tp := range fun.TypeParams {
 		a.Check(tp)
@@ -1235,77 +1494,95 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		a.Check(fun.ReturnType)
 	}
 
-	// Analyze params first and capture their initial caller taints.
+	// Analyze params first and capture their initial caller (param) taints.
+	// refParamTaint marks taints of ref/alloc params, the only valid side-effect
+	// SOURCES. Slice params carry a param-taint too (so returning one is caught),
+	// but a slice flowing into a &mut param is not a side effect.
 	paramTaintToIdx := map[TaintID]int{}
-	paramAliasToIdx := map[Alias]int{}
-	paramScope := a.scopeGraph.NodeScope(fun.Block)
+	refParamTaint := map[TaintID]bool{}
 	for i, paramNodeID := range fun.Params {
 		a.Check(paramNodeID)
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
-		paramAliasToIdx[Alias{paramScope.ID, name}] = i
+		isRef := a.typeContainsRefOrAlloc(a.env.TypeOfNode(paramNodeID).ID)
 		if vt := a.lookupVar(paramNodeID, name); vt != nil {
-			for _, t := range vt.Flow.Taints {
+			for _, t := range vt.Chain.CarriedTaints() {
 				paramTaintToIdx[t] = i
+				refParamTaint[t] = isRef
 			}
+		}
+	}
+
+	// Rebind captures in the BODY scope so the body sees the captured borrow,
+	// mirroring engine.go bindCapture (by-ref capture of x has type &x inside the
+	// body; by-value has x's type). Without this, a by-ref-captured `local` would
+	// resolve to the OUTER var with an empty chain, so the body's RETURN of it
+	// would carry nothing and a real dangle would be missed.
+	//   fun bar() &Int { mut local = 99  let g = fun[&local]() &Int { local }  g() }
+	// Inside the body `local` is &local with chain [{scope(local)}], so the body
+	// result carries scope(local) and g() escapes.
+	if len(fun.Captures) > 0 {
+		bodyScope := a.scopeState(fun.Block)
+		for _, capNodeID := range fun.Captures {
+			capture := base.Cast[ast.Capture](a.ast.Node(capNodeID).Kind)
+			outer := a.lookupVar(nodeID, capture.Name.Name)
+			if outer == nil {
+				continue
+			}
+			var chain Chain
+			switch capture.Mode {
+			case ast.CaptureByValue:
+				chain = outer.Chain
+			case ast.CaptureByRef, ast.CaptureByMutRef:
+				chain = outer.Chain.Prepend(TaintSet{outer.StorageTaint})
+			}
+			bodyScope.Vars[capture.Name.Name] = &VarTaint{capNodeID, bodyScope.ScopeTaint, chain}
 		}
 	}
 
 	// Now analyze the body.
 	a.Check(fun.Block)
-	blockFlow := a.flow(fun.Block)
+	blockTaints := a.flow(fun.Block).CarriedTaints()
 
 	effects := &FunEffects{
-		SideEffects:   map[int][]int{},
-		ReturnTaints:  nil,
-		ReturnAliases: nil,
+		SideEffects:  map[int][]int{},
+		ReturnTaints: nil,
 	}
+	paramScope := a.scopeGraph.NodeScope(fun.Block)
 
 	// Which param taints appear in the return value?
-	// Any taint that is NOT a param taint is function-local (e.g. the storage
-	// taint of a by-value param's stack slot) and must not escape.
-	for _, t := range blockFlow.Taints {
+	// A taint that is NOT a param taint is function-local (e.g. the scope taint
+	// of a by-value param's stack slot) and must not escape.
+	for _, t := range blockTaints {
 		if idx, ok := paramTaintToIdx[t]; ok {
 			if !slices.Contains(effects.ReturnTaints, idx) {
 				effects.ReturnTaints = append(effects.ReturnTaints, idx)
 			}
 		} else {
-			a.diagEscape(fun.Block, blockFlow.Taints,
-				a.scopeByID(paramScope.ID), "via block result")
+			a.diagEscape(fun.Block, blockTaints, a.scopeFor(paramScope), "via block result")
 			break
 		}
 	}
 
-	// Which param aliases appear in the return value?
-	for _, alias := range blockFlow.PointsTo {
-		if idx, ok := paramAliasToIdx[alias]; ok {
-			if !slices.Contains(effects.ReturnAliases, idx) {
-				effects.ReturnAliases = append(effects.ReturnAliases, idx)
-			}
-		}
-	}
-
-	// Which params had foreign taints merged into them (side effects)?
-	// e.g. `fun foo(a &mut Int, b &Int) { *a = *b }` --> param 0 got param 1's taint.
+	// Which params had foreign param taints merged into them (side effects)?
+	// e.g. `fun foo(a &mut Int, b &Int) { a.* = b.* }` --> param 0 got param 1's taint.
 	for i, paramNodeID := range fun.Params {
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
 		vt := a.lookupVar(paramNodeID, name)
-		a.debug(1, nodeID, "analyzeFun: side-effect check param %d (%s) vt=%v", i, name, vt)
-		if vt != nil {
-			for _, t := range vt.Flow.Taints {
-				if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i {
-					a.debug(1, nodeID, "analyzeFun: side-effect param %d (%s) tainted by param %d via %s",
-						i, name, srcIdx, t)
-					if !slices.Contains(effects.SideEffects[i], srcIdx) {
-						effects.SideEffects[i] = append(effects.SideEffects[i], srcIdx)
-					}
+		if vt == nil {
+			continue
+		}
+		for _, t := range vt.Chain.CarriedTaints() {
+			if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i && refParamTaint[t] {
+				if !slices.Contains(effects.SideEffects[i], srcIdx) {
+					effects.SideEffects[i] = append(effects.SideEffects[i], srcIdx)
 				}
 			}
 		}
 	}
 
 	a.funEffects[nodeID] = effects
-	a.debug(1, nodeID, "analyzeFun: effects for %s (nodeID=%d): taints=%v aliases=%v sideEffects=%v",
-		fun.Name.Name, nodeID, effects.ReturnTaints, effects.ReturnAliases, effects.SideEffects)
+	a.debug(1, nodeID, "analyzeFun: effects for %s (nodeID=%d): taints=%v sideEffects=%v",
+		fun.Name.Name, nodeID, effects.ReturnTaints, effects.SideEffects)
 
 	// Check noescape constraints on the function's own parameters.
 	funType := base.Cast[FunType](a.env.TypeOfNode(nodeID).Kind)
@@ -1316,69 +1593,81 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		paramName := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
 		a.checkNoescapeEffects(a.ast.Node(paramNodeID).Span, paramName, i, funType, effects)
 	}
+	a.checkMeaninglessNoescape(fun, funType)
 
-	// For closures with by-ref captures, the closure value itself carries
-	// the taints of the captured references. Register a VarTaint for the
-	// closure name in the enclosing scope so that the ident reference
-	// picks it up.
+	// For closures with captures, the closure value carries the chains of its
+	// captures. A by-ref capture contributes `&capturedVar` (prepends its storage
+	// scope); a by-value capture contributes the captured var's chain. Register a
+	// VarTaint for the closure name so the ident reference picks it up; the escape
+	// is caught by the normal block-result / return check. Writes the body makes
+	// THROUGH a captured &mut are handled at the assignment site (the captured var
+	// resolves in its outer declaring scope, so the normal write rule applies).
 	if len(fun.Captures) > 0 {
-		closureFlow := Flow{}
+		// A closure CALL yields what its BODY returns, not all its captures. The
+		// block result chain already has the closure's own locals stripped by
+		// analyzeBlock; captures (which live in outer scopes) survive. Recording
+		// this precise chain lets a direct call carry ONLY the returned captures.
+		//   fun bar(p &Int) &Int { mut local = 99  let g = fun[&local, p]() &Int { p }  g() }
+		// g's body returns p (the param), not local, so g() must not be rejected.
+		a.closureResults[nodeID] = a.flow(fun.Block)
+
+		var closureChain Chain
 		outerScope := a.scopeGraph.NodeScope(nodeID)
 		for _, capNodeID := range fun.Captures {
 			capture := base.Cast[ast.Capture](a.ast.Node(capNodeID).Kind)
-			if vt := a.lookupVar(nodeID, capture.Name.Name); vt != nil {
-				switch capture.Mode {
-				case ast.CaptureByRef, ast.CaptureByMutRef:
-					closureFlow = closureFlow.Merge(Flow{Taints: TaintSet{vt.StorageTaint}, PointsTo: nil})
-				case ast.CaptureByValue:
-					closureFlow = closureFlow.Merge(vt.Flow)
-				}
+			vt := a.lookupVar(nodeID, capture.Name.Name)
+			if vt == nil {
+				continue
+			}
+			switch capture.Mode {
+			case ast.CaptureByRef, ast.CaptureByMutRef:
+				closureChain = closureChain.Merge(vt.Chain.Prepend(TaintSet{vt.StorageTaint}))
+			case ast.CaptureByValue:
+				closureChain = closureChain.Merge(vt.Chain)
 			}
 		}
-		if len(closureFlow.Taints) > 0 {
-			ss := a.scopeByID(outerScope.ID)
-			ss.Vars[fun.Name.Name] = &VarTaint{
-				DiagNode:     nodeID,
-				StorageTaint: ss.ScopeTaint,
-				Flow:         closureFlow,
-			}
+		if len(closureChain.CarriedTaints()) > 0 {
+			ss := a.scopeFor(outerScope)
+			ss.Vars[fun.Name.Name] = &VarTaint{nodeID, ss.ScopeTaint, closureChain}
 		}
 	}
 }
 
-func (a *LifetimeCheck) flow(nodeID ast.NodeID) Flow {
-	if f, ok := a.flows[nodeID]; ok {
-		return f
-	}
-	return Flow{}
+// flow returns the chain a node's value carries.
+func (a *LifetimeCheck) flow(nodeID ast.NodeID) Chain {
+	return a.chains[nodeID]
 }
 
-// derefFlow follows aliases to find the target variables and returns
-// their merged flow. This is what `*x` evaluates to.
-func (a *LifetimeCheck) derefFlow(targets AliasSet) Flow {
-	result := Flow{}
-	for _, target := range targets {
-		ss := a.scopeByID(target.ScopeID)
-		if vt, ok := ss.Vars[target.Name]; ok {
-			result = result.Merge(vt.Flow)
-		}
+// mergeFlows unions the chains of every node per depth: the storage an aggregate
+// (struct literal, array literal, pessimistic call) reaches is whatever any of
+// its parts reaches.
+func (a *LifetimeCheck) mergeFlows(nodeIDs []ast.NodeID) Chain {
+	var merged Chain
+	for _, nodeID := range nodeIDs {
+		merged = merged.Merge(a.flow(nodeID))
 	}
-	return result
+	return merged
 }
 
+// scopeState returns the state of the lexical scope that contains nodeID.
 func (a *LifetimeCheck) scopeState(nodeID ast.NodeID) *ScopeState {
-	return a.scopeByID(a.scopeGraph.NodeScope(nodeID).ID)
+	return a.scopeFor(a.scopeGraph.NodeScope(nodeID))
 }
 
-func (a *LifetimeCheck) scopeByID(id ast.ScopeID) *ScopeState {
-	if ss, ok := a.scopes[id]; ok {
+// scopeFor returns a scope's state, lazily creating it (and minting its scope
+// taint) the first time the scope is touched.
+func (a *LifetimeCheck) scopeFor(scope *ast.Scope) *ScopeState {
+	if ss, ok := a.scopes[scope.ID]; ok {
 		return ss
 	}
-	ss := newScopeState(id, a.newTaintID())
-	a.scopes[id] = ss
+	ss := newScopeState(scope, a.newTaintID())
+	a.scopes[scope.ID] = ss
+	a.scopeByTaint[ss.ScopeTaint] = scope
 	return ss
 }
 
+// lookupVar finds a variable's taint state by name, walking scopes OUTWARD from
+// nodeID (innermost first), so an inner declaration shadows an outer one.
 func (a *LifetimeCheck) lookupVar(nodeID ast.NodeID, name string) *VarTaint {
 	vt, _ := a.lookupVarWithScope(nodeID, name)
 	return vt
@@ -1397,6 +1686,8 @@ func (a *LifetimeCheck) lookupVarWithScope(nodeID ast.NodeID, name string) (*Var
 	return nil, nil
 }
 
+// newTaintID hands out the next fresh taint (used for a new scope's taint or a
+// reference-carrying parameter's param taint).
 func (a *LifetimeCheck) newTaintID() TaintID {
 	id := a.nextTaintID
 	a.nextTaintID++
@@ -1408,6 +1699,22 @@ func (a *LifetimeCheck) debug(level int, nodeID ast.NodeID, msg string, args ...
 	indent := d.Indent()
 	d.Print(2, "at %s", a.ast.Node(nodeID).Span.DebugLine())
 	indent()
+}
+
+// diagEscapeTaint blames a single escaping taint (used by the write rule, where
+// the escaping scope is known directly rather than via LocalTaints membership).
+func (a *LifetimeCheck) diagEscapeTaint(fallbackNodeID ast.NodeID, taint TaintID, detail string) {
+	diagNode := fallbackNodeID
+	if origin, ok := a.taintOrigin[taint]; ok {
+		diagNode = origin
+	}
+	span := a.ast.Node(diagNode).Span
+	key := escapeDiagKey{span, detail}
+	if a.emittedEscape[key] {
+		return
+	}
+	a.emittedEscape[key] = true
+	a.diag(span, "reference escaping its allocation scope (%s)", detail)
 }
 
 func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, ss *ScopeState, detail string) {
@@ -1434,12 +1741,40 @@ func (a *LifetimeCheck) diagEscape(fallbackNodeID ast.NodeID, taints TaintSet, s
 	}
 }
 
+// checkMeaninglessNoescape rejects `noescape` on a CONCRETE type that cannot
+// carry a reference: the annotation can never confine anything, so it is almost
+// certainly a mistake. A type that mentions a type parameter is exempt, it may
+// carry a reference once instantiated. The declaration is judged once, on its
+// declared (possibly generic) type, hence the per-instance re-analysis is skipped.
+//
+//	fun a() noescape Int { ... }    --> error: Int cannot carry a reference
+//	fun a() noescape &Int { ... }   --> ok
+//	fun a<T>() noescape T { ... }   --> ok (T might be a reference)
+func (a *LifetimeCheck) checkMeaninglessNoescape(fun ast.Fun, funType FunType) {
+	if a.analyzingInstance {
+		return
+	}
+	meaningless := func(typeID TypeID) bool {
+		return !a.typeContainsTypeParam(typeID) && !a.typeCanEscape(typeID)
+	}
+	if funType.NoescapeReturn && fun.ReturnType != 0 && meaningless(funType.Return) {
+		a.diag(a.ast.Node(fun.ReturnType).Span,
+			"noescape is meaningless on a return type that cannot carry a reference")
+	}
+	for i, paramNodeID := range fun.Params {
+		if i < len(funType.Params) && funType.IsNoescape(i) && meaningless(funType.Params[i]) {
+			a.diag(a.ast.Node(paramNodeID).Span,
+				"noescape is meaningless on a parameter that cannot carry a reference")
+		}
+	}
+}
+
 // checkNoescapeEffects verifies that a noescape param doesn't escape through
 // the return value or other parameters, given computed effects.
 func (a *LifetimeCheck) checkNoescapeEffects(
 	span base.Span, paramName string, paramIdx int, funType FunType, effects *FunEffects,
 ) {
-	if a.typeCanEscape(funType.Return) && slices.Contains(effects.ReturnAliases, paramIdx) {
+	if a.typeCanEscape(funType.Return) && slices.Contains(effects.ReturnTaints, paramIdx) {
 		a.diag(span, "noescape parameter %q must not escape through the return value", paramName)
 	}
 	for targetIdx, srcIndices := range effects.SideEffects {
@@ -1547,27 +1882,18 @@ type shapeContractsCheck struct {
 // expectedEffects computes the FunEffects implied by a shape method declaration.
 func (s *shapeContractsCheck) expectedEffects(declID ast.NodeID, funDecl ast.FunDecl, calleeType FunType) *FunEffects {
 	effects := &FunEffects{
-		SideEffects:   map[int][]int{},
-		ReturnTaints:  nil,
-		ReturnAliases: nil,
+		SideEffects:  map[int][]int{},
+		ReturnTaints: nil,
 	}
-	// All parameters may flow to the return value (taints and aliases),
-	// but only if the return type can carry references.
-	// No parameters flow into each other (no side effects).
+	// All parameters may flow to the return value, but only if the return type
+	// can carry references. No parameters flow into each other (no side effects).
 	if s.typeContainsRefOrAlloc(calleeType.Return) {
 		for i := range funDecl.Params {
 			effects.ReturnTaints = append(effects.ReturnTaints, i)
-			effects.ReturnAliases = append(effects.ReturnAliases, i)
 		}
 	}
 	s.funEffects[declID] = effects
-	s.debug(
-		1,
-		declID,
-		"shapeContractsCheck.expectedEffects: taints=%v aliases=%v",
-		effects.ReturnTaints,
-		effects.ReturnAliases,
-	)
+	s.debug(1, declID, "shapeContractsCheck.expectedEffects: taints=%v", effects.ReturnTaints)
 	return effects
 }
 
@@ -1591,8 +1917,10 @@ func (s *shapeContractsCheck) verifyFunWork(fw FunWork) {
 		return
 	}
 	prevEnv := s.env
+	prevInstance := s.analyzingInstance
 	s.env = fw.Env
-	defer func() { s.env = prevEnv }()
+	s.analyzingInstance = true
+	defer func() { s.env = prevEnv; s.analyzingInstance = prevInstance }()
 	s.resetAnalysisStatus(fw.NodeID)
 	s.analyzeFun(fw.NodeID, fun)
 }
@@ -1600,8 +1928,8 @@ func (s *shapeContractsCheck) verifyFunWork(fw FunWork) {
 // resetAnalysisStatus marks the given fun's body subtree as "not visited" so
 // a follow-up Check pass will re-run the analyzers on it (with a different
 // env or context).
-func (s *shapeContractsCheck) resetAnalysisStatus(nodeID ast.NodeID) {
-	fun, ok := s.ast.Node(nodeID).Kind.(ast.Fun)
+func (a *LifetimeCheck) resetAnalysisStatus(nodeID ast.NodeID) {
+	fun, ok := a.ast.Node(nodeID).Kind.(ast.Fun)
 	if !ok {
 		return
 	}
@@ -1610,8 +1938,8 @@ func (s *shapeContractsCheck) resetAnalysisStatus(nodeID ast.NodeID) {
 		if id == 0 {
 			return
 		}
-		delete(s.status, id)
-		s.ast.Walk(id, visit)
+		delete(a.status, id)
+		a.ast.Walk(id, visit)
 	}
 	visit(fun.Block)
 	for _, p := range fun.Params {

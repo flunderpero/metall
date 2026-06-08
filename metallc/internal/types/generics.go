@@ -719,7 +719,13 @@ func (g *Generics) materializeFun(
 	for i, param := range inst.Spec.Params {
 		g.env.bindInScope(funScope, param.NodeID, param.Name, typeArgIDs[i])
 	}
-	funTyp, status := g.rewriteCallable(decl.typeParams, typeArgIDs, decl.paramNodeIDs, decl.returnNodeID)
+	node := g.ast.Node(funNodeID)
+	noescapeReturn := false
+	if fun, ok := node.Kind.(ast.Fun); ok {
+		noescapeReturn = fun.NoescapeReturn
+	}
+	funTyp, status := g.rewriteCallable(
+		decl.typeParams, typeArgIDs, decl.paramNodeIDs, decl.returnNodeID, noescapeReturn)
 	if status.Failed() {
 		return mat, InvalidTypeID, "", status
 	}
@@ -727,7 +733,6 @@ func (g *Generics) materializeFun(
 	if status.Failed() {
 		return mat, InvalidTypeID, "", status
 	}
-	node := g.ast.Node(funNodeID)
 	funTypeID := g.env.newType(funTyp, node.ID, node.Span, TypeOK)
 	g.env.setGenericOrigin(funTypeID, genericTypeID)
 	if !decl.builtin {
@@ -1298,6 +1303,7 @@ func (g *Generics) rewriteCallable(
 	typeArgIDs []TypeID,
 	paramNodeIDs []ast.NodeID,
 	returnTypeNodeID ast.NodeID,
+	noescapeReturn bool,
 ) (FunType, TypeStatus) {
 	bindings := map[TypeID]TypeID{}
 	if len(typeParamNodeIDs) > 0 {
@@ -1308,6 +1314,7 @@ func (g *Generics) rewriteCallable(
 		maps.Copy(bindings, spec.Bindings(typeArgIDs))
 	}
 	paramTypeIDs := make([]TypeID, len(paramNodeIDs))
+	noescapeParams := make([]bool, len(paramNodeIDs))
 	for i, paramNodeID := range paramNodeIDs {
 		paramTypeID, status := g.query(paramNodeID)
 		if status.Failed() {
@@ -1321,6 +1328,9 @@ func (g *Generics) rewriteCallable(
 			g.env.setNodeType(paramNodeID, &cachedType{Type: g.env.Type(paramTypeID), Status: TypeOK})
 		}
 		paramTypeIDs[i] = paramTypeID
+		if p, ok := g.ast.Node(paramNodeID).Kind.(ast.FunParam); ok {
+			noescapeParams[i] = p.Noescape
+		}
 	}
 	retTypeID, status := g.query(returnTypeNodeID)
 	if status.Failed() {
@@ -1337,8 +1347,8 @@ func (g *Generics) rewriteCallable(
 		Return:         retTypeID,
 		Macro:          false,
 		Sync:           false,
-		NoescapeParams: make([]bool, len(paramTypeIDs)),
-		NoescapeReturn: false,
+		NoescapeParams: noescapeParams,
+		NoescapeReturn: noescapeReturn,
 	}
 	return funType, TypeOK
 }

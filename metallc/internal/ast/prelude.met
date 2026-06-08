@@ -1291,6 +1291,10 @@ pub fun Option.or_default(o Option, default T) T {
     try o else { return default }
 }
 
+pub fun Option.or_err(o Option, err Err) !T {
+    try o else { return err }
+}
+
 --- A result type. Use this to distinct between "success" and "error" ---
 -- union Result<T> = T | Err
 

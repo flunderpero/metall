@@ -3,25 +3,39 @@
 **stack ref escapes**
 
 ```metall
-let x = { let y = 123 &y }
+let x = {
+    let y = 123
+    &y
+}
 ```
 
 ```error
-test.met:1:23: reference escaping its allocation scope (via block result)
-    let x = { let y = 123 &y }
-                          ^^
+test.met:3:5: reference escaping its allocation scope (via block result)
+        let y = 123
+        &y
+        ^^
+    }
 ```
 
 **assign ref to outer**
 
 ```metall
-{ mut x = 123 mut y = &x { mut z = 123 y = &z } }
+{
+    mut x = 123
+    mut y = &x
+    {
+        mut z = 123
+        y = &z
+    }
+}
 ```
 
 ```error
-test.met:1:44: reference escaping its allocation scope (via mutation of outer variable)
-    { mut x = 123 mut y = &x { mut z = 123 y = &z } }
-                                               ^^
+test.met:6:13: reference escaping its allocation scope (via mutation of outer variable)
+            mut z = 123
+            y = &z
+                ^^
+        }
 ```
 
 **nested block escape**
@@ -1353,7 +1367,11 @@ test.met:5:9: reference escaping its allocation scope (via block result)
 **no escape through unused mut ref param**
 
 ```metall
-{ fun foo(a &mut Int) void { a.* = 321 } mut x = 123 foo(&mut x) }
+{
+    fun foo(a &mut Int) void { a.* = 321 }
+    mut x = 123
+    foo(&mut x)
+}
 ```
 
 ```error
@@ -1642,7 +1660,10 @@ test.met:8:19: reference escaping its allocation scope (via deref assignment)
 
 ```metall
 {
-    struct Foo { one Str  two &Int }
+    struct Foo {
+        one Str
+        two &Int
+    }
     mut x = 12742
     mut y = Foo("hello", &x)
     {
@@ -1654,7 +1675,7 @@ test.met:8:19: reference escaping its allocation scope (via deref assignment)
 ```
 
 ```error
-test.met:7:17: reference escaping its allocation scope (via mutation of outer variable)
+test.met:10:17: reference escaping its allocation scope (via mutation of outer variable)
             mut z = 99
             y.two = &z
                     ^^
@@ -1689,7 +1710,10 @@ test.met:6:13: reference escaping its allocation scope (via mutation of outer va
 {
     struct Foo { }
     fun Foo.escape(f Foo, a &Int) &Int { a }
-    fun bar(t Foo) &Int { let a = 42 t.escape(&a) }
+    fun bar(t Foo) &Int {
+        let a = 42
+        t.escape(&a)
+    }
     let r = {
         let f = Foo()
         bar(f)
@@ -1699,11 +1723,11 @@ test.met:6:13: reference escaping its allocation scope (via mutation of outer va
 ```
 
 ```error
-test.met:4:47: reference escaping its allocation scope (via block result)
-        fun Foo.escape(f Foo, a &Int) &Int { a }
-        fun bar(t Foo) &Int { let a = 42 t.escape(&a) }
-                                                  ^^
-        let r = {
+test.met:6:18: reference escaping its allocation scope (via block result)
+            let a = 42
+            t.escape(&a)
+                     ^^
+        }
 ```
 
 **for-in ref to binding escapes via outer assignment**
@@ -2847,7 +2871,10 @@ test.met:7:12: reference escaping its allocation scope (via block result)
     }
     struct Foo { }
     fun Foo.escape(f Foo, a &Int) &Int { a }
-    fun bar<T Shape>(t T) &Int { let a = 42 t.escape(&a) }
+    fun bar<T Shape>(t T) &Int {
+        let a = 42
+        t.escape(&a)
+    }
     let r = {
         let f = Foo()
         bar<Foo>(f)
@@ -2857,11 +2884,11 @@ test.met:7:12: reference escaping its allocation scope (via block result)
 ```
 
 ```error
-test.met:7:54: reference escaping its allocation scope (via block result)
-        fun Foo.escape(f Foo, a &Int) &Int { a }
-        fun bar<T Shape>(t T) &Int { let a = 42 t.escape(&a) }
-                                                         ^^
-        let r = {
+test.met:9:18: reference escaping its allocation scope (via block result)
+            let a = 42
+            t.escape(&a)
+                     ^^
+        }
 ```
 
 **shape value param no escape when not written to mut ref**
@@ -3269,6 +3296,518 @@ test.met:4:11: function does not return noescape
 ```error
 ```
 
+**noescape return confined to the call scope**
+
+```metall
+{
+    fun a(x &Int) noescape &Int { x }
+    mut outer = 0
+    mut sink = &outer
+    {
+        sink = a(&outer)
+    }
+}
+```
+
+```error
+test.met:6:9: reference escaping its allocation scope (via mutation of outer variable)
+        {
+            sink = a(&outer)
+            ^^^^^^^^^^^^^^^^
+        }
+```
+
+**without noescape the result may leave the call scope**
+
+```metall
+{
+    fun a(x &Int) &Int { x }
+    mut outer = 0
+    mut sink = &outer
+    {
+        sink = a(&outer)
+    }
+}
+```
+
+```error
+```
+
+**noescape return used in place is fine**
+
+```metall
+{
+    fun a(x &Int) noescape &Int { x }
+    mut outer = 0
+    let _ = a(&outer).*
+}
+```
+
+```error
+```
+
+**noescape confines a ref field reached through the result**
+
+```metall module
+let g = 0
+struct Holder { value &Int }
+fun a(h &Holder) noescape &Holder { h }
+fun main() void {
+    mut h = Holder(&g)
+    mut sink = &g
+    {
+        sink = a(&h).value
+    }
+}
+```
+
+```error
+test.met:8:9: reference escaping its allocation scope (via mutation of outer variable)
+        {
+            sink = a(&h).value
+            ^^^^^^^^^^^^^^^^^^
+        }
+```
+
+**without noescape a reached ref field may leave**
+
+```metall module
+let g = 0
+struct Holder { value &Int }
+fun a(h &Holder) &Holder { h }
+fun main() void {
+    mut h = Holder(&g)
+    mut sink = &g
+    {
+        sink = a(&h).value
+    }
+}
+```
+
+```error
+```
+
+**noescape confines a ref held inside a returned value**
+
+```metall module
+let g = 0
+struct Holder { value &Int }
+fun a(h Holder) noescape Holder { h }
+fun main() void {
+    let h = Holder(&g)
+    mut sink = &g
+    {
+        sink = a(h).value
+    }
+}
+```
+
+```error
+test.met:8:9: reference escaping its allocation scope (via mutation of outer variable)
+        {
+            sink = a(h).value
+            ^^^^^^^^^^^^^^^^^
+        }
+```
+
+**noescape on a non-reference return is rejected**
+
+```metall
+{
+    fun first(x Int) noescape Int { x }
+}
+```
+
+```error
+test.met:2:31: noescape is meaningless on a return type that cannot carry a reference
+    {
+        fun first(x Int) noescape Int { x }
+                                  ^^^
+    }
+```
+
+**noescape on a non-reference parameter is rejected**
+
+```metall
+{
+    fun first(n noescape Int) Int { n }
+}
+```
+
+```error
+test.met:2:15: noescape is meaningless on a parameter that cannot carry a reference
+    {
+        fun first(n noescape Int) Int { n }
+                  ^^^^^^^^^^^^^^
+    }
+```
+
+**noescape on a type parameter is allowed (may carry a reference once bound)**
+
+```metall module
+let g = 0
+fun id<T>(x &T) noescape &T { x }
+fun keep<T>(x &T) noescape T { x.* }
+fun main() void { let _ = id<Int>(&g).* }
+```
+
+```error
+```
+
+**self-recursive noescape return escapes (forwards a noescape result)**
+
+```metall module
+let g = 0
+fun deep(x &Int, n Int) noescape &Int {
+    if n <= 0 { x } else { deep(x, n - 1) }
+}
+fun main() void {
+    let _ = deep(&g, 3).*
+}
+```
+
+```error
+test.met:3:28: reference escaping its allocation scope (via block result)
+    fun deep(x &Int, n Int) noescape &Int {
+        if n <= 0 { x } else { deep(x, n - 1) }
+                               ^^^^^^^^^^^^^^
+    }
+```
+
+**noescape delegation: returning another noescape call's result escapes**
+
+```metall
+{
+    mut g = 0
+    fun inner(x &Int) noescape &Int { x }
+    fun outer(x &Int) noescape &Int { inner(x) }
+    let _ = outer(&g).*
+}
+```
+
+```error
+test.met:4:39: reference escaping its allocation scope (via block result)
+        fun inner(x &Int) noescape &Int { x }
+        fun outer(x &Int) noescape &Int { inner(x) }
+                                          ^^^^^^^^
+        let _ = outer(&g).*
+```
+
+**mutual recursion of noescape functions escapes**
+
+```metall module
+let g = 0
+fun ping(x &Int, n Int) noescape &Int { if n <= 0 { x } else { pong(x, n - 1) } }
+fun pong(x &Int, n Int) noescape &Int { if n <= 0 { x } else { ping(x, n - 1) } }
+fun main() void { let _ = ping(&g, 3).* }
+```
+
+```error
+test.met:3:64: reference escaping its allocation scope (via block result)
+    fun ping(x &Int, n Int) noescape &Int { if n <= 0 { x } else { pong(x, n - 1) } }
+    fun pong(x &Int, n Int) noescape &Int { if n <= 0 { x } else { ping(x, n - 1) } }
+                                                                   ^^^^^^^^^^^^^^
+    fun main() void { let _ = ping(&g, 3).* }
+
+test.met:2:64: reference escaping its allocation scope (via block result)
+    let g = 0
+    fun ping(x &Int, n Int) noescape &Int { if n <= 0 { x } else { pong(x, n - 1) } }
+                                                                   ^^^^^^^^^^^^^^
+    fun pong(x &Int, n Int) noescape &Int { if n <= 0 { x } else { ping(x, n - 1) } }
+```
+
+**a non-noescape wrapper returning a noescape result escapes**
+
+```metall
+{
+    fun inner(x &Int) noescape &Int { x }
+    fun bad(x &Int) &Int { inner(x) }
+}
+```
+
+```error
+test.met:3:28: reference escaping its allocation scope (via block result)
+        fun inner(x &Int) noescape &Int { x }
+        fun bad(x &Int) &Int { inner(x) }
+                               ^^^^^^^^
+    }
+```
+
+**non-tail return of a noescape result from a non-noescape fun escapes**
+
+```metall
+{
+    fun inner(x &Int) noescape &Int { x }
+    fun bad(x &Int, c Bool) &Int {
+        if c { return inner(x) }
+        x
+    }
+}
+```
+
+```error
+test.met:4:23: reference escaping its allocation scope (via return)
+        fun bad(x &Int, c Bool) &Int {
+            if c { return inner(x) }
+                          ^^^^^^^^
+            x
+```
+
+**non-tail return of a noescape result escapes even in a noescape fun**
+
+```metall
+{
+    fun inner(x &Int) noescape &Int { x }
+    fun good(x &Int, c Bool) noescape &Int {
+        if c { return inner(x) }
+        x
+    }
+}
+```
+
+```error
+test.met:4:23: reference escaping its allocation scope (via return)
+        fun good(x &Int, c Bool) noescape &Int {
+            if c { return inner(x) }
+                          ^^^^^^^^
+            x
+```
+
+**block-wrapped noescape result extracted to the function body escapes**
+
+```metall module
+let g = 0
+fun inner(x &Int) noescape &Int { x }
+fun outer(x &Int) noescape &Int {
+    let r = { inner(x) }
+    r
+}
+fun main() void { let _ = outer(&g).* }
+```
+
+```error
+test.met:4:15: reference escaping its allocation scope (via block result)
+    fun outer(x &Int) noescape &Int {
+        let r = { inner(x) }
+                  ^^^^^^^^
+        r
+```
+
+**noescape result stored into a struct field then returned escapes**
+
+```metall module
+let g = 0
+struct Box { p &Int }
+fun source() noescape &Int { &g }
+fun extract() Box {
+    mut b = Box(&g)
+    b.p = source()
+    b
+}
+fun main() void { let b = extract()  let _ = b.p.* }
+```
+
+```error
+test.met:7:5: reference escaping its allocation scope (via block result)
+        b.p = source()
+        b
+        ^
+    }
+```
+
+**noescape result stored into an array element then returned escapes**
+
+```metall module
+let g = 0
+fun source() noescape &Int { &g }
+fun extract() [2]&Int {
+    mut arr = [&g, &g]
+    arr[0] = source()
+    arr
+}
+fun main() void { let a = extract()  let _ = a[0].* }
+```
+
+```error
+test.met:6:5: reference escaping its allocation scope (via block result)
+        arr[0] = source()
+        arr
+        ^^^
+    }
+```
+
+**confined ref captured into a body-local closure is fine**
+
+```metall module
+let g = 0
+fun source() noescape &Int { &g }
+fun mk() noescape &Int {
+    let r = source()
+    let f = fun[r]() &Int { r }
+    &g
+}
+fun main() void { let _ = mk().* }
+```
+
+```error
+```
+
+**closure escaping with a confined capture escapes**
+
+```metall module
+let g = 0
+fun source() noescape &Int { &g }
+fun mk() fun() &Int {
+    let r = source()
+    fun[r]() &Int { r }
+}
+fun main() void { let f = mk()  let _ = f().* }
+```
+
+```error
+test.met:5:5: reference escaping its allocation scope (via block result)
+        let r = source()
+        fun[r]() &Int { r }
+        ^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**mutual recursion through a non-noescape entry leaks and escapes**
+
+```metall module
+let g = 0
+fun src() noescape &Int { &g }
+fun ping(n Int) noescape &Int { if n <= 0 { src() } else { pong(n - 1) } }
+fun pong(n Int) &Int { ping(n) }
+fun main() void {
+    mut sink = &g
+    {
+        sink = pong(3)
+    }
+    let _ = sink.*
+}
+```
+
+```error
+test.met:3:45: reference escaping its allocation scope (via block result)
+    fun src() noescape &Int { &g }
+    fun ping(n Int) noescape &Int { if n <= 0 { src() } else { pong(n - 1) } }
+                                                ^^^^^
+    fun pong(n Int) &Int { ping(n) }
+
+test.met:4:24: reference escaping its allocation scope (via block result)
+    fun ping(n Int) noescape &Int { if n <= 0 { src() } else { pong(n - 1) } }
+    fun pong(n Int) &Int { ping(n) }
+                           ^^^^^^^
+    fun main() void {
+```
+
+**noescape closure return is confined like any reference**
+
+```metall module
+let g = 0
+fun ac() noescape fun() &Int { fun[]() &Int { &g } }
+fun main() void {
+    mut csink = fun[]() &Int { &g }
+    {
+        csink = ac()
+    }
+    let _ = csink().*
+}
+```
+
+```error
+test.met:6:9: reference escaping its allocation scope (via mutation of outer variable)
+        {
+            csink = ac()
+            ^^^^^^^^^^^^
+        }
+```
+
+## Generic instantiation
+
+A generic function is analyzed per concrete instantiation, so borrows its type
+parameter carries are tracked. Analyzing the generic body once with an abstract
+T loses them (typeContainsRefOrAlloc(T) is false), which is why the effects are
+recomputed against each instance's concrete env.
+
+**borrow carried through a generic type parameter escapes**
+
+```metall module
+let g = 0
+struct Box<T> { value T }
+fun unbox<T>(b Box<T>) T { b.value }
+fun main() void {
+    mut sink = &g
+    {
+        let inner = 5
+        sink = unbox<&Int>(Box<&Int>(&inner))
+    }
+}
+```
+
+```error
+test.met:8:38: reference escaping its allocation scope (via mutation of outer variable)
+            let inner = 5
+            sink = unbox<&Int>(Box<&Int>(&inner))
+                                         ^^^^^^
+        }
+```
+
+**generic noescape return is enforced**
+
+```metall module
+let g = 0
+fun borrow<T>(x &T) noescape &T { x }
+fun main() void {
+    mut sink = &g
+    {
+        sink = borrow<Int>(&g)
+    }
+}
+```
+
+```error
+test.met:6:9: reference escaping its allocation scope (via mutation of outer variable)
+        {
+            sink = borrow<Int>(&g)
+            ^^^^^^^^^^^^^^^^^^^^^^
+        }
+```
+
+**generic noescape return used in place is fine**
+
+```metall module
+let g = 0
+fun borrow<T>(x &T) noescape &T { x }
+fun main() void {
+    let _ = borrow<Int>(&g).*
+}
+```
+
+```error
+```
+
+**generic self-recursive noescape return escapes**
+
+```metall module
+let g = 0
+fun deep<T>(x &T, n Int) noescape &T {
+    if n <= 0 { x } else { deep<T>(x, n - 1) }
+}
+fun main() void {
+    let _ = deep<Int>(&g, 3).*
+}
+```
+
+```error
+test.met:3:28: reference escaping its allocation scope (via block result)
+    fun deep<T>(x &T, n Int) noescape &T {
+        if n <= 0 { x } else { deep<T>(x, n - 1) }
+                               ^^^^^^^^^^^^^^^^^
+    }
+```
+
 ## References To Temporaries
 
 **ref to call result used in place is fine**
@@ -3326,15 +3865,18 @@ test.met:3:27: reference escaping its allocation scope (via block result)
 
 ```metall
 {
-    struct Pair { a Int b Int }
+    struct Pair {
+        a Int
+        b Int
+    }
     fun leak() &Pair { &Pair(1, 2) }
     leak()
 }
 ```
 
 ```error
-test.met:3:24: reference escaping its allocation scope (via block result)
-        struct Pair { a Int b Int }
+test.met:6:24: reference escaping its allocation scope (via block result)
+        }
         fun leak() &Pair { &Pair(1, 2) }
                            ^^^^^^^^^^^
         leak()
@@ -3367,5 +3909,609 @@ test.met:11:14: reference escaping its allocation scope (via mutation of outer v
             let a = 1
             t.do(&a)
                  ^^
+        }
+```
+
+## Deref-assign through ref/heap projection
+
+`let pp = &mut b.p; pp.* = <inner ref>` must escape when `b` is a value, a heap
+allocation, or a ref: `b.p` lives in storage that outlives the inner reference.
+
+**deref-assign into stack struct field escapes**
+
+```metall
+{
+    struct Box { p &Int }
+    mut seed = 0
+    mut b = Box(&seed)
+    {
+        mut w = 99
+        let pp = &mut b.p
+        pp.* = &w
+    }
+}
+```
+
+```error
+test.met:8:16: reference escaping its allocation scope (via deref assignment)
+            let pp = &mut b.p
+            pp.* = &w
+                   ^^
+        }
+```
+
+**deref-assign into heap struct field escapes**
+
+```metall
+{
+    struct Box { p &Int }
+    let @a = Arena()
+    mut seed = 0
+    let b = @a.new<Box>(Box(&seed))
+    {
+        mut w = 99
+        let pp = &mut b.p
+        pp.* = &w
+    }
+}
+```
+
+```error
+test.met:9:16: reference escaping its allocation scope (via deref assignment)
+            let pp = &mut b.p
+            pp.* = &w
+                   ^^
+        }
+```
+
+**deref-assign into ref-projected struct field escapes**
+
+```metall
+{
+    struct Box { p &Int }
+    let @a = Arena()
+    let inner = @a.new<Int>(0)
+    mut holder = Box(inner)
+    let b = &mut holder
+    {
+        mut w = 99
+        let pp = &mut b.p
+        pp.* = &w
+    }
+}
+```
+
+```error
+test.met:10:16: reference escaping its allocation scope (via deref assignment)
+            let pp = &mut b.p
+            pp.* = &w
+                   ^^
+        }
+```
+
+**for &x deref-assign into heap struct field escapes**
+
+```metall
+{
+    struct Box { p &Int }
+    let @a = Arena()
+    mut seed = 0
+    let b = @a.new<Box>(Box(&seed))
+    for &x in [1, 2, 3] {
+        let pp = &mut b.p
+        pp.* = x
+    }
+}
+```
+
+```error
+test.met:8:9: reference escaping its allocation scope (via deref assignment)
+            let pp = &mut b.p
+            pp.* = x
+            ^^^^^^^^
+        }
+```
+
+**deref-assign into heap field with no alias escapes**
+
+The referent's field also points at the heap, so there is no alias to write
+through; the escape is caught from the storage taint `pp` carries.
+
+```metall
+{
+    struct Box { p &Int }
+    let @a = Arena()
+    let inner = @a.new<Int>(0)
+    let b = @a.new<Box>(Box(inner))
+    {
+        mut w = 99
+        let pp = &mut b.p
+        pp.* = &w
+    }
+}
+```
+
+```error
+test.met:9:16: reference escaping its allocation scope (via deref assignment)
+            let pp = &mut b.p
+            pp.* = &w
+                   ^^
+        }
+```
+
+**deref-assign into same-scope heap field is fine**
+
+```metall
+{
+    struct Box { p &Int }
+    let @a = Arena()
+    let inner = @a.new<Int>(0)
+    let b = @a.new<Box>(Box(inner))
+    mut w = 99
+    let pp = &mut b.p
+    pp.* = &w
+}
+```
+
+```error
+```
+
+**deref-assign through conditional two-arena referent escapes**
+
+`sel` may point into `@outer` or `@inner`, so `pp` carries both storage taints.
+Writing a middle-scope ref escapes when the referent is the longer-lived one.
+
+```metall
+{
+    struct Box { p &Int }
+    let @outer = Arena()
+    let oi = @outer.new<Int>(0)
+    let bo = @outer.new<Box>(Box(oi))
+    {
+        mut mid = 7
+        {
+            let @inner = Arena()
+            let ii = @inner.new<Int>(0)
+            let bi = @inner.new<Box>(Box(ii))
+            let sel = if true { bo } else { bi }
+            let pp = &mut sel.p
+            pp.* = &mid
+        }
+    }
+}
+```
+
+```error
+test.met:14:20: reference escaping its allocation scope (via deref assignment)
+                let pp = &mut sel.p
+                pp.* = &mid
+                       ^^^^
+            }
+```
+
+## Overhaul guard + target
+
+These two pin down the storage-vs-value distinction the analysis must keep
+straight. `&x` must mean "the storage where x lives", never "what x points at".
+
+**guard: deref-assign rewriting a same-scope ref must stay fine**
+
+`pp` points at `local`'s own slot (this scope), not at `outer`. Overwriting it
+with a same-scope ref is safe and must not be flagged.
+
+```metall
+{
+    mut outer = 0
+    {
+        mut local = &outer
+        mut pp = &mut local
+        mut z = 5
+        pp.* = &z
+    }
+}
+```
+
+```error
+```
+
+**target: deref-assign through a merged stack/heap pointer escapes**
+
+`sel` may be the stack box (this scope) or the heap box (`@outer`). Writing a
+middle-scope ref must escape, because the referent might be the longer-lived
+heap one. This is currently a false negative.
+
+```metall
+{
+    struct Box { p &Int }
+    let @outer = Arena()
+    let oi = @outer.new<Int>(0)
+    let bh = @outer.new<Box>(Box(oi))
+    {
+        mut mid = 7
+        {
+            mut sbox = Box(oi)
+            let sel = if true { &mut sbox } else { bh }
+            let pp = &mut sel.p
+            pp.* = &mid
+        }
+    }
+}
+```
+
+```error
+test.met:12:20: reference escaping its allocation scope (via deref assignment)
+                let pp = &mut sel.p
+                pp.* = &mid
+                       ^^^^
+            }
+```
+
+## Multi-level deref soundness
+
+The deref-chain model is sound at any deref depth. `chain[d]` gives the exact
+depth-d storage, so a write through `w.*.*` is checked against the depth-2 slot,
+not conflated with the depth-1 slot. carriedTaints (the union of all levels) is
+the conservative reach used for block-result and return escapes.
+
+**depth-2 deref write of a dangling ref escapes**
+
+`w.*.*` writes into `y`'s slot (outer). `&v` (inner) dangles there.
+
+```metall
+{
+    mut x = 0
+    mut y = &x
+    {
+        mut z = &mut y
+        mut w = &mut z
+        mut v = 99
+        w.*.* = &v
+    }
+}
+```
+
+```error
+test.met:6:17: reference escaping its allocation scope (via deref assignment)
+            mut z = &mut y
+            mut w = &mut z
+                    ^^^^^^
+            mut v = 99
+```
+
+**depth-3 deref write of a dangling ref escapes**
+
+`u.*.*.*` writes into `y`'s slot (outer). `&v` (inner) dangles there.
+
+```metall
+{
+    mut x = 0
+    mut y = &x
+    {
+        mut z = &mut y
+        mut w = &mut z
+        mut u = &mut w
+        mut v = 99
+        u.*.*.* = &v
+    }
+}
+```
+
+```error
+test.met:6:17: reference escaping its allocation scope (via deref assignment)
+            mut z = &mut y
+            mut w = &mut z
+                    ^^^^^^
+            mut u = &mut w
+```
+
+**depth-2 write through pointer-to-pointer struct field escapes**
+
+`ppb.*.*.p` writes into `b`'s `p` field (outer). `&local` (inner) dangles there.
+
+```metall
+{
+    struct Box { p &Int }
+    mut x = 0
+    mut b = Box(&x)
+    {
+        mut pb = &mut b
+        mut ppb = &mut pb
+        mut local = 99
+        ppb.*.*.p = &local
+    }
+}
+```
+
+```error
+test.met:7:19: reference escaping its allocation scope (via mutation of outer variable)
+            mut pb = &mut b
+            mut ppb = &mut pb
+                      ^^^^^^^
+            mut local = 99
+```
+
+**same-scope depth-2 deref write does not escape**
+
+`w.*.*` writes into `y`'s slot, which is the same scope as `&v`'s referent, so
+nothing dangles.
+
+```metall
+{
+    mut x = 0
+    mut y = &x
+    mut z = &mut y
+    mut w = &mut z
+    mut v = 99
+    w.*.* = &v
+}
+```
+
+```error
+```
+
+**closure side-effect into captured &mut struct field escapes**
+
+The closure captures `box` by `&mut` and writes a body-local ref into its field.
+`box` resolves to the outer scope, so `&local` (closure-body-local) escapes.
+
+```metall
+fun foo() void {
+    struct Box { p &Int }
+    mut x = 0
+    mut box = Box(&x)
+    let store = fun[&mut box]() void {
+        mut local = 99
+        box.p = &local
+    }
+    store()
+}
+```
+
+```error
+test.met:7:17: reference escaping its allocation scope (via mutation of outer variable)
+            mut local = 99
+            box.p = &local
+                    ^^^^^^
+        }
+```
+
+**closure side-effect into captured &mut struct field with a same-scope ref does not escape**
+
+The closure captures `box` by `&mut` and `other` by `&`, then writes the
+same-scope ref `other` into the field. Nothing dangles.
+
+```metall
+fun foo() void {
+    struct Box { p &Int }
+    mut x = 0
+    mut other = 7
+    mut box = Box(&x)
+    let store = fun[&mut box, &other]() void {
+        box.p = other
+    }
+    store()
+}
+```
+
+```error
+```
+
+## Closure escape soundness
+
+A closure that captures an inner local and is INVOKED must not lose the captured
+taint at the call boundary. The captured taints live in the closure VALUE's
+chain; merging the callee's chain into a call result (when the return can
+escape) carries them through a direct call and through a higher-order function.
+
+**captured local returned through closure call escapes**
+
+```metall
+fun bar() &Int {
+    mut local = 99
+    let g = fun[&local]() &Int { local }
+    g()
+}
+```
+
+```error
+test.met:4:5: reference escaping its allocation scope (via block result)
+        let g = fun[&local]() &Int { local }
+        g()
+        ^^^
+    }
+```
+
+**captured local escapes through closure call bound to a let**
+
+Inline-call syntax `(fun...)()` does not type-check, so this is the let-bound
+variant: the call result flows into `r`, then escapes via the block result.
+
+```metall
+fun bar() &Int {
+    mut local = 99
+    let g = fun[&local]() &Int { local }
+    let r = g()
+    r
+}
+```
+
+```error
+test.met:5:5: reference escaping its allocation scope (via block result)
+        let r = g()
+        r
+        ^
+    }
+```
+
+**captured local escapes through a higher-order function**
+
+```metall
+{
+    fun apply(f fun() &Int) &Int { f() }
+    fun foo() &Int {
+        mut local = 99
+        apply(fun[&local]() &Int { local })
+    }
+}
+```
+
+```error
+test.met:5:9: reference escaping its allocation scope (via block result)
+            mut local = 99
+            apply(fun[&local]() &Int { local })
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        }
+```
+
+**captured-by-value ref returned through closure call escapes**
+
+```metall
+fun bar() &Int {
+    mut local = 99
+    let r = &local
+    let g = fun[r]() &Int { r }
+    g()
+}
+```
+
+```error
+test.met:3:13: reference escaping its allocation scope (via block result)
+        mut local = 99
+        let r = &local
+                ^^^^^^
+        let g = fun[r]() &Int { r }
+```
+
+**closure call returning a captured param does not escape**
+
+```metall
+fun bar(outer &Int) &Int {
+    let g = fun[outer]() &Int { outer }
+    g()
+}
+```
+
+```error
+```
+
+**closure read out of a struct field keeps its captures**
+
+A closure stored in a struct field and read back through `h.f` is hidden behind
+a projection, so the call result must still carry the capture of `local`.
+
+```metall
+fun bar() &Int {
+    struct Holder { f fun() &Int }
+    mut local = 99
+    let h = Holder(fun[&local]() &Int { local })
+    let fn = h.f
+    fn()
+}
+```
+
+```error
+test.met:6:5: reference escaping its allocation scope (via block result)
+        let fn = h.f
+        fn()
+        ^^^^
+    }
+```
+
+**closure returning a longer-lived capture does not escape an unreturned capture**
+
+The closure captures `local` (body-local) but does NOT return it; it returns the
+caller's param `p`, so the call result must not be rejected.
+
+```metall
+fun bar(p &Int) &Int {
+    mut local = 99
+    let g = fun[&local, p]() &Int { p }
+    g()
+}
+```
+
+```error
+```
+
+**by-ref capture alongside a param capture returns the local and escapes**
+
+Mirror of the previous case, but the body RETURNS the captured `local` (not the
+param `p`), so the call result dangles.
+
+```metall
+fun bar(p &Int) &Int {
+    mut local = 99
+    let g = fun[&local, p]() &Int { local }
+    g()
+}
+```
+
+```error
+test.met:4:5: reference escaping its allocation scope (via block result)
+        let g = fun[&local, p]() &Int { local }
+        g()
+        ^^^
+    }
+```
+
+**closure in a nested struct read two projections deep then called escapes**
+
+The closure capturing `&local` is stored two struct levels deep
+(`Outer.inner.f`); reading it back through `o.inner.f` must still carry the
+capture, so the call result dangles.
+
+```metall
+fun bar() &Int {
+    struct Inner { f fun() &Int }
+    struct Outer { inner Inner }
+    mut local = 99
+    let o = Outer(Inner(fun[&local]() &Int { local }))
+    o.inner.f()
+}
+```
+
+```error
+test.met:6:5: reference escaping its allocation scope (via block result)
+        let o = Outer(Inner(fun[&local]() &Int { local }))
+        o.inner.f()
+        ^^^^^^^^^^^
+    }
+```
+
+## Accepted false positives
+
+We accept the following false positives to keep the implementation lean. We might
+revisit them later.
+
+**closure captures are merged into a single taint set**
+
+So crossing an abstraction boundary makes the analyzer attribute ALL of a
+closure's captures to a CALL result. Sound (never a missed dangling), but it
+rejects valid programs. Here `apply` returns the closure's result, the long-lived
+param `p`, so nothing dangles, yet the captured local `scratch` is wrongly
+reported escaping.
+
+```metall
+{
+    fun apply(f fun() &Int) &Int { f() }
+    fun foo(p &Int) &Int {
+        mut scratch = 99
+        apply(fun[&scratch, p]() &Int {
+            let _ = scratch.*
+            p
+        })
+    }
+}
+```
+
+```error
+test.met:5:9: reference escaping its allocation scope (via block result)
+            mut scratch = 99
+            apply(fun[&scratch, p]() &Int {
+            ^
+                let _ = scratch.*
+                p
+            })
+             ^
         }
 ```
