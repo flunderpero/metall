@@ -489,6 +489,88 @@ fun f(x AB) Int {
       (identifier))))
 
 ================================================================================
+Match by reference binding
+================================================================================
+
+fun f(u U) Int {
+    match u {
+        case A &x: x.v
+        case B &mut y: y.v
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          binding: (identifier)
+          (field_access
+            object: (identifier)
+            field: (identifier)))
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          binding: (identifier)
+          (field_access
+            object: (identifier)
+            field: (identifier)))))))
+
+================================================================================
+Match else by reference binding
+================================================================================
+
+fun f(u U) Int {
+    match u {
+        case A &x: x.v
+        else &mut y: y.v
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name
+      (identifier))
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (simple_type
+          (type_identifier))))
+    return_type: (simple_type
+      (type_identifier))
+    body: (block
+      (match_expression
+        subject: (identifier)
+        (match_arm
+          pattern: (simple_type
+            (type_identifier))
+          binding: (identifier)
+          (field_access
+            object: (identifier)
+            field: (identifier)))
+        (match_else
+          binding: (identifier)
+          (field_access
+            object: (identifier)
+            field: (identifier)))))))
+
+================================================================================
 Return, break, continue
 ================================================================================
 

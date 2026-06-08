@@ -1769,7 +1769,9 @@ func (p *Parser) parseTry() (NodeID, bool) {
 	successBinding := Name{"__try", span}
 	successIdent := p.NewIdent("__try", nil, span)
 	successBody := p.NewBlock([]NodeID{successIdent}, span)
-	arm := MatchArm{Pattern: pattern, Binding: &successBinding, Guard: nil, Body: successBody}
+	arm := MatchArm{
+		Pattern: pattern, Binding: &successBinding, Ref: false, Mut: false, Guard: nil, Body: successBody,
+	}
 	var else_ *MatchElse
 	if next, ok := p.mayPeek(); ok && next.Kind == token.Else && !p.isMatchElse() {
 		p.next()
@@ -1783,13 +1785,13 @@ func (p *Parser) parseTry() (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
-		else_ = &MatchElse{Binding: binding, Body: body}
+		else_ = &MatchElse{Binding: binding, Ref: false, Mut: false, Body: body}
 	} else {
 		elseBinding := Name{"__try_e", span}
 		elseIdent := p.NewIdent("__try_e", nil, span)
 		elseReturn := p.NewReturn(elseIdent, span)
 		elseBody := p.NewBlock([]NodeID{elseReturn}, span)
-		else_ = &MatchElse{Binding: &elseBinding, Body: elseBody}
+		else_ = &MatchElse{Binding: &elseBinding, Ref: false, Mut: false, Body: elseBody}
 	}
 	matchID := p.NewMatch(expr, []MatchArm{arm}, else_, span.Combine(p.span()))
 	p.Node(matchID).Kind = Match{
@@ -1822,11 +1824,13 @@ func (p *Parser) parseMatchArms() ([]MatchArm, *MatchElse, bool) {
 		if !ok {
 			return nil, nil, false
 		}
-		binding, guard, body, ok := p.parseMatchArmBindingAndBody()
+		binding, ref, mut, guard, body, ok := p.parseMatchArmBindingAndBody()
 		if !ok {
 			return nil, nil, false
 		}
-		arms = append(arms, MatchArm{Pattern: pattern, Binding: binding, Guard: guard, Body: body})
+		arms = append(arms, MatchArm{
+			Pattern: pattern, Binding: binding, Ref: ref, Mut: mut, Guard: guard, Body: body,
+		})
 	}
 }
 
@@ -1876,7 +1880,7 @@ func (p *Parser) parseMatchPattern() (NodeID, bool) {
 }
 
 func (p *Parser) parseMatchElse() (*MatchElse, bool) {
-	binding, guard, body, ok := p.parseMatchArmBindingAndBody()
+	binding, ref, mut, guard, body, ok := p.parseMatchArmBindingAndBody()
 	if !ok {
 		return nil, false
 	}
@@ -1884,38 +1888,50 @@ func (p *Parser) parseMatchElse() (*MatchElse, bool) {
 		p.diagnostic(p.Node(*guard).Span, "else arm cannot have a guard condition")
 		return nil, false
 	}
-	return &MatchElse{Binding: binding, Body: body}, true
+	return &MatchElse{Binding: binding, Ref: ref, Mut: mut, Body: body}, true
 }
 
-func (p *Parser) parseMatchArmBindingAndBody() (*Name, *NodeID, NodeID, bool) {
+func (p *Parser) parseMatchArmBindingAndBody() (*Name, bool, bool, *NodeID, NodeID, bool) {
+	var ref, mut bool
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Amp {
+		p.next()
+		ref = true
+		if m, ok := p.mayPeek(); ok && m.Kind == token.Mut {
+			p.next()
+			mut = true
+		}
+	}
 	var binding *Name
 	if next, ok := p.mayPeek(); ok && next.Kind == token.Ident {
 		p.next()
 		b := Name{next.Value, next.Span}
 		binding = &b
+	} else if ref {
+		p.diagnostic(p.span(), "expected a binding name after `&` in match arm")
+		return nil, false, false, nil, ParseFailed, false
 	}
 	var guard *NodeID
 	if next, ok := p.mayPeek(); ok && next.Kind == token.If {
 		p.next()
 		guardExpr, ok := p.ParseExpr(0)
 		if !ok {
-			return nil, nil, ParseFailed, false
+			return nil, false, false, nil, ParseFailed, false
 		}
 		guard = &guardExpr
 	}
 	if _, ok := p.expect(token.Colon); !ok {
-		return nil, nil, ParseFailed, false
+		return nil, false, false, nil, ParseFailed, false
 	}
 	bodyExprs, ok := p.parseCaseBody()
 	if !ok {
-		return nil, nil, ParseFailed, false
+		return nil, false, false, nil, ParseFailed, false
 	}
 	bodySpan := p.span()
 	if len(bodyExprs) > 0 {
 		bodySpan = p.Node(bodyExprs[0]).Span.Combine(p.span())
 	}
 	body := p.NewBlock(bodyExprs, bodySpan)
-	return binding, guard, body, true
+	return binding, ref, mut, guard, body, true
 }
 
 func (p *Parser) parseCaseBody() ([]NodeID, bool) {

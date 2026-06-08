@@ -662,6 +662,176 @@ satisfies exhaustiveness.
 ```error
 ```
 
+**Match on a mutable reference binds references**
+
+A `&mut` matched value projects through the ref: each arm binds a reference into the
+variant. A `&mut x` binding is mutable; a `&y` binding coerces down from `&mut`.
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    mut u = U(A(1))
+    match &mut u {
+        case A &mut x: let p = x
+        case B &y: let q = y
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Struct: scope02
+    StructField: scope03
+      SimpleType: scope03
+  Struct: scope02
+    StructField: scope04
+      SimpleType: scope04
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Var: scope02
+    TypeConstruction: scope02
+      Ident: scope02
+      TypeConstruction: scope02
+        Ident: scope02
+        Int: scope02
+  Match: scope02
+    Ref: scope02
+      Ident: scope02
+    SimpleType: scope02
+    Block: scope02
+      Var: scope05
+        Ident: scope05
+    SimpleType: scope02
+    Block: scope02
+      Var: scope06
+        Ident: scope06
+---
+scope01:
+scope02:
+  A: struct01
+  B: struct02
+  U: union01
+  u: union01 (mut)
+scope03:
+scope04:
+scope05:
+  p: &mut struct01
+  x: &mut struct01
+scope06:
+  q: &struct02
+  y: &struct02
+struct01 = A { v Int }
+struct02 = B { v Int }
+union01  = U = struct01 | struct02
+```
+
+**Match else on a reference binds a reference**
+
+The else binding when matching a reference is itself a reference; with one variant
+uncovered it narrows to that variant.
+
+```metall
+{
+    union Foo = Str | Int
+    mut x = Foo(42)
+    match &x {
+        case Str &s: let y = s
+        else &i: let y = i
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Union: scope02
+    SimpleType: scope02
+    SimpleType: scope02
+  Var: scope02
+    TypeConstruction: scope02
+      Ident: scope02
+      Int: scope02
+  Match: scope02
+    Ref: scope02
+      Ident: scope02
+    SimpleType: scope02
+    Block: scope02
+      Var: scope03
+        Ident: scope03
+    Block: scope02
+      Var: scope04
+        Ident: scope04
+---
+scope01:
+scope02:
+  Foo: union01
+  x: union01 (mut)
+scope03:
+  s: &Str
+  y: &Str
+scope04:
+  i: &Int
+  y: &Int
+union01 = Foo = Str | Int
+```
+
+**Match on a reference to an enum binds references**
+
+```metall
+{
+    enum Coin(cents U8) U8 = penny(1) | dime(10)
+    let c = Coin.dime
+    match &c {
+        case Coin.penny &p: let a = p
+        case Coin.dime &d: let b = d
+    }
+}
+```
+
+```bindings
+Block: scope01
+  Enum: scope02
+    SimpleType: scope03
+    FunParam: scope03
+      SimpleType: scope03
+    EnumVariant: scope03
+      Int: scope03
+    EnumVariant: scope03
+      Int: scope03
+  Var: scope02
+    Ident: scope02
+  Match: scope02
+    Ref: scope02
+      Ident: scope02
+    FieldAccess: scope02
+      SimpleType: scope02
+    Block: scope02
+      Var: scope04
+        Ident: scope04
+    FieldAccess: scope02
+      SimpleType: scope02
+    Block: scope02
+      Var: scope05
+        Ident: scope05
+---
+scope01:
+scope02:
+  Coin: enum01
+  Coin.dime: enum01
+  Coin.penny: enum01
+  c: enum01
+scope03:
+scope04:
+  a: &enum01
+  p: &enum01
+scope05:
+  b: &enum01
+  d: &enum01
+enum01 = Coin = penny | dime
+```
+
 ## Errors
 
 **Match on non-union**
@@ -1161,4 +1331,94 @@ test.met:4:18: Color is not a subset of Color
             try c is Color else { return c }
                      ^^^^^
             c
+```
+
+**Reference binding when matching a value**
+
+A value cannot bind references; match on `&value` instead.
+
+```metall
+{
+    union Foo = Str | Int
+    let x = Foo(42)
+    match x {
+        case Str &s: 1
+        case Int &i: 2
+    }
+}
+```
+
+```error
+test.met:5:14: cannot bind a reference here: the matched value is not a reference; match on `&value` to bind references
+        match x {
+            case Str &s: 1
+                 ^^^
+            case Int &i: 2
+```
+
+**Value binding when matching a reference**
+
+Matching a reference requires reference bindings.
+
+```metall
+{
+    union Foo = Str | Int
+    mut x = Foo(42)
+    match &x {
+        case Str s: 1
+        case Int i: 2
+    }
+}
+```
+
+```error
+test.met:5:14: the matched value is a reference; bind with `&` or `&mut`, not by value
+        match &x {
+            case Str s: 1
+                 ^^^
+            case Int i: 2
+```
+
+**Mutable binding from an immutable reference**
+
+```metall
+{
+    union Foo = Str | Int
+    mut x = Foo(42)
+    match &x {
+        case Str &mut s: 1
+        case Int &mut i: 2
+    }
+}
+```
+
+```error
+test.met:5:14: cannot take a `&mut` binding from a `&` value
+        match &x {
+            case Str &mut s: 1
+                 ^^^
+            case Int &mut i: 2
+```
+
+**Assign through an immutable reference binding**
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    mut u = U(A(1))
+    match &u {
+        case A &x: x.v = 5
+        case B &y: y.v = 6
+    }
+}
+```
+
+```error
+test.met:7:20: cannot assign to field of immutable value
+        match &u {
+            case A &x: x.v = 5
+                       ^^^
+            case B &y: y.v = 6
 ```

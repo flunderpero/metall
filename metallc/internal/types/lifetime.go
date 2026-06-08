@@ -1009,7 +1009,7 @@ func (a *LifetimeCheck) writeThroughArg(nodeID, arg ast.NodeID, src Chain) {
 }
 
 // analyzeMatch: the result is the union of the arm bodies (like analyzeIf). A
-// `case T v:` binding makes v carry the scrutinee's reach, so unwrapping a ref
+// `case T v:` binding makes v carry the matched value's reach, so unwrapping a ref
 // out of an optional/union keeps the borrow (and a later escape of v is caught).
 func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	a.Check(match.Expr)
@@ -1018,13 +1018,17 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 		a.Check(arm.Pattern)
 		if arm.Binding != nil {
 			ss := a.scopeFor(a.scopeGraph.IntroducedScope(arm.Body))
-			// Only propagate taint if the matched variant type can carry references.
-			// E.g. matching `case Err e:` on a union that also contains `&mut File`
-			// should not taint `e` since Err is a plain value type.
+			// A reference binding (`case Foo &x`) aliases the matched value's storage,
+			// so it always carries the matched value's reach. A value binding only
+			// propagates taint when the matched variant type can itself carry
+			// references: `case Err e:` on a union that also holds `&mut File`
+			// must not taint `e`, since Err is a plain value type.
 			bindingChain := exprChain
-			variantType := a.env.TypeOfNode(arm.Pattern)
-			if variantType != nil && !a.typeContainsRefOrAlloc(variantType.ID) {
-				bindingChain = nil
+			if !arm.Ref {
+				variantType := a.env.TypeOfNode(arm.Pattern)
+				if variantType != nil && !a.typeContainsRefOrAlloc(variantType.ID) {
+					bindingChain = nil
+				}
 			}
 			ss.Vars[arm.Binding.Name] = &VarTaint{arm.Body, ss.ScopeTaint, bindingChain}
 		}
@@ -1036,21 +1040,44 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	if match.Else != nil {
 		if match.Else.Binding != nil {
 			ss := a.scopeFor(a.scopeGraph.IntroducedScope(match.Else.Body))
-			// Only propagate taint if any uncovered variant can carry references.
+			// A reference else binding aliases the matched value; otherwise only
+			// propagate taint if an uncovered variant can carry references.
 			bindingChain := a.elseBindingChain(match, exprChain)
+			if match.Else.Ref {
+				bindingChain = exprChain
+			}
 			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, bindingChain}
 		}
 		a.Check(match.Else.Body)
 	}
+	// A diverging arm (`return`/`break`/`panic`) never yields a value through the
+	// match, so its borrows do not flow to the match result. Dropping it mirrors
+	// the type checker, which excludes `never` arms from the result type, and
+	// avoids a redundant "via block result" escape alongside the real "via return".
 	var merged Chain
 	for _, arm := range match.Arms {
+		if a.bodyDiverges(arm.Body) {
+			continue
+		}
 		merged = merged.Merge(a.flow(arm.Body))
 	}
-	if match.Else != nil {
+	if match.Else != nil && !a.bodyDiverges(match.Else.Body) {
 		merged = merged.Merge(a.flow(match.Else.Body))
 	}
 	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeMatch: %s", merged)
+}
+
+// bodyDiverges reports whether a branch body is `never`-typed, i.e. it returns,
+// breaks, or panics and so contributes no value (and no borrow) to its
+// enclosing expression's result.
+func (a *LifetimeCheck) bodyDiverges(nodeID ast.NodeID) bool {
+	t := a.env.TypeOfNode(nodeID)
+	if t == nil {
+		return false
+	}
+	_, ok := t.Kind.(NeverType)
+	return ok
 }
 
 func (a *LifetimeCheck) elseBindingChain(match ast.Match, exprChain Chain) Chain {
@@ -1080,10 +1107,14 @@ func (a *LifetimeCheck) elseBindingChain(match ast.Match, exprChain Chain) Chain
 
 // analyzeIf: an `if` used as an expression yields a value from one branch or the
 // other, so conservatively its chain is the union (Merge) of the branch chains.
+// A diverging branch yields no value, so it does not contribute (see analyzeMatch).
 func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 	a.ast.Walk(nodeID, a.Check)
-	merged := a.flow(ifNode.Then)
-	if ifNode.Else != nil {
+	var merged Chain
+	if !a.bodyDiverges(ifNode.Then) {
+		merged = a.flow(ifNode.Then)
+	}
+	if ifNode.Else != nil && !a.bodyDiverges(*ifNode.Else) {
 		merged = merged.Merge(a.flow(*ifNode.Else))
 	}
 	a.chains[nodeID] = merged
@@ -1091,14 +1122,17 @@ func (a *LifetimeCheck) analyzeIf(nodeID ast.NodeID, ifNode ast.If) {
 }
 
 // analyzeWhen: like analyzeIf, the result can come from any case (or the else),
-// so its chain is the union of all the branch chains.
+// so its chain is the union of all the non-diverging branch chains.
 func (a *LifetimeCheck) analyzeWhen(nodeID ast.NodeID, when ast.When) {
 	a.ast.Walk(nodeID, a.Check)
 	var merged Chain
 	for _, case_ := range when.Cases {
+		if a.bodyDiverges(case_.Body) {
+			continue
+		}
 		merged = merged.Merge(a.flow(case_.Body))
 	}
-	if when.Else != nil {
+	if when.Else != nil && !a.bodyDiverges(*when.Else) {
 		merged = merged.Merge(a.flow(*when.Else))
 	}
 	a.chains[nodeID] = merged

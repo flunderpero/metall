@@ -3604,6 +3604,69 @@ fun main() void {
 30
 ```
 
+## Match On References
+
+**match on a reference projects, binds references, and mutates in place**
+
+A `&mut`/`&` matched value binds references into the variant. Mutating through a
+`&mut` binding persists. Reading through a `&` binding reaches scalar and
+aggregate fields and enum associated data. A value match whose variant type is
+itself a reference still loads the stored reference (no projection).
+
+```metall
+struct Inner { n Int }
+struct A { v Int  inner Inner }
+struct B { v Int  inner Inner }
+union U = A | B
+
+enum Coin(cents Int) U8 = penny(1) | dime(10)
+
+fun bump(u &mut U) void {
+    match u {
+    case A &mut x: x.v = x.v + 100
+    case B &mut y: y.v = y.v + 200
+    }
+}
+
+fun total(u &U) Int {
+    match u {
+    case A &x: x.v + x.inner.n
+    case B &y: y.v + y.inner.n
+    }
+}
+
+fun main() void {
+    mut u = U(A(1, Inner(2)))
+    bump(&mut u)
+    DebugIntern.print_int(total(&u))
+
+    match &u {
+    case B &b: DebugIntern.print_int(b.v)
+    else &a: DebugIntern.print_int(a.v)
+    }
+
+    let c = Coin.dime
+    match &c {
+    case Coin.penny &p: DebugIntern.print_int(p.cents)
+    case Coin.dime &d: DebugIntern.print_int(d.cents)
+    }
+
+    mut n = 41
+    let o ?&mut Int = &mut n
+    match o {
+    case None: DebugIntern.print_int(0)
+    else x: DebugIntern.print_int(x.*)
+    }
+}
+```
+
+```output
+103
+101
+10
+41
+```
+
 ## Union Auto-Wrap
 
 **union auto-wrap in let binding**

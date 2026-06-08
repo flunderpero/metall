@@ -782,7 +782,8 @@ module.exports = grammar({
       seq(
         "case",
         field("pattern", $._match_pattern),
-        optional(field("binding", $.identifier)),
+        // `&x` / `&mut x` binds a reference into the matched value.
+        optional(seq(optional(seq("&", optional("mut"))), field("binding", $.identifier))),
         optional(seq("if", field("guard", $._expression))),
         ":",
         repeat($._statement),
@@ -798,7 +799,8 @@ module.exports = grammar({
     match_else: ($) =>
       seq(
         "else",
-        optional(field("binding", $.identifier)),
+        // `&x` / `&mut x` binds a reference into the matched value.
+        optional(seq(optional(seq("&", optional("mut"))), field("binding", $.identifier))),
         ":",
         repeat($._statement),
       ),

@@ -10,7 +10,16 @@ func (e *Engine) checkMatch(match ast.Match, span base.Span, typeHint *TypeID) (
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	switch kind := e.env.Type(exprTypeID).Kind.(type) {
+	// Matching on a reference to a union/enum projects through the ref: arms bind
+	// references into the matched value's storage (`case Foo &x` / `case Foo &mut x`).
+	matchTypeID := exprTypeID
+	var matchedRefMut *bool
+	if ref, ok := e.env.Type(exprTypeID).Kind.(RefType); ok {
+		matchTypeID = ref.Type
+		mut := ref.Mut
+		matchedRefMut = &mut
+	}
+	switch kind := e.env.Type(matchTypeID).Kind.(type) {
 	case UnionType:
 		if len(kind.Variants) == 0 {
 			return InvalidTypeID, TypeDepFailed
@@ -19,13 +28,13 @@ func (e *Engine) checkMatch(match ast.Match, span base.Span, typeHint *TypeID) (
 			e.diag(span, "match requires at least one arm")
 			return InvalidTypeID, TypeFailed
 		}
-		return e.checkUnionMatchArms(match, kind, exprTypeID, span, typeHint)
+		return e.checkUnionMatchArms(match, kind, matchTypeID, matchedRefMut, span, typeHint)
 	case EnumType:
 		if len(match.Arms) == 0 && match.Else == nil {
 			e.diag(span, "match requires at least one arm")
 			return InvalidTypeID, TypeFailed
 		}
-		return e.checkEnumMatchArms(match, kind, exprTypeID, span, typeHint)
+		return e.checkEnumMatchArms(match, kind, matchTypeID, matchedRefMut, span, typeHint)
 	default:
 		e.diag(e.ast.Node(match.Expr).Span, "match expression must be a union or enum type, got %s",
 			e.env.TypeDisplay(exprTypeID))
@@ -33,8 +42,40 @@ func (e *Engine) checkMatch(match ast.Match, span base.Span, typeHint *TypeID) (
 	}
 }
 
+// matchBindingType computes the type bound by a match arm or else binding, given
+// the variant (or narrowed) type and the binding's `&`/`&mut` markers. It
+// enforces the reference rules: a reference matched value requires reference
+// bindings, a value matched value forbids them, and a `&mut` binding requires a
+// `&mut` matched value (a `&` binding may coerce down from `&mut`). matchedRefMut
+// is nil for a value matched value, else points at its ref mutability.
+// It returns ok=false (after emitting a diagnostic) on a rule violation.
+func (e *Engine) matchBindingType(
+	span base.Span, baseTypeID TypeID, bindingRef, bindingMut bool, matchedRefMut *bool,
+) (TypeID, bool) {
+	if matchedRefMut == nil {
+		if bindingRef {
+			e.diag(span, "cannot bind a reference here: the matched value is not a reference; "+
+				"match on `&value` to bind references")
+			return InvalidTypeID, false
+		}
+		return baseTypeID, true
+	}
+	if !bindingRef {
+		e.diag(span, "the matched value is a reference; bind with `&` or `&mut`, not by value")
+		return InvalidTypeID, false
+	}
+	if bindingMut && !*matchedRefMut {
+		e.diag(span, "cannot take a `&mut` binding from a `&` value")
+		return InvalidTypeID, false
+	}
+	// nodeID 0: this ref type belongs to no AST node (the binding is a Name, not a
+	// node), so it must not clobber the arm body's or pattern's recorded type.
+	return e.env.buildRefType(0, baseTypeID, bindingMut, span), true
+}
+
 func (e *Engine) checkUnionMatchArms( //nolint:funlen
-	match ast.Match, union UnionType, unionTypeID TypeID, span base.Span, typeHint *TypeID,
+	match ast.Match, union UnionType, unionTypeID TypeID, matchedRefMut *bool,
+	span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
 	covered := make([]bool, len(union.Variants))
 	type armBody struct {
@@ -77,8 +118,13 @@ func (e *Engine) checkUnionMatchArms( //nolint:funlen
 			covered[matchedIdx] = true
 		}
 		if arm.Binding != nil {
+			bindTypeID, ok := e.matchBindingType(
+				e.ast.Node(arm.Pattern).Span, variantTypeID, arm.Ref, arm.Mut, matchedRefMut)
+			if !ok {
+				return InvalidTypeID, TypeFailed
+			}
 			bodyScope := e.scopeGraph.IntroducedScope(arm.Body)
-			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, variantTypeID)
+			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, bindTypeID)
 		}
 		if arm.Guard != nil {
 			if status := e.checkGuard(*arm.Guard); status.Failed() {
@@ -99,6 +145,11 @@ func (e *Engine) checkUnionMatchArms( //nolint:funlen
 			bindTypeID := unionTypeID
 			if uncovered := uncoveredVariants(covered, union); len(uncovered) == 1 {
 				bindTypeID = uncovered[0]
+			}
+			bindTypeID, ok := e.matchBindingType(
+				span, bindTypeID, match.Else.Ref, match.Else.Mut, matchedRefMut)
+			if !ok {
+				return InvalidTypeID, TypeFailed
 			}
 			bodyScope := e.scopeGraph.IntroducedScope(match.Else.Body)
 			e.env.bindInScope(bodyScope, match.Else.Body, match.Else.Binding.Name, bindTypeID)
@@ -184,11 +235,17 @@ func uncoveredVariants(covered []bool, union UnionType) []TypeID {
 }
 
 func (e *Engine) checkEnumMatchArms( //nolint:funlen
-	match ast.Match, enum EnumType, enumTypeID TypeID, span base.Span, typeHint *TypeID,
+	match ast.Match, enum EnumType, enumTypeID TypeID, matchedRefMut *bool,
+	span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
 	if match.Else != nil && match.Else.Binding != nil {
+		bindTypeID, ok := e.matchBindingType(
+			span, enumTypeID, match.Else.Ref, match.Else.Mut, matchedRefMut)
+		if !ok {
+			return InvalidTypeID, TypeFailed
+		}
 		bodyScope := e.scopeGraph.IntroducedScope(match.Else.Body)
-		e.env.bindInScope(bodyScope, match.Else.Body, match.Else.Binding.Name, enumTypeID)
+		e.env.bindInScope(bodyScope, match.Else.Body, match.Else.Binding.Name, bindTypeID)
 	}
 	if match.Try {
 		// A `try` desugars to one narrowing arm plus an else that must break
@@ -248,8 +305,13 @@ func (e *Engine) checkEnumMatchArms( //nolint:funlen
 			}
 		}
 		if arm.Binding != nil {
+			bindTypeID, ok := e.matchBindingType(
+				e.ast.Node(arm.Pattern).Span, patTypeID, arm.Ref, arm.Mut, matchedRefMut)
+			if !ok {
+				return InvalidTypeID, TypeFailed
+			}
 			bodyScope := e.scopeGraph.IntroducedScope(arm.Body)
-			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, patTypeID)
+			e.env.bindInScope(bodyScope, arm.Body, arm.Binding.Name, bindTypeID)
 		}
 		if arm.Guard != nil {
 			// A guarded arm proves nothing. It may fall through, so it covers no

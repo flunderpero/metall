@@ -439,15 +439,21 @@ type Match struct {
 func (Match) isKind() {}
 
 type MatchArm struct {
-	Pattern NodeID  // SimpleType (variant)
-	Binding *Name   // optional binding (nil if absent)
-	Guard   *NodeID // optional guard condition (nil if absent)
-	Body    NodeID  // Block
+	Pattern NodeID // SimpleType (variant)
+	Binding *Name  // optional binding (nil if absent)
+	// Ref/Mut describe the binding: `&x` sets Ref, `&mut x` sets Ref+Mut.
+	Ref   bool
+	Mut   bool
+	Guard *NodeID // optional guard condition (nil if absent)
+	Body  NodeID  // Block
 }
 
 type MatchElse struct {
-	Binding *Name  // optional binding (nil if absent)
-	Body    NodeID // Block
+	Binding *Name // optional binding (nil if absent)
+	// Ref/Mut describe the binding: `&x` sets Ref, `&mut x` sets Ref+Mut.
+	Ref  bool
+	Mut  bool
+	Body NodeID // Block
 }
 
 type When struct {
@@ -1199,6 +1205,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 				if arm.Binding != nil {
 					addAttr(fmt.Sprintf("arm[%d].binding", i), arm.Binding.Name)
 				}
+				if arm.Ref {
+					addAttr(fmt.Sprintf("arm[%d].ref", i), "true")
+				}
+				if arm.Mut {
+					addAttr(fmt.Sprintf("arm[%d].mut", i), "true")
+				}
 				if arm.Guard != nil {
 					addChild(fmt.Sprintf("arm[%d].guard", i), *arm.Guard)
 				}
@@ -1207,6 +1219,12 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			if kind.Else != nil {
 				if kind.Else.Binding != nil {
 					addAttr("else.binding", kind.Else.Binding.Name)
+				}
+				if kind.Else.Ref {
+					addAttr("else.ref", "true")
+				}
+				if kind.Else.Mut {
+					addAttr("else.mut", "true")
 				}
 				addChild("else.body", kind.Else.Body)
 			}

@@ -2248,12 +2248,6 @@ test.met:6:30: reference escaping its allocation scope (via return)
                 case Int: return &local
                                  ^^^^^^
                 case Bool: return &local
-
-test.met:6:30: reference escaping its allocation scope (via block result)
-            match u {
-                case Int: return &local
-                                 ^^^^^^
-                case Bool: return &local
 ```
 
 **match binding used safely no escape**
@@ -4514,4 +4508,160 @@ test.met:5:9: reference escaping its allocation scope (via block result)
             })
              ^
         }
+```
+
+## Match reference bindings
+
+A `case Foo &x` / `case Foo &mut x` binding aliases the matched value's
+storage, so escape analysis must treat the binding as borrowing the matched value.
+
+**ref binding escapes when it borrows a local union**
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    fun foo() &mut A {
+        mut u = U(A(1))
+        match &mut u {
+            case A &mut x: return x
+            case B &mut y: return foo()
+        }
+    }
+}
+```
+
+```error
+test.met:7:15: reference escaping its allocation scope (via return)
+            mut u = U(A(1))
+            match &mut u {
+                  ^^^^^^
+                case A &mut x: return x
+```
+
+**ref binding borrowing a reference parameter is valid**
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    fun foo(u &mut U) &mut A {
+        match u {
+            case A &mut x: return x
+            case B &mut y: return foo(u)
+        }
+    }
+}
+```
+
+```error
+```
+
+**reading through a ref binding stays local**
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    fun sum(u &U) Int {
+        match u {
+            case A &x: x.v
+            case B &y: y.v
+        }
+    }
+}
+```
+
+```error
+```
+
+**else ref binding escapes when it borrows a local union**
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    fun foo() &A {
+        mut u = U(A(1))
+        match &u {
+            case B &b: return foo()
+            else &a: return a
+        }
+    }
+}
+```
+
+```error
+test.met:7:15: reference escaping its allocation scope (via return)
+            mut u = U(A(1))
+            match &u {
+                  ^^
+                case B &b: return foo()
+```
+
+**storing a ref binding into an outer variable escapes**
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    mut sink = A(0)
+    mut keep = &mut sink
+    {
+        mut u = U(A(1))
+        match &mut u {
+            case A &mut x: keep = x
+            case B &mut y: keep = &mut sink
+        }
+    }
+}
+```
+
+```error
+test.met:9:15: reference escaping its allocation scope (via mutation of outer variable)
+            mut u = U(A(1))
+            match &mut u {
+                  ^^^^^^
+                case A &mut x: keep = x
+```
+
+**mutating in place through a ref binding is valid**
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    fun bump(u &mut U) void {
+        match u {
+            case A &mut x: x.v = x.v + 1
+            case B &mut y: y.v = y.v + 1
+        }
+    }
+}
+```
+
+```error
+```
+
+**reading enum associated data through a ref binding is valid**
+
+```metall
+{
+    enum Coin(cents Int) U8 = penny(1) | dime(10)
+    fun worth(c &Coin) Int {
+        match c {
+            case Coin.penny &p: p.cents
+            case Coin.dime &d: d.cents
+        }
+    }
+}
+```
+
+```error
 ```

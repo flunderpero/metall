@@ -713,7 +713,16 @@ func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 func (g *IRFunGen) genEnumFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
 	g.Gen(fieldAccess.Target)
 	discrReg := g.lookupCode(fieldAccess.Target)
-	enumTypeID := g.typeOfNode(fieldAccess.Target).ID
+	targetType := g.typeOfNode(fieldAccess.Target)
+	if refTyp, ok := targetType.Kind.(types.RefType); ok {
+		// `&E` target: the register is a pointer to the discriminant, so load the
+		// tag before mapping it to its assoc-struct row.
+		targetType = g.env.Type(refTyp.Type)
+		loaded := g.reg()
+		g.write("%s = load %s, ptr %s", loaded, g.irType(targetType.ID), discrReg)
+		discrReg = loaded
+	}
+	enumTypeID := targetType.ID
 	enum := base.Cast[types.EnumType](g.env.Type(enumTypeID).Kind)
 	assoc := base.Cast[types.StructType](g.env.Type(enum.AssociatedDataStruct).Kind)
 	fieldIdx := indexOfStructField(assoc, fieldAccess.Field.Name)
@@ -1462,13 +1471,21 @@ func (g *IRFunGen) genWhen(id ast.NodeID, when ast.When) { //nolint:funlen
 func (g *IRFunGen) genMatch(id ast.NodeID, match ast.Match) {
 	g.Gen(match.Expr)
 	exprType := g.typeOfNode(match.Expr)
-	if _, ok := exprType.Kind.(types.EnumType); ok {
-		g.genEnumMatch(id, match, exprType.ID)
+	// Matching on `&U`/`&mut U` projects through the ref. The matched-value register
+	// is already the union/enum address (a ref variable lowers to a ptr value),
+	// so only the dispatch and IR type need the inner type.
+	innerTypeID := exprType.ID
+	if refTyp, ok := exprType.Kind.(types.RefType); ok {
+		innerTypeID = refTyp.Type
+	}
+	innerKind := g.env.Type(innerTypeID).Kind
+	if _, ok := innerKind.(types.EnumType); ok {
+		g.genEnumMatch(id, match, innerTypeID)
 		return
 	}
 	exprReg := g.lookupCode(match.Expr)
-	union := base.Cast[types.UnionType](exprType.Kind)
-	unionIRType := g.irType(exprType.ID)
+	union := base.Cast[types.UnionType](innerKind)
+	unionIRType := g.irType(innerTypeID)
 	tagPtr := g.reg()
 	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, unionIRType, exprReg)
 	tagReg := g.reg()
@@ -1638,8 +1655,16 @@ func (g *IRFunGen) emitMatchPhi(id ast.NodeID, contLabel Label, entries []matchP
 // through on guard failure exactly like a non-matching one. This also lowers
 // `try`, which the parser desugars into a match with a diverging else.
 func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types.TypeID) { //nolint:funlen
-	discrReg := g.lookupCode(match.Expr)
 	intIR := g.irType(enumTypeID)
+	// On a `&E`/`&mut E` matched value the register is a pointer to the discriminant;
+	// load the int for the tests and keep the pointer for reference bindings.
+	discrReg := g.lookupCode(match.Expr)
+	var enumPtr string
+	if _, ok := g.typeOfNode(match.Expr).Kind.(types.RefType); ok {
+		enumPtr = discrReg
+		discrReg = g.reg()
+		g.write("%s = load %s, ptr %s", discrReg, intIR, enumPtr)
+	}
 	contLabel := g.label("endmatch", id)
 	elseLabel := g.label("case_else", id)
 	testLabels := make([]Label, len(match.Arms))
@@ -1661,7 +1686,7 @@ func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types
 			miss = testLabels[i+1]
 		}
 		g.writeLabel(testLabels[i])
-		g.genEnumArmBinding(arm.Body, arm.Binding, arm.Guard != nil, discrReg, intIR)
+		g.genEnumArmBinding(arm.Body, arm.Binding, arm.Ref, arm.Guard != nil, discrReg, enumPtr, intIR)
 		// Gather the tags this arm matches (one for a variant, every
 		// variant of a subset for a bare subset pattern), then test whether the
 		// value equals any of them.
@@ -1704,7 +1729,7 @@ func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types
 
 	g.writeLabel(elseLabel)
 	if match.Else != nil {
-		g.genEnumArmBinding(match.Else.Body, match.Else.Binding, false, discrReg, intIR)
+		g.genEnumArmBinding(match.Else.Body, match.Else.Binding, match.Else.Ref, false, discrReg, enumPtr, intIR)
 		g.Gen(match.Else.Body)
 		if !g.breaksControlFlow(match.Else.Body) {
 			g.write("br label %%%s", contLabel)
@@ -1716,13 +1741,24 @@ func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types
 	g.emitMatchPhi(id, contLabel, phiEntries)
 }
 
-// genEnumArmBinding binds the scrutinee's tag (the enum value) to the
+// genEnumArmBinding binds the matched value's tag (the enum value) to the
 // arm's binding name.
-func (g *IRFunGen) genEnumArmBinding(bodyID ast.NodeID, binding *ast.Name, hasGuard bool, discrReg, intIR string) {
+func (g *IRFunGen) genEnumArmBinding(
+	bodyID ast.NodeID, binding *ast.Name, ref, hasGuard bool, discrReg, enumPtr, intIR string,
+) {
 	body := base.Cast[ast.Block](g.ast.Node(bodyID).Kind)
 	// An empty body never reads the binding, but a guard still can, so bind it
 	// whenever the arm is guarded even if the body is empty.
 	if binding == nil || (len(body.Exprs) == 0 && !hasGuard) {
+		return
+	}
+	// A reference binding (`case Color.red &x`) aliases the matched value's
+	// discriminant storage; bind the pointer, held in a slot like any ref var.
+	if ref {
+		slot := g.reg()
+		g.writeAlloca(slot, "ptr")
+		g.write("store ptr %s, ptr %s", enumPtr, slot)
+		g.setSymbol(ast.BindingID(bodyID), binding.Name, slot, "ptr")
 		return
 	}
 	allocReg := g.reg()
@@ -1738,20 +1774,54 @@ func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
 	if arm.Binding == nil || (len(body.Exprs) == 0 && arm.Guard == nil) {
 		return
 	}
-	g.genMatchBinding(ast.BindingID(arm.Body), arm.Binding.Name, g.typeIDOfNode(arm.Pattern), payloadPtr)
+	// Use the binding's recorded type, not the pattern's: a `&x` binding is typed
+	// `&Variant`. arm.Ref marks a projection into the (reference) matched value.
+	bindTypeID, _ := g.env.BindingType(ast.BindingID(arm.Body))
+	g.genMatchBinding(ast.BindingID(arm.Body), arm.Binding.Name, bindTypeID, payloadPtr, arm.Ref)
 }
 
 func (g *IRFunGen) genMatchElseBinding(match ast.Match, payloadPtr string) {
 	bindID := ast.BindingID(match.Else.Body)
 	bindTypeID, _ := g.env.BindingType(bindID)
-	if bindTypeID == g.typeIDOfNode(match.Expr) {
-		g.setSymbol(bindID, match.Else.Binding.Name, g.lookupCode(match.Expr), "ptr")
+	// The else binding covers the whole matched value when its pointee type matches
+	// the matched value's pointee type; a narrowed single-variant else binds the
+	// payload instead. Unwrapping a leading ref handles `&U` matched values.
+	if g.derefIfRef(bindTypeID) == g.derefIfRef(g.typeIDOfNode(match.Expr)) {
+		unionPtr := g.lookupCode(match.Expr)
+		if _, ok := g.env.Type(bindTypeID).Kind.(types.RefType); ok {
+			g.genMatchBinding(bindID, match.Else.Binding.Name, bindTypeID, unionPtr, match.Else.Ref)
+			return
+		}
+		g.setSymbol(bindID, match.Else.Binding.Name, unionPtr, "ptr")
 		return
 	}
-	g.genMatchBinding(bindID, match.Else.Binding.Name, bindTypeID, payloadPtr)
+	g.genMatchBinding(bindID, match.Else.Binding.Name, bindTypeID, payloadPtr, match.Else.Ref)
 }
 
-func (g *IRFunGen) genMatchBinding(bindID ast.BindingID, name string, typeID types.TypeID, ptr string) {
+// derefIfRef returns the pointee type of a RefType, else the type itself.
+func (g *IRFunGen) derefIfRef(typeID types.TypeID) types.TypeID {
+	if ref, ok := g.env.Type(typeID).Kind.(types.RefType); ok {
+		return ref.Type
+	}
+	return typeID
+}
+
+func (g *IRFunGen) genMatchBinding(
+	bindID ast.BindingID, name string, typeID types.TypeID, ptr string, projection bool,
+) {
+	// A projection binding (`case Foo &x` on a reference matched value) binds the
+	// payload pointer itself, never a copy: the ref value is the address `ptr`,
+	// held in a fresh slot so genIdent loads it like any other ref variable. This
+	// must be gated on the projection marker, not on the binding being a RefType:
+	// a value binding whose variant type is itself a reference (e.g. matching
+	// `?&mut Int`) holds the ref value in the payload and must be loaded below.
+	if projection {
+		slot := g.reg()
+		g.writeAlloca(slot, "ptr")
+		g.write("store ptr %s, ptr %s", ptr, slot)
+		g.setSymbol(bindID, name, slot, "ptr")
+		return
+	}
 	valReg := g.loadValue(ptr, typeID)
 	irTyp := g.irType(typeID)
 	// An allocator binding must hold the arena pointer directly, never a stack
