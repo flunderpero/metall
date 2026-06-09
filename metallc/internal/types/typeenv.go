@@ -106,6 +106,7 @@ type TypeEnv struct {
 	captureOrigins     map[ast.NodeID]*Binding
 	methodCallReceiver map[ast.NodeID]ast.NodeID
 	callDefaults       map[ast.NodeID][]ast.NodeID
+	argOrder           map[ast.NodeID][]ast.NodeID
 	unionWraps         map[ast.NodeID]unionWrap
 	constArrays        map[ast.NodeID]bool
 	enumVariantRefs    map[ast.NodeID]enumVariantRef
@@ -143,6 +144,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		captureOrigins:     map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
+		argOrder:           map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
 		constArrays:        map[ast.NodeID]bool{},
 		enumVariantRefs:    map[ast.NodeID]enumVariantRef{},
@@ -168,6 +170,7 @@ func (e *TypeEnv) NewChildEnv(node ast.NodeID) *TypeEnv {
 		captureOrigins:     map[ast.NodeID]*Binding{},
 		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
 		callDefaults:       map[ast.NodeID][]ast.NodeID{},
+		argOrder:           map[ast.NodeID][]ast.NodeID{},
 		unionWraps:         map[ast.NodeID]unionWrap{},
 		constArrays:        map[ast.NodeID]bool{},
 		enumVariantRefs:    map[ast.NodeID]enumVariantRef{},
@@ -293,6 +296,40 @@ func (e *TypeEnv) CallDefaults(callID ast.NodeID) ([]ast.NodeID, bool) {
 		return e.parent.CallDefaults(callID)
 	}
 	return nil, false
+}
+
+// ArgOrder returns the call's or type-construction's arguments reordered into
+// parameter order with defaults filled in (one node per user-facing parameter,
+// excluding the method receiver). Only set when named arguments are used.
+func (e *TypeEnv) ArgOrder(nodeID ast.NodeID) ([]ast.NodeID, bool) {
+	order, ok := e.argOrder[nodeID]
+	if ok {
+		return order, true
+	}
+	if e.parent != nil {
+		return e.parent.ArgOrder(nodeID)
+	}
+	return nil, false
+}
+
+// CallArgNodes returns a call's effective arguments in parameter order: the
+// method receiver (if any) first, then one node per parameter (the source
+// argument or, where omitted, its default expression). This is the single
+// assembly shared by type checking, lifetime analysis, and code generation.
+func (e *TypeEnv) CallArgNodes(callID ast.NodeID) []ast.NodeID {
+	call := base.Cast[ast.Call](e.ast.Node(callID).Kind)
+	args := make([]ast.NodeID, 0, len(call.Args)+1)
+	if receiver, ok := e.MethodCallReceiver(callID); ok {
+		args = append(args, receiver)
+	}
+	if order, ok := e.ArgOrder(callID); ok {
+		return append(args, order...)
+	}
+	args = append(args, call.Args...)
+	if defaults, ok := e.CallDefaults(callID); ok {
+		args = append(args, defaults...)
+	}
+	return args
 }
 
 func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
@@ -668,6 +705,10 @@ func (e *TypeEnv) setMethodCallReceiver(callID ast.NodeID, targetID ast.NodeID) 
 
 func (e *TypeEnv) setCallDefaults(callID ast.NodeID, defaults []ast.NodeID) {
 	e.callDefaults[callID] = defaults
+}
+
+func (e *TypeEnv) setArgOrder(nodeID ast.NodeID, order []ast.NodeID) {
+	e.argOrder[nodeID] = order
 }
 
 func (e *TypeEnv) isIntType(typeID TypeID) bool {

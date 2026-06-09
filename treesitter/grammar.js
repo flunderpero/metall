@@ -679,7 +679,14 @@ module.exports = grammar({
       prec.right(PREC.UNARY, seq("unsafe", $.call_expression)),
 
     argument_list: ($) =>
-      seq($._expression, repeat(seq(",", $._expression)), optional(",")),
+      seq($._argument, repeat(seq(",", $._argument)), optional(",")),
+
+    _argument: ($) => choice($._expression, $.named_argument),
+
+    // A `name = value` argument. `=` cannot continue an expression here (it is
+    // only assignment, a statement), so the name disambiguates the value.
+    named_argument: ($) =>
+      seq(field("name", $.identifier), "=", field("value", $._expression)),
 
     field_access: ($) =>
       prec.left(

@@ -435,7 +435,7 @@ func (g *IRFunGen) genTypeConstructionOnStack(id ast.NodeID, lit ast.TypeConstru
 	irTyp := g.irType(targetTyp.ID)
 	reg := g.reg()
 	g.writeAlloca(reg, irTyp)
-	g.genStructConstructionFields(id, lit, reg)
+	g.genStructConstructionFields(id, id, lit, reg)
 }
 
 func (g *IRFunGen) genUnionConstruction(
@@ -501,7 +501,7 @@ func (g *IRFunGen) genArenaNew(id ast.NodeID, call ast.Call, fa ast.FieldAccess)
 	size := g.irTypeSize(g.env, valueTypeID)
 	g.write("%s = call ptr @runtime$arena.arena_alloc(ptr %s, i64 %d)", reg, allocReg, size)
 	if lit, ok := g.ast.Node(valueArg).Kind.(ast.TypeConstruction); ok {
-		g.genStructConstructionFields(id, lit, reg)
+		g.genStructConstructionFields(id, valueArg, lit, reg)
 	} else {
 		g.Gen(valueArg)
 		valReg := g.lookupCode(valueArg)
@@ -641,19 +641,29 @@ func (g *IRFunGen) genInitializeMemoryStruct(
 	g.write("call void @__fill_cpy(ptr %s, ptr %s, i64 %d, i64 %s)", dataReg, valReg, elemSize, countReg)
 }
 
-func (g *IRFunGen) genStructConstructionFields(id ast.NodeID, lit ast.TypeConstruction, destReg string) {
+// genStructConstructionFields lowers a struct construction's fields into destReg.
+// constructionID is the TypeConstruction node (where any named-argument order is
+// recorded); resultID is the node whose result register is set (they differ when
+// the construction is nested inside another expression like `arena.new(...)`).
+func (g *IRFunGen) genStructConstructionFields(
+	resultID, constructionID ast.NodeID, lit ast.TypeConstruction, destReg string,
+) {
 	g.Gen(lit.Target)
-	for _, arg := range lit.Args {
+	args := lit.Args
+	if order, ok := g.env.ArgOrder(constructionID); ok {
+		args = order
+	}
+	for _, arg := range args {
 		g.Gen(arg)
 	}
 	targetTyp := g.typeOfNode(lit.Target)
 	structTyp := base.Cast[types.StructType](targetTyp.Kind)
 	irTyp := g.irType(targetTyp.ID)
-	for i, arg := range lit.Args {
+	for i, arg := range args {
 		fieldReg := g.fieldPtr(irTyp, destReg, i)
 		g.storeValue(g.lookupCode(arg), fieldReg, structTyp.Fields[i].Type)
 	}
-	g.setCode(id, destReg)
+	g.setCode(resultID, destReg)
 }
 
 func (g *IRFunGen) genFieldAccess(id ast.NodeID, fieldAccess ast.FieldAccess) {
@@ -2373,6 +2383,21 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 	return false
 }
 
+// callDefaultSet returns the set of a call's default-argument nodes. Default
+// expressions live on the function declaration and are shared across every call
+// site, so they are re-emitted per site rather than generated once.
+func (g *IRFunGen) callDefaultSet(id ast.NodeID) map[ast.NodeID]bool {
+	defaults, ok := g.env.CallDefaults(id)
+	if !ok {
+		return nil
+	}
+	set := make(map[ast.NodeID]bool, len(defaults))
+	for _, d := range defaults {
+		set[d] = true
+	}
+	return set
+}
+
 func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nolint:funlen
 	if g.genBuiltinFun(id, call, span) {
 		return
@@ -2382,22 +2407,16 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 	if !ok {
 		panic(base.Errorf("callee is not a function"))
 	}
-	var argNodes []ast.NodeID
-	if target, ok := g.env.MethodCallReceiver(id); ok {
-		argNodes = append(argNodes, target)
-	}
-	argNodes = append(argNodes, call.Args...)
+	defaults := g.callDefaultSet(id)
+	argNodes := g.env.CallArgNodes(id)
 	for _, nodeID := range argNodes {
-		g.Gen(nodeID)
-	}
-	// Default-argument AST nodes live on the function declaration and are
-	// shared across every call site. Re-emit into the current basic block
-	// so init IR doesn't end up dominated by just one call site's branch.
-	if defaults, ok := g.env.CallDefaults(id); ok {
-		for _, defaultID := range defaults {
-			g.regenSubtree(defaultID)
+		// Re-emit a default into the current basic block (rather than reuse a
+		// prior site's IR) so it is not dominated by just one call site's branch.
+		if defaults[nodeID] {
+			g.regenSubtree(nodeID)
+		} else {
+			g.Gen(nodeID)
 		}
-		argNodes = append(argNodes, defaults...)
 	}
 	if _, isDirect := g.env.NamedFunRef(call.Callee); !isDirect {
 		g.genIndirectCall(id, call, fun, argNodes)

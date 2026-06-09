@@ -255,6 +255,45 @@ Call()
     callee=Ident(name="foo")
 ```
 
+**Named call args**
+
+```metall
+foo(1, b = 2, a = 3)
+```
+
+```ast
+Call(args[1].name="b",args[2].name="a")
+  callee=Ident(name="foo")
+  args[0]=Int(value=1)
+  args[1]=Int(value=2)
+  args[2]=Int(value=3)
+```
+
+**Named type construction**
+
+```metall
+Foo(y = 2, x = 1)
+```
+
+```ast
+TypeConstruction(args[0].name="y",args[1].name="x")
+  target=Ident(name="Foo")
+  args[0]=Int(value=2)
+  args[1]=Int(value=1)
+```
+
+**Positional argument after named argument is rejected**
+
+```metall
+foo(a = 1, 2)
+```
+
+```error
+test.met:1:12: positional argument after named argument
+    foo(a = 1, 2)
+               ^
+```
+
 **Fun type**
 
 ```metall
@@ -2723,6 +2762,24 @@ Enum(name="Color")
     args[0]=String(value="Green")
     args[1]=Int(value=65280)
     tag=Int(value=2)
+```
+
+**Associated data with named values**
+
+```metall
+enum Color(name Str, rgb U32) U8 = red(rgb = 0xff0000, name = "Red")
+```
+
+```ast
+Enum(name="Color")
+  backing=SimpleType(name="U8")
+  params[0]=FunParam(name="name")
+    type=SimpleType(name="Str")
+  params[1]=FunParam(name="rgb")
+    type=SimpleType(name="U32")
+  variants=EnumVariant(name="red",args[0].name="rgb",args[1].name="name")
+    args[0]=Int(value=16711680)
+    args[1]=String(value="Red")
 ```
 
 **Enum reserved word**

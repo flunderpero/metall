@@ -239,3 +239,27 @@ fun f() void { let a = xs[1..3] let b = xs[..2] let c = xs[1..] let d = xs[..] l
           object: (identifier)
           lo: (integer_literal)
           hi: (integer_literal))))))
+
+================================================================================
+Named call arguments
+================================================================================
+
+fun f() void { foo(1, b = 2, a = 3) }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (identifier)
+        arguments: (argument_list
+          (integer_literal)
+          (named_argument
+            name: (identifier)
+            value: (integer_literal))
+          (named_argument
+            name: (identifier)
+            value: (integer_literal)))))))

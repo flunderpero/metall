@@ -536,11 +536,11 @@ func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	ident := p.NewIdent(struct_.Value, typeArgs, struct_.Span.Combine(p.span()))
-	args, ok := p.ParseCallArgs()
+	args, argNames, ok := p.ParseCallArgs()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewTypeConstruction(ident, args, struct_.Span.Combine(p.span())), true
+	return p.NewTypeConstruction(ident, args, argNames, struct_.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
@@ -765,14 +765,14 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		switch t.Kind { //nolint:exhaustive
 		case token.LParen:
 			callee := expr
-			args, ok := p.ParseCallArgs()
+			args, argNames, ok := p.ParseCallArgs()
 			if !ok {
 				return ParseFailed, false
 			}
 			if p.isStructTarget(callee) {
-				expr = p.NewTypeConstruction(callee, args, span.Combine(p.span()))
+				expr = p.NewTypeConstruction(callee, args, argNames, span.Combine(p.span()))
 			} else {
-				expr = p.NewCall(callee, args, false, span.Combine(p.span()))
+				expr = p.NewCall(callee, args, argNames, false, span.Combine(p.span()))
 			}
 			continue
 		case token.LBracketImmediate:
@@ -1074,42 +1074,66 @@ func (p *Parser) ParseRefExpr() (NodeID, bool) {
 	return p.NewRef(target, mut, span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseCallArgs() ([]NodeID, bool) {
+// ParseCallArgs parses `(arg, ...)` where each arg is positional or named
+// (`name = expr`). Returns the value expressions and a parallel names slice
+// (nil when no argument is named; otherwise names[i] is non-nil for a named arg).
+func (p *Parser) ParseCallArgs() ([]NodeID, []*Name, bool) {
 	if _, ok := p.expect(token.LParen); !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	args := []NodeID{}
+	var names []*Name // lazily allocated on the first named argument
 	for {
 		t, ok := p.mayPeek()
 		if !ok {
-			return args, true
+			return args, names, true
 		}
 		if t.Kind == token.RParen {
 			p.next()
-			return args, true
+			return args, names, true
+		}
+		// A named argument is `ident = expr`. `==` is a comparison, so only a
+		// single `=` separates a name from its value.
+		var name *Name
+		if t.Kind == token.Ident {
+			if next, ok := p.mayPeek1(); ok && next.Kind == token.Eq {
+				p.next()
+				p.next()
+				name = &Name{t.Value, t.Span}
+			}
+		}
+		if name == nil && names != nil {
+			p.diagnostic(t.Span, "positional argument after named argument")
+			return args, names, false
+		}
+		if name != nil && names == nil {
+			names = make([]*Name, len(args))
 		}
 		var expr NodeID
-		if t.Kind == token.AllocatorIdent {
+		if peek, ok := p.mayPeek(); ok && peek.Kind == token.AllocatorIdent {
 			p.next()
-			expr = p.NewIdent(t.Value, nil, t.Span)
+			expr = p.NewIdent(peek.Value, nil, peek.Span)
 		} else {
 			expr, ok = p.ParseExpr(0)
 			if !ok {
-				return args, false
+				return args, names, false
 			}
 		}
 		args = append(args, expr)
+		if names != nil {
+			names = append(names, name)
+		}
 		t, ok = p.next()
 		if !ok {
-			return args, true
+			return args, names, true
 		}
 		switch t.Kind { //nolint:exhaustive
 		case token.Comma:
 		case token.RParen:
-			return args, true
+			return args, names, true
 		default:
 			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
-			return args, false
+			return args, names, false
 		}
 	}
 }
@@ -1842,8 +1866,9 @@ func (p *Parser) parseEnumVariant() (NodeID, bool) {
 	span := nameTok.Span
 	name := Name{nameTok.Value, nameTok.Span}
 	var args []NodeID
+	var argNames []*Name
 	if next, ok := p.mayPeek(); ok && next.Kind == token.LParen {
-		args, ok = p.ParseCallArgs()
+		args, argNames, ok = p.ParseCallArgs()
 		if !ok {
 			return ParseFailed, false
 		}
@@ -1858,7 +1883,7 @@ func (p *Parser) parseEnumVariant() (NodeID, bool) {
 		}
 		tag = &num
 	}
-	return p.NewEnumVariant(name, args, tag, span.Combine(p.span())), true
+	return p.NewEnumVariant(name, args, argNames, tag, span.Combine(p.span())), true
 }
 
 // parseMatchPattern parses a match arm pattern: a type (union variant or whole

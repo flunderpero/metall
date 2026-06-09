@@ -194,42 +194,46 @@ func (e *Engine) resolveEnumAssocArgs(v ast.EnumVariant, params []StructField) (
 		}
 		return nil, TypeOK
 	}
-	if len(v.Args) > len(params) {
-		e.diag(v.Name.Span, "enum variant %s: expected at most %d associated values, got %d",
-			v.Name.Name, len(params), len(v.Args))
+	paramNames := make([]string, len(params))
+	for i, field := range params {
+		paramNames[i] = field.Name
+	}
+	slots, ok := matchArgs(e.ast, paramNames, "associated field", v.Args, v.ArgNames, v.Name.Span, e.diag)
+	if !ok {
 		return nil, TypeFailed
 	}
 	args := make([]ast.NodeID, len(params))
 	for i, field := range params {
-		if i >= len(v.Args) {
+		argNodeID := slots[i]
+		if argNodeID == 0 {
 			if !e.isOptionType(field.Type) {
 				e.diag(v.Name.Span, "enum variant %s: missing associated value for %s", v.Name.Name, field.Name)
 				return nil, TypeFailed
 			}
 			continue
 		}
-		argType, status := e.queryWithHint(v.Args[i], &field.Type)
+		argType, status := e.queryWithHint(argNodeID, &field.Type)
 		if status.Failed() {
 			return nil, TypeDepFailed
 		}
 		if !e.isAssignableTo(argType, field.Type) {
-			e.diag(e.ast.Node(v.Args[i]).Span, "associated value type mismatch for %s: expected %s, got %s",
+			e.diag(e.ast.Node(argNodeID).Span, "associated value type mismatch for %s: expected %s, got %s",
 				field.Name, e.env.TypeDisplay(field.Type), e.env.TypeDisplay(argType))
 			return nil, TypeFailed
 		}
 		// Associated values are emitted as compile-time constants, so they follow
 		// the same restriction as module-level constants: no function calls.
-		if callNodeID, ok := ast.FindNode[ast.Call](e.ast, v.Args[i]); ok {
+		if callNodeID, ok := ast.FindNode[ast.Call](e.ast, argNodeID); ok {
 			e.diag(e.ast.Node(callNodeID).Span, "enum associated values cannot contain function calls")
 			return nil, TypeFailed
 		}
 		// Reading a member off an enum value lowers to a runtime table load whose
 		// fill order is unspecified, so it would silently read a zero table.
-		if memberID, ok := e.assocValueReadsEnumMember(v.Args[i]); ok {
+		if memberID, ok := e.assocValueReadsEnumMember(argNodeID); ok {
 			e.diag(e.ast.Node(memberID).Span, "enum associated values cannot read enum fields")
 			return nil, TypeFailed
 		}
-		args[i] = v.Args[i]
+		args[i] = argNodeID
 	}
 	return args, TypeOK
 }

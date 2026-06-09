@@ -4397,6 +4397,56 @@ fun main() void {
 1234
 ```
 
+**named arguments**
+
+Covers reordering, positional-then-named, defaults filled by name, struct
+construction reorder, a method, a generic function, and named enum associated
+data, all in one program.
+
+```metall
+struct Point { x Int y Int }
+
+fun sub(a Int, b Int) Int { a - b }
+
+fun greet(a Int, b Int = 100, c Int = 7) Int { a * 1000 + b * 10 + c }
+
+fun Point.combine(self Point, k Int) Int { self.x * 100 + self.y * 10 + k }
+
+fun pick<T>(first T, second T) T { second }
+
+enum Color(r Int, g Int, b Int) U8 = red(r = 255, g = 0, b = 0) | green(g = 255, r = 0, b = 0)
+
+fun main() void {
+    DebugIntern.print_int(sub(b = 3, a = 10))
+    DebugIntern.print_int(sub(10, b = 4))
+    DebugIntern.print_int(greet(a = 1, c = 9))
+    DebugIntern.print_int(greet(2))
+    let p = Point(y = 5, x = 9)
+    DebugIntern.print_int(p.combine(k = 3))
+    DebugIntern.print_int(pick(second = 42, first = 1))
+    DebugIntern.print_int(Color.green.r)
+    DebugIntern.print_int(Color.green.g)
+    -- named construction nested inside arena.new
+    let @a = Arena()
+    let bp = @a.new(Point(y = 8, x = 6))
+    DebugIntern.print_int(bp.x)
+    DebugIntern.print_int(bp.y)
+}
+```
+
+```output
+7
+6
+2009
+3007
+953
+42
+0
+255
+6
+8
+```
+
 ## Defer
 
 **defer basic**

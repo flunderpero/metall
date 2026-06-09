@@ -1238,7 +1238,6 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 		e.diag(calleeSpan, "cannot call non-function: %s", e.env.TypeDisplay(calleeTypeID))
 		return InvalidTypeID, TypeFailed
 	}
-	var argNodes []ast.NodeID
 	fieldAccess, isFieldAccess := e.ast.Node(call.Callee).Kind.(ast.FieldAccess)
 	// Method calls are named functions reached via field access on a value
 	// (not on a module or a type name).
@@ -1252,11 +1251,16 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 		}
 	}
 	if isMethod {
-		argNodes = append(argNodes, fieldAccess.Target)
 		e.env.setMethodCallReceiver(callNodeID, fieldAccess.Target)
 	}
-	argNodes = append(argNodes, call.Args...)
-	argNodes = e.fillCallDefaults(call, callNodeID, argNodes, fun)
+	if hasNamedArgs(call.ArgNames) {
+		if status := e.resolveNamedCallArgs(call, callNodeID, isMethod, span); status.Failed() {
+			return InvalidTypeID, status
+		}
+	} else {
+		e.fillCallDefaults(callNodeID, call, fun, isMethod)
+	}
+	argNodes := e.env.CallArgNodes(callNodeID)
 	if len(argNodes) != len(fun.Params) {
 		expected := len(fun.Params)
 		if isMethod {
@@ -1312,38 +1316,86 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 	return fun.Return, TypeOK
 }
 
-func (e *Engine) fillCallDefaults(
-	call ast.Call, callNodeID ast.NodeID, argNodes []ast.NodeID, fun FunType,
-) []ast.NodeID {
-	if len(argNodes) >= len(fun.Params) {
-		return argNodes
+// resolveNamedCallArgs reorders a call's named/positional arguments into
+// parameter order and records that order (and any defaults) for CallArgNodes.
+func (e *Engine) resolveNamedCallArgs(
+	call ast.Call, callNodeID ast.NodeID, isMethod bool, span base.Span,
+) TypeStatus {
+	params, builtin, ok := e.calleeParams(call.Callee)
+	if !ok {
+		e.diag(span, "named arguments are not supported for indirect calls")
+		return TypeFailed
+	}
+	if builtin {
+		e.diag(span, "named arguments are not supported for builtin functions")
+		return TypeFailed
+	}
+	userParams := params
+	if isMethod {
+		userParams = params[1:]
+	}
+	order, defaults, ok := orderCallArgs(e.ast, userParams, call.Args, call.ArgNames, span, e.diag)
+	if !ok {
+		return TypeFailed
+	}
+	e.env.setArgOrder(callNodeID, order)
+	if len(defaults) > 0 {
+		e.env.setCallDefaults(callNodeID, defaults)
+	}
+	return TypeOK
+}
+
+// funParams returns the parameter nodes declared by an ast.Fun or ast.FunDecl
+// (receiver first for methods) and whether it is a builtin. ok is false for any
+// other node.
+func (c *TypeContext) funParams(declNodeID ast.NodeID) (params []ast.NodeID, builtin bool, ok bool) {
+	switch k := c.ast.Node(declNodeID).Kind.(type) {
+	case ast.Fun:
+		return k.Params, k.Builtin, true
+	case ast.FunDecl:
+		return k.Params, k.Builtin, true
+	default:
+		return nil, false, false
+	}
+}
+
+// calleeParams resolves a directly-called function's parameters via its binding.
+// ok is false for indirect calls and other callees with no static parameters.
+func (c *TypeContext) calleeParams(callee ast.NodeID) (params []ast.NodeID, builtin bool, ok bool) {
+	binding, ok := c.env.LocalPathBinding(callee)
+	if !ok || binding.Decl == 0 {
+		return nil, false, false
+	}
+	return c.funParams(binding.Decl)
+}
+
+// fillCallDefaults records the trailing default expressions a positional call
+// omits, so CallArgNodes can append them in parameter order.
+func (e *Engine) fillCallDefaults(callNodeID ast.NodeID, call ast.Call, fun FunType, isMethod bool) {
+	provided := len(call.Args)
+	if isMethod {
+		provided++
+	}
+	if provided >= len(fun.Params) {
+		return
 	}
 	defaults := e.funDeclDefaults(call)
-	if defaults == nil {
-		return argNodes
-	}
-	missing := len(fun.Params) - len(argNodes)
+	missing := len(fun.Params) - provided
 	if missing > len(defaults) {
-		return argNodes
+		return
 	}
-	fill := defaults[len(defaults)-missing:]
-	e.env.setCallDefaults(callNodeID, fill)
-	return append(argNodes, fill...)
+	e.env.setCallDefaults(callNodeID, defaults[len(defaults)-missing:])
 }
 
 // funDeclDefaults returns the default-expression NodeIDs for the trailing
 // parameters of the callee, or nil if not applicable.
 func (e *Engine) funDeclDefaults(call ast.Call) []ast.NodeID {
-	binding, ok := e.env.LocalPathBinding(call.Callee)
-	if !ok || binding.Decl == 0 {
-		return nil
-	}
-	funNode, ok := e.ast.Node(binding.Decl).Kind.(ast.Fun)
+	params, _, ok := e.calleeParams(call.Callee)
 	if !ok {
 		return nil
 	}
 	var defaults []ast.NodeID
-	for _, paramNodeID := range funNode.Params {
+	for _, paramNodeID := range params {
 		param := base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind)
 		if param.Default != nil {
 			defaults = append(defaults, *param.Default)
@@ -1888,6 +1940,10 @@ func (e *Engine) dispatchTypeConstruction(
 	nodeID ast.NodeID, targetTypeID TypeID, lit ast.TypeConstruction, span base.Span,
 ) (TypeID, TypeStatus) {
 	targetTyp := e.env.Type(targetTypeID)
+	if _, isStruct := targetTyp.Kind.(StructType); !isStruct && hasNamedArgs(lit.ArgNames) {
+		e.diag(span, "named arguments are only supported when constructing a struct")
+		return InvalidTypeID, TypeFailed
+	}
 	switch kind := targetTyp.Kind.(type) {
 	case IntType:
 		if kind.Name == "Rune" && !ast.IsPreludeNode(nodeID) {
@@ -1900,7 +1956,7 @@ func (e *Engine) dispatchTypeConstruction(
 			e.diag(span, "Str cannot be constructed directly; use Str.from_utf8_lossy() instead")
 			return InvalidTypeID, TypeFailed
 		}
-		return e.checkStructConstruction(kind, targetTypeID, lit, span)
+		return e.checkStructConstruction(nodeID, kind, targetTypeID, lit, span)
 	case UnionType:
 		return e.checkUnionConstruction(kind, targetTypeID, lit, span)
 	case AllocatorType:
@@ -1916,8 +1972,36 @@ func (e *Engine) dispatchTypeConstruction(
 	}
 }
 
+// orderConstructionArgs returns the construction's arguments in field order.
+// For a positional construction it returns lit.Args unchanged; for a named one
+// it reorders by field name (every field is required, structs have no defaults)
+// and records the order for the backend.
+func (e *Engine) orderConstructionArgs(
+	nodeID ast.NodeID, lit ast.TypeConstruction, fields []StructField, span base.Span,
+) ([]ast.NodeID, bool) {
+	if !hasNamedArgs(lit.ArgNames) {
+		return lit.Args, true
+	}
+	fieldNames := make([]string, len(fields))
+	for i, f := range fields {
+		fieldNames[i] = f.Name
+	}
+	slots, ok := matchArgs(e.ast, fieldNames, "field", lit.Args, lit.ArgNames, span, e.diag)
+	if !ok {
+		return nil, false
+	}
+	for i, slot := range slots {
+		if slot == 0 {
+			e.diag(span, "missing argument for field: %s", fieldNames[i])
+			return nil, false
+		}
+	}
+	e.env.setArgOrder(nodeID, slots)
+	return slots, true
+}
+
 func (e *Engine) checkStructConstruction(
-	struct_ StructType, structTypeID TypeID, lit ast.TypeConstruction, span base.Span,
+	nodeID ast.NodeID, struct_ StructType, structTypeID TypeID, lit ast.TypeConstruction, span base.Span,
 ) (TypeID, TypeStatus) {
 	structDeclNode := e.env.DeclNode(structTypeID)
 	for _, field := range struct_.Fields {
@@ -1927,11 +2011,15 @@ func (e *Engine) checkStructConstruction(
 			return InvalidTypeID, TypeFailed
 		}
 	}
-	if len(lit.Args) != len(struct_.Fields) {
+	args, ok := e.orderConstructionArgs(nodeID, lit, struct_.Fields, span)
+	if !ok {
+		return InvalidTypeID, TypeFailed
+	}
+	if len(args) != len(struct_.Fields) {
 		e.diag(span, "argument count mismatch: expected %d, got %d", len(struct_.Fields), len(lit.Args))
 		return InvalidTypeID, TypeFailed
 	}
-	for i, argNodeID := range lit.Args {
+	for i, argNodeID := range args {
 		argNode := e.ast.Node(argNodeID)
 		fieldType := struct_.Fields[i].Type
 		argTypeID, status := e.queryWithHint(argNodeID, &fieldType)

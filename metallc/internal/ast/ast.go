@@ -253,7 +253,10 @@ func (Union) isKind() {}
 type EnumVariant struct {
 	Name Name
 	Args []NodeID // associated-data args, nil if no "(...)"
-	Tag  *NodeID  // explicit `= N`, nil if compiler-assigned
+	// ArgNames is nil or parallel to Args; ArgNames[i] is the name for a `n=expr`
+	// associated value, nil for a positional one.
+	ArgNames []*Name
+	Tag      *NodeID // explicit `= N`, nil if compiler-assigned
 }
 
 func (EnumVariant) isKind() {}
@@ -477,7 +480,10 @@ func (TryPattern) isKind() {}
 type Call struct {
 	Callee NodeID
 	Args   []NodeID
-	Unsafe bool
+	// ArgNames is nil or parallel to Args; ArgNames[i] is the name for a `n=expr`
+	// named argument, nil for a positional one.
+	ArgNames []*Name
+	Unsafe   bool
 }
 
 func (Call) isKind() {}
@@ -485,6 +491,9 @@ func (Call) isKind() {}
 type TypeConstruction struct {
 	Target NodeID
 	Args   []NodeID
+	// ArgNames is nil or parallel to Args; ArgNames[i] is the name for a `n=expr`
+	// named argument, nil for a positional one.
+	ArgNames []*Name
 }
 
 func (TypeConstruction) isKind() {}
@@ -593,12 +602,12 @@ func (a *AST) NewBlock(exprs []NodeID, span base.Span) NodeID {
 	return a.node(Block{Exprs: exprs}, span)
 }
 
-func (a *AST) NewCall(callee NodeID, args []NodeID, unsafe bool, span base.Span) NodeID {
-	return a.node(Call{Callee: callee, Args: args, Unsafe: unsafe}, span)
+func (a *AST) NewCall(callee NodeID, args []NodeID, argNames []*Name, unsafe bool, span base.Span) NodeID {
+	return a.node(Call{Callee: callee, Args: args, ArgNames: argNames, Unsafe: unsafe}, span)
 }
 
-func (a *AST) NewTypeConstruction(target NodeID, args []NodeID, span base.Span) NodeID {
-	return a.node(TypeConstruction{Target: target, Args: args}, span)
+func (a *AST) NewTypeConstruction(target NodeID, args []NodeID, argNames []*Name, span base.Span) NodeID {
+	return a.node(TypeConstruction{Target: target, Args: args, ArgNames: argNames}, span)
 }
 
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
@@ -744,8 +753,8 @@ func (a *AST) NewEnum(
 	)
 }
 
-func (a *AST) NewEnumVariant(name Name, args []NodeID, tag *NodeID, span base.Span) NodeID {
-	return a.node(EnumVariant{Name: name, Args: args, Tag: tag}, span)
+func (a *AST) NewEnumVariant(name Name, args []NodeID, argNames []*Name, tag *NodeID, span base.Span) NodeID {
+	return a.node(EnumVariant{Name: name, Args: args, ArgNames: argNames, Tag: tag}, span)
 }
 
 func (a *AST) NewFieldAccess(target NodeID, field Name, typeArgs []NodeID, span base.Span) NodeID {
@@ -1123,6 +1132,13 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	addChild := func(name string, ids ...NodeID) {
 		childAttrs = append(childAttrs, childAttr{name: name, ids: ids})
 	}
+	addArgNames := func(names []*Name) {
+		for i, n := range names {
+			if n != nil {
+				addAttr(fmt.Sprintf("args[%d].name", i), fmt.Sprintf("%q", n.Name))
+			}
+		}
+	}
 	nodeIDKind := func(id NodeID) string {
 		kindName := strings.TrimPrefix(fmt.Sprintf("%T", a.Node(id).Kind), "ast.")
 		return fmt.Sprintf("%s:%s", id, kindName)
@@ -1181,6 +1197,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addChild("exprs", kind.Exprs...)
 		}
 	case Call:
+		addArgNames(kind.ArgNames)
 		if !children {
 			addAttr("callee", nodeIDKind(kind.Callee))
 			addAttr("args", nodeIDList(kind.Args))
@@ -1515,6 +1532,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case EnumVariant:
 		addAttr("name", fmt.Sprintf("%q", kind.Name.Name))
+		addArgNames(kind.ArgNames)
 		if len(kind.Args) > 0 {
 			if !children {
 				addAttr("args", nodeIDList(kind.Args))
@@ -1559,6 +1577,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addChild("type", kind.Type)
 		}
 	case TypeConstruction:
+		addArgNames(kind.ArgNames)
 		if !children {
 			addAttr("target", nodeIDKind(kind.Target))
 			addAttr("args", nodeIDList(kind.Args))

@@ -171,6 +171,10 @@ func (e *Engine) expandMacroCall(
 		e.diag(span, "could not read macro module source")
 		return nil, false
 	}
+	if hasNamedArgs(call.ArgNames) {
+		e.diag(span, "named arguments are not supported for macros")
+		return nil, false
+	}
 	args := make([]macros.MacroArg, len(call.Args))
 	for i, argNodeID := range call.Args {
 		argNode := e.ast.Node(argNodeID)

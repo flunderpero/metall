@@ -195,3 +195,44 @@ fun main() void { enum Local U8 = a | b }
           (enum_variant
             name: (identifier)))))))
 
+
+================================================================================
+Enum variant with named associated data
+================================================================================
+
+enum Color(r U8, g U8, b U8) U8 = red(r = 255, g = 0, b = 0)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    name: (type_identifier)
+    parameters: (enum_parameters
+      (parameter_list
+        (parameter
+          name: (identifier)
+          type: (simple_type
+            (type_identifier)))
+        (parameter
+          name: (identifier)
+          type: (simple_type
+            (type_identifier)))
+        (parameter
+          name: (identifier)
+          type: (simple_type
+            (type_identifier)))))
+    backing: (simple_type
+      (type_identifier))
+    variants: (enum_variants
+      (enum_variant
+        name: (identifier)
+        (argument_list
+          (named_argument
+            name: (identifier)
+            value: (integer_literal))
+          (named_argument
+            name: (identifier)
+            value: (integer_literal))
+          (named_argument
+            name: (identifier)
+            value: (integer_literal)))))))

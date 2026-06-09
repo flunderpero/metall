@@ -8790,6 +8790,172 @@ fun03    = fun(T) Str
 fun04    = fun(struct01, Str) Str
 ```
 
+## Named Arguments
+
+**Named call args are reordered**
+
+```metall
+{ fun foo(a Int, b Int) Int { a - b } foo(b = 3, a = 10) }
+```
+
+```types
+Block: Int
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Int
+      SimpleType: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Ident: Int
+        Ident: Int
+  Call: Int
+    Ident: fun01
+    Int: Int
+    Int: Int
+---
+fun01 = sync fun(Int, Int) Int
+```
+
+**Named args fill the right defaults**
+
+```metall
+{ fun foo(a Int, b Int = 2, c Int = 3) Int { a + b + c } foo(a = 1, c = 9) }
+```
+
+```types
+Block: Int
+  Fun: fun01
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    FunParam: Int
+      SimpleType: Int
+      Int: Int
+    SimpleType: Int
+    Block: Int
+      Binary: Int
+        Binary: Int
+          Ident: Int
+          Ident: Int
+        Ident: Int
+  Call: Int
+    Ident: fun01
+    Int: Int
+    Int: Int
+    Int: Int
+---
+fun01 = sync fun(Int, Int, Int) Int
+```
+
+**Named struct construction is reordered**
+
+```metall
+{ struct Foo { x Int y Int } Foo(y = 2, x = 1) }
+```
+
+```types
+Block: struct01
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+    StructField: ?
+      SimpleType: ?
+  TypeConstruction: struct01
+    Ident: struct01
+    Int: Int
+    Int: Int
+---
+struct01 = Foo { x Int, y Int }
+```
+
+**Unknown parameter name is rejected**
+
+```metall
+{ fun foo(a Int, b Int) Int { a } foo(z = 1, a = 2) }
+```
+
+```error
+test.met:1:39: unknown parameter: z
+    { fun foo(a Int, b Int) Int { a } foo(z = 1, a = 2) }
+                                          ^
+```
+
+**Parameter specified twice is rejected**
+
+```metall
+{ fun foo(a Int, b Int) Int { a } foo(a = 1, a = 2) }
+```
+
+```error
+test.met:1:46: parameter a specified more than once
+    { fun foo(a Int, b Int) Int { a } foo(a = 1, a = 2) }
+                                                 ^
+```
+
+**Positional and named for the same parameter is rejected**
+
+```metall
+{ fun foo(a Int, b Int) Int { a } foo(1, a = 2) }
+```
+
+```error
+test.met:1:42: parameter a specified more than once
+    { fun foo(a Int, b Int) Int { a } foo(1, a = 2) }
+                                             ^
+```
+
+**Missing required parameter is rejected**
+
+```metall
+{ fun foo(a Int, b Int) Int { a } foo(b = 2) }
+```
+
+```error
+test.met:1:35: missing argument for parameter: a
+    { fun foo(a Int, b Int) Int { a } foo(b = 2) }
+                                      ^^^^^^^^^^
+```
+
+**Named struct construction missing a field is rejected**
+
+```metall
+{ struct Foo { x Int y Int } Foo(x = 1) }
+```
+
+```error
+test.met:1:30: missing argument for field: y
+    { struct Foo { x Int y Int } Foo(x = 1) }
+                                 ^^^^^^^^^^
+```
+
+**Named arguments on union construction are rejected**
+
+```metall
+{ union U = Int | Str U(v = 1) }
+```
+
+```error
+test.met:1:23: named arguments are only supported when constructing a struct
+    { union U = Int | Str U(v = 1) }
+                          ^^^^^^^^
+```
+
+**Named arguments on indirect calls are rejected**
+
+```metall
+{ let f = fun(a Int) Int { a } f(a = 1) }
+```
+
+```error
+test.met:1:32: named arguments are not supported for indirect calls
+    { let f = fun(a Int) Int { a } f(a = 1) }
+                                   ^^^^^^^^
+```
+
 ## Errors
 
 **Undefined symbol**
@@ -11606,7 +11772,7 @@ test.met:1:22: enum variant a: missing associated value for x
 ```
 
 ```error
-test.met:1:22: enum variant a: expected at most 1 associated values, got 2
+test.met:1:22: too many arguments: expected at most 1, got 2
     { enum C(x U32) U8 = a(1, 2) }
                          ^
 ```

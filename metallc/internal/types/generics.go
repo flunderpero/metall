@@ -1383,15 +1383,16 @@ func (g *Generics) rewriteNamedType(typeID TypeID, typeArgs []TypeID, bindings m
 	return g.materializeNamedType(originTypeID, rewrittenArgs)
 }
 
-func (g *Generics) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus, bool) {
+func (g *Generics) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStatus, bool) { //nolint:funlen
 	binding, funTypeParams, ok := g.inferFunCallBinding(call)
 	if !ok {
 		return InvalidTypeID, TypeFailed, false
 	}
-	funNode := base.Cast[ast.Fun](g.ast.Node(binding.Decl).Kind)
+	funParams, _, _ := g.funParams(binding.Decl)
 	genericFunType := base.Cast[FunType](g.env.Type(binding.TypeID).Kind)
 	allArgNodeIDs := call.Args
 	fieldAccess, isFieldAccess := g.ast.Node(call.Callee).Kind.(ast.FieldAccess)
+	var methodReceiver ast.NodeID
 	if isFieldAccess {
 		targetTypeID, status := g.query(fieldAccess.Target)
 		if status.Failed() {
@@ -1399,12 +1400,27 @@ func (g *Generics) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStat
 		}
 		_, isModule := g.env.Type(targetTypeID).Kind.(ModuleType)
 		if !isModule && !g.isTypeReference(fieldAccess.Target) {
-			allArgNodeIDs = append([]ast.NodeID{fieldAccess.Target}, call.Args...)
+			methodReceiver = fieldAccess.Target
 		}
 	}
+	// Named arguments are reordered into parameter order with defaults filled in,
+	// so inference lines arguments up with the right parameter types. The engine
+	// reports any naming errors, so a bad match silently falls back here.
+	if hasNamedArgs(call.ArgNames) {
+		userParams := funParams
+		if methodReceiver != 0 && len(funParams) > 0 {
+			userParams = funParams[1:]
+		}
+		if order, _, ok := orderCallArgs(g.ast, userParams, call.Args, call.ArgNames, span, noDiag); ok {
+			allArgNodeIDs = order
+		}
+	}
+	if methodReceiver != 0 {
+		allArgNodeIDs = append([]ast.NodeID{methodReceiver}, allArgNodeIDs...)
+	}
 	if len(allArgNodeIDs) < len(genericFunType.Params) {
-		for i := len(allArgNodeIDs); i < len(funNode.Params); i++ {
-			param := base.Cast[ast.FunParam](g.ast.Node(funNode.Params[i]).Kind)
+		for i := len(allArgNodeIDs); i < len(funParams); i++ {
+			param := base.Cast[ast.FunParam](g.ast.Node(funParams[i]).Kind)
 			if param.Default != nil {
 				allArgNodeIDs = append(allArgNodeIDs, *param.Default)
 			}
@@ -1542,10 +1558,21 @@ func (g *Generics) inferStructConstruction(
 		return nil, true, TypeFailed
 	}
 	fieldTypeIDs := make([]TypeID, len(structType.Fields))
+	fieldNames := make([]string, len(structType.Fields))
 	for i, field := range structType.Fields {
 		fieldTypeIDs[i] = field.Type
+		fieldNames[i] = field.Name
 	}
-	args, queryStatus := g.queryArgsForInference(lit.Args, fieldTypeIDs)
+	// Reorder named fields into declaration order so inference pairs each value
+	// with the right field type. The engine reports naming errors.
+	orderedArgs := lit.Args
+	if hasNamedArgs(lit.ArgNames) {
+		if slots, ok := matchArgs(g.ast, fieldNames, "field", lit.Args, lit.ArgNames, span, noDiag); ok &&
+			!slices.Contains(slots, ast.NodeID(0)) {
+			orderedArgs = slots
+		}
+	}
+	args, queryStatus := g.queryArgsForInference(orderedArgs, fieldTypeIDs)
 	if queryStatus.Failed() {
 		return nil, true, TypeDepFailed
 	}

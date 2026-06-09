@@ -654,12 +654,17 @@ func (a *LifetimeCheck) analyzeTypeConstruction(nodeID ast.NodeID, lit ast.TypeC
 		a.debug(1, nodeID, "analyzeTypeConstruction (arena): %s", a.chains[nodeID])
 		return
 	}
-	merged := a.mergeFlows(lit.Args)
+	// A named construction's arguments are reordered into field order.
+	args := lit.Args
+	if order, ok := a.env.ArgOrder(nodeID); ok {
+		args = order
+	}
+	merged := a.mergeFlows(args)
 	// Check noescape for struct fields that are function types.
 	resultType := a.env.TypeOfNode(nodeID)
 	if resultType != nil {
 		if st, ok := resultType.Kind.(StructType); ok {
-			for i, argNodeID := range lit.Args {
+			for i, argNodeID := range args {
 				if i < len(st.Fields) {
 					a.checkNoescapeValueAssignment(argNodeID, st.Fields[i].Type)
 				}
@@ -748,17 +753,6 @@ func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 	a.debug(1, nodeID, "analyzeSubSlice: %s target=%s", chain, a.ast.Debug(sub.Target, false, 0))
 }
 
-// callArgs returns a call's effective positional arguments, the method receiver
-// (if any) first, so index 0 lines up with param 0 of the callee. Defaults are
-// appended by the caller that needs them.
-func (a *LifetimeCheck) callArgs(nodeID ast.NodeID, call ast.Call) []ast.NodeID {
-	args := make([]ast.NodeID, 0, len(call.Args)+1)
-	if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
-		args = append(args, receiver)
-	}
-	return append(args, call.Args...)
-}
-
 // instanceEffects returns the effects of a generic call's CONCRETE instantiation.
 // The generic body analyzed with an abstract type parameter drops borrows the
 // parameter carries (e.g. `Option.or_err` returns its T, but for abstract T
@@ -818,7 +812,7 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 	}
 	if ref, ok := a.env.NamedFunRef(call.Callee); ok {
 		if effects := BuiltinFunEffects(BuiltinName(ref)); effects != nil {
-			a.applyBuiltinEffects(nodeID, call, *effects)
+			a.applyBuiltinEffects(nodeID, *effects)
 			return
 		}
 	}
@@ -872,18 +866,14 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 		return
 	}
 
+	args := a.env.CallArgNodes(nodeID)
+
 	// Check noescape compatibility for function-typed arguments.
 	calleeFun := base.Cast[FunType](calleeType.Kind)
-	for i, argNodeID := range a.callArgs(nodeID, call) {
+	for i, argNodeID := range args {
 		if i < len(calleeFun.Params) {
 			a.checkNoescapeValueAssignment(argNodeID, calleeFun.Params[i])
 		}
-	}
-
-	// Build the effective argument list: receiver (if method) + explicit args + defaults.
-	args := a.callArgs(nodeID, call)
-	if defaults, ok := a.env.CallDefaults(nodeID); ok {
-		args = append(args, defaults...)
 	}
 
 	// Map param chains into the return value (per-depth union).
@@ -956,8 +946,8 @@ func (a *LifetimeCheck) closureCallContribution(callID, callee, declID ast.NodeI
 }
 
 // applyBuiltinEffects applies pre-defined lifetime effects for a builtin function call.
-func (a *LifetimeCheck) applyBuiltinEffects(nodeID ast.NodeID, call ast.Call, effects FunEffects) {
-	args := a.callArgs(nodeID, call)
+func (a *LifetimeCheck) applyBuiltinEffects(nodeID ast.NodeID, effects FunEffects) {
+	args := a.env.CallArgNodes(nodeID)
 	var result Chain
 	for _, paramIdx := range effects.ReturnTaints {
 		result = result.Merge(a.flow(args[paramIdx]))
@@ -968,7 +958,7 @@ func (a *LifetimeCheck) applyBuiltinEffects(nodeID ast.NodeID, call ast.Call, ef
 // applyPessimisticEffects: assume every arg flows into the return value and
 // into every &mut arg. Used when we can't determine the actual effects.
 func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call) {
-	args := a.callArgs(nodeID, call)
+	args := a.env.CallArgNodes(nodeID)
 	allArgs := a.mergeFlows(args)
 	funType := base.Cast[FunType](a.env.TypeOfNode(call.Callee).Kind)
 	if a.typeContainsRefOrAlloc(funType.Return) {
