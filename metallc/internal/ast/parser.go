@@ -702,11 +702,11 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			token.And:  BinaryOpAnd,
 			token.Or:   BinaryOpOr,
 
-			token.AmpInfix: BinaryOpBitAnd,
-			token.Pipe:     BinaryOpBitOr,
-			token.Caret:    BinaryOpBitXor,
-			token.LtLt:     BinaryOpShl,
-			token.GtGt:     BinaryOpShr,
+			token.Amp:   BinaryOpBitAnd,
+			token.Pipe:  BinaryOpBitOr,
+			token.Caret: BinaryOpBitXor,
+			token.LtLt:  BinaryOpShl,
+			token.GtGt:  BinaryOpShr,
 		}[t.Kind]
 		if !ok {
 			return lhs, true
@@ -831,7 +831,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		if _, ok := p.expect(token.RParen); !ok {
 			return ParseFailed, false
 		}
-	case token.Amp:
+	case token.AmpImmediate:
 		ref, ok := p.ParseRefExpr()
 		if !ok {
 			return ParseFailed, false
@@ -1053,7 +1053,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 }
 
 func (p *Parser) ParseRefExpr() (NodeID, bool) {
-	t, ok := p.expect(token.Amp)
+	t, ok := p.expect(token.AmpImmediate)
 	if !ok {
 		return ParseFailed, false
 	}
@@ -1337,7 +1337,7 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 		return p.NewSimpleType(Name{name.String(), nameSpan}, typeArgs, span.Combine(p.span())), true
 	case token.LBracket, token.LBracketImmediate:
 		return p.ParseArrayOrSliceType()
-	case token.Amp:
+	case token.AmpImmediate:
 		p.next()
 		mut := false
 		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
@@ -1387,14 +1387,14 @@ func (p *Parser) ParseFor() (NodeID, bool) { //nolint:funlen
 	//   for [&[mut]] x [, i] in <iterable> { ... }
 	// A leading `&` could be the start of a boolean-condition loop or an
 	// iterating loop.
-	forIn := t.Kind == token.Amp
+	forIn := t.Kind == token.AmpImmediate
 	if t.Kind == token.Ident {
 		next, hasNext := p.mayPeek1()
 		forIn = hasNext && (next.Kind == token.In || next.Kind == token.Comma)
 	}
 	if forIn {
 		var ref, mut bool
-		if t.Kind == token.Amp {
+		if t.Kind == token.AmpImmediate {
 			p.next()
 			ref = true
 			if m, ok := p.mayPeek(); ok && m.Kind == token.Mut {
@@ -1893,7 +1893,7 @@ func (p *Parser) parseMatchElse() (*MatchElse, bool) {
 
 func (p *Parser) parseMatchArmBindingAndBody() (*Name, bool, bool, *NodeID, NodeID, bool) {
 	var ref, mut bool
-	if next, ok := p.mayPeek(); ok && next.Kind == token.Amp {
+	if next, ok := p.mayPeek(); ok && next.Kind == token.AmpImmediate {
 		p.next()
 		ref = true
 		if m, ok := p.mayPeek(); ok && m.Kind == token.Mut {
@@ -2149,7 +2149,7 @@ func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 			}
 			capSpan := p.span()
 			mode := CaptureByValue
-			if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.Amp {
+			if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.AmpImmediate {
 				p.next()
 				capSpan = peek.Span
 				if peek2, peekOK2 := p.mayPeek(); peekOK2 && peek2.Kind == token.Mut {

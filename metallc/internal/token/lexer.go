@@ -14,7 +14,7 @@ type TokenKind int
 const (
 	AllocatorIdent TokenKind = iota + 1
 	Amp
-	AmpInfix
+	AmpImmediate
 	AmpEq
 	And
 	Break
@@ -115,7 +115,7 @@ const (
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AllocatorIdent:        "<allocator identifier>",
 	Amp:                   "&",
-	AmpInfix:              "<&infix>",
+	AmpImmediate:          "<&immediate>",
 	AmpEq:                 "&=",
 	And:                   "<and>",
 	Break:                 "<break>",
@@ -683,9 +683,9 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		if peek(source, idx, '=') {
 			return Token{Kind: AmpEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		kind := Amp
+		kind := AmpImmediate
 		if idx < len(source.Content) && unicode.IsSpace(source.Content[idx]) {
-			kind = AmpInfix
+			kind = Amp
 		}
 		return Token{Kind: kind, Value: "", Span: span}
 	case c == '[':
