@@ -1276,19 +1276,29 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 			return InvalidTypeID, TypeDepFailed
 		}
 		if !e.isAssignableTo(argTypeID, paramTypeID) {
-			argNode := e.ast.Node(argNodeID)
+			handled := false
 			if i == 0 && isMethod {
-				e.diag(argNode.Span, "type mismatch at receiver: expected %s, got %s",
-					e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
-			} else {
-				argIndex := i
-				if isMethod {
-					argIndex--
+				var status TypeStatus
+				handled, status = e.tryAutoRefReceiver(callNodeID, argNodeID, argTypeID, paramTypeID)
+				if handled && status.Failed() {
+					return InvalidTypeID, TypeFailed
 				}
-				e.diag(argNode.Span, "type mismatch at argument %d: expected %s, got %s",
-					argIndex+1, e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
 			}
-			return InvalidTypeID, TypeFailed
+			if !handled {
+				argNode := e.ast.Node(argNodeID)
+				if i == 0 && isMethod {
+					e.diag(argNode.Span, "type mismatch at receiver: expected %s, got %s",
+						e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
+				} else {
+					argIndex := i
+					if isMethod {
+						argIndex--
+					}
+					e.diag(argNode.Span, "type mismatch at argument %d: expected %s, got %s",
+						argIndex+1, e.env.TypeDisplay(paramTypeID), e.env.TypeDisplay(argTypeID))
+				}
+				return InvalidTypeID, TypeFailed
+			}
 		}
 		if _, isRef := e.env.Type(paramTypeID).Kind.(RefType); !isRef {
 			if !e.checkNocopy(argNodeID, argTypeID, e.ast.Node(argNodeID).Span) {
@@ -1367,6 +1377,36 @@ func (c *TypeContext) calleeParams(callee ast.NodeID) (params []ast.NodeID, buil
 		return nil, false, false
 	}
 	return c.funParams(binding.Decl)
+}
+
+// tryAutoRefReceiver implicitly borrows a method receiver passed by value to a
+// `&`/`&mut` receiver parameter, so `x.foo()` works where foo takes `&mut Bar`.
+// Only the receiver is auto-borrowed, never a regular argument. handled is false
+// when no borrow applies (the caller then reports the plain type mismatch); for a
+// `&mut` borrow of an immutable place it reports the error itself and returns a
+// failed status.
+func (e *Engine) tryAutoRefReceiver(
+	callNodeID, recvNodeID ast.NodeID, recvTypeID, paramTypeID TypeID,
+) (handled bool, status TypeStatus) {
+	refParam, ok := e.env.Type(paramTypeID).Kind.(RefType)
+	if !ok {
+		return false, TypeOK
+	}
+	if _, recvIsRef := e.env.Type(recvTypeID).Kind.(RefType); recvIsRef {
+		return false, TypeOK
+	}
+	if !e.isAssignableTo(recvTypeID, refParam.Type) {
+		return false, TypeOK
+	}
+	if refParam.Mut && !isTemporaryExpr(e.ast.Node(recvNodeID).Kind) {
+		if _, mut := e.isPlaceMutable(recvNodeID); !mut {
+			e.diag(e.ast.Node(recvNodeID).Span,
+				"cannot call a method requiring a mutable receiver on an immutable value")
+			return true, TypeFailed
+		}
+	}
+	e.env.setMethodReceiverAutoRef(callNodeID, refParam.Mut)
+	return true, TypeOK
 }
 
 // fillCallDefaults records the trailing default expressions a positional call

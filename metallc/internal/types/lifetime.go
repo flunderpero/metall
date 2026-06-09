@@ -370,19 +370,26 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 //	mut z = &mut y; &z   --> [{scope(z)}, {scope(y)}]  (z.chain = [{scope(y)}])
 func (a *LifetimeCheck) analyzeRef(nodeID ast.NodeID, ref ast.Ref) {
 	a.ast.Walk(nodeID, a.Check)
-	chain := a.placeChain(ref.Target)
-	// `&temp` materializes the temporary into a fresh slot in this scope:
-	//   &make()   --> [{scope of the &-expression}]
-	if isTemporaryExpr(a.ast.Node(ref.Target).Kind) {
-		chain = Chain{TaintSet{a.scopeState(nodeID).ScopeTaint}}
+	chain := a.refChain(ref.Target, nodeID)
+	a.chains[nodeID] = chain
+	a.debug(1, nodeID, "analyzeRef: %s", chain)
+}
+
+// refChain is the chain carried by `&target`/`&mut target` taken at refNode:
+// chain[0] is the slot the new reference points at, chain[1:] is whatever that
+// slot's value reaches onward. `&temp` materializes the temporary into a fresh
+// slot in refNode's scope.
+func (a *LifetimeCheck) refChain(target, refNode ast.NodeID) Chain {
+	chain := a.placeChain(target)
+	if isTemporaryExpr(a.ast.Node(target).Kind) {
+		chain = Chain{TaintSet{a.scopeState(refNode).ScopeTaint}}
 	}
 	for _, t := range chain.HeadTaintSet() {
 		if _, ok := a.taintOrigin[t]; !ok {
-			a.taintOrigin[t] = nodeID
+			a.taintOrigin[t] = refNode
 		}
 	}
-	a.chains[nodeID] = chain
-	a.debug(1, nodeID, "analyzeRef: %s", chain)
+	return chain
 }
 
 // projection classifies `x.f` / `x[i]`: it returns the container, whether the
@@ -802,6 +809,15 @@ func (a *LifetimeCheck) instanceEffects(typeID TypeID) *FunEffects {
 // If we detect a cycle (mutual recursion), we apply pessimistic effects.
 func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint:funlen
 	a.ast.Walk(nodeID, a.Check)
+	// A method receiver passed by value to a `&`/`&mut` parameter is implicitly
+	// borrowed: analyze it as `&receiver` so the call's effects see the borrow at
+	// the right depth (a returned `&self.field` stays bounded by the receiver's
+	// scope, and a write through `&mut self` accumulates into the receiver).
+	if receiver, ok := a.env.MethodCallReceiver(nodeID); ok {
+		if _, autoRef := a.env.MethodReceiverAutoRef(nodeID); autoRef {
+			a.chains[receiver] = a.refChain(receiver, receiver)
+		}
+	}
 	if a.isArenaAllocCall(nodeID) {
 		a.analyzeArenaAllocCall(nodeID, call)
 		return

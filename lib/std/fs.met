@@ -53,12 +53,12 @@ pub fun Path.dir(p Path) Path {
     mut it = p.raw.rtrim(path_separator).rsplit(path_separator, 2)
 
     -- First match is the base - ignore it. If nothing matched, return the path unchanged.
-    _ = try (&mut it).next() else { return p }
+    _ = try it.next() else { return p }
 
     -- Second match is the dir part. 
     -- If it is empty, it is either the root - i.e. `p` is something like `/` or `//`) - 
     -- or the current dir if only a base name was given, e.g. `file.txt`.
-    let dir = try (&mut it).next() else {
+    let dir = try it.next() else {
         if p.raw.starts_with(path_separator) {
             return Path(path_separator)
         }
@@ -84,7 +84,7 @@ pub fun Path.base(p Path) Path {
         return Path(dot)
     }
     mut it = p.raw.rtrim(path_separator).rsplit(path_separator, 2)
-    let base = try (&mut it).next() else { return p }
+    let base = try it.next() else { return p }
     if base.len == 0 {
         -- The last split is empty - this must have been a `/` or `//` etc.
         return Path(path_separator)

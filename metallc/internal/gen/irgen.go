@@ -2409,7 +2409,18 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 	}
 	defaults := g.callDefaultSet(id)
 	argNodes := g.env.CallArgNodes(id)
-	for _, nodeID := range argNodes {
+	autoRefReceiver := false
+	if _, ok := g.env.MethodCallReceiver(id); ok {
+		_, autoRefReceiver = g.env.MethodReceiverAutoRef(id)
+	}
+	receiverAddr := ""
+	for i, nodeID := range argNodes {
+		// An auto-borrowed receiver passes the place's address (a `ptr`), not its
+		// loaded value. Computed first to preserve left-to-right argument order.
+		if i == 0 && autoRefReceiver {
+			receiverAddr = g.genPlaceAddr(nodeID)
+			continue
+		}
 		// Re-emit a default into the current basic block (rather than reuse a
 		// prior site's IR) so it is not dominated by just one call site's branch.
 		if defaults[nodeID] {
@@ -2452,9 +2463,14 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		fmt.Fprintf(&sb, "ptr sret(%s) %s", g.irType(fun.Return), resReg)
 		hasArg = true
 	}
-	for _, nodeID := range argNodes {
+	for i, nodeID := range argNodes {
 		if hasArg {
 			sb.WriteString(", ")
+		}
+		if i == 0 && autoRefReceiver {
+			fmt.Fprintf(&sb, "ptr %s", receiverAddr)
+			hasArg = true
+			continue
 		}
 		typeID := g.typeIDOfNode(nodeID)
 		reg := g.lookupCode(nodeID)

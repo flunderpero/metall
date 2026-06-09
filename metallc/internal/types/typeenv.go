@@ -105,11 +105,15 @@ type TypeEnv struct {
 	pathBindings       map[ast.NodeID]*Binding
 	captureOrigins     map[ast.NodeID]*Binding
 	methodCallReceiver map[ast.NodeID]ast.NodeID
-	callDefaults       map[ast.NodeID][]ast.NodeID
-	argOrder           map[ast.NodeID][]ast.NodeID
-	unionWraps         map[ast.NodeID]unionWrap
-	constArrays        map[ast.NodeID]bool
-	enumVariantRefs    map[ast.NodeID]enumVariantRef
+	// methodReceiverAutoRef marks method calls whose receiver is borrowed
+	// implicitly (`x.foo()` where foo takes `&`/`&mut`); the bool is the
+	// borrow's mutability.
+	methodReceiverAutoRef map[ast.NodeID]bool
+	callDefaults          map[ast.NodeID][]ast.NodeID
+	argOrder              map[ast.NodeID][]ast.NodeID
+	unionWraps            map[ast.NodeID]unionWrap
+	constArrays           map[ast.NodeID]bool
+	enumVariantRefs       map[ast.NodeID]enumVariantRef
 }
 
 type enumVariantRef struct {
@@ -136,18 +140,19 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 			genericOrigin:  map[TypeID]TypeID{},
 			nextID:         1,
 		},
-		bindings:           map[ast.BindingID]*Binding{},
-		nodes:              map[ast.NodeID]*cachedType{},
-		namedFunRef:        map[ast.NodeID]string{},
-		funDeclRef:         map[ast.NodeID]ast.NodeID{},
-		pathBindings:       map[ast.NodeID]*Binding{},
-		captureOrigins:     map[ast.NodeID]*Binding{},
-		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
-		callDefaults:       map[ast.NodeID][]ast.NodeID{},
-		argOrder:           map[ast.NodeID][]ast.NodeID{},
-		unionWraps:         map[ast.NodeID]unionWrap{},
-		constArrays:        map[ast.NodeID]bool{},
-		enumVariantRefs:    map[ast.NodeID]enumVariantRef{},
+		bindings:              map[ast.BindingID]*Binding{},
+		nodes:                 map[ast.NodeID]*cachedType{},
+		namedFunRef:           map[ast.NodeID]string{},
+		funDeclRef:            map[ast.NodeID]ast.NodeID{},
+		pathBindings:          map[ast.NodeID]*Binding{},
+		captureOrigins:        map[ast.NodeID]*Binding{},
+		methodCallReceiver:    map[ast.NodeID]ast.NodeID{},
+		methodReceiverAutoRef: map[ast.NodeID]bool{},
+		callDefaults:          map[ast.NodeID][]ast.NodeID{},
+		argOrder:              map[ast.NodeID][]ast.NodeID{},
+		unionWraps:            map[ast.NodeID]unionWrap{},
+		constArrays:           map[ast.NodeID]bool{},
+		enumVariantRefs:       map[ast.NodeID]enumVariantRef{},
 	}
 }
 
@@ -156,24 +161,25 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 // the same env.
 func (e *TypeEnv) NewChildEnv(node ast.NodeID) *TypeEnv {
 	return &TypeEnv{
-		parent:             e,
-		ast:                e.ast,
-		scopeGraph:         e.scopeGraph,
-		reg:                e.reg,
-		node:               node,
-		childEnvs:          map[ast.NodeID]*TypeEnv{},
-		bindings:           map[ast.BindingID]*Binding{},
-		nodes:              map[ast.NodeID]*cachedType{},
-		namedFunRef:        map[ast.NodeID]string{},
-		funDeclRef:         map[ast.NodeID]ast.NodeID{},
-		pathBindings:       map[ast.NodeID]*Binding{},
-		captureOrigins:     map[ast.NodeID]*Binding{},
-		methodCallReceiver: map[ast.NodeID]ast.NodeID{},
-		callDefaults:       map[ast.NodeID][]ast.NodeID{},
-		argOrder:           map[ast.NodeID][]ast.NodeID{},
-		unionWraps:         map[ast.NodeID]unionWrap{},
-		constArrays:        map[ast.NodeID]bool{},
-		enumVariantRefs:    map[ast.NodeID]enumVariantRef{},
+		parent:                e,
+		ast:                   e.ast,
+		scopeGraph:            e.scopeGraph,
+		reg:                   e.reg,
+		node:                  node,
+		childEnvs:             map[ast.NodeID]*TypeEnv{},
+		bindings:              map[ast.BindingID]*Binding{},
+		nodes:                 map[ast.NodeID]*cachedType{},
+		namedFunRef:           map[ast.NodeID]string{},
+		funDeclRef:            map[ast.NodeID]ast.NodeID{},
+		pathBindings:          map[ast.NodeID]*Binding{},
+		captureOrigins:        map[ast.NodeID]*Binding{},
+		methodCallReceiver:    map[ast.NodeID]ast.NodeID{},
+		methodReceiverAutoRef: map[ast.NodeID]bool{},
+		callDefaults:          map[ast.NodeID][]ast.NodeID{},
+		argOrder:              map[ast.NodeID][]ast.NodeID{},
+		unionWraps:            map[ast.NodeID]unionWrap{},
+		constArrays:           map[ast.NodeID]bool{},
+		enumVariantRefs:       map[ast.NodeID]enumVariantRef{},
 	}
 }
 
@@ -285,6 +291,18 @@ func (e *TypeEnv) MethodCallReceiver(callID ast.NodeID) (ast.NodeID, bool) {
 		return e.parent.MethodCallReceiver(callID)
 	}
 	return 0, false
+}
+
+// MethodReceiverAutoRef reports whether the call's receiver is implicitly
+// borrowed, and the borrow's mutability.
+func (e *TypeEnv) MethodReceiverAutoRef(callID ast.NodeID) (mut bool, ok bool) {
+	if mut, ok := e.methodReceiverAutoRef[callID]; ok {
+		return mut, true
+	}
+	if e.parent != nil {
+		return e.parent.MethodReceiverAutoRef(callID)
+	}
+	return false, false
 }
 
 func (e *TypeEnv) CallDefaults(callID ast.NodeID) ([]ast.NodeID, bool) {
@@ -701,6 +719,10 @@ func (e *TypeEnv) isNamedFun(nodeID ast.NodeID) bool {
 
 func (e *TypeEnv) setMethodCallReceiver(callID ast.NodeID, targetID ast.NodeID) {
 	e.methodCallReceiver[callID] = targetID
+}
+
+func (e *TypeEnv) setMethodReceiverAutoRef(callID ast.NodeID, mut bool) {
+	e.methodReceiverAutoRef[callID] = mut
 }
 
 func (e *TypeEnv) setCallDefaults(callID ast.NodeID, defaults []ast.NodeID) {

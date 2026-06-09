@@ -55,10 +55,10 @@ fun main() void {
     })
     suite.test("iter", fun() !void {
         mut it = [1, 2, 3][..].iter()
-        try test.eq(Option(1), (&mut it).next())
-        try test.eq(Option(2), (&mut it).next())
-        try test.eq(Option(3), (&mut it).next())
-        try test.eq(Option<Int>(None()), (&mut it).next())
+        try test.eq(Option(1), it.next())
+        try test.eq(Option(2), it.next())
+        try test.eq(Option(3), it.next())
+        try test.eq(Option<Int>(None()), it.next())
     })
     suite.test("ltrim", fun() !void {
         try test.eq("hi ".as_bytes(), " ,. hi ".as_bytes().ltrim([U8(' '), ',', '.'][..]))

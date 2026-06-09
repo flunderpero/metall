@@ -3235,6 +3235,33 @@ fun main() void {
 42
 ```
 
+**method receiver auto-ref**
+
+```metall
+struct Counter { n Int }
+fun Counter.inc(self &mut Counter) void { self.n += 1 }
+fun Counter.add(self &mut Counter, d Int) void { self.n += d }
+fun Counter.get(self &Counter) Int { self.n }
+struct Box { c Counter }
+fun fresh() Counter { Counter(100) }
+fun main() void {
+    mut c = Counter(0)
+    c.inc()
+    c.add(40)
+    DebugIntern.print_int(c.get())
+    mut b = Box(Counter(10))
+    b.c.inc()
+    DebugIntern.print_int(b.c.get())
+    DebugIntern.print_int(fresh().get())
+}
+```
+
+```output
+41
+11
+100
+```
+
 **shape method access**
 
 ```metall

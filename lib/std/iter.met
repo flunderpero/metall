@@ -13,7 +13,7 @@ struct IterToPipeIter<A, In Iter<A>> {
 }
 
 pub fun IterToPipeIter.next(it &mut IterToPipeIter) PipeIterVal<A> {
-    match (&mut it.src).next() {
+    match it.src.next() {
         case None: None()
         else v: v
     }
@@ -25,7 +25,7 @@ struct PipeIterToIter<A, In PipeIter<A>> {
 
 pub fun PipeIterToIter.next(it &mut PipeIterToIter) ?A {
     for {
-        match (&mut it.src).next() {
+        match it.src.next() {
             case None: return None()
             case Skip:
             else v: return v
@@ -40,7 +40,7 @@ struct MapIter<A, B, I PipeIter<A>> {
 }
 
 pub fun MapIter.next(it &mut MapIter) PipeIterVal<B> {
-    match (&mut it.src).next() {
+    match it.src.next() {
         case Skip: Skip()
         case None: None()
         else e: it.f(e)
@@ -53,7 +53,7 @@ struct FilterIter<A, I PipeIter<A>> {
 }
 
 pub fun FilterIter.next(it &mut FilterIter) PipeIterVal<A> {
-    match (&mut it.src).next() {
+    match it.src.next() {
         case None: None()
         case Skip: Skip()
         else a: if it.f(a) { a } else { Skip() }
@@ -68,12 +68,12 @@ struct ChainIter<A, I1 PipeIter<A>, I2 Iter<A>> {
 
 pub fun ChainIter.next(it &mut ChainIter) PipeIterVal<A> {
     if it.use1 {
-        match (&mut it.it1).next() {
+        match it.it1.next() {
             case None: it.use1 = false
             else a: return a
         }
     }
-    match (&mut it.it2).next() {
+    match it.it2.next() {
         case None: None()
         else v: v
     }
@@ -90,7 +90,7 @@ struct TakeIter<A, I PipeIter<A>> {
 
 pub fun TakeIter.next(t &mut TakeIter) PipeIterVal<A> {
     if t.left > 0 {
-        match (&mut t.it).next() {
+        match t.it.next() {
             case None: None()
             case Skip: Skip()
             else v: 
@@ -108,7 +108,7 @@ struct TakeWhileIter<A, I PipeIter<A>> {
 }
 
 pub fun TakeWhileIter.next(t &mut TakeWhileIter) PipeIterVal<A> {
-    match (&mut t.it).next() {
+    match t.it.next() {
         case None: None()
         case Skip: Skip()
         else a: if t.f(a) { a } else { None() }
@@ -163,7 +163,7 @@ pub fun Pipeline.iter(p Pipeline) PipeIterToIter<A, I> {
 pub fun Pipeline.find(p Pipeline, f fun(A) Bool) ?A {
     mut it = p.it
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: break
             case Skip: 
             else v: if f(v) { return v }
@@ -176,7 +176,7 @@ pub fun Pipeline.find(p Pipeline, f fun(A) Bool) ?A {
 pub fun Pipeline.all(p Pipeline, predicate fun(A) Bool) Bool {
     mut it = p.it
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: break
             case Skip: 
             else v: if not predicate(v) { return false }
@@ -189,7 +189,7 @@ pub fun Pipeline.all(p Pipeline, predicate fun(A) Bool) Bool {
 pub fun Pipeline.any(p Pipeline, predicate fun(A) Bool) Bool {
     mut it = p.it
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: break
             case Skip: 
             else v: if predicate(v) { return true }
@@ -203,7 +203,7 @@ pub fun Pipeline.count(p Pipeline) Int {
     mut it = p.it
     mut count = 0
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: break
             case Skip: 
             else: count += 1
@@ -217,7 +217,7 @@ pub fun Pipeline.fold<B>(p Pipeline, initial B, f fun(B, A) B) B {
     mut it = p.it
     mut value = initial
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: break
             case Skip: 
             else v: value = f(value, v)
@@ -233,7 +233,7 @@ pub fun Pipeline.collect(p Pipeline, initial_capacity Int, @a Arena) []mut A {
     mut len = 0
     mut it = p.it
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: break
             case Skip: 
             else v: 
@@ -253,7 +253,7 @@ pub fun Pipeline.collect_list(p Pipeline, initial_capacity Int, @a Arena) &mut l
     let l = list.List.new<A>(initial_capacity, @a)
     mut it = p.it
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: break
             case Skip: 
             else v: l.push(v)

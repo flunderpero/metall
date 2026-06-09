@@ -9983,6 +9983,41 @@ test.met:6:5: type mismatch at receiver: expected Foo, got &Foo
     }
 ```
 
+**Method receiver auto-ref of value**
+
+```metall
+{
+    struct Foo { one Int }
+    fun Foo.bump(f &mut Foo) void { f.one += 1 }
+    fun Foo.read(f &Foo) Int { f.one }
+    mut x = Foo(1)
+    x.bump()
+    x.read()
+}
+```
+
+```error
+```
+
+**Method receiver auto-ref of immutable value rejected**
+
+```metall
+{
+    struct Foo { one Int }
+    fun Foo.bump(f &mut Foo) void { f.one += 1 }
+    let x = Foo(1)
+    x.bump()
+}
+```
+
+```error
+test.met:5:5: cannot call a method requiring a mutable receiver on an immutable value
+        let x = Foo(1)
+        x.bump()
+        ^
+    }
+```
+
 **Generic struct type arg count too few**
 
 ```metall

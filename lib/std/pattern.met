@@ -76,7 +76,7 @@ pub struct RunePred {
 pub fun RunePred.lfind_pattern(p RunePred, haystack []U8) ?Range<Int> {
     mut it = StrRuneIndexIter.new(haystack) 
     for {
-        match (&mut it).next() {
+        match it.next() {
             case None: return None()
             else next:
                 if p.predicate(next.rune) {
