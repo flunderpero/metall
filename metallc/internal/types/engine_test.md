@@ -1248,6 +1248,77 @@ test.met:6:9: symbol not defined: r2
     }
 ```
 
+**Can construct a struct from a fresh nocopy value**
+
+Moving a freshly constructed nocopy value into a field is not a copy.
+
+```metall module
+nocopy struct Handle { id Int }
+struct Wrapper { h Handle }
+fun foo() void {
+    let w = Wrapper(Handle(1))
+    _ = w
+}
+```
+
+```error
+```
+
+**Cannot construct a struct from a nocopy binding**
+
+Passing an existing nocopy binding as a construction argument copies it, the same
+as passing it to a function.
+
+```metall module
+nocopy struct Handle { id Int }
+struct Wrapper { h Handle }
+fun foo() void {
+    let h = Handle(1)
+    let w = Wrapper(h)
+    _ = w
+}
+```
+
+```error
+test.met:5:21: cannot copy value of nocopy type test.Handle
+        let h = Handle(1)
+        let w = Wrapper(h)
+                        ^
+        _ = w
+
+test.met:6:9: symbol not defined: w
+        let w = Wrapper(h)
+        _ = w
+            ^
+    }
+```
+
+**Cannot construct a union from a nocopy binding**
+
+```metall module
+nocopy struct Handle { id Int }
+union Resource = Handle | Int
+fun foo() void {
+    let h = Handle(1)
+    let r = Resource(h)
+    _ = r
+}
+```
+
+```error
+test.met:5:22: cannot copy value of nocopy type test.Handle
+        let h = Handle(1)
+        let r = Resource(h)
+                         ^
+        _ = r
+
+test.met:6:9: symbol not defined: r
+        let r = Resource(h)
+        _ = r
+            ^
+    }
+```
+
 ## Defer
 
 **Defer block is void**

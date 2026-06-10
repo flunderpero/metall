@@ -2076,6 +2076,11 @@ func (e *Engine) checkStructConstruction(
 			)
 			return InvalidTypeID, TypeFailed
 		}
+		if _, isRef := e.env.Type(struct_.Fields[i].Type).Kind.(RefType); !isRef {
+			if !e.checkNocopy(argNodeID, argTypeID, argNode.Span) {
+				return InvalidTypeID, TypeFailed
+			}
+		}
 	}
 	return structTypeID, TypeOK
 }
@@ -2094,6 +2099,11 @@ func (e *Engine) checkUnionConstruction(
 	}
 	for _, variantTypeID := range union.Variants {
 		if e.isAssignableTo(argTypeID, variantTypeID) {
+			if _, isRef := e.env.Type(variantTypeID).Kind.(RefType); !isRef {
+				if !e.checkNocopy(argNodeID, argTypeID, e.ast.Node(argNodeID).Span) {
+					return InvalidTypeID, TypeFailed
+				}
+			}
 			return unionTypeID, TypeOK
 		}
 	}
