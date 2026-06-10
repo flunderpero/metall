@@ -2817,17 +2817,18 @@ func (g *IRFunGen) genPlaceAddr(nodeID ast.NodeID) string {
 	}
 }
 
+// genTempAddr materializes a temporary into a fresh scope-local slot and returns
+// its address. An aggregate value register is the address of wherever the value
+// lives, which for a block/if/match tail is an existing place, so it must be
+// copied into the fresh slot rather than returned directly. Otherwise `&mut { b }`
+// would alias `b` and let a mutation reach an immutable binding.
 func (g *IRFunGen) genTempAddr(nodeID ast.NodeID) string {
 	g.Gen(nodeID)
 	valueReg := g.lookupCode(nodeID)
 	typeID := g.typeIDOfNode(nodeID)
-	if g.isAggregateType(typeID) {
-		return valueReg
-	}
-	irTyp := g.irType(typeID)
 	reg := g.reg()
-	g.writeAlloca(reg, irTyp)
-	g.write("store %s %s, ptr %s", irTyp, valueReg, reg)
+	g.writeAlloca(reg, g.irType(typeID))
+	g.storeValue(valueReg, reg, typeID)
 	return reg
 }
 

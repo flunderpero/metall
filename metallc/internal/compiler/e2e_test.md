@@ -801,6 +801,34 @@ hello
 bye
 ```
 
+**&mut of a temporary aggregate copies it**
+
+`&mut { b }` materializes a fresh mutable slot holding a copy of the aggregate.
+`bump` mutates that copy (it returns 99), and the immutable `b` is left untouched
+(still 1).
+
+```metall
+struct Box {
+    v Int
+}
+
+fun bump(b &mut Box) Int {
+    b.v = 99
+    b.v
+}
+
+fun main() void {
+    let b = Box(1)
+    DebugIntern.print_int(bump(&mut { b }))
+    DebugIntern.print_int(b.v)
+}
+```
+
+```output
+99
+1
+```
+
 **fun returns struct**
 
 ```metall
