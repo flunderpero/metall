@@ -2603,7 +2603,56 @@ fun foo() Int {
 ```error
 ```
 
-**closure capture by value does not escape**
+**by-value capture bubbles up out of its subscope without escaping**
+
+`n` and the closure are declared in a subscope; the closure value bubbles up to
+`g` but stays inside `foo`. The by-value capture copies `n` into the context,
+which lives on `foo`'s frame and so outlives the subscope. Nothing escapes. (The
+context taint is the enclosing function, not the subscope, so this is not a false
+escape.)
+
+```metall
+fun foo() Int {
+    let g = {
+        let n = 42
+        fun[n](x Int) Int { x + n }
+    }
+    g(8)
+}
+```
+
+```error
+```
+
+**by-ref capture of a subscope local escapes even when the closure stays in the function**
+
+Same shape with `&n`: the closure never leaves `foo`, but it borrows `n`, which
+dies when the subscope ends, so the borrow escapes its subscope. This is the
+by-value/by-ref distinction the previous test pins down.
+
+```metall
+fun foo() Int {
+    let g = {
+        let n = 42
+        fun[&n](x Int) Int { x + n.* }
+    }
+    g(8)
+}
+```
+
+```error
+test.met:4:9: reference escaping its allocation scope (via block result)
+            let n = 42
+            fun[&n](x Int) Int { x + n.* }
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        }
+```
+
+**closure capturing a value by value escapes when returned**
+
+A closure with any capture carries its context, which lives on the enclosing
+function's frame. Returning it escapes that frame, even though `x` is copied into
+the context by value.
 
 ```metall
 fun foo() fun() Int {
@@ -2613,6 +2662,27 @@ fun foo() fun() Int {
 ```
 
 ```error
+test.met:3:5: reference escaping its allocation scope (via block result)
+        let x = 42
+        fun[x]() Int { x }
+        ^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**closure capturing a parameter by value escapes when returned**
+
+```metall
+fun make_adder(n Int) fun(Int) Int {
+    fun[n](x Int) Int { x + n }
+}
+```
+
+```error
+test.met:2:5: reference escaping its allocation scope (via block result)
+    fun make_adder(n Int) fun(Int) Int {
+        fun[n](x Int) Int { x + n }
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
 ```
 
 **closure capture ref by value escapes when returned**

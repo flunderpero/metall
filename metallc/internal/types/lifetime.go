@@ -1651,8 +1651,15 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		// g's body returns p (the param), not local, so g() must not be rejected.
 		a.closureResults[nodeID] = a.flow(fun.Block)
 
-		var closureChain Chain
-		outerScope := a.scopeGraph.NodeScope(nodeID)
+		// Seed with the closure's own context taint: the capture context is
+		// alloca'd on the enclosing function's frame, so a closure with ANY capture
+		// borrows that frame even when every capture is a plain value (`fun[n]` with
+		// n Int copies n into the context). Without this, returning such a closure
+		// would dangle the context undetected. The taint is the enclosing FUNCTION
+		// body, not the closure's immediate (desugared wrapper) scope, so moving the
+		// closure to an outer block within the same function is not a false escape.
+		bindScope := a.scopeFor(a.scopeGraph.NodeScope(nodeID))
+		closureChain := Chain{TaintSet{a.enclosingFunScope(nodeID).ScopeTaint}}
 		for _, capNodeID := range fun.Captures {
 			capture := base.Cast[ast.Capture](a.ast.Node(capNodeID).Kind)
 			vt := a.lookupVar(nodeID, capture.Name.Name)
@@ -1666,10 +1673,7 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 				closureChain = closureChain.Merge(vt.Chain)
 			}
 		}
-		if len(closureChain.CarriedTaints()) > 0 {
-			ss := a.scopeFor(outerScope)
-			ss.Vars[fun.Name.Name] = &VarTaint{nodeID, ss.ScopeTaint, closureChain}
-		}
+		bindScope.Vars[fun.Name.Name] = &VarTaint{nodeID, bindScope.ScopeTaint, closureChain}
 	}
 }
 
@@ -1692,6 +1696,21 @@ func (a *LifetimeCheck) mergeFlows(nodeIDs []ast.NodeID) Chain {
 // scopeState returns the state of the lexical scope that contains nodeID.
 func (a *LifetimeCheck) scopeState(nodeID ast.NodeID) *ScopeState {
 	return a.scopeFor(a.scopeGraph.NodeScope(nodeID))
+}
+
+// enclosingFunScope returns the body scope of the function that lexically
+// encloses nodeID: the outermost scope still inside that function (the one whose
+// parent is the ast.Fun). A value tagged with this scope's taint escapes only
+// when it leaves the function, not when it moves to an outer block within it.
+func (a *LifetimeCheck) enclosingFunScope(nodeID ast.NodeID) *ScopeState {
+	scope := a.scopeGraph.NodeScope(nodeID)
+	for scope.Parent != nil {
+		if _, isFun := a.ast.Node(scope.Parent.Node).Kind.(ast.Fun); isFun {
+			break
+		}
+		scope = scope.Parent
+	}
+	return a.scopeFor(scope)
 }
 
 // scopeFor returns a scope's state, lazily creating it (and minting its scope
