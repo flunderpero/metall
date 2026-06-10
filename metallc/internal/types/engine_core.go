@@ -345,11 +345,17 @@ func (c *TypeContext) isAssignableTo(got TypeID, expected TypeID) bool {
 	expTyp := c.env.Type(expected)
 	switch gotKind := gotTyp.Kind.(type) {
 	case SliceType:
-		if expKind, ok := expTyp.Kind.(SliceType); ok && gotKind.Mut == expKind.Mut {
+		// Only immutable slices are covariant in their element. `[]mut` is
+		// invariant: widening the element (e.g. `[]mut &mut Int` to `[]mut &Int`)
+		// lets you store a widened value through one alias and read it back at the
+		// narrower element type through another. The top-level `[]mut T -> []T`
+		// drop is handled by the mutableSliceFlag check above.
+		if expKind, ok := expTyp.Kind.(SliceType); ok && !gotKind.Mut && !expKind.Mut {
 			return c.isAssignableTo(gotKind.Elem, expKind.Elem)
 		}
 	case RefType:
-		if expKind, ok := expTyp.Kind.(RefType); ok && gotKind.Mut == expKind.Mut {
+		// Same invariance rule: `&mut` is invariant in its pointee, `&` is covariant.
+		if expKind, ok := expTyp.Kind.(RefType); ok && !gotKind.Mut && !expKind.Mut {
 			return c.isAssignableTo(gotKind.Type, expKind.Type)
 		}
 	case FunType:

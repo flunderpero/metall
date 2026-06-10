@@ -2954,6 +2954,52 @@ struct01 = Foo { one &Int }
 ```error
 ```
 
+**Mutable slice is invariant in its element**
+
+Assigning `[]mut &mut Int` to `[]mut &Int` is rejected: a mutable slice is
+invariant in its element. If it were allowed, a `&Int` stored through the
+narrowed view could be read back as `&mut Int` and used to write an immutable
+place.
+
+```metall
+{
+    mut x = 1
+    mut arr = [&mut x]
+    let s = arr[..]
+    let s2 []mut &Int = s
+}
+```
+
+```error
+test.met:5:25: type mismatch: expected []mut &Int, got []mut &mut Int
+        let s = arr[..]
+        let s2 []mut &Int = s
+                            ^
+    }
+```
+
+**Mutable ref is invariant in its pointee**
+
+Assigning `&mut &mut Int` to `&mut &Int` is rejected: a mutable ref is invariant
+in its pointee. If it were allowed, a store through the alias could plant an
+immutable ref where a mutable one is expected.
+
+```metall
+{
+    mut x = 1
+    mut r = &mut x
+    let rr &mut &Int = &mut r
+}
+```
+
+```error
+test.met:4:24: type mismatch: expected &mut &Int, got &mut &mut Int
+        mut r = &mut x
+        let rr &mut &Int = &mut r
+                           ^^^^^^
+    }
+```
+
 **Fun returns ref**
 
 ```metall
