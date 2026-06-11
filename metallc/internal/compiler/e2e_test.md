@@ -3467,6 +3467,37 @@ fun main() void {
 Telecaster
 ```
 
+**receiver-less shape method through a type parameter**
+
+`T.zero()` dispatches to each concrete type's static factory, so the right one
+runs per instantiation.
+
+```metall
+shape HasZero {
+    fun HasZero.zero() HasZero
+}
+
+struct P { x Int }
+fun P.zero() P { P(7) }
+
+struct Q { y Int }
+fun Q.zero() Q { Q(99) }
+
+fun mk<T HasZero>(witness T) T {
+    T.zero()
+}
+
+fun main() void {
+    DebugIntern.print_int(mk(P(1)).x)
+    DebugIntern.print_int(mk(Q(1)).y)
+}
+```
+
+```output
+7
+99
+```
+
 **import local module**
 
 ```metall

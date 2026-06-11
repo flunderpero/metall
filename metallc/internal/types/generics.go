@@ -168,7 +168,40 @@ func (g *Generics) resolveIdent(nodeID ast.NodeID, ident ast.Ident, span base.Sp
 	if !ok || binding.Decl == 0 {
 		return Outcome{}
 	}
+	// A receiver-less shape method reached through a type parameter, written as a
+	// qualified ident (`T.zero`): resolve the base's type and dispatch like the
+	// field-access form, else it reaches copyNamedFunRef on the abstract method.
+	if _, isFunDecl := g.ast.Node(binding.Decl).Kind.(ast.FunDecl); isFunDecl {
+		if base_, _, hasDot := strings.Cut(ident.Name, "."); hasDot {
+			if baseBinding, ok := g.lookup(nodeID, base_, -1); ok {
+				if out, ok := g.resolveShapeMethodRef(nodeID, binding, g.env.Type(baseBinding.TypeID), span); ok {
+					return out
+				}
+			}
+		}
+	}
 	return g.resolveBinding(nodeID, binding, ident.TypeArgs, span)
+}
+
+// resolveShapeMethodRef resolves a shape method reached on a shape- or
+// type-param-typed target (the receiver of `v.zero`, the base of `T.zero`),
+// setting the named fun ref and returning the bound signature. ok is false for a
+// concrete target, which goes through ordinary method dispatch.
+func (g *Generics) resolveShapeMethodRef(
+	nodeID ast.NodeID, binding *Binding, targetTyp *Type, span base.Span,
+) (Outcome, bool) {
+	if _, isShape := targetTyp.Kind.(ShapeType); !isShape {
+		if _, isParam := targetTyp.Kind.(TypeParamType); !isParam {
+			return Outcome{}, false
+		}
+	}
+	g.env.setNamedFunRef(nodeID, binding.Name)
+	funType, status := g.methodSignature(binding, g.boundMethodContext(binding, targetTyp.ID), nodeID, span)
+	if status.Failed() {
+		return Outcome{Handled: true, TypeID: InvalidTypeID, Status: status}, true
+	}
+	newID := g.env.newType(funType, 0, base.Span{}, TypeOK)
+	return Outcome{Handled: true, TypeID: newID, Status: TypeOK}, true
 }
 
 func (g *Generics) resolveBinding(
@@ -349,18 +382,7 @@ func (g *Generics) tryResolveShapeMethodFieldAccess(
 	if status.Failed() {
 		return Outcome{Handled: true, TypeID: InvalidTypeID, Status: status}, true
 	}
-	if _, isShape := targetTyp.Kind.(ShapeType); !isShape {
-		if _, isParam := targetTyp.Kind.(TypeParamType); !isParam {
-			return Outcome{}, false
-		}
-	}
-	g.env.setNamedFunRef(nodeID, binding.Name)
-	funType, status := g.methodSignature(binding, g.boundMethodContext(binding, targetTyp.ID), nodeID, fa.Field.Span)
-	if status.Failed() {
-		return Outcome{Handled: true, TypeID: InvalidTypeID, Status: status}, true
-	}
-	newID := g.env.newType(funType, 0, base.Span{}, TypeOK)
-	return Outcome{Handled: true, TypeID: newID, Status: TypeOK}, true
+	return g.resolveShapeMethodRef(nodeID, binding, targetTyp, fa.Field.Span)
 }
 
 func (g *Generics) resolveMethodCallFieldAccess(nodeID ast.NodeID, fa ast.FieldAccess, binding *Binding) Outcome {

@@ -1367,13 +1367,14 @@ test.met:2:5: defer block cannot transfer control: no return, break, continue, o
 fun fallible() !Int {
     5
 }
+
 fun main() void {
     defer { _ = try fallible() }
 }
 ```
 
 ```error
-test.met:5:5: defer block cannot transfer control: no return, break, continue, or try
+test.met:6:5: defer block cannot transfer control: no return, break, continue, or try
     fun main() void {
         defer { _ = try fallible() }
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -6585,17 +6586,19 @@ diagnostic instead of hanging.
 
 ```metall module
 struct Box<T> { v T }
+
 fun depth<T>(x T, n Int) Int {
     if n == 0 { return 0 }
     depth(Box(x), n - 1) + 1
 }
+
 fun main() void {
     DebugIntern.print_int(depth(1, 5))
 }
 ```
 
 ```error
-test.met:4:5: generic instantiation of depth nests deeper than 64 levels; likely unbounded recursion
+test.met:5:5: generic instantiation of depth nests deeper than 64 levels; likely unbounded recursion
         if n == 0 { return 0 }
         depth(Box(x), n - 1) + 1
         ^^^^^
