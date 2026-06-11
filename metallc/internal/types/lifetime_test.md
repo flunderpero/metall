@@ -3191,10 +3191,65 @@ test.met:3:29: noescape parameter "src" must not escape through other parameters
 
 **noescape slice flows into &mut param holding slice**
 
+A slice borrows its backing storage, so storing a `noescape` slice param into a
+`&mut` param leaks it through that parameter, exactly like the ref case above.
+
 ```metall
 {
     struct Buf { data []U8 }
     fun store(dst &mut Buf, src noescape []U8) void { dst.* = Buf(src) }
+}
+```
+
+```error
+test.met:3:29: noescape parameter "src" must not escape through other parameters
+        struct Buf { data []U8 }
+        fun store(dst &mut Buf, src noescape []U8) void { dst.* = Buf(src) }
+                                ^^^^^^^^^^^^^^^^^
+    }
+```
+
+**slice stored through a &mut param escapes a shorter-lived caller slice**
+
+`store` records "dst gets src's borrow" as a side effect, so calling it with a
+block-local array's slice and a longer-lived `buf` is caught at the call site.
+
+```metall
+{
+    struct Buf { data []Int }
+    fun store(dst &mut Buf, src []Int) void { dst.* = Buf(src) }
+    fun main() void {
+        mut buf = Buf([0][..])
+        {
+            mut arr = [111, 222, 333]
+            store(&mut buf, arr[0..3])
+        }
+    }
+}
+```
+
+```error
+test.met:8:29: reference escaping its allocation scope (via mutation of outer variable)
+                mut arr = [111, 222, 333]
+                store(&mut buf, arr[0..3])
+                                ^^^^^^^^^
+            }
+```
+
+**slice stored through a &mut param into a same-scope place does not escape**
+
+When the source slice and the `&mut` destination live in the same scope, the
+borrow does not outlive its backing, so the side effect is not an escape.
+
+```metall
+{
+    struct Buf { data []Int }
+    fun store(dst &mut Buf, src []Int) void { dst.* = Buf(src) }
+    fun main() void {
+        mut arr = [111, 222, 333]
+        mut buf = Buf([0][..])
+        store(&mut buf, arr[0..3])
+    }
 }
 ```
 

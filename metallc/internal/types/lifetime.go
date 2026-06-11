@@ -1275,6 +1275,30 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 	return false
 }
 
+// typeContainsSlice reports whether the type is, or recursively contains by
+// value, a SliceType (so `Str`, which wraps a `[]U8`, counts). A slice borrows
+// its backing storage, so storing one into a &mut param leaks that borrow.
+// Refs are already covered by typeContainsRefOrAlloc; this adds the by-value
+// slice case it omits (design-review F04).
+func (a *LifetimeCheck) typeContainsSlice(typeID TypeID) bool {
+	if typeID == InvalidTypeID {
+		return false
+	}
+	switch kind := a.env.Type(typeID).Kind.(type) {
+	case SliceType:
+		return true
+	case StructType:
+		return slices.ContainsFunc(kind.Fields, func(f StructField) bool {
+			return a.typeContainsSlice(f.Type)
+		})
+	case UnionType:
+		return slices.ContainsFunc(kind.Variants, a.typeContainsSlice)
+	case ArrayType:
+		return a.typeContainsSlice(kind.Elem)
+	}
+	return false
+}
+
 // funDeclTypeContainsRefOrAlloc reports whether any parameter or return type
 // in the given FunDecl is, or contains, a reference or allocator. Used to
 // decide whether a TypeParam constrained by a shape is potentially ref-bearing.
@@ -1535,19 +1559,21 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	}
 
 	// Analyze params first and capture their initial caller (param) taints.
-	// refParamTaint marks taints of ref/alloc params, the only valid side-effect
-	// SOURCES. Slice params carry a param-taint too (so returning one is caught),
-	// but a slice flowing into a &mut param is not a side effect.
+	// sideEffectSrc marks taints of params that borrow storage (ref/alloc OR a
+	// by-value slice/Str), the valid side-effect SOURCES: storing one into a &mut
+	// param leaks the borrow. A slice borrows its backing just like a ref, so
+	// `fun store(dst &mut Buf, src []Int) { dst.* = Buf(src) }` is a side effect.
 	paramTaintToIdx := map[TaintID]int{}
-	refParamTaint := map[TaintID]bool{}
+	sideEffectSrc := map[TaintID]bool{}
 	for i, paramNodeID := range fun.Params {
 		a.Check(paramNodeID)
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
-		isRef := a.typeContainsRefOrAlloc(a.env.TypeOfNode(paramNodeID).ID)
+		paramTypeID := a.env.TypeOfNode(paramNodeID).ID
+		isSrc := a.typeContainsRefOrAlloc(paramTypeID) || a.typeContainsSlice(paramTypeID)
 		if vt := a.lookupVar(paramNodeID, name); vt != nil {
 			for _, t := range vt.Chain.CarriedTaints() {
 				paramTaintToIdx[t] = i
-				refParamTaint[t] = isRef
+				sideEffectSrc[t] = isSrc
 			}
 		}
 	}
@@ -1612,7 +1638,7 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 			continue
 		}
 		for _, t := range vt.Chain.CarriedTaints() {
-			if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i && refParamTaint[t] {
+			if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i && sideEffectSrc[t] {
 				if !slices.Contains(effects.SideEffects[i], srcIdx) {
 					effects.SideEffects[i] = append(effects.SideEffects[i], srcIdx)
 				}
