@@ -35,22 +35,25 @@ fun MapSlot.key(s MapSlot) ?K {
 pub struct Map<K Key, V> {
     data []mut MapSlot<K, V>
     pub len Int
+    -- Non-free slots: live entries plus tombstones. Drives growth (see Map.set).
+    used Int
     @a Arena
 }
 
 pub fun Map.new(capacity Int, @a Arena) &mut Map {
     if capacity <= 0 { panic("invalid capacity (<= 0)")}
     let data = @a.slice<MapSlot<K, V>>(capacity, false)
-    @a.new(Map<K, V>(data, 0, @a))
+    @a.new(Map<K, V>(data, 0, 0, @a))
 }
 
 pub fun Map.set(m &mut Map, key K, value V) void {
-    let hash = key.hash()
-    let desired_capacity = ((m.len * 3) / 2) + 1
-    if desired_capacity > m.data.len {
-        m.grow(m.data.len * 2)
+    if (m.used + 1) * 4 > m.data.len * 3 {
+        let new_capacity = if (m.len + 1) * 4 > m.data.len * 3 { m.data.len * 2 } else { m.data.len }
+        m.grow(new_capacity)
     }
-    m.len += set(m.data, key, value)
+    let delta = set(m.data, key, value)
+    m.len += delta.len.to_int()
+    m.used += delta.used.to_int()
 }
 
 --- Get the value associated with the key.
@@ -62,7 +65,7 @@ pub fun Map.get(m &Map, key K) ?V {
     mut pos = (hash % capacity.to_u64_wrapping()).to_int_wrapping()
     for {
         match m.data[pos] {
-        case Bool deleted: 
+        case Bool deleted:
             if not deleted {
                 return None()
             }
@@ -128,6 +131,8 @@ pub fun Map.grow(m &mut Map, capacity Int) void {
         }
     }
     m.data = new_data
+    -- Only live entries were copied, so every used slot is now a live entry.
+    m.used = m.len
 }
 
 pub struct MapIter<K Key, V> {
@@ -162,20 +167,26 @@ pub fun Map.iter(m &Map) MapIter<K, V> {
     MapIter<K, V>(m.data, 0)
 }
 
-fun set<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {
-    mut hash = key.hash()
+struct SetDelta {
+    len U8
+    used U8
+}
+
+fun set<K Key, V>(data []mut MapSlot<K, V>, key K, value V) SetDelta {
+    let hash = key.hash()
     mut first_deleted_at = -1
     let capacity = data.len
     mut pos = (hash % capacity.to_u64_wrapping()).to_int_wrapping()
     for {
         match data[pos] {
-        case Bool deleted: 
-            if not deleted { 
+        case Bool deleted:
+            if not deleted {
                 if first_deleted_at >= 0 {
-                    pos = first_deleted_at
+                    data[first_deleted_at] = MapEntry(key, value)
+                    return SetDelta(1, 0)
                 }
                 data[pos] = MapEntry(key, value)
-                return 1
+                return SetDelta(1, 1)
             }
             if first_deleted_at == -1 {
                 first_deleted_at = pos
@@ -183,7 +194,7 @@ fun set<K Key, V>(data []mut MapSlot<K, V>, key K, value V) Int {
         else existing:
             if existing.key.eq(key) {
                 data[pos] = MapEntry(key, value)
-                return 0
+                return SetDelta(0, 0)
             }
         }
         pos = (pos + 1) % capacity

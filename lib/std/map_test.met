@@ -144,6 +144,42 @@ fun main() void {
         try test.eq(3, l[2].key)
         try test.eq("c", l[2].value)
     })
+    suite.test("operations on a dense table terminate", fun() !void {
+        let @local = Arena()
+        -- Insert, delete, and refill so the table is dense with live entries and
+        -- tombstones. Before growth counted tombstones, this saturated and every
+        -- probe (get/has/del) spun forever on a missing key.
+        let m = map.Map.new<Int, Int>(4, @local)
+        m.set(1, 10)
+        m.set(2, 20)
+        m.set(3, 30)
+        _ = m.del(1)
+        m.set(4, 40)
+        try test.eq(Option<Int>(None()), m.get(99))
+        try test.eq(false, m.has(99))
+        try test.eq(false, m.del(99))
+        -- inserting a fresh key on the dense table still works
+        m.set(99, 990)
+        try test.eq(Option<Int>(990), m.get(99))
+    })
+    suite.test("delete-heavy churn does not wedge", fun() !void {
+        let @local = Arena()
+        -- Each iteration inserts then deletes, leaving a tombstone. Without
+        -- tombstone-aware growth a small table fills with tombstones and `set`
+        -- itself wedges; here it must stay live and correct.
+        let m = map.Map.new<Int, Int>(4, @local)
+        mut i = 0
+        for {
+            if i >= 1000 { break }
+            m.set(i, i * 10)
+            _ = m.del(i)
+            i = i + 1
+        }
+        try test.eq(0, m.len)
+        m.set(7, 77)
+        try test.eq(Option<Int>(77), m.get(7))
+        try test.eq(1, m.len)
+    })
     _ = suite.run()
 }
 
