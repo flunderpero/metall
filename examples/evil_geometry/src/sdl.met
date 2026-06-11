@@ -1,0 +1,58 @@
+use std.ffi
+
+-- SDL3/SDL_init.h
+
+--- Subsystems for `init`. Each discriminant is SDL's `SDL_INIT_*` flag bit,
+    so a variant's `.tag` is exactly the value SDL expects. ---
+pub enum InitFlags U32 =
+    | audio = 0x00000010
+    | video = 0x00000020
+    | events = 0x00004000
+
+--- Bring SDL and the given subsystem up. Returns true on success. ---
+pub extern("SDL_Init") fun init(flags U32) Bool
+
+--- Shut SDL down, releasing everything `init` brought up. ---
+pub extern("SDL_Quit") fun quit() void
+
+-- SDL3/SDL_video.h
+
+--- Create a centered window of the given size. `flags` is a bitmask of SDL's
+    `SDL_WINDOW_*` constants (0 for a plain window). Null on failure. ---
+pub extern("SDL_CreateWindow") fun create_window(title ffi.Ptr<U8>, w I32, h I32, flags U64) ffi.Ptr<void>
+
+--- Destroy a window created by `create_window`. ---
+pub extern("SDL_DestroyWindow") fun destroy_window(window ffi.Ptr<void>) void
+
+--- Raise the window above the others and give it input focus. On macOS this
+    also activates the app, bringing a terminal-launched window to the front. ---
+pub extern("SDL_RaiseWindow") fun raise_window(window ffi.Ptr<void>) Bool
+
+-- SDL3/SDL_timer.h
+
+--- Block the calling thread for the given number of milliseconds. ---
+pub extern("SDL_Delay") fun delay(ms U32) void
+
+-- SDL3/SDL_events.h
+
+--- Pump the OS event queue. Without this the window manager never gets to
+    show or redraw the window, so a freshly created window stays invisible. ---
+pub extern("SDL_PumpEvents") fun pump_events() void
+
+-- SDL3/SDL_render.h
+
+--- Create a 2D renderer for the window. `name` picks a driver; pass a null
+    pointer to let SDL choose. Null on failure. ---
+pub extern("SDL_CreateRenderer") fun create_renderer(window ffi.Ptr<void>, name ffi.Ptr<U8>) ffi.Ptr<void>
+
+--- Set the color (0-255 per channel) used by `render_clear` and draw calls. ---
+pub extern("SDL_SetRenderDrawColor") fun set_render_draw_color(renderer ffi.Ptr<void>, r U8, g U8, b U8, a U8) Bool
+
+--- Clear the whole render target with the current draw color. ---
+pub extern("SDL_RenderClear") fun render_clear(renderer ffi.Ptr<void>) Bool
+
+--- Present the rendered frame to the window. ---
+pub extern("SDL_RenderPresent") fun render_present(renderer ffi.Ptr<void>) Bool
+
+--- Destroy a renderer created by `create_renderer`. ---
+pub extern("SDL_DestroyRenderer") fun destroy_renderer(renderer ffi.Ptr<void>) void

@@ -1,0 +1,36 @@
+use sdl
+use std.ffi
+use std.io
+
+fun main() void {
+    if unsafe sdl.init(sdl.InitFlags.video.tag) {
+        let @a = Arena()
+        let title = ffi.cstr("Evil Geometry".as_bytes(), @a)
+        let window = unsafe sdl.create_window(title, I32(800), I32(600), U64(0))
+        if window.is_null() {
+            io.println("window creation failed")
+        } else {
+            let renderer = unsafe sdl.create_renderer(window, ffi.Ptr.null<U8>())
+            if renderer.is_null() {
+                io.println("renderer creation failed")
+            } else {
+                io.println("window created")
+                _ = unsafe sdl.raise_window(window)
+                _ = unsafe sdl.set_render_draw_color(renderer, U8(40), U8(70), U8(140), U8(255))
+                mut frames = 0
+                for frames < 300 {
+                    unsafe sdl.pump_events()
+                    _ = unsafe sdl.render_clear(renderer)
+                    _ = unsafe sdl.render_present(renderer)
+                    unsafe sdl.delay(U32(16))
+                    frames = frames + 1
+                }
+                unsafe sdl.destroy_renderer(renderer)
+            }
+            unsafe sdl.destroy_window(window)
+        }
+        unsafe sdl.quit()
+    } else {
+        io.println("SDL_Init failed")
+    }
+}
