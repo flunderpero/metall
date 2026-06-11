@@ -4802,6 +4802,35 @@ fun main() void {
 99
 ```
 
+**defer with branching body at multiple returns**
+
+```metall
+fun pick(n Int) Int {
+    defer {
+        if n < 0 {
+            DebugIntern.print_int(7)
+        }
+    }
+    if n == 0 {
+        return 100
+    }
+    return n
+}
+
+fun main() void {
+    DebugIntern.print_int(pick(0))
+    DebugIntern.print_int(pick(-5))
+    DebugIntern.print_int(pick(3))
+}
+```
+
+```output
+100
+7
+-5
+3
+```
+
 ## Type Sugar
 
 **Option and Result sugar**

@@ -99,6 +99,8 @@ type IRFunGen struct {
 	deferStack       [][]ast.NodeID // stack of defer block IDs per block scope
 	loopStack        []LoopLabels
 	astCode          map[ast.NodeID]string
+	labelSalt        string // appended to generated labels to keep re-emitted defer bodies distinct
+	deferEmitSeq     int    // monotonic counter feeding labelSalt, one bump per defer body emission
 	entryAllocas     strings.Builder
 	constInit        bool // true when generating module-level constant init
 	wrapperBuf       strings.Builder
@@ -1147,12 +1149,17 @@ func (g *IRFunGen) genReturn(id ast.NodeID, return_ ast.Return) {
 func (g *IRFunGen) emitBlockCleanup(arenaLevel, deferLevel int) {
 	defers := g.deferStack[deferLevel]
 	for i := len(defers) - 1; i >= 0; i-- {
-		// Use a fresh astCode so that re-emitting the same defer block at
-		// multiple exit points (normal exit + break/continue) doesn't conflict.
-		saved := g.astCode
+		// Re-emitting the same defer body at multiple exit points reuses its AST
+		// node IDs, so without distinct per-emission state we'd emit a duplicate
+		// astCode value and duplicate basic-block labels. LLVM merges same-named
+		// blocks, leaving a terminator mid-block. A fresh astCode and a unique
+		// label salt keep each emission self-contained.
+		savedCode, savedSalt := g.astCode, g.labelSalt
 		g.astCode = map[ast.NodeID]string{}
+		g.deferEmitSeq++
+		g.labelSalt = fmt.Sprintf(".d%d", g.deferEmitSeq)
 		g.Gen(defers[i])
-		g.astCode = saved
+		g.astCode, g.labelSalt = savedCode, savedSalt
 	}
 	for _, reg := range g.arenaRegStack[arenaLevel] {
 		g.write("call i64 @runtime$arena.arena_destroy(ptr %s)", reg)
@@ -1852,8 +1859,8 @@ func (g *IRFunGen) genMatchBinding(
 	g.setSymbol(bindID, name, allocReg, irTyp)
 }
 
-func (g *IRGen) label(name string, id ast.NodeID) Label {
-	return Label(fmt.Sprintf("%s_%s", name, id))
+func (g *IRFunGen) label(name string, id ast.NodeID) Label {
+	return Label(fmt.Sprintf("%s_%s%s", name, id, g.labelSalt))
 }
 
 func (g *IRFunGen) writeLabel(label Label) {
