@@ -1383,24 +1383,28 @@ func (g *IRFunGen) genIf(id ast.NodeID, ifNode ast.If) {
 	g.writeLabel(contLabel)
 	code := voidValue
 	if ifNode.Else != nil {
-		phi := g.reg()
-		thenCode := g.lookupCode(ifNode.Then)
-		elseCode := g.lookupCode(*ifNode.Else)
-		thenType := g.typeOfNode(ifNode.Then)
-		typ := g.irType(thenType.ID)
-		if g.isAggregateType(thenType.ID) {
+		// A diverging branch never reaches contLabel, so it contributes no phi
+		// entry; the live branch alone gives the result type.
+		thenDiverges := g.breaksControlFlow(ifNode.Then)
+		elseDiverges := g.breaksControlFlow(*ifNode.Else)
+		liveType := g.typeOfNode(ifNode.Then)
+		if thenDiverges {
+			liveType = g.typeOfNode(*ifNode.Else)
+		}
+		typ := g.irType(liveType.ID)
+		if g.isAggregateType(liveType.ID) {
 			typ = "ptr" // Aggregate values flow as pointers in code registers.
 		}
-		if typ != "{}" && typ != "void" {
-			g.write(
-				"%s = phi %s [%s, %%%s], [%s, %%%s]",
-				phi,
-				typ,
-				thenCode,
-				phiThenLabel,
-				elseCode,
-				phiElseLabel,
-			)
+		var entries []string
+		if !thenDiverges {
+			entries = append(entries, fmt.Sprintf("[%s, %%%s]", g.lookupCode(ifNode.Then), phiThenLabel))
+		}
+		if !elseDiverges {
+			entries = append(entries, fmt.Sprintf("[%s, %%%s]", g.lookupCode(*ifNode.Else), phiElseLabel))
+		}
+		if typ != "{}" && typ != "void" && len(entries) > 0 {
+			phi := g.reg()
+			g.write("%s = phi %s %s", phi, typ, strings.Join(entries, ", "))
 			code = phi
 		}
 	}

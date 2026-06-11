@@ -2342,20 +2342,22 @@ Block: void
 **If with one branch return**
 
 ```metall
-fun foo() Int { if true { return 123 } else { "hello" } 321 }
+fun foo() Int { _ = if true { return 123 } else { "hello" } 321 }
 ```
 
 ```types
 Fun: fun01
   SimpleType: Int
   Block: Int
-    If: void
-      Bool: Bool
-      Block: never
-        Return: never
-          Int: Int
-      Block: Str
-        String: Str
+    Assign: void
+      Ident: ?
+      If: Str
+        Bool: Bool
+        Block: never
+          Return: never
+            Int: Int
+        Block: Str
+          String: Str
     Int: Int
 ---
 fun01 = sync fun() Int
@@ -2364,7 +2366,7 @@ fun01 = sync fun() Int
 **If with one branch break**
 
 ```metall
-fun foo() void { for { if true { break } else { "hello" } } }
+fun foo() void { for { _ = if true { break } else { "hello" } } }
 ```
 
 ```types
@@ -2373,12 +2375,14 @@ Fun: fun01
   Block: void
     For: void
       Block: void
-        If: void
-          Bool: Bool
-          Block: never
-            Break: never
-          Block: Str
-            String: Str
+        Assign: void
+          Ident: ?
+          If: Str
+            Bool: Bool
+            Block: never
+              Break: never
+            Block: Str
+              String: Str
 ---
 fun01 = sync fun() void
 ```
@@ -2386,7 +2390,7 @@ fun01 = sync fun() void
 **If with one branch continue**
 
 ```metall
-fun foo() void { for { if true { continue } else { "hello" } } }
+fun foo() void { for { _ = if true { continue } else { "hello" } } }
 ```
 
 ```types
@@ -2395,12 +2399,14 @@ Fun: fun01
   Block: void
     For: void
       Block: void
-        If: void
-          Bool: Bool
-          Block: never
-            Continue: never
-          Block: Str
-            String: Str
+        Assign: void
+          Ident: ?
+          If: Str
+            Bool: Bool
+            Block: never
+              Continue: never
+            Block: Str
+              String: Str
 ---
 fun01 = sync fun() void
 ```
@@ -2458,7 +2464,7 @@ fun01 = sync fun() Int
 **Nested return breaks outer if control flow**
 
 ```metall
-fun foo(a Int) Int { if true { if a == 0 { return 1 } else { return 2 } } else { "hello" } 321 }
+fun foo(a Int) Int { _ = if true { if a == 0 { return 1 } else { return 2 } } else { "hello" } 321 }
 ```
 
 ```types
@@ -2467,24 +2473,54 @@ Fun: fun01
     SimpleType: Int
   SimpleType: Int
   Block: Int
-    If: void
-      Bool: Bool
-      Block: never
-        If: never
-          Binary: Bool
-            Ident: Int
-            Int: Int
-          Block: never
-            Return: never
+    Assign: void
+      Ident: ?
+      If: Str
+        Bool: Bool
+        Block: never
+          If: never
+            Binary: Bool
+              Ident: Int
               Int: Int
-          Block: never
-            Return: never
-              Int: Int
-      Block: Str
-        String: Str
+            Block: never
+              Return: never
+                Int: Int
+            Block: never
+              Return: never
+                Int: Int
+        Block: Str
+          String: Str
     Int: Int
 ---
 fun01 = sync fun(Int) Int
+```
+
+**If value with a diverging branch takes the live branch's type**
+
+```metall
+fun pick(ok Bool) Int {
+    let x = if ok { 42 } else { return 0 }
+    x
+}
+```
+
+```types
+Fun: fun01
+  FunParam: Bool
+    SimpleType: Bool
+  SimpleType: Int
+  Block: Int
+    Var: void
+      If: Int
+        Ident: Bool
+        Block: Int
+          Int: Int
+        Block: never
+          Return: never
+            Int: Int
+    Ident: Int
+---
+fun01 = sync fun(Bool) Int
 ```
 
 ## When

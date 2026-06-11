@@ -580,8 +580,13 @@ func (e *Engine) checkIf(if_ ast.If, typeHint *TypeID) (TypeID, TypeStatus) {
 	if elseType == e.neverTyp && thenType == e.neverTyp {
 		return e.neverTyp, TypeOK
 	}
-	if elseType == e.neverTyp || thenType == e.neverTyp {
-		return e.voidTyp, TypeOK
+	// A diverging branch (`return`/`break`/`panic`) yields no value, so the if
+	// takes the live branch's type, matching `when`/`match` arm unification.
+	if elseType == e.neverTyp {
+		return thenType, TypeOK
+	}
+	if thenType == e.neverTyp {
+		return elseType, TypeOK
 	}
 	if thenType != elseType {
 		e.diag(

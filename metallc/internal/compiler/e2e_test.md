@@ -266,7 +266,7 @@ hello
 ```metall
 fun foo(a Int) Int { 
     if a != 2 {
-        if a == 0 {
+        _ = if a == 0 {
             return 100
         } else {
             "just some expr"
@@ -652,6 +652,60 @@ fun main() void {
 
 ```output
 123
+```
+
+**if yields the live value for every kind of diverging branch**
+
+One program exercises all four diversions (`return`, `panic`, `break`, `continue`),
+since codegen treats them identically (each is `never`, so the PHI drops it).
+Prints: `via_return(true)`, `via_return(false)`, `via_panic(true)`, `via_break`,
+`via_continue`.
+
+```metall
+fun via_return(ok Bool) Int {
+    let x = if ok { 42 } else { return -1 }
+    x
+}
+fun via_panic(ok Bool) Int {
+    let x = if ok { 7 } else { panic("unreached") }
+    x
+}
+fun via_break() Int {
+    mut total = 0
+    mut i = 0
+    for {
+        let x = if i >= 3 { break } else { i }
+        total = total + x
+        i = i + 1
+    }
+    total
+}
+fun via_continue() Int {
+    mut total = 0
+    mut i = 0
+    for {
+        i = i + 1
+        if i > 4 { break }
+        let x = if i == 2 { continue } else { i }
+        total = total + x
+    }
+    total
+}
+fun main() void {
+    DebugIntern.print_int(via_return(true))
+    DebugIntern.print_int(via_return(false))
+    DebugIntern.print_int(via_panic(true))
+    DebugIntern.print_int(via_break())
+    DebugIntern.print_int(via_continue())
+}
+```
+
+```output
+42
+-1
+7
+3
+8
 ```
 
 **when branch chain**
