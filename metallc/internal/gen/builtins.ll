@@ -430,6 +430,8 @@ define internal i32 @"Rune.to_u32"(i32 %v) alwaysinline {
 @str_index_out_of_bounds = private constant %Str { { ptr, i64 } { ptr @str_index_out_of_bounds.data, i64 19 } }
 @str_slice_out_of_bounds.data = private constant [19 x i8] c"slice out of bounds"
 @str_slice_out_of_bounds = private constant %Str { { ptr, i64 } { ptr @str_slice_out_of_bounds.data, i64 19 } }
+@str_shift_out_of_range.data = private constant [24 x i8] c"shift count out of range"
+@str_shift_out_of_range = private constant %Str { { ptr, i64 } { ptr @str_shift_out_of_range.data, i64 24 } }
 
 ; __fun_ptr_ctx_copy copies a closure's capture context to the arena.
 ; The context is prefixed by an i64 size (see emitClosureValue).

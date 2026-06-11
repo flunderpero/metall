@@ -1910,6 +1910,29 @@ func (g *IRFunGen) emitSafeIntOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string)
 	g.write("%s = %s %s %s, %s", reg, op, irTyp, lhs, rhs)
 }
 
+// emitCheckedShift emits a shift, range-checking the amount under
+// ArithmeticOverflowCheck: shifting by >= the type's bit width is undefined.
+func (g *IRFunGen) emitCheckedShift(id ast.NodeID, reg, irTyp, op, lhs, rhs string) {
+	if !g.opts.ArithmeticOverflowCheck {
+		g.write("%s = %s %s %s, %s", reg, op, irTyp, lhs, rhs)
+		return
+	}
+	bits := strings.TrimPrefix(irTyp, "i")
+	span := g.ast.Node(id).Span
+	locReg := g.addStrConst(span.String())
+	panicLabel := g.label("shift_panic", id)
+	okLabel := g.label("shift_ok", id)
+	oorReg := g.reg()
+	// Unsigned compare catches a negative amount too (a huge unsigned value).
+	g.write("%s = icmp uge %s %s, %s", oorReg, irTyp, rhs, bits)
+	g.write("br i1 %s, label %%%s, label %%%s", oorReg, panicLabel, okLabel)
+	g.writeLabel(panicLabel)
+	g.write("call void @panic(ptr @str_shift_out_of_range, ptr %s)", locReg)
+	g.write("unreachable")
+	g.writeLabel(okLabel)
+	g.write("%s = %s %s %s, %s", reg, op, irTyp, lhs, rhs)
+}
+
 // emitCheckedArithmeticOp emits a call to a checked add/sub/mul builtin
 // that panics on overflow if `opts.ArithmeticOverflowCheck` is set.
 func (g *IRFunGen) emitCheckedArithmeticOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string, signed bool) {
@@ -2112,13 +2135,13 @@ func (g *IRFunGen) emitArithBitOp(
 	case ast.BinaryOpBitXor:
 		g.write("%s = xor %s %s, %s", reg, irTyp, lhs, rhs)
 	case ast.BinaryOpShl:
-		g.write("%s = shl %s %s, %s", reg, irTyp, lhs, rhs)
+		g.emitCheckedShift(id, reg, irTyp, "shl", lhs, rhs)
 	case ast.BinaryOpShr:
 		shrOp := "ashr"
 		if !signed {
 			shrOp = "lshr"
 		}
-		g.write("%s = %s %s %s, %s", reg, shrOp, irTyp, lhs, rhs)
+		g.emitCheckedShift(id, reg, irTyp, shrOp, lhs, rhs)
 	default:
 		panic(base.Errorf("not an arithmetic or bitwise operator: %s", op))
 	}

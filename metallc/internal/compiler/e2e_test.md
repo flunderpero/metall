@@ -2546,6 +2546,50 @@ fun main() void {
 test.met:2:9: integer overflow
 ```
 
+**left shift out of range panics**
+
+Shifting by at least the type's bit width is undefined, so a checked build traps
+instead of yielding a masked result.
+
+```metall !fast
+fun main() void {
+    let amount = 70
+    _ = 1 << amount
+}
+```
+
+```panic
+test.met:3:9: shift count out of range
+```
+
+**right shift out of range panics**
+
+```metall !fast
+fun main() void {
+    let amount = 64
+    _ = 256 >> amount
+}
+```
+
+```panic
+test.met:3:9: shift count out of range
+```
+
+**shift in range is fine**
+
+```metall
+fun main() void {
+    let amount = 3
+    DebugIntern.print_int(1 << amount)
+    DebugIntern.print_int(256 >> amount)
+}
+```
+
+```output
+8
+32
+```
+
 **bool operators**
 
 ```metall
