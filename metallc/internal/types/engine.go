@@ -1733,6 +1733,17 @@ func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
 			return InvalidTypeID, TypeDepFailed
 		}
 		return exprTypeID, TypeOK
+	case ast.UnaryOpNeg:
+		if intTyp, ok := e.env.Type(exprTypeID).Kind.(IntType); !ok || !intTyp.Signed {
+			span := e.ast.Node(unary.Expr).Span
+			e.diag(
+				span,
+				"type mismatch: unary minus expects a signed integer, got %s",
+				e.env.TypeDisplay(exprTypeID),
+			)
+			return InvalidTypeID, TypeDepFailed
+		}
+		return exprTypeID, TypeOK
 	default:
 		panic(base.Errorf("unknown unary operator: %s", unary.Op))
 	}

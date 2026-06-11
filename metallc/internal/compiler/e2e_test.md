@@ -2382,6 +2382,31 @@ fun main() void {
 1
 ```
 
+**unary minus and glued subtraction**
+
+`-x` negates; `-` glued to a digit after a value (`a-1`) is subtraction, not a
+negative literal. Unary minus binds tighter than binary operators.
+
+```metall
+fun main() void {
+    let a = 5
+    let b = 2
+    DebugIntern.print_int(-a)
+    DebugIntern.print_int(a-1)
+    DebugIntern.print_int(-a + b)
+    DebugIntern.print_int(a - -b)
+    DebugIntern.print_int(a-1*b)
+}
+```
+
+```output
+-5
+4
+-3
+7
+3
+```
+
 **wrapping arithmetic**
 
 ```metall

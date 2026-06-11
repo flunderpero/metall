@@ -2085,6 +2085,8 @@ func (g *IRFunGen) genUnary(id ast.NodeID, unary ast.Unary) {
 		irTyp := g.irTypeOfNode(unary.Expr)
 		g.write("%s = xor %s %s, -1", reg, irTyp, expr)
 		g.runeCheckIfNeeded(unary.Expr, reg)
+	case ast.UnaryOpNeg:
+		g.emitCheckedArithmeticOp(id, reg, g.irTypeOfNode(unary.Expr), "sub", "0", expr, true)
 	default:
 		panic(base.Errorf("unknown unary operator: %s", unary.Op))
 	}

@@ -642,9 +642,25 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 		return p.NewUnary(op, expr, t.Span.Combine(p.span())), true
 	}
 	span := t.Span
-	lhs, ok := p.ParsePostfixExpr(0)
-	if !ok {
-		return ParseFailed, false
+	var lhs NodeID
+	next, hasNext := p.mayPeek1()
+	if t.Kind == token.Minus && (!hasNext || next.Kind != token.Number) {
+		// Unary minus on a non-literal (`-x`, `-(a+b)`, `-foo()`). Its operand binds
+		// tighter than every binary operator (precedence 9 is above the highest,
+		// `*`/`/` at 8) and feeds the binary loop below, so `-a + b` is `(-a) + b`.
+		// `-<number literal>` is handled in the primary instead, so postfix binds to
+		// the negative literal: `-5.abs()` is `(-5).abs()`.
+		p.next()
+		expr, ok := p.ParseExpr(9)
+		if !ok {
+			return ParseFailed, false
+		}
+		lhs = p.NewUnary(UnaryOpNeg, expr, span.Combine(p.span()))
+	} else {
+		lhs, ok = p.ParsePostfixExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
 	}
 	t, ok = p.mayPeek()
 	if !ok {
@@ -981,7 +997,10 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			}
 			expr = array
 		}
-	case token.Number:
+	case token.Minus, token.Number:
+		// A number literal, with an optional `-` folded in. Folding here (rather
+		// than at the unary-minus level) keeps `-5` a primary, so postfix binds to
+		// the negative literal: `-5.abs()` is `(-5).abs()`.
 		num, ok := p.ParseNumber()
 		if !ok {
 			return ParseFailed, false
@@ -1606,12 +1625,27 @@ func (p *Parser) ParseIdent() (NodeID, bool) {
 	return p.NewIdent(t.Value, typeArgs, t.Span.Combine(p.span())), true
 }
 
+// ParseNumber parses an integer literal with an optional leading `-`, folding it
+// into one Int node. The lexer makes `-` a Minus token, so contexts that take a
+// bare integer (a negative literal, an enum tag) reassemble it here. Folding the
+// sign keeps signed minimums (`I8 -128`) range-checking as the negated value.
 func (p *Parser) ParseNumber() (NodeID, bool) {
+	start, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	neg := start.Kind == token.Minus
+	if neg {
+		p.next()
+	}
 	n, ok := p.expectNumber()
 	if !ok {
 		return ParseFailed, false
 	}
-	return p.NewInt(n, p.span()), true
+	if neg {
+		n.Neg(n)
+	}
+	return p.NewInt(n, start.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {
@@ -2375,10 +2409,6 @@ func (p *Parser) expectNumber() (*big.Int, bool) {
 		return nil, false
 	}
 	s := t.Value
-	neg := strings.HasPrefix(s, "-")
-	if neg {
-		s = s[1:]
-	}
 	intBase := 10
 	switch {
 	case strings.HasPrefix(s, "0x"):
@@ -2396,9 +2426,6 @@ func (p *Parser) expectNumber() (*big.Int, bool) {
 	if !valid {
 		p.diagnostic(t.Span, "invalid number: %s", t.Value)
 		return nil, false
-	}
-	if neg {
-		n.Neg(n)
 	}
 	return n, true
 }

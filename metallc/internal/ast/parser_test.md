@@ -1852,6 +1852,42 @@ Unary(op=~)
   expr=Int(value=1)
 ```
 
+**Unary minus**
+
+```metall
+-x
+```
+
+```ast
+Unary(op=-)
+  expr=Ident(name="x")
+```
+
+**Glued minus after a value is subtraction**
+
+```metall
+a-1
+```
+
+```ast
+Binary(op=-)
+  lhs=Ident(name="a")
+  rhs=Int(value=1)
+```
+
+**Unary minus binds tighter than binary**
+
+```metall
+-a + b
+```
+
+```ast
+Binary(op=+)
+  lhs=Unary(op=-)
+    expr=Ident(name="a")
+  rhs=Ident(name="b")
+```
+
 **Bitwise precedence**
 
 ```metall

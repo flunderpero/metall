@@ -359,6 +359,7 @@ type UnaryOp string
 const (
 	UnaryOpNot    UnaryOp = "not"
 	UnaryOpBitNot UnaryOp = "~"
+	UnaryOpNeg    UnaryOp = "-"
 )
 
 type Unary struct {

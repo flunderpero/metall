@@ -9927,6 +9927,18 @@ test.met:1:5: type mismatch: expected Bool, got Int
         ^^^
 ```
 
+**unary minus on an unsigned integer**
+
+```metall
+-U8(5)
+```
+
+```error
+test.met:1:2: type mismatch: unary minus expects a signed integer, got U8
+    -U8(5)
+     ^^^^^
+```
+
 **Non-boolean condition in for loop**
 
 ```metall

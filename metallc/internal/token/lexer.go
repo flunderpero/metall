@@ -330,16 +330,13 @@ func peek(source *base.Source, idx int, r rune) bool {
 	return idx < len(source.Content) && source.Content[idx] == r
 }
 
-// lexNumber reads a number literal. start may point at '-' or at the leading
-// digit. Supported forms: decimal, hex (0x), octal (0o), binary (0b).
-// Underscores are allowed between digits as separators.
+// lexNumber reads a number literal starting at the leading digit. Supported
+// forms: decimal, hex (0x), octal (0o), binary (0b). Underscores are allowed
+// between digits as separators. A leading `-` is the Minus operator, never part
+// of a literal; the parser folds `-<number>` into a negative value.
 func lexNumber(source *base.Source, start int) Token {
 	idx := start
 	value := []rune{}
-	if peek(source, idx, '-') {
-		value = append(value, '-')
-		idx++
-	}
 	digitOk := isDecDigit
 	baseName := "decimal"
 	if idx+1 < len(source.Content) && source.Content[idx] == '0' {
@@ -643,9 +640,6 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		}
 		if peek(source, idx, '=') {
 			return Token{Kind: MinusEq, Value: "", Span: base.NewSpan(source, start, idx)}
-		}
-		if idx < len(source.Content) && unicode.IsDigit(source.Content[idx]) {
-			return lexNumber(source, start)
 		}
 		if !peek(source, idx, '-') {
 			return Token{Kind: Minus, Value: "", Span: span}
