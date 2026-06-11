@@ -3,6 +3,7 @@ package gen
 import (
 	_ "embed"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -1907,7 +1908,32 @@ func (g *IRFunGen) emitSafeIntOp(id ast.NodeID, reg, irTyp, op, lhs, rhs string)
 	g.write("call void @panic(ptr @str_division_by_zero, ptr %s)", locReg)
 	g.write("unreachable")
 	g.writeLabel(okLabel)
+	if strings.HasPrefix(op, "s") && g.opts.ArithmeticOverflowCheck {
+		g.emitSignedDivOverflowCheck(id, irTyp, lhs, rhs)
+	}
 	g.write("%s = %s %s %s, %s", reg, op, irTyp, lhs, rhs)
+}
+
+// emitSignedDivOverflowCheck traps on `INT_MIN / -1` (and `INT_MIN % -1`), the
+// one signed division that overflows: it is LLVM UB and SIGFPEs on x86.
+func (g *IRFunGen) emitSignedDivOverflowCheck(id ast.NodeID, irTyp, lhs, rhs string) {
+	bits, _ := strconv.Atoi(strings.TrimPrefix(irTyp, "i"))
+	intMin := strconv.FormatInt(int64(-1)<<(bits-1), 10)
+	span := g.ast.Node(id).Span
+	locReg := g.addStrConst(span.String())
+	panicLabel := g.label("divovf_panic", id)
+	okLabel := g.label("divovf_ok", id)
+	lhsMinReg := g.reg()
+	rhsNegOneReg := g.reg()
+	bothReg := g.reg()
+	g.write("%s = icmp eq %s %s, %s", lhsMinReg, irTyp, lhs, intMin)
+	g.write("%s = icmp eq %s %s, -1", rhsNegOneReg, irTyp, rhs)
+	g.write("%s = and i1 %s, %s", bothReg, lhsMinReg, rhsNegOneReg)
+	g.write("br i1 %s, label %%%s, label %%%s", bothReg, panicLabel, okLabel)
+	g.writeLabel(panicLabel)
+	g.write("call void @panic(ptr @str_integer_overflow, ptr %s)", locReg)
+	g.write("unreachable")
+	g.writeLabel(okLabel)
 }
 
 // emitCheckedShift emits a shift, range-checking the amount under

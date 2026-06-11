@@ -2590,6 +2590,48 @@ fun main() void {
 32
 ```
 
+**INT_MIN / -1 panics**
+
+The one signed division that overflows; left unchecked it SIGFPEs on x86 and
+yields INT_MIN on arm64.
+
+```metall !fast
+fun main() void {
+    let min = -9223372036854775808
+    _ = min / -1
+}
+```
+
+```panic
+test.met:3:9: integer overflow
+```
+
+**INT_MIN % -1 panics**
+
+```metall !fast
+fun main() void {
+    let min = -9223372036854775808
+    _ = min % -1
+}
+```
+
+```panic
+test.met:3:9: integer overflow
+```
+
+**division by -1 in range is fine**
+
+```metall
+fun main() void {
+    let x = -10
+    DebugIntern.print_int(x / -1)
+}
+```
+
+```output
+10
+```
+
 **bool operators**
 
 ```metall
