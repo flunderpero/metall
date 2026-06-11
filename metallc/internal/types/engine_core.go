@@ -362,7 +362,7 @@ func (c *TypeContext) isAssignableTo(got TypeID, expected TypeID) bool {
 		// Noescape differences are checked by lifetime analysis, not here.
 		if expKind, ok := expTyp.Kind.(FunType); ok && gotKind.Macro == expKind.Macro &&
 			gotKind.Return == expKind.Return && gotKind.Sync == expKind.Sync &&
-			slices.Equal(gotKind.Params, expKind.Params) {
+			gotKind.Unsafe == expKind.Unsafe && slices.Equal(gotKind.Params, expKind.Params) {
 			return true
 		}
 	case EnumType:

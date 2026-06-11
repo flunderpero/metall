@@ -61,6 +61,7 @@ type FunType struct {
 	Return         TypeID
 	Macro          bool
 	Sync           bool
+	Unsafe         bool
 	NoescapeParams []bool // nil if no params are noescape
 	NoescapeReturn bool
 }

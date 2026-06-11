@@ -3350,7 +3350,7 @@ Block: []mut Int
       SimpleType: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Struct with allocator field**
@@ -3428,7 +3428,7 @@ Block: []mut Int
       SimpleType: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Make slice with default**
@@ -3469,7 +3469,7 @@ Block: []mut Int
       SimpleType: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Make slice default**
@@ -3511,7 +3511,7 @@ Block: void
         SimpleType: Int
       Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Make uninit safe struct slice**
@@ -3538,7 +3538,7 @@ Block: void
       Int: Int
 ---
 struct01 = Foo { one Int, two Int }
-fun01    = fun(Arena, Int) []mut struct01
+fun01    = unsafe fun(Arena, Int) []mut struct01
 ```
 
 **Make slice Bool with default**
@@ -3918,7 +3918,7 @@ Block: Int
     Ident: []mut Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Slice index write**
@@ -3944,7 +3944,7 @@ Block: void
       Int: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Slice len**
@@ -3967,7 +3967,7 @@ Block: Int
   FieldAccess: Int
     Ident: []mut Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Slice as fun param**
@@ -4001,7 +4001,7 @@ Block: Int
     Ident: []mut Int
 ---
 fun01 = fun([]Int) Int
-fun02 = fun(Arena, Int) []mut Int
+fun02 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Slice as fun param and return**
@@ -4034,7 +4034,7 @@ Block: []Int
     Ident: []mut Int
 ---
 fun01 = fun([]Int) []Int
-fun02 = fun(Arena, Int) []mut Int
+fun02 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Struct with slice field**
@@ -4068,7 +4068,7 @@ Block: Int
     Int: Int
 ---
 struct01 = Foo { one []Int }
-fun01    = fun(Arena, Int) []mut Int
+fun01    = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Ref to slice**
@@ -4091,7 +4091,7 @@ Block: &[]mut Int
   Ref: &[]mut Int
     Ident: []mut Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Slice index through ref**
@@ -4118,7 +4118,7 @@ Block: Int
     Ident: &[]mut Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Slice len through ref**
@@ -4144,7 +4144,7 @@ Block: Int
   FieldAccess: Int
     Ident: &[]mut Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Mut ref slice index write**
@@ -4173,7 +4173,7 @@ Block: void
       Int: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Make mut slice**
@@ -4193,7 +4193,7 @@ Block: []mut Int
       SimpleType: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Mut slice assignable to immutable**
@@ -4227,7 +4227,7 @@ Block: Int
     Ident: []mut Int
 ---
 fun01 = fun([]Int) Int
-fun02 = fun(Arena, Int) []mut Int
+fun02 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Mut slice index write no mut binding**
@@ -4253,7 +4253,7 @@ Block: void
       Int: Int
     Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Subslice mut array**
@@ -4299,7 +4299,7 @@ Block: []mut Int
       Int: Int
       Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Subslice mut slice through mut ref**
@@ -4328,7 +4328,7 @@ Block: []mut Int
       Int: Int
       Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Subslice mut slice through immutable ref**
@@ -4357,7 +4357,7 @@ Block: []Int
       Int: Int
       Int: Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Subslice through ref**
@@ -4427,7 +4427,7 @@ Block: void
     Ident: []mut Int
     EmptySlice: []mut Int
 ---
-fun01 = fun(Arena, Int) []mut Int
+fun01 = unsafe fun(Arena, Int) []mut Int
 ```
 
 **Empty slice as fun arg**
@@ -10776,6 +10776,80 @@ test.met:1:31: unsafe keyword can only be used on unsafe functions
                                   ^^^^^
 ```
 
+**Unsafe is not erased through an indirect binding**
+
+Storing an unsafe function in a binding keeps the unsafe in its type, so the
+call through that binding still requires the keyword.
+
+```metall module
+extern fun abs(n I32) I32
+fun main() void {
+    let f = abs
+    _ = f(I32(-5))
+}
+```
+
+```error
+test.met:4:9: calling unsafe function requires the unsafe keyword
+        let f = abs
+        _ = f(I32(-5))
+            ^^^^^^^^^^
+    }
+```
+
+**Indirect unsafe call with the keyword is allowed**
+
+```metall module
+extern fun abs(n I32) I32
+fun main() void {
+    let f = abs
+    let r = unsafe f(I32(-5))
+    _ = r
+}
+```
+
+```error
+```
+
+**Cannot pass an unsafe function where a safe one is expected**
+
+```metall module
+extern fun abs(n I32) I32
+fun apply(f fun(I32) I32, x I32) I32 {
+    f(x)
+}
+fun main() void {
+    _ = apply(abs, I32(-5))
+}
+```
+
+```error
+test.met:6:15: type mismatch at argument 1: expected fun(I32) I32, got unsafe fun(I32) I32
+    fun main() void {
+        _ = apply(abs, I32(-5))
+                  ^^^
+    }
+```
+
+**A generic unsafe function stays unsafe when instantiated**
+
+```metall module
+unsafe fun id<T>(x T) T {
+    x
+}
+fun main() void {
+    _ = id(5)
+}
+```
+
+```error
+test.met:5:9: calling unsafe function requires the unsafe keyword
+    fun main() void {
+        _ = id(5)
+            ^^^^^
+    }
+```
+
 ## Slice and Array Methods
 
 **Slice method with shape constraint**
@@ -10902,7 +10976,7 @@ Module: test
         Call: Int
           Ident: fun01
 ---
-fun01 = fun() Int
+fun01 = unsafe fun() Int
 fun02 = sync fun() void
 ```
 

@@ -874,7 +874,7 @@ func (e *Engine) checkInferredFunLit( //nolint:funlen
 	if !inferRetFromBody {
 		tmpFunType := FunType{
 			Params: paramTypeIDs, Return: retTypeID,
-			Macro: false, Sync: false, NoescapeParams: noescapeParams,
+			Macro: false, Sync: false, Unsafe: funNode.Unsafe, NoescapeParams: noescapeParams,
 			NoescapeReturn: funNode.NoescapeReturn,
 		}
 		tmpFunTypeID := e.env.buildFunType(tmpFunType, 0, node.Span)
@@ -913,7 +913,7 @@ func (e *Engine) checkInferredFunLit( //nolint:funlen
 	isSync := e.isFunDeclSync(node, paramTypeIDs, retTypeID)
 	funType := FunType{
 		Params: paramTypeIDs, Return: retTypeID,
-		Macro: false, Sync: isSync, NoescapeParams: noescapeParams,
+		Macro: false, Sync: isSync, Unsafe: funNode.Unsafe, NoescapeParams: noescapeParams,
 		NoescapeReturn: funNode.NoescapeReturn,
 	}
 	funTypeID := e.env.buildFunType(funType, funNodeID, node.Span)
@@ -1012,6 +1012,7 @@ func (e *Engine) checkFunType(nodeID ast.NodeID, funType ast.FunType, span base.
 		Return:         returnType,
 		Macro:          false,
 		Sync:           funType.Sync == ast.SyncSync,
+		Unsafe:         false,
 		NoescapeParams: funType.NoescapeParams,
 		NoescapeReturn: funType.NoescapeReturn,
 	}
@@ -1306,15 +1307,7 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 			}
 		}
 	}
-	calleeIsUnsafe := false
-	if binding, ok := e.env.LocalPathBinding(call.Callee); ok && binding.Decl != 0 {
-		switch kind := e.ast.Node(binding.Decl).Kind.(type) {
-		case ast.Fun:
-			calleeIsUnsafe = kind.Unsafe
-		case ast.FunDecl:
-			calleeIsUnsafe = kind.Unsafe
-		}
-	}
+	calleeIsUnsafe := fun.Unsafe
 	if calleeIsUnsafe && !call.Unsafe {
 		e.diag(span, "calling unsafe function requires the unsafe keyword")
 		return InvalidTypeID, TypeFailed

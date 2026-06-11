@@ -62,6 +62,7 @@ func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
 		Return:         retTypeID,
 		Macro:          true,
 		Sync:           false,
+		Unsafe:         false,
 		NoescapeParams: make([]bool, len(paramTypeIDs)),
 		NoescapeReturn: false,
 	}

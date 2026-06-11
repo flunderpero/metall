@@ -721,8 +721,10 @@ func (g *Generics) materializeFun(
 	}
 	node := g.ast.Node(funNodeID)
 	noescapeReturn := false
+	unsafe := false
 	if fun, ok := node.Kind.(ast.Fun); ok {
 		noescapeReturn = fun.NoescapeReturn
+		unsafe = fun.Unsafe
 	}
 	funTyp, status := g.rewriteCallable(
 		decl.typeParams, typeArgIDs, decl.paramNodeIDs, decl.returnNodeID, noescapeReturn)
@@ -733,6 +735,7 @@ func (g *Generics) materializeFun(
 	if status.Failed() {
 		return mat, InvalidTypeID, "", status
 	}
+	funTyp.Unsafe = unsafe
 	funTypeID := g.env.newType(funTyp, node.ID, node.Span, TypeOK)
 	g.env.setGenericOrigin(funTypeID, genericTypeID)
 	if !decl.builtin {
@@ -1277,6 +1280,7 @@ func (g *Generics) rewriteFunType(funType FunType, bindings map[TypeID]TypeID) (
 		Return:         funType.Return,
 		Macro:          funType.Macro,
 		Sync:           funType.Sync,
+		Unsafe:         funType.Unsafe,
 		NoescapeParams: funType.NoescapeParams,
 		NoescapeReturn: funType.NoescapeReturn,
 	}
@@ -1347,6 +1351,7 @@ func (g *Generics) rewriteCallable(
 		Return:         retTypeID,
 		Macro:          false,
 		Sync:           false,
+		Unsafe:         false,
 		NoescapeParams: noescapeParams,
 		NoescapeReturn: noescapeReturn,
 	}
@@ -2891,6 +2896,7 @@ func (g *Generics) shapeFunDeclType(funDecl ast.FunDecl) (TypeID, TypeStatus) {
 		Return:         retTypeID,
 		Macro:          false,
 		Sync:           false,
+		Unsafe:         funDecl.Unsafe,
 		NoescapeParams: make([]bool, len(paramTypeIDs)),
 		NoescapeReturn: false,
 	}

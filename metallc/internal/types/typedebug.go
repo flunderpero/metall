@@ -652,6 +652,9 @@ func (d *debugTypes) structDetailWithID(kind StructType, typeID TypeID) string {
 
 func (d *debugTypes) funDetail(kind FunType) string {
 	var sb strings.Builder
+	if kind.Unsafe {
+		sb.WriteString("unsafe ")
+	}
 	if kind.Sync {
 		sb.WriteString("sync ")
 	}

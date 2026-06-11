@@ -377,6 +377,9 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 		return fmt.Sprintf("&%s", e.TypeDisplay(kind.Type))
 	case FunType:
 		var sb strings.Builder
+		if kind.Unsafe {
+			sb.WriteString("unsafe ")
+		}
 		if typeID&syncFunFlag != 0 {
 			sb.WriteString("sync ")
 		}
@@ -827,11 +830,12 @@ func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 
 func funTypeCacheKey(typ FunType) string {
 	return fmt.Sprintf(
-		"fun:%v:%v:%v:%v:%v:%v",
+		"fun:%v:%v:%v:%v:%v:%v:%v",
 		typ.Params,
 		typ.Return,
 		typ.Macro,
 		typ.Sync,
+		typ.Unsafe,
 		typ.NoescapeParams,
 		typ.NoescapeReturn,
 	)

@@ -447,6 +447,7 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		Return:         retTypeID,
 		Macro:          false,
 		Sync:           isSync,
+		Unsafe:         fun.Unsafe,
 		NoescapeParams: noescapeParams,
 		NoescapeReturn: fun.NoescapeReturn,
 	}
