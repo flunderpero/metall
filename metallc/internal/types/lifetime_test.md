@@ -2924,6 +2924,38 @@ test.met:7:12: reference escaping its allocation scope (via block result)
     }
 ```
 
+**ffi.Ptr inside a struct keeps its lifetime through a `try` unwrap**
+
+An `ffi.Ptr` derived from arena memory carries that arena's lifetime even when it
+sits in a struct field. Unwrapping the `!Box` with `try` must keep that borrow, so
+returning the unwrapped `Box` past its arena is caught.
+
+```metall module
+use std.ffi
+
+struct Box { p ffi.Ptr<Int> }
+
+fun alloc(@a Arena) !Box {
+    let s = unsafe @a.slice_uninit<Int>(1)
+    Box(ffi.slice_ptr_mut<Int>(s).as_ptr())
+}
+
+fun leak() !Box {
+    let @a = Arena()
+    try alloc(@a)
+}
+
+fun main() void { _ = try leak() else { return void } }
+```
+
+```error
+test.met:12:5: reference escaping its allocation scope (via block result)
+        let @a = Arena()
+        try alloc(@a)
+        ^^^^^^^^^^^^^
+    }
+```
+
 ## Shape
 
 **shape method ref escapes**

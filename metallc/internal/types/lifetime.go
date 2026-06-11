@@ -1026,13 +1026,14 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 			ss := a.scopeFor(a.scopeGraph.IntroducedScope(arm.Body))
 			// A reference binding (`case Foo &x`) aliases the matched value's storage,
 			// so it always carries the matched value's reach. A value binding only
-			// propagates taint when the matched variant type can itself carry
-			// references: `case Err e:` on a union that also holds `&mut File`
-			// must not taint `e`, since Err is a plain value type.
+			// propagates taint when the matched variant type can itself carry a
+			// borrow (a ref, allocator, or raw ffi pointer): `case Err e:` on a union
+			// that also holds `&mut File` must not taint `e`, but a value that borrows
+			// an arena through an ffi pointer must keep that borrow when unwrapped.
 			bindingChain := exprChain
 			if !arm.Ref {
 				variantType := a.env.TypeOfNode(arm.Pattern)
-				if variantType != nil && !a.typeContainsRefOrAlloc(variantType.ID) {
+				if variantType != nil && !a.typeContainsRefAllocOrFfiPtr(variantType.ID) {
 					bindingChain = nil
 				}
 			}
@@ -1105,7 +1106,7 @@ func (a *LifetimeCheck) elseBindingChain(match ast.Match, exprChain Chain) Chain
 			}
 		}
 	}
-	if slices.ContainsFunc(uncoveredVariants(covered, union), a.typeContainsRefOrAlloc) {
+	if slices.ContainsFunc(uncoveredVariants(covered, union), a.typeContainsRefAllocOrFfiPtr) {
 		return exprChain
 	}
 	return nil
@@ -1271,6 +1272,38 @@ func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
 		return a.typeContainsRefOrAlloc(kind.Elem)
 	case SliceType:
 		return a.typeContainsRefOrAlloc(kind.Elem)
+	}
+	return false
+}
+
+// typeContainsRefAllocOrFfiPtr extends typeContainsRefOrAlloc with raw ffi
+// pointers (`ffi.Ptr`/`ffi.PtrMut`, the empty builtin-ptr structs). An ffi
+// pointer derived from Metall memory carries that memory's lifetime, so a union
+// value holding one (e.g. in a struct field) must keep the borrow when unwrapped
+// via `try`/`match`. Bare slices are deliberately NOT added here: their taint
+// attribution through container methods is currently too coarse to propagate
+// through a value binding without false positives (it would flag returning a
+// slice read out of a local iterator that actually borrows a longer-lived param).
+func (a *LifetimeCheck) typeContainsRefAllocOrFfiPtr(typeID TypeID) bool {
+	if typeID == InvalidTypeID {
+		return false
+	}
+	switch kind := a.env.Type(typeID).Kind.(type) {
+	case RefType, AllocatorType:
+		return true
+	case StructType:
+		if IsBuiltinPtrStruct(kind) {
+			return true
+		}
+		return slices.ContainsFunc(kind.Fields, func(f StructField) bool {
+			return a.typeContainsRefAllocOrFfiPtr(f.Type)
+		})
+	case UnionType:
+		return slices.ContainsFunc(kind.Variants, a.typeContainsRefAllocOrFfiPtr)
+	case ArrayType:
+		return a.typeContainsRefAllocOrFfiPtr(kind.Elem)
+	case SliceType:
+		return a.typeContainsRefAllocOrFfiPtr(kind.Elem)
 	}
 	return false
 }
