@@ -6605,6 +6605,30 @@ test.met:5:5: generic instantiation of depth nests deeper than 64 levels; likely
     }
 ```
 
+**Constructing a phantom type param is rejected**
+
+`T` appears in no field, so a value cannot pin it down. Without an explicit type
+argument or hint it is unresolvable, rejected here instead of reaching codegen as
+an unsized type.
+
+```metall module
+struct Box<T> {
+    value Int
+}
+
+fun main() void {
+    let _ = Box(42)
+}
+```
+
+```error
+test.met:6:13: cannot infer type arguments for Box
+    fun main() void {
+        let _ = Box(42)
+                ^^^^^^^
+    }
+```
+
 ## Template Shorthand Syntax
 
 **Bare owner param and return carry owner params**

@@ -1999,7 +1999,35 @@ func (e *Engine) checkTypeConstruction(
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}
-	return e.dispatchTypeConstruction(nodeID, targetTypeID, lit, span)
+	resultID, status := e.dispatchTypeConstruction(nodeID, targetTypeID, lit, span)
+	if name, ok := e.underInstantiatedGeneric(targetTypeID); ok && !status.Failed() {
+		// Inference resolved fewer type arguments than the generic declares (e.g. a
+		// param used by no field), so an abstract generic reaches here. Reject it,
+		// or codegen tries to size an uninstantiated type.
+		e.diag(span, "cannot infer type arguments for %s", name)
+		return InvalidTypeID, TypeFailed
+	}
+	return resultID, status
+}
+
+// underInstantiatedGeneric reports whether typeID is a generic struct or union
+// constructed with fewer type arguments than its declaration has type
+// parameters, i.e. some parameter was never pinned down. The bool is the
+// declaration's name, for the diagnostic.
+func (e *Engine) underInstantiatedGeneric(typeID TypeID) (string, bool) {
+	declNode := e.env.DeclNode(typeID)
+	if declNode == 0 {
+		return "", false
+	}
+	switch decl := e.ast.Node(declNode).Kind.(type) {
+	case ast.Struct:
+		st, ok := e.env.Type(typeID).Kind.(StructType)
+		return decl.Name.Name, ok && len(st.TypeArgs) < len(decl.TypeParams)
+	case ast.Union:
+		ut, ok := e.env.Type(typeID).Kind.(UnionType)
+		return decl.Name.Name, ok && len(ut.TypeArgs) < len(decl.TypeParams)
+	}
+	return "", false
 }
 
 func (e *Engine) dispatchTypeConstruction(
