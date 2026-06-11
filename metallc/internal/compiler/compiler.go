@@ -84,6 +84,7 @@ type CompileOpts struct {
 	ProjectRoot         string
 	IncludePaths        []string
 	Tags                []string
+	LinkFlags           []string
 	Listener            CompileListener
 	PrintTiming         bool
 	Output              string
@@ -747,7 +748,8 @@ func runClang(
 // clangLinkFlags returns link-time flags (and the environment clang should be
 // run in) for the active target: wasm linker directives + a PATH override so
 // clang finds the matching wasm-ld, or a macOS sysroot so the bundled LLVM
-// can locate Command Line Tools headers.
+// can locate Command Line Tools headers. User-supplied -link flags (e.g. to
+// link a vendored C library) are appended for native targets.
 func clangLinkFlags(
 	ctx context.Context, llvmHome string, opts CompileOpts, wasmExports []string,
 ) ([]string, []string, error) {
@@ -768,14 +770,16 @@ func clangLinkFlags(
 		env = append(env, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 		return flags, env, nil
 	}
+	var flags []string
 	if runtime.GOOS == "darwin" {
 		sdk, err := exec.CommandContext(ctx, "xcrun", "--show-sdk-path").Output()
 		if err != nil {
 			return nil, nil, base.WrapErrorf(err, "failed to locate macOS SDK via xcrun")
 		}
-		return []string{"-isysroot", strings.TrimSpace(string(sdk))}, env, nil
+		flags = append(flags, "-isysroot", strings.TrimSpace(string(sdk)))
 	}
-	return nil, env, nil
+	flags = append(flags, opts.LinkFlags...)
+	return flags, env, nil
 }
 
 func run_cmd(ctx context.Context, cmdline []string, env []string) error {

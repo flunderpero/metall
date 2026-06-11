@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/compiler"
@@ -91,10 +92,22 @@ func (f *tagFlags) Set(value string) error {
 	return nil
 }
 
+// linkFlags collects extra linker arguments passed straight through to clang
+// at link time. Each value is split on whitespace (LDFLAGS-style), so a single
+// `-link "-Lvendor/lib -lfoo -framework Cocoa"` expands to separate clang args.
+type linkFlags []string
+
+func (f *linkFlags) String() string { return fmt.Sprintf("%v", *f) }
+func (f *linkFlags) Set(value string) error {
+	*f = append(*f, strings.Fields(value)...)
+	return nil
+}
+
 func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //nolint:funlen
 	opts := compiler.NewCompileOptsWithDefaults()
 	var includes includeFlags
 	var tags tagFlags
+	var link linkFlags
 	var noErrtrace bool
 	var errorLimit int
 	flags := flag.NewFlagSet(command, flag.ExitOnError)
@@ -105,6 +118,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 	flags.StringVar(&opts.Output, "o", "", "output binary path (build default: ./<name>)")
 	flags.Var(&includes, "I", "add include path (repeatable)")
 	flags.Var(&tags, "tag", "add compile-time tag (repeatable)")
+	flags.Var(&link, "link", "extra linker flags passed to clang, LDFLAGS-style (repeatable, whitespace-split)")
 	flags.BoolVar(&opts.PrintTiming, "timing", false, "print compilation timing")
 	flags.BoolVar(&opts.KeepIR, "keep-ir", false, "keep intermediate .ll files next to the output")
 	flags.Func("target", "compile target: native (default), wasm32, wasm64", func(s string) error {
@@ -173,6 +187,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 	opts.ProjectRoot = filepath.Dir(fileName)
 	opts.IncludePaths = includes
 	opts.Tags = tags
+	opts.LinkFlags = link
 	opts.ErrorTracing = !noErrtrace
 	opts.LLVMPasses = compiler.DefaultLLVMPasses
 	src, err := os.ReadFile(fileName)

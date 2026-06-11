@@ -22,7 +22,7 @@ lint:
 
 # We never want to commit anything with a "fixme" comment.
 lint-fixme:
-    ! git --no-pager grep -i -n --untracked "fixme" -- :^.golangci.yaml :^.spell :^justfile :^AGENTS.md
+    ! git --no-pager grep -i -n --untracked "fixme" -- :^.golangci.yaml :^.spell :^justfile :^AGENTS.md ':(exclude,glob)**/vendor/**'
 
 lint-no-excluded-tests:
     ! git --no-pager grep -i -n --untracked "!only" -- :^justfile :^AGENTS.md :^metallc/internal/test/
