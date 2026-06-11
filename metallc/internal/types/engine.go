@@ -778,6 +778,10 @@ func (e *Engine) checkContinue(span base.Span) (TypeID, TypeStatus) {
 }
 
 func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatus) {
+	if e.deferTransfersControl(defer_.Block, false) {
+		e.diag(span, "defer block cannot transfer control: no return, break, continue, or try")
+		return InvalidTypeID, TypeFailed
+	}
 	blockTypeID, status := e.Query(defer_.Block)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -787,6 +791,30 @@ func (e *Engine) checkDefer(defer_ ast.Defer, span base.Span) (TypeID, TypeStatu
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK
+}
+
+// deferTransfersControl reports whether the subtree transfers control out of a
+// defer block. `return` always does; `break`/`continue` do unless they target a
+// loop inside the defer. Nested functions are their own control scope. A `try`
+// is caught via the `return` it desugars to.
+func (e *Engine) deferTransfersControl(nodeID ast.NodeID, inLoop bool) bool {
+	switch e.ast.Node(nodeID).Kind.(type) {
+	case ast.Return:
+		return true
+	case ast.Break, ast.Continue:
+		return !inLoop
+	case ast.Fun:
+		return false
+	case ast.For:
+		inLoop = true
+	}
+	found := false
+	e.ast.Walk(nodeID, func(child ast.NodeID) {
+		if !found && e.deferTransfersControl(child, inLoop) {
+			found = true
+		}
+	})
+	return found
 }
 
 func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeStatus) {

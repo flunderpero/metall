@@ -1345,6 +1345,107 @@ test.met:1:3: defer block must not yield a value, got Int
       ^^^^^^^^^^^
 ```
 
+**Defer with return is rejected**
+
+```metall module
+fun main() void {
+    defer { return void }
+}
+```
+
+```error
+test.met:2:5: defer block cannot transfer control: no return, break, continue, or try
+    fun main() void {
+        defer { return void }
+        ^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**Defer with try is rejected**
+
+```metall module
+fun fallible() !Int {
+    5
+}
+fun main() void {
+    defer { _ = try fallible() }
+}
+```
+
+```error
+test.met:5:5: defer block cannot transfer control: no return, break, continue, or try
+    fun main() void {
+        defer { _ = try fallible() }
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**Defer with a break escaping the defer is rejected**
+
+```metall module
+fun main() void {
+    for {
+        defer { break }
+    }
+}
+```
+
+```error
+test.met:3:9: defer block cannot transfer control: no return, break, continue, or try
+        for {
+            defer { break }
+            ^^^^^^^^^^^^^^^
+        }
+```
+
+**Defer with a loop containing break is allowed**
+
+```metall module
+fun main() void {
+    defer { for { break } }
+}
+```
+
+```error
+```
+
+**Defer with a return nested in an if is rejected**
+
+```metall module
+fun pick(ok Bool) void {
+    defer {
+        if ok { return void }
+        DebugIntern.print_int(1)
+    }
+}
+```
+
+```error
+test.met:2:5: defer block cannot transfer control: no return, break, continue, or try
+    fun pick(ok Bool) void {
+        defer {
+        ^
+            if ok { return void }
+            DebugIntern.print_int(1)
+        }
+        ^
+    }
+```
+
+**Defer with a return in a nested closure is allowed**
+
+```metall module
+fun main() void {
+    defer {
+        let g = fun() void { return void }
+        g()
+    }
+}
+```
+
+```error
+```
+
 ## Structs
 
 **Struct declaration**
