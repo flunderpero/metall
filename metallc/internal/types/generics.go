@@ -692,7 +692,36 @@ func (g *Generics) solveAndMaterializeFun(
 // materializeFun computes the materialized FunType for a generic function at
 // a call site. The returned mat carries the env to re-enter for the body
 // check, which callers schedule via scheduleBodyCheck.
-func (g *Generics) materializeFun(
+// genericDepthLimit bounds how deeply a generic's type arguments may nest before
+// the monomorphizer gives up. Polymorphic recursion (`depth(Box(x), n-1)`) would
+// otherwise instantiate Box<Box<Box<...>>> forever. No real type nests this deep.
+const genericDepthLimit = 64
+
+// typeNestingDepth returns the structural nesting depth of a type's arguments
+// (Box<Box<Int>> is 2), bounded by `budget` so it never recurses past the limit.
+func (g *Generics) typeNestingDepth(typeID TypeID, budget int) int {
+	if budget <= 0 || typeID == InvalidTypeID {
+		return 0
+	}
+	var args []TypeID
+	switch kind := g.env.Type(typeID).Kind.(type) {
+	case StructType:
+		args = kind.TypeArgs
+	case UnionType:
+		args = kind.TypeArgs
+	default:
+		return 0
+	}
+	maxD := 0
+	for _, arg := range args {
+		if d := g.typeNestingDepth(arg, budget-1); d > maxD {
+			maxD = d
+		}
+	}
+	return 1 + maxD
+}
+
+func (g *Generics) materializeFun( //nolint:funlen
 	funNodeID ast.NodeID,
 	genericTypeID TypeID,
 	callSiteNodeID ast.NodeID,
@@ -705,6 +734,19 @@ func (g *Generics) materializeFun(
 	mangledName = decl.cacheName(g, typeArgIDs)
 	if cached, ok := g.loadFunWork(mangledName); ok {
 		return mat, cached.TypeID, mangledName, TypeOK
+	}
+	name := decl.name
+	if fun, ok := g.ast.Node(funNodeID).Kind.(ast.Fun); ok {
+		name = fun.Name.Name
+	}
+	for _, argID := range typeArgIDs {
+		if g.typeNestingDepth(argID, genericDepthLimit) >= genericDepthLimit {
+			g.diag(g.ast.Node(callSiteNodeID).Span,
+				"generic instantiation of %s nests deeper than %d levels; likely unbounded recursion",
+				name, genericDepthLimit)
+			g.recursionAborted = true
+			return mat, InvalidTypeID, "", TypeFailed
+		}
 	}
 	defer g.enterChildEnv()()
 	inst, status := g.prepareGenericInstance(decl, typeArgIDs)

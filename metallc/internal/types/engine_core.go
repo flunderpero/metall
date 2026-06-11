@@ -79,6 +79,7 @@ type TypeContext struct {
 	skipRegisterWork bool
 	moduleResolution *modules.ModuleResolution
 	neverTyp         TypeID
+	recursionAborted bool
 }
 
 func NewTypeContext(
@@ -99,6 +100,11 @@ func NewTypeContext(
 }
 
 func (c *TypeContext) diag(span base.Span, msg string, msgArgs ...any) {
+	// Unbounded generic recursion is fatal and spews a cascade of secondary
+	// errors over the half-built deep types; report the root cause and go quiet.
+	if c.recursionAborted {
+		return
+	}
 	c.diagnostics = append(c.diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
 

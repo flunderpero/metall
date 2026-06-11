@@ -6577,6 +6577,31 @@ fun05 = fun(Str) Int
 fun04 = fun(Str, fun05) Int
 ```
 
+**Polymorphic recursion is bounded, not infinite**
+
+Each call wraps the argument one level deeper (`Box<Box<...>>`), so the
+monomorphizer would instantiate forever; the depth limit stops it with a
+diagnostic instead of hanging.
+
+```metall module
+struct Box<T> { v T }
+fun depth<T>(x T, n Int) Int {
+    if n == 0 { return 0 }
+    depth(Box(x), n - 1) + 1
+}
+fun main() void {
+    DebugIntern.print_int(depth(1, 5))
+}
+```
+
+```error
+test.met:4:5: generic instantiation of depth nests deeper than 64 levels; likely unbounded recursion
+        if n == 0 { return 0 }
+        depth(Box(x), n - 1) + 1
+        ^^^^^
+    }
+```
+
 ## Template Shorthand Syntax
 
 **Bare owner param and return carry owner params**
