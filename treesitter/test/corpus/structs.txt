@@ -82,3 +82,18 @@ fun f() void { Foo(y = 2, x = 1) }
           (named_argument
             name: (identifier)
             value: (integer_literal)))))))
+
+================================================================================
+Unsafe sync struct
+================================================================================
+
+pub unsafe sync struct Str_ { data []U8 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    name: (type_identifier)
+    (struct_field
+      name: (identifier)
+      type: (slice_type (simple_type (type_identifier))))))

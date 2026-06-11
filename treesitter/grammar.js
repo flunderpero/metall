@@ -31,10 +31,10 @@ module.exports = grammar({
 
   // Two GLR conflicts the grammar cannot resolve without unbounded lookahead:
   //
-  // - `function_declaration`: inside a block, `unsafe fun ...` could be a
-  //   `function_declaration` with an `unsafe` modifier, or an `unsafe_call`
-  //   whose callee is a function_declaration (the trailing `(...)` never
-  //   arrives, but tree-sitter can't see that).
+  // - `function_declaration`/`struct_declaration`/`union_declaration`: a leading
+  //   `unsafe` could be the declaration's own modifier, or the start of an
+  //   `unsafe_call` that happens to be followed by the declaration. The
+  //   distinguishing token never arrives, but tree-sitter can't see that.
   //
   // - `simple_type`: after a bare `TypeId`, a following `.` could continue the
   //   `TypeId.TypeId` associated-type chain or stop the type and start an
@@ -42,6 +42,8 @@ module.exports = grammar({
   //   but GLR needs to explore both interpretations.
   conflicts: ($) => [
     [$.function_declaration],
+    [$.struct_declaration],
+    [$.union_declaration],
     [$.simple_type],
     [$.if_expression],
     [$.try_expression],
@@ -352,6 +354,7 @@ module.exports = grammar({
       seq(
         optional("pub"),
         optional("nocopy"),
+        optional("unsafe"),
         optional(choice("sync", "unsync")),
         "struct",
         field("name", $.type_identifier),
@@ -401,6 +404,7 @@ module.exports = grammar({
       seq(
         optional("pub"),
         optional("nocopy"),
+        optional("unsafe"),
         optional(choice("sync", "unsync")),
         "union",
         field("name", $.type_identifier),

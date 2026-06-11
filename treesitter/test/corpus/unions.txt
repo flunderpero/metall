@@ -93,3 +93,18 @@ union Foo = []Int | Str
     variants: (union_variants
       (slice_type (simple_type (type_identifier)))
       (simple_type (type_identifier)))))
+
+================================================================================
+Unsafe sync union
+================================================================================
+
+pub unsafe sync union Handle = Int | Err
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (union_declaration
+    name: (type_identifier)
+    variants: (union_variants
+      (simple_type (type_identifier))
+      (simple_type (type_identifier)))))
