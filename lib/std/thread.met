@@ -98,7 +98,7 @@ pub fun ThreadGroup.join(tg &mut ThreadGroup, @a Arena) []!T {
     `with_lock` or `with_try_lock`. 
 
     `lock_and_copy_value()` will acquire the lock and return a copy. ---
-pub sync struct Mutex<sync T> {
+pub unsafe sync struct Mutex<sync T> {
     lock_ptr ffi.PtrMut<void>
     value &mut T
 }

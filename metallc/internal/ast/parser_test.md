@@ -844,15 +844,15 @@ Union(name="Resource",nocopy=true)
   variants[1]=SimpleType(name="Str")
 ```
 
-**Sync struct**
+**Unsafe sync struct**
 
 ```metall module
-pub sync struct Mutex { locked Bool }
+pub unsafe sync struct Mutex { locked Bool }
 ```
 
 ```ast
 Module(fileName="test.met",name="test",main=true)
-  decls=Struct(name="Mutex",pub=true,sync=true)
+  decls=Struct(name="Mutex",pub=true,unsafe=true,sync=true)
     fields=StructField(name="locked")
       type=SimpleType(name="Bool")
 ```

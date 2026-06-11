@@ -348,6 +348,7 @@ func (p *Parser) ParseStructFields(stopAt ...token.TokenKind) ([]NodeID, bool) {
 func (p *Parser) ParseStruct() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
 	nocopy := p.lookAheadConsume(token.Nocopy)
+	unsafe := p.lookAheadConsume(token.Unsafe)
 	sync := p.parseSyncMode()
 	t, ok := p.expect(token.Struct)
 	if !ok {
@@ -376,7 +377,7 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if _, ok := p.expect(token.RCurly); !ok {
 		return ParseFailed, false
 	}
-	return p.NewStruct(name, typeParams, fields, pub, nocopy, sync, t.Span.Combine(p.span())), true
+	return p.NewStruct(name, typeParams, fields, pub, nocopy, sync, unsafe, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseShape() (NodeID, bool) {
@@ -425,6 +426,7 @@ func (p *Parser) ParseShape() (NodeID, bool) {
 func (p *Parser) ParseUnion() (NodeID, bool) {
 	pub := p.lookAheadConsume(token.Pub)
 	nocopy := p.lookAheadConsume(token.Nocopy)
+	unsafe := p.lookAheadConsume(token.Unsafe)
 	sync := p.parseSyncMode()
 	t, ok := p.expect(token.Union)
 	if !ok {
@@ -464,7 +466,7 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 		p.diagnostic(p.span(), "union requires at least 2 variants")
 		return ParseFailed, false
 	}
-	return p.NewUnion(name, typeParams, variants, pub, nocopy, sync, t.Span.Combine(p.span())), true
+	return p.NewUnion(name, typeParams, variants, pub, nocopy, sync, unsafe, t.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseEnum() (NodeID, bool) {
@@ -1739,8 +1741,9 @@ func (p *Parser) parseFunLitParams() ([]NodeID, bool) {
 	}
 }
 
-// lookAheadTypeDecl checks if the next tokens form a type declaration with
-// the given keyword (struct or union). Handles [pub] [nocopy] [sync|unsync].
+// lookAheadTypeDecl checks if the next tokens form a type declaration with the
+// given keyword (struct or union). Handles [pub] [nocopy] [unsafe] [sync|unsync].
+// `unsafe` only appears paired with `sync` (enforced when checking the decl).
 func (p *Parser) lookAheadTypeDecl(kw token.TokenKind) bool {
 	return p.lookAhead(kw) ||
 		p.lookAhead(token.Pub, kw) ||
@@ -1753,7 +1756,11 @@ func (p *Parser) lookAheadTypeDecl(kw token.TokenKind) bool {
 		p.lookAhead(token.Nocopy, token.Sync, kw) ||
 		p.lookAhead(token.Pub, token.Nocopy, token.Sync, kw) ||
 		p.lookAhead(token.Nocopy, token.Unsync, kw) ||
-		p.lookAhead(token.Pub, token.Nocopy, token.Unsync, kw)
+		p.lookAhead(token.Pub, token.Nocopy, token.Unsync, kw) ||
+		p.lookAhead(token.Unsafe, token.Sync, kw) ||
+		p.lookAhead(token.Pub, token.Unsafe, token.Sync, kw) ||
+		p.lookAhead(token.Nocopy, token.Unsafe, token.Sync, kw) ||
+		p.lookAhead(token.Pub, token.Nocopy, token.Unsafe, token.Sync, kw)
 }
 
 func (p *Parser) parseSyncMode() SyncMode {

@@ -8,7 +8,16 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
 
+// checkSyncUnsafe enforces that a `sync` struct/union is declared `unsafe`.
+func (e *Engine) checkSyncUnsafe(span base.Span, sync ast.SyncMode, unsafe bool, kind string) {
+	if sync == ast.SyncSync && !unsafe {
+		e.diag(span, "a sync %s must be declared `unsafe sync %s`: "+
+			"asserting it is safe to share across threads is a soundness claim", kind, kind)
+	}
+}
+
 func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct) (TypeID, TypeStatus) {
+	e.checkSyncUnsafe(node.Span, structNode.Sync, structNode.Unsafe, "struct")
 	name := e.declMangledName(node.ID, structNode.Name.Name)
 	typeID := e.env.newType(
 		StructType{Name: name, Fields: []StructField{}, TypeArgs: nil},
@@ -23,6 +32,7 @@ func (e *Engine) checkStructCreateAndBind(node *ast.Node, structNode ast.Struct)
 }
 
 func (e *Engine) checkUnionCreateAndBind(node *ast.Node, unionNode ast.Union) (TypeID, TypeStatus) {
+	e.checkSyncUnsafe(node.Span, unionNode.Sync, unionNode.Unsafe, "union")
 	name := e.declMangledName(node.ID, unionNode.Name.Name)
 	typeID := e.env.newType(UnionType{name, nil, nil}, node.ID, node.Span, TypeInProgress)
 	if !e.bind(node.ID, unionNode.Name.Name, false, typeID, unionNode.Name.Span, -1) {

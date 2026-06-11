@@ -215,6 +215,7 @@ type Struct struct {
 	Pub        bool
 	Nocopy     bool
 	Sync       SyncMode
+	Unsafe     bool
 	Builtin    bool
 	Extern     bool
 }
@@ -246,6 +247,7 @@ type Union struct {
 	Pub        bool
 	Nocopy     bool
 	Sync       SyncMode
+	Unsafe     bool
 }
 
 func (Union) isKind() {}
@@ -705,7 +707,7 @@ func (a *AST) NewFunParam(name Name, type_ NodeID, defaultVal *NodeID, noescape 
 }
 
 func (a *AST) NewStruct(
-	name Name, typeParams []NodeID, fields []NodeID, pub bool, nocopy bool, sync SyncMode, span base.Span,
+	name Name, typeParams []NodeID, fields []NodeID, pub bool, nocopy bool, sync SyncMode, unsafe bool, span base.Span,
 ) NodeID {
 	return a.node(
 		Struct{
@@ -715,6 +717,7 @@ func (a *AST) NewStruct(
 			Pub:        pub,
 			Nocopy:     nocopy,
 			Sync:       sync,
+			Unsafe:     unsafe,
 			Builtin:    false,
 			Extern:     false,
 		},
@@ -735,10 +738,20 @@ func (a *AST) NewShape(name Name, typeParams []NodeID, funs []NodeID, pub bool, 
 }
 
 func (a *AST) NewUnion(
-	name Name, typeParams []NodeID, variants []NodeID, pub bool, nocopy bool, sync SyncMode, span base.Span,
+	name Name,
+	typeParams []NodeID,
+	variants []NodeID,
+	pub bool,
+	nocopy bool,
+	sync SyncMode,
+	unsafe bool,
+	span base.Span,
 ) NodeID {
 	return a.node(
-		Union{Name: name, TypeParams: typeParams, Variants: variants, Pub: pub, Nocopy: nocopy, Sync: sync},
+		Union{
+			Name: name, TypeParams: typeParams, Variants: variants,
+			Pub: pub, Nocopy: nocopy, Sync: sync, Unsafe: unsafe,
+		},
 		span,
 	)
 }
@@ -1451,6 +1464,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		if kind.Nocopy {
 			addAttr("nocopy", "true")
 		}
+		if kind.Unsafe {
+			addAttr("unsafe", "true")
+		}
 		if kind.Sync == SyncSync {
 			addAttr("sync", "true")
 		}
@@ -1491,6 +1507,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 		if kind.Nocopy {
 			addAttr("nocopy", "true")
+		}
+		if kind.Unsafe {
+			addAttr("unsafe", "true")
 		}
 		if kind.Sync == SyncSync {
 			addAttr("sync", "true")

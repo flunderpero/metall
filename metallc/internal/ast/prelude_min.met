@@ -114,7 +114,7 @@ pub struct Rune_ {}
 pub fun Rune.to_u32(r Rune) U32 {}
 
 --- A placeholder type for the builtin `Str` type. ---
-pub sync struct Str_ { data []U8 }
+pub unsafe sync struct Str_ { data []U8 }
 
 --- A placeholder type for the builtin `None` type. ---
 pub struct None_ {}

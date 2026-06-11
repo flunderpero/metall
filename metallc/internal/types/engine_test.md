@@ -11078,10 +11078,10 @@ test.met:5:16: type mismatch at argument 1: expected sync fun() void, got fun() 
     }
 ```
 
-**sync struct overrides field check**
+**unsafe sync struct overrides field check**
 
 ```metall module
-sync struct Safe { r &Int }
+unsafe sync struct Safe { r &Int }
 fun is_sync(x sync fun() void) void {}
 fun main() void {
     let v = 42
@@ -11091,6 +11091,23 @@ fun main() void {
 ```
 
 ```error
+```
+
+**sync struct without unsafe is rejected**
+
+Declaring a struct shareable across threads is a soundness assertion, so it must
+sit on the unsafe surface.
+
+```metall module
+sync struct Shared { data Int }
+fun main() void {}
+```
+
+```error
+test.met:1:6: a sync struct must be declared `unsafe sync struct`: asserting it is safe to share across threads is a soundness claim
+    sync struct Shared { data Int }
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    fun main() void {}
 ```
 
 **named function with all-sync params and return is sync**
@@ -11337,10 +11354,10 @@ test.met:6:16: type mismatch at argument 1: expected sync fun() void, got fun() 
     }
 ```
 
-**sync union overrides variant check**
+**unsafe sync union overrides variant check**
 
 ```metall module
-sync union MaybeRef = &Int | Int
+unsafe sync union MaybeRef = &Int | Int
 fun is_sync(x sync fun() void) void {}
 fun main() void {
     let v = 42
@@ -11350,6 +11367,20 @@ fun main() void {
 ```
 
 ```error
+```
+
+**sync union without unsafe is rejected**
+
+```metall module
+sync union MaybeRef = &Int | Int
+fun main() void {}
+```
+
+```error
+test.met:1:6: a sync union must be declared `unsafe sync union`: asserting it is safe to share across threads is a soundness claim
+    sync union MaybeRef = &Int | Int
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    fun main() void {}
 ```
 
 **closure capturing sync fun is sync**
