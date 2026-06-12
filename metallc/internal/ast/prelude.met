@@ -42,7 +42,7 @@ pub fun Range.eq<U HasEq>(r Range<U>, other Range<U>) Bool {
     r.start.eq(other.start) and r.end.eq(other.end)
 }
 
-pub fun Range.hash<U HasHash>(r Range<U>, other Range<U>) U64 {
+pub fun Range.hash<U HasHash>(r Range<U>) U64 {
     r.start.hash() +% r.end.hash()
 }
 
