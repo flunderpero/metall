@@ -23,6 +23,7 @@ extern("chdir") fun c_chdir(dir ffi.Ptr<U8>) I32
 pub fun shell(cmd []Str, @a Arena) !RunResult {
     let @local = Arena()
     let sb = StrBuilder.new(256, @local)
+    -- todo: This is so not cool. We need to quote every cmd part to prevent shell injection.
     sb.slice(cmd, " ")
     sb.str(" 2>&1")
     posix.reset_errno()
