@@ -123,7 +123,7 @@ pub fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
 }
 
 pub fun gt_int(left Int, right Int, msg Str = "") !void {
-    if not left > right {
+    if not (left > right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")
@@ -136,7 +136,7 @@ pub fun gt_int(left Int, right Int, msg Str = "") !void {
 }
 
 pub fun gte_int(left Int, right Int, msg Str = "") !void {
-    if not left >= right {
+    if not (left >= right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")
@@ -149,7 +149,7 @@ pub fun gte_int(left Int, right Int, msg Str = "") !void {
 }
 
 pub fun lt_int(left Int, right Int, msg Str = "") !void {
-    if not left < right {
+    if not (left < right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")
@@ -162,7 +162,7 @@ pub fun lt_int(left Int, right Int, msg Str = "") !void {
 }
 
 pub fun lte_int(left Int, right Int, msg Str = "") !void {
-    if not left <= right {
+    if not (left <= right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")
@@ -175,7 +175,7 @@ pub fun lte_int(left Int, right Int, msg Str = "") !void {
 }
 
 pub fun gt_u64(left U64, right U64, msg Str = "") !void {
-    if not left > right {
+    if not (left > right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")
@@ -188,7 +188,7 @@ pub fun gt_u64(left U64, right U64, msg Str = "") !void {
 }
 
 pub fun gte_u64(left U64, right U64, msg Str = "") !void {
-    if not left >= right {
+    if not (left >= right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")
@@ -201,7 +201,7 @@ pub fun gte_u64(left U64, right U64, msg Str = "") !void {
 }
 
 pub fun lt_u64(left U64, right U64, msg Str = "") !void {
-    if not left < right {
+    if not (left < right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")
@@ -214,7 +214,7 @@ pub fun lt_u64(left U64, right U64, msg Str = "") !void {
 }
 
 pub fun lte_u64(left U64, right U64, msg Str = "") !void {
-    if not left <= right {
+    if not (left <= right) {
         let @local = Arena()
         let sb = StrBuilder.new(32, @local)
         sb.str("want ")

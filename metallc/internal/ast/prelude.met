@@ -494,7 +494,10 @@ pub fun StrLMatchesIter.next(it &mut StrLMatchesIter) ?Str {
             -- This is an empty pattern - it doesn't match anything.
             return None()
         }
-        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+        -- range.end may be it.data.len (a delimiter at the very end): that is a
+        -- valid split point with an empty remainder, so only check the byte there
+        -- when one exists.
+        if not Rune.is_valid_utf8(it.data[range.start]) or (range.end < it.data.len and not Rune.is_valid_utf8(it.data[range.end])) {
             panic("invalid utf8 range")
         }
         let s = Str(it.data[range.start..range.end])
@@ -520,7 +523,10 @@ pub fun StrRMatchesIter.next(it &mut StrRMatchesIter) ?Str {
             -- This is an empty pattern - it doesn't match anything.
             return None()
         }
-        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+        -- range.end may be it.data.len (a delimiter at the very end): that is a
+        -- valid split point with an empty remainder, so only check the byte there
+        -- when one exists.
+        if not Rune.is_valid_utf8(it.data[range.start]) or (range.end < it.data.len and not Rune.is_valid_utf8(it.data[range.end])) {
             panic("invalid utf8 range")
         }
         let s = Str(it.data[range.start..range.end])
@@ -566,7 +572,10 @@ pub fun StrLSplitIter.next(it &mut StrLSplitIter) ?Str {
             it.data = it.data[i..]
             return s
         }
-        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+        -- range.end may be it.data.len (a delimiter at the very end): that is a
+        -- valid split point with an empty remainder, so only check the byte there
+        -- when one exists.
+        if not Rune.is_valid_utf8(it.data[range.start]) or (range.end < it.data.len and not Rune.is_valid_utf8(it.data[range.end])) {
             panic("invalid utf8 range")
         }
         let s = Str(it.data[0..range.start])
@@ -613,7 +622,10 @@ pub fun StrRSplitIter.next(it &mut StrRSplitIter) ?Str {
             it.data = it.data[0..i]
             return s
         }
-        if not Rune.is_valid_utf8(it.data[range.start]) or not Rune.is_valid_utf8(it.data[range.end]) {
+        -- range.end may be it.data.len (a delimiter at the very end): that is a
+        -- valid split point with an empty remainder, so only check the byte there
+        -- when one exists.
+        if not Rune.is_valid_utf8(it.data[range.start]) or (range.end < it.data.len and not Rune.is_valid_utf8(it.data[range.end])) {
             panic("invalid utf8 range")
         }
         let s = Str(it.data[range.end..])

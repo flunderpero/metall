@@ -2407,6 +2407,28 @@ fun main() void {
 3
 ```
 
+**bitwise and unary precedence**
+
+`~` binds tight and `& ^ |` bind tighter than comparison (Rust/Zig order), so
+`flags & ~3 | 4` is `(flags & ~3) | 4` and `6 & 1 == 0` is `(6 & 1) == 0`.
+
+```metall
+fun main() void {
+    let flags = 15
+    DebugIntern.print_int(flags & ~3 | 4)
+    DebugIntern.print_bool(6 & 1 == 0)
+    DebugIntern.print_bool(~0 == -1)
+    DebugIntern.print_bool(not true == false)
+}
+```
+
+```output
+12
+true
+true
+true
+```
+
 **wrapping arithmetic**
 
 ```metall

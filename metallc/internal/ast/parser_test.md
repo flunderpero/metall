@@ -1904,6 +1904,46 @@ Binary(op=|)
       rhs=Int(value=4)
 ```
 
+**Bitwise binds tighter than comparison**
+
+```metall
+a & b == c
+```
+
+```ast
+Binary(op===)
+  lhs=Binary(op=&)
+    lhs=Ident(name="a")
+    rhs=Ident(name="b")
+  rhs=Ident(name="c")
+```
+
+**Tilde binds tighter than binary operators**
+
+```metall
+~a | b
+```
+
+```ast
+Binary(op=|)
+  lhs=Unary(op=~)
+    expr=Ident(name="a")
+  rhs=Ident(name="b")
+```
+
+**not binds tighter than comparison**
+
+```metall
+not a == b
+```
+
+```ast
+Binary(op===)
+  lhs=Unary(op=not)
+    expr=Ident(name="a")
+  rhs=Ident(name="b")
+```
+
 **Shift precedence vs add**
 
 ```metall

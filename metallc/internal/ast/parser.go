@@ -629,33 +629,27 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	if !ok {
 		return ParseFailed, false
 	}
-	if t.Kind == token.Not || t.Kind == token.Tilde {
-		p.next()
-		expr, ok := p.ParseExpr(0)
-		if !ok {
-			return ParseFailed, false
-		}
-		op := UnaryOpNot
-		if t.Kind == token.Tilde {
-			op = UnaryOpBitNot
-		}
-		return p.NewUnary(op, expr, t.Span.Combine(p.span())), true
-	}
 	span := t.Span
 	var lhs NodeID
 	next, hasNext := p.mayPeek1()
-	if t.Kind == token.Minus && (!hasNext || next.Kind != token.Number) {
-		// Unary minus on a non-literal (`-x`, `-(a+b)`, `-foo()`). Its operand binds
-		// tighter than every binary operator (precedence 9 is above the highest,
-		// `*`/`/` at 8) and feeds the binary loop below, so `-a + b` is `(-a) + b`.
-		// `-<number literal>` is handled in the primary instead, so postfix binds to
-		// the negative literal: `-5.abs()` is `(-5).abs()`.
+	// Unary prefix operators `not`, `~`, `-` bind tighter than every binary operator
+	// (operand at precedence 9, above the highest binary at 8) and feed the binary
+	// loop below, so `~a | b` is `(~a) | b` and `not a == b` is `(not a) == b`
+	// (matching Rust/Zig). `-<number literal>` is folded as a primary instead, so
+	// postfix binds to it (`-5.abs()` is `(-5).abs()`), hence the Number guard.
+	unaryMinus := t.Kind == token.Minus && (!hasNext || next.Kind != token.Number)
+	if t.Kind == token.Not || t.Kind == token.Tilde || unaryMinus {
 		p.next()
-		expr, ok := p.ParseExpr(9)
-		if !ok {
+		operand, opOk := p.ParseExpr(9)
+		if !opOk {
 			return ParseFailed, false
 		}
-		lhs = p.NewUnary(UnaryOpNeg, expr, span.Combine(p.span()))
+		op := map[token.TokenKind]UnaryOp{
+			token.Not:   UnaryOpNot,
+			token.Tilde: UnaryOpBitNot,
+			token.Minus: UnaryOpNeg,
+		}[t.Kind]
+		lhs = p.NewUnary(op, operand, span.Combine(p.span()))
 	} else {
 		lhs, ok = p.ParsePostfixExpr(0)
 		if !ok {
@@ -730,17 +724,19 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			return lhs, true
 		}
 		precedence := map[BinaryOp]int{
+			// Bitwise & ^ | bind tighter than comparison (Rust/Zig order), not
+			// looser as in C. `x & 1 == 0` is `(x & 1) == 0`.
 			BinaryOpOr:      0,
 			BinaryOpAnd:     1,
-			BinaryOpBitOr:   2,
-			BinaryOpBitXor:  3,
-			BinaryOpBitAnd:  4,
-			BinaryOpEq:      5,
-			BinaryOpNeq:     5,
-			BinaryOpLt:      5,
-			BinaryOpLte:     5,
-			BinaryOpGt:      5,
-			BinaryOpGte:     5,
+			BinaryOpEq:      2,
+			BinaryOpNeq:     2,
+			BinaryOpLt:      2,
+			BinaryOpLte:     2,
+			BinaryOpGt:      2,
+			BinaryOpGte:     2,
+			BinaryOpBitOr:   3,
+			BinaryOpBitXor:  4,
+			BinaryOpBitAnd:  5,
 			BinaryOpShl:     6,
 			BinaryOpShr:     6,
 			BinaryOpAdd:     7,
