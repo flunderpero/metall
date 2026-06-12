@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -287,6 +288,12 @@ type Int struct {
 }
 
 func (Int) isKind() {}
+
+type Float struct {
+	Value float64
+}
+
+func (Float) isKind() {}
 
 type Bool struct {
 	Value bool
@@ -787,6 +794,10 @@ func (a *AST) NewInt(value *big.Int, span base.Span) NodeID {
 	return a.node(Int{Value: value}, span)
 }
 
+func (a *AST) NewFloat(value float64, span base.Span) NodeID {
+	return a.node(Float{Value: value}, span)
+}
+
 func (a *AST) NewRef(target NodeID, mut bool, span base.Span) NodeID {
 	return a.node(Ref{Target: target, Mut: mut}, span)
 }
@@ -1101,6 +1112,7 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 			f(kind.TypeArgs[i])
 		}
 	case Int:
+	case Float:
 	case Bool:
 	case String:
 	case RuneLiteral:
@@ -1638,6 +1650,8 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		}
 	case Int:
 		addAttr("value", kind.Value.String())
+	case Float:
+		addAttr("value", strconv.FormatFloat(kind.Value, 'g', -1, 64))
 	case Bool:
 		addAttr("value", fmt.Sprintf("%t", kind.Value))
 	case String:
@@ -1980,7 +1994,7 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 		parent.Kind = k
 	case Export:
 		required(k.Target)
-	case Import, Break, Continue, EmptySlice, TryPattern, Capture, Int, Bool, String, RuneLiteral:
+	case Import, Break, Continue, EmptySlice, TryPattern, Capture, Int, Float, Bool, String, RuneLiteral:
 		// no NodeID children
 	default:
 		panic(base.Errorf("unlinkChild: unknown node kind %T", k))

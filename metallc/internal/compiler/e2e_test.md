@@ -42,6 +42,72 @@ fun main() void { let x = 123 DebugIntern.print_int(x) }
 123
 ```
 
+**float arithmetic, conversions, and printing**
+
+```metall
+fun main() void {
+    let a = 3.14
+    let b = 2.0
+    DebugIntern.print_float(a + b)
+    DebugIntern.print_float(a - b)
+    DebugIntern.print_float(a * b)
+    DebugIntern.print_float(b / b)
+    DebugIntern.print_float(-2.5)
+    let c F32 = 1.5
+    DebugIntern.print_f32(c)
+    DebugIntern.print_f32(c + c)
+    DebugIntern.print_float(c.to_float())
+    DebugIntern.print_int(a.to_int())
+    DebugIntern.print_float(7.to_float())
+    DebugIntern.print_f32(3.to_f32())
+    DebugIntern.print_bool(a == 3.14)
+    DebugIntern.print_bool(a < b)
+    mut sum = 0.0
+    sum += 1.5
+    sum += 2.0
+    DebugIntern.print_float(sum)
+    DebugIntern.print_float(1e15)
+    let n = 0.0 / 0.0
+    DebugIntern.print_bool(n != n)
+    DebugIntern.print_bool(n == n)
+    DebugIntern.print_int(1e30.to_int())
+    DebugIntern.print_int(n.to_int())
+    let inf = 1.0 / 0.0
+    DebugIntern.print_bool(n.is_nan())
+    DebugIntern.print_bool(inf.is_inf())
+    DebugIntern.print_bool(inf.is_nan())
+    DebugIntern.print_bool(3.14.is_inf())
+    DebugIntern.print_bool(inf.to_f32().is_inf())
+}
+```
+
+```output
+5.14
+1.14
+6.28
+1
+-2.5
+1.5
+3
+1.5
+3
+7
+3
+true
+false
+3.5
+1e+15
+true
+false
+9223372036854775807
+0
+true
+true
+false
+false
+true
+```
+
 **bytes literal**
 
 ```metall

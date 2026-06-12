@@ -6,6 +6,10 @@
 
 declare i64 @write(i32, ptr, i64)
 
+; Float conversion: resolved to env imports by the JS harness (same names).
+declare double @__strtod(ptr byval({ptr, i64}), ptr)
+declare i64 @__snprintf_float(double, i64, i8, ptr byval({ptr, i64}))
+
 ; Stub so the shared @panic in builtins.ll can call @fflush unconditionally.
 define i32 @fflush(ptr %_unused) {
     ret i32 0

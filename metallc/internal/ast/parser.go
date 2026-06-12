@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -1004,6 +1005,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = num
+	case token.Float:
+		f, ok := p.ParseFloat()
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = f
 	case token.True:
 		p.next()
 		expr = p.NewBool(true, t.Span)
@@ -1649,6 +1656,19 @@ func (p *Parser) ParseNumber() (NodeID, bool) {
 		n.Neg(n)
 	}
 	return p.NewInt(n, start.Span.Combine(p.span())), true
+}
+
+func (p *Parser) ParseFloat() (NodeID, bool) {
+	t, ok := p.expect(token.Float)
+	if !ok {
+		return ParseFailed, false
+	}
+	f, err := strconv.ParseFloat(strings.ReplaceAll(t.Value, "_", ""), 64)
+	if err != nil {
+		p.diagnostic(t.Span, "invalid float literal: %s", t.Value)
+		return ParseFailed, false
+	}
+	return p.NewFloat(f, p.span()), true
 }
 
 func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {

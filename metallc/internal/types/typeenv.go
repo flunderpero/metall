@@ -364,6 +364,8 @@ func (e *TypeEnv) TypeDisplay(typeID TypeID) string { //nolint:funlen
 	switch kind := cached.Type.Kind.(type) {
 	case IntType:
 		return kind.Name
+	case FloatType:
+		return kind.Name
 	case BoolType:
 		return "Bool"
 	case VoidType:
@@ -746,6 +748,15 @@ func (e *TypeEnv) isEnumType(typeID TypeID) bool {
 	return ok
 }
 
+func (e *TypeEnv) isFloatType(typeID TypeID) bool {
+	_, ok := e.Type(typeID).Kind.(FloatType)
+	return ok
+}
+
+func (e *TypeEnv) isNumericType(typeID TypeID) bool {
+	return e.isIntType(typeID) || e.isFloatType(typeID)
+}
+
 // enumFamilyRoot returns the open root of a subset, or the type itself for a
 // closed enum or open root. InvalidTypeID if the type is not an enum.
 func (e *TypeEnv) enumFamilyRoot(typeID TypeID) TypeID {
@@ -809,6 +820,8 @@ func (e *TypeEnv) methodFQN(typ *Type, method string) (string, bool) {
 	case EnumType:
 		ns = kind.Name
 	case IntType:
+		ns = kind.Name
+	case FloatType:
 		ns = kind.Name
 	case BoolType:
 		ns = "Bool"

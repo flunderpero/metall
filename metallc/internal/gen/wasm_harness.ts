@@ -184,8 +184,118 @@ function defaultImports(
             blockingSleep(ms)
             return 0
         },
+        // Thin snprintf/strtod equivalents; the prelude does the looping,
+        // classification, and rendering. The slice argument arrives as a pointer
+        // to a { ptr, i64 len } struct (byval); a bigint means a 64-bit pointer
+        // (wasm64), a number means 32-bit (wasm32).
+        __snprintf_float: (v: number, prec: number | bigint, mode: number, slicePtr: number | bigint): bigint => {
+            const {ptr, len} = readSlice(view(), slicePtr)
+            const enc = new TextEncoder().encode(snprintfFloat(v, Number(prec), mode))
+            const m = Math.min(enc.length, len)
+            new Uint8Array(getMemory().buffer, ptr, m).set(enc.subarray(0, m))
+            return BigInt(enc.length)
+        },
+        __strtod: (slicePtr: number | bigint, consumedPtr: number | bigint): number => {
+            const {ptr, len} = readSlice(view(), slicePtr)
+            const s = decoder.decode(new Uint8Array(getMemory().buffer, ptr, len))
+            const [v, consumed] = strtodLike(s)
+            view().setBigInt64(Number(consumedPtr), BigInt(consumed), true)
+            return v
+        },
     }
     return {imports: {env}}
+}
+
+/** Read a Metall slice ({ ptr, i64 len }) from the struct the byval call left in
+ * linear memory. len is always at offset 8 (the i64 is 8-aligned on both wasm32
+ * and wasm64); the pointer is 4 bytes on wasm32 (number arg) or 8 on wasm64. */
+function readSlice(v: DataView, slicePtr: number | bigint): {ptr: number; len: number} {
+    const sp = Number(slicePtr)
+    const ptr = typeof slicePtr === "bigint" ? Number(v.getBigUint64(sp, true)) : v.getUint32(sp, true)
+    return {ptr, len: Number(v.getBigUint64(sp + 8, true))}
+}
+
+/** snprintf("%.{prec}{mode}", v) with mode 101='e', 102='f', 103='g', matching
+ * builtins_posix.ll. NaN/inf use the C spellings; the prelude special-cases the
+ * stdlib spellings before this is reached. */
+function snprintfFloat(v: number, prec: number, mode: number): string {
+    if (Number.isNaN(v)) {
+        return "nan"
+    }
+    if (!Number.isFinite(v)) {
+        return v < 0 ? "-inf" : "inf"
+    }
+    const sign = v < 0 || Object.is(v, -0) ? "-" : ""
+    const a = Math.abs(v)
+    if (mode === 102) {
+        return sign + a.toFixed(prec)
+    }
+    if (mode === 101) {
+        return sign + toExpFixed(a, prec)
+    }
+    return sign + toG(a, prec)
+
+    /** "%.{prec}e" of a non-negative value: at least two exponent digits, like C. */
+    function toExpFixed(a: number, prec: number): string {
+        const s = a.toExponential(prec)
+        const e = s.indexOf("e")
+        const exp = parseInt(s.slice(e + 1), 10)
+        let ed = Math.abs(exp).toString()
+        if (ed.length < 2) {
+            ed = "0" + ed
+        }
+        return s.slice(0, e) + "e" + (exp < 0 ? "-" : "+") + ed
+    }
+
+    /** "%.{p}g" of a non-negative value: p significant digits, trailing zeros
+     * removed, scientific when the exponent is < -4 or >= p. */
+    function toG(a: number, p: number): string {
+        if (a === 0) {
+            return "0"
+        }
+        const es = a.toExponential(p - 1)
+        const e = es.indexOf("e")
+        const exp = parseInt(es.slice(e + 1), 10)
+        let mant = es.slice(0, e).replace(".", "").replace(/0+$/, "")
+        if (mant === "") {
+            mant = "0"
+        }
+        if (exp < -4 || exp >= p) {
+            const head = mant.length > 1 ? mant[0] + "." + mant.slice(1) : mant
+            let ed = Math.abs(exp).toString()
+            if (ed.length < 2) {
+                ed = "0" + ed
+            }
+            return head + "e" + (exp < 0 ? "-" : "+") + ed
+        }
+        if (exp < 0) {
+            return "0." + "0".repeat(-exp - 1) + mant
+        }
+        if (exp + 1 >= mant.length) {
+            return mant + "0".repeat(exp + 1 - mant.length)
+        }
+        return mant.slice(0, exp + 1) + "." + mant.slice(exp + 1)
+    }
+}
+
+/** Parse the longest float prefix (strtod-like), returning [value, bytes
+ * consumed] so the prelude can detect trailing junk. */
+function strtodLike(s: string): [number, number] {
+    const m = s.match(/^[+-]?(infinity|inf|nan|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/i)
+    if (!m) {
+        return [0, 0]
+    }
+    const tok = m[0]
+    const body = tok.replace(/^[+-]/, "").toLowerCase()
+    let v: number
+    if (body === "inf" || body === "infinity") {
+        v = tok[0] === "-" ? -Infinity : Infinity
+    } else if (body === "nan") {
+        v = NaN
+    } else {
+        v = Number(tok)
+    }
+    return [v, tok.length]
 }
 
 function blockingSleep(ms: number): void {

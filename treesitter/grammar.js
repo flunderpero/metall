@@ -7,14 +7,16 @@
 // Compile the parser for Neovim:
 //   cc -shared -fPIC -O2 -o parser/metall.so src/parser.c -I src
 
+// Bitwise `& ^ |` bind tighter than comparison (Rust/Zig order), and unary
+// `not`/`~`/`-` bind tightest, matching the real parser (parser.go).
 const PREC = {
   ASSIGN: 1,
   OR: 2,
   AND: 3,
-  BIT_OR: 4,
-  BIT_XOR: 5,
-  BIT_AND: 6,
-  COMPARE: 7,
+  COMPARE: 4,
+  BIT_OR: 5,
+  BIT_XOR: 6,
+  BIT_AND: 7,
   SHIFT: 8,
   ADD: 9,
   MUL: 10,
@@ -47,6 +49,10 @@ module.exports = grammar({
     [$.simple_type],
     [$.if_expression],
     [$.try_expression],
+    // `a & b >` is ambiguous: reduce `a & b` (bitwise now binds above comparison)
+    // for a `>` comparison, or shift for a `>>` right-shift. GLR explores both and
+    // static precedence picks the winner.
+    [$.binary_expression],
   ],
 
   rules: {
@@ -176,6 +182,31 @@ module.exports = grammar({
           seq("0o", /[0-7]+(_[0-7]+)*/),
           seq("0b", /[01]+(_[01]+)*/),
           /[0-9]+(_[0-9]+)*/,
+        ),
+      ),
+
+    // Decimal floats only. A digit must follow the `.` so `1.foo` stays a field
+    // access and `1..10` stays a range; the dot-less form requires an exponent so
+    // a bare integer never reads as a float. Underscores group digits as in
+    // integers. Longest-match lexing makes `1.5`/`1e10` win over `integer_literal`.
+    float_literal: (_) =>
+      token(
+        prec(
+          1,
+          choice(
+            seq(
+              /[0-9]+(_[0-9]+)*/,
+              ".",
+              /[0-9]+(_[0-9]+)*/,
+              optional(seq(/[eE]/, optional(/[+-]/), /[0-9]+(_[0-9]+)*/)),
+            ),
+            seq(
+              /[0-9]+(_[0-9]+)*/,
+              /[eE]/,
+              optional(/[+-]/),
+              /[0-9]+(_[0-9]+)*/,
+            ),
+          ),
         ),
       ),
 
@@ -477,6 +508,7 @@ module.exports = grammar({
       choice(
         // Literals and atoms.
         $.integer_literal,
+        $.float_literal,
         $.string_literal,
         $.bytes_literal,
         $.rune_literal,

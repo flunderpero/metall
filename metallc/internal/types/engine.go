@@ -2,8 +2,10 @@ package types
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
@@ -47,6 +49,8 @@ type Engine struct {
 	arenaTyp        TypeID
 	intTyp          TypeID
 	u8Typ           TypeID
+	floatTyp        TypeID
+	f32Typ          TypeID
 }
 
 func NewEngine(
@@ -272,6 +276,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkBool()
 	case ast.Int:
 		typeID, status = e.checkInt(nodeKind, node.Span, typeHint)
+	case ast.Float:
+		typeID, status = e.checkFloat(nodeKind, node.Span, typeHint)
 	case ast.Ref:
 		typeID, status = e.checkRef(nodeID, nodeKind, node.Span)
 	case ast.RefType:
@@ -324,6 +330,20 @@ func (e *Engine) queryWithHint(nodeID ast.NodeID, typeHint *TypeID) (TypeID, Typ
 		if runeLit, ok := node.Kind.(ast.RuneLiteral); ok {
 			if _, ok := hintedType.Type.Kind.(IntType); ok {
 				typeID, status := e.checkRuneLiteral(runeLit, node.Span, typeHint)
+				if status.Failed() {
+					return InvalidTypeID, status
+				}
+				cached, ok := e.env.cachedTypeInfo(typeID)
+				if !ok {
+					panic(base.Errorf("type %s not found", typeID))
+				}
+				e.env.setNodeType(nodeID, cached)
+				return typeID, TypeOK
+			}
+		}
+		if floatNode, ok := node.Kind.(ast.Float); ok {
+			if _, ok := hintedType.Type.Kind.(FloatType); ok {
+				typeID, status := e.checkFloat(floatNode, node.Span, typeHint)
 				if status.Failed() {
 					return InvalidTypeID, status
 				}
@@ -1149,7 +1169,7 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		return typeID, status
 	}
 	switch kind := targetTyp.Kind.(type) {
-	case StructType, UnionType, IntType, BoolType, AllocatorType, SliceType, EnumType:
+	case StructType, UnionType, IntType, FloatType, BoolType, AllocatorType, SliceType, EnumType:
 		e.diag(fieldAccess.Field.Span, "unknown field: %s.%s", typeName, fieldAccess.Field.Name)
 	case TypeParamType:
 		e.diagTypeParamFieldAccess(kind, fieldAccess, typeName)
@@ -1490,6 +1510,21 @@ func (e *Engine) checkInt(intNode ast.Int, span base.Span, typeHint *TypeID) (Ty
 	return target, TypeOK
 }
 
+func (e *Engine) checkFloat(floatNode ast.Float, span base.Span, typeHint *TypeID) (TypeID, TypeStatus) {
+	target := e.floatTyp
+	if typeHint != nil {
+		if _, ok := e.env.Type(*typeHint).Kind.(FloatType); ok {
+			target = *typeHint
+		}
+	}
+	info := base.Cast[FloatType](e.env.Type(target).Kind)
+	if info.Bits == 32 && math.IsInf(float64(float32(floatNode.Value)), 0) {
+		e.diag(span, "value %s out of range for F32", strconv.FormatFloat(floatNode.Value, 'g', -1, 64))
+		return InvalidTypeID, TypeFailed
+	}
+	return target, TypeOK
+}
+
 func (e *Engine) checkString(
 	nodeID ast.NodeID, str ast.String, span base.Span,
 ) (TypeID, TypeStatus) { //nolint:unparam
@@ -1607,12 +1642,23 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 		return InvalidTypeID, TypeDepFailed
 	}
 	// A compound assignment `lhs op= rhs` desugars to `lhs = lhs op rhs`, so the
-	// place must be an integer the operator accepts.
-	if assign.Op != nil && !e.env.isIntType(lhsTypeID) {
-		e.diag(e.ast.Node(assign.LHS).Span,
-			"compound assignment '%s=' expects an integer, got %s",
-			*assign.Op, e.env.TypeDisplay(lhsTypeID))
-		return InvalidTypeID, TypeDepFailed
+	// place must be a type the operator accepts: any integer, or a float for the
+	// arithmetic operators (floats reject `%`, bitwise, and shifts).
+	if assign.Op != nil {
+		op := *assign.Op
+		arith := op == ast.BinaryOpAdd || op == ast.BinaryOpSub || op == ast.BinaryOpMul || op == ast.BinaryOpDiv
+		expected := "an integer"
+		valid := e.env.isIntType(lhsTypeID)
+		if arith {
+			expected = "an integer or float"
+			valid = e.env.isNumericType(lhsTypeID)
+		}
+		if !valid {
+			e.diag(e.ast.Node(assign.LHS).Span,
+				"compound assignment '%s=' expects %s, got %s",
+				op, expected, e.env.TypeDisplay(lhsTypeID))
+			return InvalidTypeID, TypeDepFailed
+		}
 	}
 	rhsTypeID, status := e.queryWithHint(assign.RHS, &lhsTypeID)
 	if status.Failed() {
@@ -1652,16 +1698,18 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:
 	var expected string
 	switch binary.Op {
 	case ast.BinaryOpEq, ast.BinaryOpNeq:
-		valid = e.env.isIntType(lhsTypeID) || lhsTypeID == e.boolTyp || e.env.isEnumType(lhsTypeID)
-		expected = "an integer or Bool"
+		valid = e.env.isNumericType(lhsTypeID) || lhsTypeID == e.boolTyp || e.env.isEnumType(lhsTypeID)
+		expected = "an integer, float, or Bool"
 	case ast.BinaryOpLt, ast.BinaryOpLte, ast.BinaryOpGt, ast.BinaryOpGte:
-		valid = e.env.isIntType(lhsTypeID)
-		expected = "an integer"
+		valid = e.env.isNumericType(lhsTypeID)
+		expected = "an integer or float"
 	case ast.BinaryOpOr, ast.BinaryOpAnd:
 		valid = lhsTypeID == e.boolTyp
 		expected = "Bool"
-	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv, ast.BinaryOpMod,
-		ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul:
+	case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv:
+		valid = e.env.isNumericType(lhsTypeID)
+		expected = "an integer or float"
+	case ast.BinaryOpMod, ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul:
 		valid = e.env.isIntType(lhsTypeID)
 		expected = "an integer"
 	case ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor, ast.BinaryOpShl, ast.BinaryOpShr:
@@ -1734,11 +1782,14 @@ func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
 		}
 		return exprTypeID, TypeOK
 	case ast.UnaryOpNeg:
+		if e.env.isFloatType(exprTypeID) {
+			return exprTypeID, TypeOK
+		}
 		if intTyp, ok := e.env.Type(exprTypeID).Kind.(IntType); !ok || !intTyp.Signed {
 			span := e.ast.Node(unary.Expr).Span
 			e.diag(
 				span,
-				"type mismatch: unary minus expects a signed integer, got %s",
+				"type mismatch: unary minus expects a signed integer or float, got %s",
 				e.env.TypeDisplay(exprTypeID),
 			)
 			return InvalidTypeID, TypeDepFailed
@@ -1751,7 +1802,7 @@ func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
 
 func (e *Engine) isLiteral(nodeID ast.NodeID) bool {
 	switch e.ast.Node(nodeID).Kind.(type) {
-	case ast.Int, ast.RuneLiteral:
+	case ast.Int, ast.Float, ast.RuneLiteral:
 		return true
 	}
 	return false
@@ -2056,6 +2107,8 @@ func (e *Engine) dispatchTypeConstruction(
 			return InvalidTypeID, TypeFailed
 		}
 		return e.checkIntConstruction(nodeID, kind, targetTypeID, lit, span)
+	case FloatType:
+		return e.checkFloatConstruction(targetTypeID, lit, span)
 	case StructType:
 		if kind.Name == "Str" && !ast.IsPreludeNode(nodeID) {
 			e.diag(span, "Str cannot be constructed directly; use Str.from_utf8_lossy() instead")
@@ -2200,6 +2253,28 @@ func (e *Engine) checkIntConstruction(
 				return targetTypeID, TypeOK
 			}
 		}
+		argSpan := e.ast.Node(argNodeID).Span
+		e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
+			e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	return targetTypeID, TypeOK
+}
+
+func (e *Engine) checkFloatConstruction(
+	targetTypeID TypeID, lit ast.TypeConstruction, span base.Span,
+) (TypeID, TypeStatus) {
+	targetTyp := base.Cast[FloatType](e.env.Type(targetTypeID).Kind)
+	if len(lit.Args) != 1 {
+		e.diag(span, "%s() takes exactly 1 argument, got %d", targetTyp.Name, len(lit.Args))
+		return InvalidTypeID, TypeFailed
+	}
+	argNodeID := lit.Args[0]
+	argTypeID, status := e.queryWithHint(argNodeID, &targetTypeID)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if argTypeID != targetTypeID {
 		argSpan := e.ast.Node(argNodeID).Span
 		e.diag(argSpan, "cannot use %s as %s; use conversion methods instead",
 			e.env.TypeDisplay(argTypeID), e.env.TypeDisplay(targetTypeID))
@@ -2422,6 +2497,17 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 				}
 			}
 		}
+		for _, floatTyp := range floatTypes {
+			if floatTyp.Name == structNode.Name.Name {
+				typ.Type.Kind = floatTyp
+				if floatTyp.Name == "Float" {
+					e.floatTyp = typ.Type.ID
+				}
+				if floatTyp.Name == "F32" {
+					e.f32Typ = typ.Type.ID
+				}
+			}
+		}
 	}
 }
 
@@ -2431,7 +2517,7 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 func (e *Engine) isCopyable(typeID TypeID) bool {
 	typ := e.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
-	case VoidType, NeverType, BoolType, IntType:
+	case VoidType, NeverType, BoolType, IntType, FloatType:
 		return true
 	case StructType:
 		declNode := e.env.DeclNode(typeID)

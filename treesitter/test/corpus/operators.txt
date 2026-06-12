@@ -73,6 +73,61 @@ fun f() Int { a & b | c ^ d }
           (identifier))))))
 
 ================================================================================
+Bitwise binds tighter than comparison
+================================================================================
+
+fun f() Bool { a & b == c }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (binary_expression
+          (identifier)
+          (identifier))
+        (identifier)))))
+
+================================================================================
+Tilde binds tighter than binary operators
+================================================================================
+
+fun f() Int { ~a | b }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (unary_expression
+          (identifier))
+        (identifier)))))
+
+================================================================================
+not binds tighter than comparison
+================================================================================
+
+fun f() Bool { not a == b }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (unary_expression
+          (identifier))
+        (identifier)))))
+
+================================================================================
 Shift operators
 ================================================================================
 
@@ -155,3 +210,116 @@ fun f() Int { -x }
     body: (block
       (unary_expression
         (identifier)))))
+
+================================================================================
+Float literal
+================================================================================
+
+fun f() Float { 3.14 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (float_literal))))
+
+================================================================================
+Float literal with exponent
+================================================================================
+
+fun f() Float { 1e10 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (float_literal))))
+
+================================================================================
+Float literal with signed exponent
+================================================================================
+
+fun f() Float { 1.5e-3 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (float_literal))))
+
+================================================================================
+Float literal with digit separators
+================================================================================
+
+fun f() Float { 1_000.000_1 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (float_literal))))
+
+================================================================================
+Float arithmetic
+================================================================================
+
+fun f() Float { 1.5 + 2.5 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type (type_identifier))
+    body: (block
+      (binary_expression
+        (float_literal)
+        (float_literal)))))
+
+================================================================================
+Integer dot is method access, not a float
+================================================================================
+
+fun f() void { 1.foo() }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (call_expression
+        callee: (field_access
+          object: (integer_literal)
+          field: (identifier))))))
+
+================================================================================
+Integer range is not a float
+================================================================================
+
+fun f() void { arr[1..10] }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (function_name (identifier))
+    return_type: (simple_type)
+    body: (block
+      (sub_slice
+        object: (identifier)
+        lo: (integer_literal)
+        hi: (integer_literal)))))

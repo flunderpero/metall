@@ -621,6 +621,37 @@ RuneLiteral(value='é'(233))
 Int(value=-123)
 ```
 
+**Float literal**
+
+```metall
+3.14
+```
+
+```ast
+Float(value=3.14)
+```
+
+**Float literal with exponent**
+
+```metall
+1.5e-3
+```
+
+```ast
+Float(value=0.0015)
+```
+
+**Unary minus on a float literal**
+
+```metall
+-2.5
+```
+
+```ast
+Unary(op=-)
+  expr=Float(value=2.5)
+```
+
 **Negative integer literal in expression**
 
 ```metall

@@ -4866,6 +4866,101 @@ Binary: Bool
     Bool: Bool
 ```
 
+**Float literal defaults to Float**
+
+```metall
+3.14
+```
+
+```types
+Float: Float
+```
+
+**Float +**
+
+```metall
+1.5 + 2.5
+```
+
+```types
+Binary: Float
+  Float: Float
+  Float: Float
+```
+
+**Float /**
+
+```metall
+3.0 / 2.0
+```
+
+```types
+Binary: Float
+  Float: Float
+  Float: Float
+```
+
+**Float < yields Bool**
+
+```metall
+1.5 < 2.5
+```
+
+```types
+Binary: Bool
+  Float: Float
+  Float: Float
+```
+
+**Unary minus on a float**
+
+```metall
+-1.5
+```
+
+```types
+Unary: Float
+  Float: Float
+```
+
+**Float == yields Bool**
+
+```metall
+1.5 == 1.5
+```
+
+```types
+Binary: Bool
+  Float: Float
+  Float: Float
+```
+
+**F32 via constructor narrows the literal**
+
+```metall
+F32(1.5)
+```
+
+```types
+TypeConstruction: F32
+  Ident: F32
+  Float: F32
+```
+
+**F32 materialization binary**
+
+```metall
+F32(1.5) + 2.5
+```
+
+```types
+Binary: F32
+  TypeConstruction: F32
+    Ident: F32
+    Float: F32
+  Float: F32
+```
+
 ## Type constructors and materialization
 
 **Type constructor**
@@ -9468,7 +9563,7 @@ test.met:1:15: cannot assign to immutable variable: x
 ```
 
 ```error
-test.met:1:16: compound assignment '+=' expects an integer, got Str
+test.met:1:16: compound assignment '+=' expects an integer or float, got Str
     { mut s = "hi" s += "x" }
                    ^
 ```
@@ -9906,7 +10001,7 @@ test.met:1:5: type mismatch: expected type of LHS: Int, got Str
 ```
 
 ```error
-test.met:1:1: type mismatch: binary operation '==' expects an integer or Bool, got Str
+test.met:1:1: type mismatch: binary operation '==' expects an integer, float, or Bool, got Str
     "hello" == "world"
     ^^^^^^^
 ```
@@ -9942,7 +10037,7 @@ test.met:1:5: type mismatch: expected Bool, got Int
 ```
 
 ```error
-test.met:1:2: type mismatch: unary minus expects a signed integer, got U8
+test.met:1:2: type mismatch: unary minus expects a signed integer or float, got U8
     -U8(5)
      ^^^^^
 ```
@@ -10735,6 +10830,42 @@ test.met:3:5: cannot access field on non-struct type: void
         foo().bar()
         ^^^^^
     }
+```
+
+**Float rejects modulo**
+
+```metall
+1.5 % 2.0
+```
+
+```error
+test.met:1:1: type mismatch: binary operation '%' expects an integer, got Float
+    1.5 % 2.0
+    ^^^
+```
+
+**Float rejects bitwise and**
+
+```metall
+1.5 & 2.0
+```
+
+```error
+test.met:1:1: type mismatch: binary operation '&' expects an integer, got Float
+    1.5 & 2.0
+    ^^^
+```
+
+**Float and F32 do not mix**
+
+```metall
+{ let x F32 = 1.5 let y = 2.5 x + y }
+```
+
+```error
+test.met:1:35: type mismatch: expected type of LHS: F32, got Float
+    { let x F32 = 1.5 let y = 2.5 x + y }
+                                      ^
 ```
 
 ## Try

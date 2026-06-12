@@ -82,6 +82,33 @@ define internal void @DebugIntern.print_bool(i1 %b, i64 %fd, i1 %nl) {
     ret void
 }
 
+define internal void @DebugIntern.print_float(double %n, i64 %fd, i1 %nl) {
+    %fd32 = trunc i64 %fd to i32
+    call void @__print_float(i32 %fd32, i1 %nl, double %n)
+    ret void
+}
+
+define internal void @DebugIntern.print_f32(float %n, i64 %fd, i1 %nl) {
+    %fd32 = trunc i64 %fd to i32
+    %d = fpext float %n to double
+    call void @__print_float(i32 %fd32, i1 %nl, double %d)
+    ret void
+}
+
+; __print_float writes %x with a plain "%g" (adequate debug output; the stdlib's
+; shortest formatting lives in the prelude) and emits it via @__print_str.
+define internal void @__print_float(i32 %fd, i1 %nl, double %x) {
+    %buf = alloca [48 x i8], align 1
+    %slice = alloca {ptr, i64}, align 8
+    %sp = getelementptr {ptr, i64}, ptr %slice, i32 0, i32 0
+    store ptr %buf, ptr %sp
+    %lp = getelementptr {ptr, i64}, ptr %slice, i32 0, i32 1
+    store i64 48, ptr %lp
+    %len = call i64 @__snprintf_float(double %x, i64 6, i8 103, ptr byval({ptr, i64}) %slice)
+    call void @__print_str(i32 %fd, i1 %nl, ptr %buf, i64 %len)
+    ret void
+}
+
 @__arena_dbg_open  = private constant [9 x i8] c"arena [0x"
 @__arena_dbg_close = private constant [2 x i8] c"] "
 
@@ -412,6 +439,75 @@ define internal i32 @"Int.to_u32_wrapping"(i64 %v) alwaysinline {
 }
 define internal i64 @"Int.to_u64_wrapping"(i64 %v) alwaysinline {
     ret i64 %v
+}
+
+; >>> Float conversions. Float is f64 (double), F32 is f32 (float). Float-to-int
+; truncates toward zero and saturates (NaN -> 0, overflow -> Int min/max) so the
+; result is identical on every target; raw fptosi would be target-divergent poison.
+
+define internal float @"Float.to_f32"(double %v) alwaysinline {
+    %r = fptrunc double %v to float
+    ret float %r
+}
+define internal i64 @"Float.to_int"(double %v) alwaysinline {
+    %r = call i64 @llvm.fptosi.sat.i64.f64(double %v)
+    ret i64 %r
+}
+define internal double @"F32.to_float"(float %v) alwaysinline {
+    %r = fpext float %v to double
+    ret double %r
+}
+define internal i64 @"F32.to_int"(float %v) alwaysinline {
+    %r = call i64 @llvm.fptosi.sat.i64.f32(float %v)
+    ret i64 %r
+}
+define internal double @"Int.to_float"(i64 %v) alwaysinline {
+    %r = sitofp i64 %v to double
+    ret double %r
+}
+define internal float @"Int.to_f32"(i64 %v) alwaysinline {
+    %r = sitofp i64 %v to float
+    ret float %r
+}
+
+; >>> Float predicates. is_nan via the unordered self-compare; is_inf compares
+; against the +/-Inf bit patterns (float constants use the 16-digit double form).
+
+define internal i1 @"Float.is_nan"(double %v) alwaysinline {
+    %r = fcmp uno double %v, %v
+    ret i1 %r
+}
+define internal i1 @"Float.is_inf"(double %v) alwaysinline {
+    %pos = fcmp oeq double %v, 0x7FF0000000000000
+    %neg = fcmp oeq double %v, 0xFFF0000000000000
+    %r = or i1 %pos, %neg
+    ret i1 %r
+}
+define internal i1 @"F32.is_nan"(float %v) alwaysinline {
+    %r = fcmp uno float %v, %v
+    ret i1 %r
+}
+define internal i1 @"F32.is_inf"(float %v) alwaysinline {
+    %pos = fcmp oeq float %v, 0x7FF0000000000000
+    %neg = fcmp oeq float %v, 0xFFF0000000000000
+    %r = or i1 %pos, %neg
+    ret i1 %r
+}
+define internal i64 @"Float.to_bits"(double %v) alwaysinline {
+    %r = bitcast double %v to i64
+    ret i64 %r
+}
+define internal i32 @"F32.to_bits"(float %v) alwaysinline {
+    %r = bitcast float %v to i32
+    ret i32 %r
+}
+define internal double @"Float.from_bits"(i64 %bits) alwaysinline {
+    %r = bitcast i64 %bits to double
+    ret double %r
+}
+define internal float @"F32.from_bits"(i32 %bits) alwaysinline {
+    %r = bitcast i32 %bits to float
+    ret float %r
 }
 
 ; >>> Rune builtins.

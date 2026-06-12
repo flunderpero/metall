@@ -115,7 +115,7 @@ func (e *Engine) validateExportSignature(targetTypeID TypeID, targetFun ast.Fun)
 // stands for "no value" in return position but is not a parameter type.
 func isCCompatibleType(env *TypeEnv, typeID TypeID, asReturn bool) bool {
 	switch env.Type(typeID).Kind.(type) {
-	case IntType, BoolType:
+	case IntType, FloatType, BoolType:
 		return true
 	case VoidType:
 		return asReturn

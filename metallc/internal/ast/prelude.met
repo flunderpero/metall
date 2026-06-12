@@ -706,6 +706,16 @@ pub fun StrBuilder.rune(sb &mut StrBuilder, r Rune) void {
     sb.slice_raw((&bytes).as_slice())
 }
 
+pub fun StrBuilder.float(sb &mut StrBuilder, v Float) void {
+    sb.ensure_capacity(48)
+    let len = try v.fmt_into(sb.out[sb.len..]) else { panic("reserved too few bytes") }
+    sb.len += len
+}
+
+pub fun StrBuilder.f32(sb &mut StrBuilder, v F32) void {
+    sb.float(v.to_float())
+}
+
 pub fun StrBuilder.fmt<T HasFmt>(sb &mut StrBuilder, t T) void { t.fmt(sb) }
 
 pub fun StrBuilder.nl(sb &mut StrBuilder) void { sb.rune('\n') }
@@ -1366,6 +1376,19 @@ pub fun U32.cmp(u U32, other U32) Int { when { case u == other: 0 case u > other
 pub fun U64.cmp(u U64, other U64) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
 pub fun Bool.cmp(b Bool, other Bool) Int { when { case b == other: 0 case not other: 1 else: -1 } }
 
+--- A total order for sorting: NaN sorts after every number and equals itself. ---
+pub fun Float.cmp(a Float, other Float) Int {
+    when {
+    case a.is_nan() and other.is_nan(): 0
+    case a.is_nan(): 1
+    case other.is_nan(): -1
+    case a == other: 0
+    case a > other: 1
+    else: -1
+    }
+}
+pub fun F32.cmp(a F32, other F32) Int { a.to_float().cmp(other.to_float()) }
+
 pub fun I8.eq(i I8, other I8) Bool { i == other }
 pub fun I16.eq(i I16, other I16) Bool { i == other }
 pub fun I32.eq(i I32, other I32) Bool { i == other }
@@ -1376,6 +1399,11 @@ pub fun U32.eq(u U32, other U32) Bool { u == other }
 pub fun U64.eq(u U64, other U64) Bool { u == other }
 pub fun Rune.eq(r Rune, other Rune) Bool { r == other }
 pub fun Bool.eq(b Bool, other Bool) Bool { b == other }
+
+--- IEEE-754 equality, so NaN is never equal to anything (use cmp for a total order). ---
+pub fun Float.eq(a Float, other Float) Bool { a == other }
+--- IEEE-754 equality, so NaN is never equal to anything (use cmp for a total order). ---
+pub fun F32.eq(a F32, other F32) Bool { a == other }
 
 pub fun I8.hash(i I8) U64 { i.to_u64_wrapping() *% 0x517CC1B727220A95 }
 pub fun I16.hash(i I16) U64 { i.to_u64_wrapping() *% 0x517CC1B727220A95 }
@@ -1388,6 +1416,21 @@ pub fun U64.hash(u U64) U64 { u *% 0x517CC1B727220A95 }
 pub fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() *% 0x517CC1B727220A95 }
 pub fun Bool.hash(b Bool) U64 { if b { 1 } else { 0 } }
 
+--- Hash the raw bits. 
+
+    -0.0 is folded to +0.0 so values that compare equal hash equal. ---
+pub fun Float.hash(a Float) U64 {
+    let bits = if a == 0.0 { U64(0) } else { a.to_bits() }
+    bits *% 0x517CC1B727220A95
+}
+--- Hash the raw bits.
+
+    -0.0 is folded to +0.0 so values that compare equal hash equal. ---
+pub fun F32.hash(a F32) U64 {
+    let bits = if a == 0.0 { U64(0) } else { a.to_bits().to_u64() }
+    bits *% 0x517CC1B727220A95
+}
+
 pub fun Str.fmt(s Str, sb &mut StrBuilder) void { sb.str(s) }
 pub fun Int.fmt(i Int, sb &mut StrBuilder) void { sb.int(i) }
 pub fun I32.fmt(i I32, sb &mut StrBuilder) void { sb.i32(i) }
@@ -1399,6 +1442,11 @@ pub fun U16.fmt(i U16, sb &mut StrBuilder) void { sb.u16(i) }
 pub fun U8.fmt(i U8, sb &mut StrBuilder) void { sb.u8(i) }
 pub fun Rune.fmt(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
 pub fun Bool.fmt(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
+pub fun Float.fmt(v Float, sb &mut StrBuilder) void { sb.float(v) }
+pub fun F32.fmt(v F32, sb &mut StrBuilder) void { sb.f32(v) }
+
+pub fun Float.is_finite(v Float) Bool { not v.is_nan() and not v.is_inf() }
+pub fun F32.is_finite(v F32) Bool { not v.is_nan() and not v.is_inf() }
 
 pub fun U8.to_i8_checked(u U8) !I8 { if u > U8(0x7F) { return NumConvErr.out_of_range } u.to_i8_wrapping() }
 pub fun U16.to_i16_checked(u U16) !I16 { if u > U16(0x7FFF) { return NumConvErr.out_of_range } u.to_i16_wrapping() }
@@ -1552,6 +1600,58 @@ pub fun U32.from_ascii_str(s []U8, base Int = 10) !U32 {
     try (try U64.from_ascii_str(s, base)).to_u32_checked() else { return NumParseErr.out_of_range }
 }
 
+--- Parse a decimal or scientific-notation float (e.g. `1.5`, `-3.14e10`), or
+    the signed words `inf`/`infinity`/`nan`.
+
+    Correctly rounded to the nearest Float. ---
+pub fun Float.from_ascii_str(str []U8) !Float {
+    let @local = Arena()
+    -- Strip digit separators so strtod never sees them, but only for reasonable
+    -- lengths (any real float literal fits) so a pathological input can't force
+    -- a large copy. Longer strings pass through untouched.
+    let str = if str.len > 256 {
+        str
+    } else {
+        mut buf = @local.slice<U8>(str.len, 0)
+        mut n = 0
+        for b in str {
+            if b != '_' {
+                buf[n] = b
+                n += 1
+            }
+        }
+        -- todo: The explicit []U8 rebind only works around the type checker not
+        --       coercing []mut U8 to []U8 across if branches. Drop it once fixed.
+        let cleaned []U8 = buf[0..n]
+        cleaned
+    }
+    if str.len == 0 {
+        return NumParseErr.empty
+    }
+    -- strtod skips leading whitespace, but a sane parser rejects it.
+    if str[0] <= ' ' {
+        return NumParseErr.malformed
+    }
+    mut consumed = 0
+    let v = unsafe __strtod(str, &mut consumed)
+    if consumed != str.len {
+        return NumParseErr.malformed
+    }
+    -- A numeric input that produced infinity overflowed; an `inf` literal is fine.
+    if v.is_inf() {
+        let first = if str[0] == '+' or str[0] == '-' { str[1] } else { str[0] }
+        if (first >= '0' and first <= '9') or first == '.' {
+            return NumParseErr.out_of_range
+        }
+    }
+    v
+}
+
+--- Like `Float.from_ascii_str`, rounded to the nearest F32. ---
+pub fun F32.from_ascii_str(str []U8) !F32 {
+    (try Float.from_ascii_str(str)).to_f32()
+}
+
 --- Format the integer value as a string and write it into `dst`.
 
     Return `None()` if the stringified value wouldn't fit `dst`. ---
@@ -1701,3 +1801,60 @@ pub fun U16.fmt_into(v U16, dst []mut U8, base Int = 10, upper Bool = false, min
 pub fun U32.fmt_into(v U32, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
     v.to_u64().fmt_into(dst, base, upper, min_width)
 }
+
+pub fun Float.fmt_into(v Float, dst []mut U8) ?Int {
+    let @local = Arena()
+    let scratch = @local.slice<U8>(48, 0)
+    let result = when {
+    case v.is_nan():
+        scratch[0..scratch.set("NaN".as_bytes())]
+    case v.is_inf():
+        let word = if v < 0.0 { "-inf" } else { "+inf" }
+        scratch[0..scratch.set(word.as_bytes())]
+    else:
+        -- Shortest: smallest significant-digit count whose %e reads back to v.
+        mut sd = 1
+        mut elen = 0
+        for sd <= 17 {
+            elen = unsafe __snprintf_float(v, sd - 1, 'e', scratch)
+            mut consumed = 0
+            if (unsafe __strtod(scratch[0..elen], &mut consumed)) == v {
+                break
+            }
+            sd += 1
+        }
+        -- The %e form ends in "e±DD...". Read the signed decimal exponent.
+        mut ei = 0
+        for scratch[ei] != 'e' {
+            ei += 1
+        }
+        mut dexp = 0
+        mut di = ei + 2
+        for di < elen {
+            dexp = dexp * 10 + (scratch[di] - '0').to_int()
+            di += 1
+        }
+        if scratch[ei + 1] == '-' {
+            dexp = -dexp
+        }
+        -- Scientific when the exponent is < -4 or >= 6, positional otherwise.
+        if dexp < -4 or dexp >= 6 {
+            scratch[0..elen]
+        } else {
+            let frac = if sd - 1 - dexp > 0 { sd - 1 - dexp } else { 0 }
+            let flen = unsafe __snprintf_float(v, frac, 'f', scratch)
+            scratch[0..flen]
+        }
+    }
+    if dst.len < result.len {
+        return None()
+    }
+    Option(dst.set(result))
+}
+
+pub fun F32.fmt_into(v F32, dst []mut U8) ?Int {
+    v.to_float().fmt_into(dst)
+}
+
+extern fun __strtod(buf []U8, consumed &mut Int) Float
+extern fun __snprintf_float(v Float, prec Int, mode U8, buf []mut U8) Int

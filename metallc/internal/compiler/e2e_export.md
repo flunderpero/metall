@@ -234,6 +234,44 @@ bool flip(bool b);
 #endif // EXPORT_E2E_EXPORT_TESTS_EXPORTS_6_GENERATED_HEADER_SHAPE_MET_H
 ```
 
+**floats round-trip**
+
+```metall
+fun double_it(x Float) Float {
+    x * 2.0
+}
+
+fun f32_id(x F32) F32 {
+    x
+}
+
+export metall_double_it = double_it
+export metall_f32_id = f32_id
+```
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    printf("%g\n", metall_double_it(3.25));
+    printf("%g\n", (double)metall_f32_id(2.5f));
+    return 0;
+}
+```
+
+```ts
+import { loadMetall } from "./metall.ts"
+import * as fs from "node:fs"
+const api = await loadMetall(fs.readFileSync("./metall.wasm"))
+console.log(api.metall_double_it(3.25))
+console.log(api.metall_f32_id(2.5))
+```
+
+```output
+6.5
+2.5
+```
+
 ## Errors
 
 **not exportable: Str parameter**

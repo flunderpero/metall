@@ -525,6 +525,8 @@ func (d *debugTypes) typeLabelForID(typeID TypeID) string { //nolint:funlen
 		return "Bool"
 	case IntType:
 		return kind.Name
+	case FloatType:
+		return kind.Name
 	case TypeParamType:
 		if typ.Type.NodeID != 0 {
 			tp := base.Cast[ast.TypeParam](d.env.ast.Node(typ.Type.NodeID).Kind)

@@ -3,6 +3,7 @@ package gen
 import (
 	_ "embed"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -184,6 +185,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genIdent(id, kind)
 	case ast.Int:
 		g.genInt(id, kind)
+	case ast.Float:
+		g.genFloat(id, kind)
 	case ast.Bool:
 		g.genBool(id, kind)
 	case ast.String:
@@ -425,7 +428,9 @@ func (g *IRFunGen) genTypeConstructionOnStack(id ast.NodeID, lit ast.TypeConstru
 		return
 	}
 	targetTyp := g.typeOfNode(lit.Target)
-	if _, ok := targetTyp.Kind.(types.IntType); ok {
+	_, isInt := targetTyp.Kind.(types.IntType)
+	_, isFloat := targetTyp.Kind.(types.FloatType)
+	if isInt || isFloat {
 		g.Gen(lit.Target)
 		g.Gen(lit.Args[0])
 		g.setCode(id, g.lookupCode(lit.Args[0]))
@@ -1898,9 +1903,14 @@ func (g *IRFunGen) genCompoundAssign(id ast.NodeID, assign ast.Assign) {
 	cur := g.loadValue(ptrReg, typeID)
 	g.Gen(assign.RHS)
 	rhs := g.lookupCode(assign.RHS)
-	intTyp, isInt := g.typeOfNode(assign.LHS).Kind.(types.IntType)
-	signed := isInt && intTyp.Signed
-	result := g.emitArithBitOp(id, *assign.Op, g.irType(typeID), cur, rhs, signed, assign.LHS)
+	var result string
+	if _, isFloat := g.typeOfNode(assign.LHS).Kind.(types.FloatType); isFloat {
+		result = g.emitFloatBinOp(*assign.Op, g.irType(typeID), cur, rhs)
+	} else {
+		intTyp, isInt := g.typeOfNode(assign.LHS).Kind.(types.IntType)
+		signed := isInt && intTyp.Signed
+		result = g.emitArithBitOp(id, *assign.Op, g.irType(typeID), cur, rhs, signed, assign.LHS)
+	}
 	g.storeValue(result, ptrReg, typeID)
 	g.setCode(id, voidValue)
 }
@@ -2086,7 +2096,11 @@ func (g *IRFunGen) genUnary(id ast.NodeID, unary ast.Unary) {
 		g.write("%s = xor %s %s, -1", reg, irTyp, expr)
 		g.runeCheckIfNeeded(unary.Expr, reg)
 	case ast.UnaryOpNeg:
-		g.emitCheckedArithmeticOp(id, reg, g.irTypeOfNode(unary.Expr), "sub", "0", expr, true)
+		if _, ok := g.typeOfNode(unary.Expr).Kind.(types.FloatType); ok {
+			g.write("%s = fneg %s %s", reg, g.irTypeOfNode(unary.Expr), expr)
+		} else {
+			g.emitCheckedArithmeticOp(id, reg, g.irTypeOfNode(unary.Expr), "sub", "0", expr, true)
+		}
 	default:
 		panic(base.Errorf("unknown unary operator: %s", unary.Op))
 	}
@@ -2103,6 +2117,10 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	lhs := g.lookupCode(binary.LHS)
 	rhs := g.lookupCode(binary.RHS)
 	irTyp := g.irTypeOfNode(binary.LHS)
+	if _, isFloat := g.typeOfNode(binary.LHS).Kind.(types.FloatType); isFloat {
+		g.setCode(id, g.emitFloatBinOp(binary.Op, irTyp, lhs, rhs))
+		return
+	}
 	intTyp, isInt := g.typeOfNode(binary.LHS).Kind.(types.IntType)
 	signed := isInt && intTyp.Signed
 	switch binary.Op { //nolint:exhaustive
@@ -2130,6 +2148,40 @@ func (g *IRFunGen) genBinary(id ast.NodeID, binary ast.Binary) {
 	default:
 		g.setCode(id, g.emitArithBitOp(id, binary.Op, irTyp, lhs, rhs, signed, binary.LHS))
 	}
+}
+
+// emitFloatBinOp emits an IEEE-754 binary operation. `==` and the relational
+// operators use ordered predicates (false when either operand is NaN); `!=`
+// uses the unordered predicate so it is the exact negation of `==` (true when
+// either operand is NaN, matching C/Rust/Go). Arithmetic never traps or checks
+// overflow, unlike the integer path.
+func (g *IRFunGen) emitFloatBinOp(op ast.BinaryOp, irTyp, lhs, rhs string) string {
+	reg := g.reg()
+	switch op { //nolint:exhaustive
+	case ast.BinaryOpEq:
+		g.write("%s = fcmp oeq %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpNeq:
+		g.write("%s = fcmp une %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpLt:
+		g.write("%s = fcmp olt %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpLte:
+		g.write("%s = fcmp ole %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpGt:
+		g.write("%s = fcmp ogt %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpGte:
+		g.write("%s = fcmp oge %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpAdd:
+		g.write("%s = fadd %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpSub:
+		g.write("%s = fsub %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpMul:
+		g.write("%s = fmul %s %s, %s", reg, irTyp, lhs, rhs)
+	case ast.BinaryOpDiv:
+		g.write("%s = fdiv %s %s, %s", reg, irTyp, lhs, rhs)
+	default:
+		panic(base.Errorf("not a valid float operator: %s", op))
+	}
+	return reg
 }
 
 // emitArithBitOp emits a single arithmetic or bitwise binary operation on two
@@ -2808,6 +2860,21 @@ func (g *IRFunGen) genInt(id ast.NodeID, int_ ast.Int) {
 	g.setCode(id, int_.Value.String())
 }
 
+func (g *IRFunGen) genFloat(id ast.NodeID, float_ ast.Float) {
+	bits := base.Cast[types.FloatType](g.typeOfNode(id).Kind).Bits
+	g.setCode(id, llvmFloatConst(float_.Value, bits))
+}
+
+// llvmFloatConst renders a float constant as the 16-hex-digit IEEE-754 double
+// bit pattern LLVM requires. For F32 the value is first rounded to single
+// precision so the widened double pattern is exact for the `float` type.
+func llvmFloatConst(value float64, bits int) string {
+	if bits == 32 {
+		value = float64(float32(value))
+	}
+	return fmt.Sprintf("0x%016x", math.Float64bits(value))
+}
+
 func (g *IRFunGen) genRuneLiteral(id ast.NodeID, lit ast.RuneLiteral) {
 	g.setCode(id, "%d", lit.Value)
 }
@@ -3054,8 +3121,11 @@ func irReturnType(env *types.TypeEnv, typeID types.TypeID) string {
 }
 
 func (g *IRFunGen) isAggregateType(typeID types.TypeID) bool {
-	typ := g.env.Type(typeID)
-	switch kind := typ.Kind.(type) {
+	return isAggregateTypeEnv(g.env, typeID)
+}
+
+func isAggregateTypeEnv(env *types.TypeEnv, typeID types.TypeID) bool {
+	switch kind := env.Type(typeID).Kind.(type) {
 	case types.StructType:
 		return !types.IsBuiltinPtrStruct(kind)
 	case types.UnionType:
@@ -3083,6 +3153,11 @@ func irType(env *types.TypeEnv, typeID types.TypeID) string {
 	switch kind := typ.Kind.(type) {
 	case types.IntType:
 		return fmt.Sprintf("i%d", kind.Bits)
+	case types.FloatType:
+		if kind.Bits == 32 {
+			return "float"
+		}
+		return "double"
 	case types.BoolType:
 		return "i1"
 	case types.VoidType:
@@ -3131,6 +3206,8 @@ func (g *IRGen) irTypeAlign(env *types.TypeEnv, typeID types.TypeID) int64 {
 	switch kind := typ.Kind.(type) {
 	case types.IntType:
 		return int64(kind.Bits+7) / 8
+	case types.FloatType:
+		return int64(kind.Bits) / 8
 	case types.BoolType:
 		return 1
 	case types.VoidType:
@@ -3173,6 +3250,8 @@ func (g *IRGen) irTypeSize(env *types.TypeEnv, typeID types.TypeID) int64 {
 	switch kind := typ.Kind.(type) {
 	case types.IntType:
 		return int64(kind.Bits+7) / 8
+	case types.FloatType:
+		return int64(kind.Bits) / 8
 	case types.BoolType:
 		return 1
 	case types.VoidType:
@@ -3352,6 +3431,11 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 		"arena_debug_print": true,
 		// Defined in builtins.ll for error-return traces (std/errors.met).
 		"__errtrace_buf": true,
+		// Float conversion: defined in builtins_posix.ll, declared (as harness
+		// imports) in builtins_wasm.ll. The prelude `extern`s them, so skip the
+		// would-be duplicate declare on every target.
+		"__strtod":         true,
+		"__snprintf_float": true,
 	}
 	if g.opts.Target.IsWasm() {
 		emitted["fflush"] = true
@@ -3388,7 +3472,13 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 			if i > 0 {
 				params.WriteString(", ")
 			}
-			params.WriteString(irType(env, paramTypeID))
+			// Aggregates are passed `ptr byval(T)` at the call site; the declare
+			// must match or LLVM rejects the inconsistent function type.
+			if isAggregateTypeEnv(env, paramTypeID) {
+				fmt.Fprintf(&params, "ptr byval(%s)", irType(env, paramTypeID))
+			} else {
+				params.WriteString(irType(env, paramTypeID))
+			}
 		}
 		g.write("declare %s @%s(%s)", retIR, name, params.String())
 		return true

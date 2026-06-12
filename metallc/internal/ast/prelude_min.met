@@ -65,6 +65,8 @@ pub fun Int.to_u8_wrapping(self Int) U8 {}
 pub fun Int.to_u16_wrapping(self Int) U16 {}
 pub fun Int.to_u32_wrapping(self Int) U32 {}
 pub fun Int.to_u64_wrapping(self Int) U64 {}
+pub fun Int.to_float(self Int) Float {}
+pub fun Int.to_f32(self Int) F32 {}
 
 --- A placeholder type for the builtin `U8` type. ---
 pub struct U8_ {}
@@ -108,6 +110,26 @@ pub fun U64.to_u32_wrapping(self U64) U32 {}
 pub fun U64.to_int_wrapping(self U64) Int {}
 pub fun U64.to_i32_wrapping(self U64) I32 {}
 
+--- A placeholder type for the builtin `Float` type. ---
+pub struct Float_ {}
+
+pub fun Float.to_f32(self Float) F32 {}
+pub fun Float.to_int(self Float) Int {}
+pub fun Float.is_nan(self Float) Bool {}
+pub fun Float.is_inf(self Float) Bool {}
+pub fun Float.to_bits(self Float) U64 {}
+pub fun Float.from_bits(bits U64) Float {}
+
+--- A placeholder type for the builtin `F32` type. ---
+pub struct F32_ {}
+
+pub fun F32.to_float(self F32) Float {}
+pub fun F32.to_int(self F32) Int {}
+pub fun F32.is_nan(self F32) Bool {}
+pub fun F32.is_inf(self F32) Bool {}
+pub fun F32.to_bits(self F32) U32 {}
+pub fun F32.from_bits(bits U32) F32 {}
+
 --- A placeholder type for the builtin `Rune` type. ---
 pub struct Rune_ {}
 
@@ -141,6 +163,8 @@ pub fun DebugIntern.print_str(s Str, fd Int = 1, new_line Bool = true) void {}
 pub fun DebugIntern.print_int(n Int, fd Int = 1, new_line Bool = true) void {}
 pub fun DebugIntern.print_uint(n U64, fd Int = 1, new_line Bool = true) void {}
 pub fun DebugIntern.print_bool(b Bool, fd Int = 1, new_line Bool = true) void {}
+pub fun DebugIntern.print_float(n Float, fd Int = 1, new_line Bool = true) void {}
+pub fun DebugIntern.print_f32(n F32, fd Int = 1, new_line Bool = true) void {}
 
 --- Print the message to stderr and abort the program immediately
     without unwinding the stack. ---

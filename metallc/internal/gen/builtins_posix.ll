@@ -64,3 +64,54 @@ exit:
     store i64 %n, ptr %g_len
     ret void
 }
+
+; Float <-> string: thin libc wrappers. The shortest-digit loop, the parse
+; classification, and the positional/scientific rendering all live in the
+; prelude; these just expose strtod and snprintf.
+declare double @strtod(ptr, ptr)
+declare i32 @snprintf(ptr, i64, ptr, ...)
+declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+
+@__fmt_star_e = private constant [5 x i8] c"%.*e\00"
+@__fmt_star_f = private constant [5 x i8] c"%.*f\00"
+@__fmt_star_g = private constant [5 x i8] c"%.*g\00"
+
+; Parse a NUL-terminated copy of buf as a double, writing the number of bytes
+; consumed (so the prelude can spot trailing junk). strtod is correctly rounded.
+define double @__strtod(ptr byval({ptr, i64}) %buf, ptr %consumed) {
+    %dp = getelementptr {ptr, i64}, ptr %buf, i32 0, i32 0
+    %data = load ptr, ptr %dp
+    %lp = getelementptr {ptr, i64}, ptr %buf, i32 0, i32 1
+    %len = load i64, ptr %lp
+    %sz = add i64 %len, 1
+    %c = call ptr @malloc(i64 %sz)
+    call void @llvm.memcpy.p0.p0.i64(ptr %c, ptr %data, i64 %len, i1 false)
+    %nul = getelementptr i8, ptr %c, i64 %len
+    store i8 0, ptr %nul
+    %endpp = alloca ptr
+    %v = call double @strtod(ptr %c, ptr %endpp)
+    %endp = load ptr, ptr %endpp
+    %ei = ptrtoint ptr %endp to i64
+    %ci = ptrtoint ptr %c to i64
+    %used = sub i64 %ei, %ci
+    store i64 %used, ptr %consumed
+    call void @free(ptr %c)
+    ret double %v
+}
+
+; snprintf("%.{prec}{mode}", v) into buf, where mode is 'e', 'f', or 'g'.
+; Returns the full length; a length > cap means it did not fit.
+define i64 @__snprintf_float(double %v, i64 %prec, i8 %mode, ptr byval({ptr, i64}) %buf) {
+    %dp = getelementptr {ptr, i64}, ptr %buf, i32 0, i32 0
+    %dst = load ptr, ptr %dp
+    %cp = getelementptr {ptr, i64}, ptr %buf, i32 0, i32 1
+    %cap = load i64, ptr %cp
+    %prec32 = trunc i64 %prec to i32
+    %is_e = icmp eq i8 %mode, 101
+    %fmt0 = select i1 %is_e, ptr @__fmt_star_e, ptr @__fmt_star_g
+    %is_f = icmp eq i8 %mode, 102
+    %fmt = select i1 %is_f, ptr @__fmt_star_f, ptr %fmt0
+    %n = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %dst, i64 %cap, ptr %fmt, i32 %prec32, double %v)
+    %n64 = sext i32 %n to i64
+    ret i64 %n64
+}

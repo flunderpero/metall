@@ -287,7 +287,7 @@ func (c *TypeContext) declMangledName(nodeID ast.NodeID, name string) string {
 func (c *TypeContext) isSync(typeID TypeID) bool {
 	typ := c.env.Type(typeID)
 	switch kind := typ.Kind.(type) {
-	case VoidType, NeverType, BoolType, IntType, EnumType:
+	case VoidType, NeverType, BoolType, IntType, FloatType, EnumType:
 		return true
 	case StructType:
 		declNode := c.env.DeclNode(typeID)

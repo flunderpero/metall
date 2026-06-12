@@ -1,0 +1,504 @@
+use std.test
+
+fun main() void {
+    let @local = Arena()
+
+    let fmt_suite = test.Suite.new("fmt", @local)
+    fmt_suite.test("Float.fmt", fun() !void {
+        let @local = Arena()
+        try test.eq("1.5", fmt_float(1.5, @local))
+        try test.eq("0", fmt_float(0.0, @local))
+        try test.eq("2", fmt_float(2.0, @local))
+        try test.eq("-2.5", fmt_float(-2.5, @local))
+        try test.eq("0.25", fmt_float(0.25, @local))
+        try test.eq("100.5", fmt_float(100.5, @local))
+        try test.eq("0.1", fmt_float(0.1, @local))
+        try test.eq("0.0001", fmt_float(0.0001, @local))
+        try test.eq("1e+06", fmt_float(1000000.0, @local))
+        try test.eq("1e-05", fmt_float(0.00001, @local))
+        try test.eq("6.022e+23", fmt_float(6.022e23, @local))
+        try test.eq("NaN", fmt_float(0.0 / 0.0, @local))
+        try test.eq("+inf", fmt_float(1.0 / 0.0, @local))
+        try test.eq("-inf", fmt_float(-1.0 / 0.0, @local))
+    })
+    fmt_suite.test("F32.fmt", fun() !void {
+        let @local = Arena()
+        try test.eq("1.5", fmt_f32(1.5, @local))
+        try test.eq("0.5", fmt_f32(0.5, @local))
+        try test.eq("2", fmt_f32(2.0, @local))
+        -- F32 formatting forwards to the Float path, so an inexact value prints
+        -- its full f64 widening. It still round-trips back to the same F32.
+        try test.ok(F32(0.1).eq(try F32.from_ascii_str(fmt_f32(0.1, @local).as_bytes())))
+    })
+    _ = fmt_suite.run()
+
+    let fmt_into_suite = test.Suite.new("fmt_into", @local)
+    fmt_into_suite.test("Float.fmt_into", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(32, 0)
+        try test.eq(Option(3), Float(1.5).fmt_into(buf))
+        try test.eq("1.5", Str.from_utf8_lossy(buf[0..3], @local))
+        try test.eq(Option(4), Float(0.25).fmt_into(buf))
+        try test.eq("0.25", Str.from_utf8_lossy(buf[0..4], @local))
+        try test.eq(Option(4), Float(-2.5).fmt_into(buf))
+        try test.eq("-2.5", Str.from_utf8_lossy(buf[0..4], @local))
+        try test.eq(Option(3), Float(0.0 / 0.0).fmt_into(buf))
+        try test.eq("NaN", Str.from_utf8_lossy(buf[0..3], @local))
+    })
+    _ = fmt_into_suite.run()
+
+    let from_ascii_suite = test.Suite.new("from_ascii_str", @local)
+    from_ascii_suite.test("Float.from_ascii_str", fun() !void {
+        try test.eq(Result(Float(1.5)), Float.from_ascii_str("1.5".as_bytes()))
+        try test.eq(Result(Float(3.25)), Float.from_ascii_str("3.25".as_bytes()))
+        try test.eq(Result(Float(-0.5)), Float.from_ascii_str("-0.5".as_bytes()))
+        try test.eq(Result(Float(42.0)), Float.from_ascii_str("42".as_bytes()))
+        try test.eq(Result(Float(0.125)), Float.from_ascii_str("0.125".as_bytes()))
+        try test.eq(Result(Float(0.5)), Float.from_ascii_str(".5".as_bytes()))
+        try test.eq(Result(Float(5.0)), Float.from_ascii_str("5.".as_bytes()))
+        try test.eq(Result(Float(1500.0)), Float.from_ascii_str("1.5e3".as_bytes()))
+        try test.eq(Result(Float(0.025)), Float.from_ascii_str("2.5E-2".as_bytes()))
+        try test.eq(Result(Float(-12.5)), Float.from_ascii_str("-1.25e1".as_bytes()))
+        try test.ok((try Float.from_ascii_str("inf".as_bytes())).is_inf())
+        try test.ok((try Float.from_ascii_str("-Infinity".as_bytes())).is_inf())
+        try test.ok((try Float.from_ascii_str("NaN".as_bytes())).is_nan())
+        try test.err(Float.from_ascii_str("".as_bytes()), NumParseErr.empty)
+        try test.err(Float.from_ascii_str("-".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("abc".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("1.2.3".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str(".".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("e5".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("1e".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("1e+".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("++1".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("nanx".as_bytes()), NumParseErr.malformed)
+        try test.err(Float.from_ascii_str("1e400".as_bytes()), NumParseErr.out_of_range)
+        try test.err(Float.from_ascii_str("1e309".as_bytes()), NumParseErr.out_of_range)
+        try test.err(Float.from_ascii_str("1.7976931348623159e308".as_bytes()), NumParseErr.out_of_range)
+    })
+    from_ascii_suite.test("F32.from_ascii_str", fun() !void {
+        try test.eq(Result(F32(2.5)), F32.from_ascii_str("2.5".as_bytes()))
+        try test.eq(Result(F32(1.5)), F32.from_ascii_str("1.5e0".as_bytes()))
+        try test.err(F32.from_ascii_str("x".as_bytes()), NumParseErr.malformed)
+    })
+    _ = from_ascii_suite.run()
+
+    let cmp_suite = test.Suite.new("cmp", @local)
+    cmp_suite.test("Float.cmp", fun() !void {
+        try test.eq(-1, Float(1.5).cmp(2.0))
+        try test.eq(1, Float(2.0).cmp(1.5))
+        try test.eq(0, Float(1.5).cmp(1.5))
+        let nan = 0.0 / 0.0
+        try test.eq(1, nan.cmp(1.0))
+        try test.eq(-1, Float(1.0).cmp(nan))
+        try test.eq(0, nan.cmp(nan))
+    })
+    cmp_suite.test("F32.cmp", fun() !void {
+        try test.eq(-1, F32(1.5).cmp(2.0))
+        try test.eq(0, F32(1.5).cmp(1.5))
+    })
+    _ = cmp_suite.run()
+
+    let eq_suite = test.Suite.new("eq", @local)
+    eq_suite.test("Float.eq", fun() !void {
+        try test.ok(Float(1.5).eq(1.5))
+        try test.not_ok(Float(1.5).eq(2.0))
+        let nan = 0.0 / 0.0
+        try test.not_ok(nan.eq(nan))
+    })
+    eq_suite.test("F32.eq", fun() !void {
+        try test.ok(F32(1.5).eq(1.5))
+        try test.not_ok(F32(1.5).eq(2.0))
+    })
+    _ = eq_suite.run()
+
+    let hash_suite = test.Suite.new("hash", @local)
+    hash_suite.test("Float.hash", fun() !void {
+        try test.eq(Float(1.5).hash(), Float(1.5).hash())
+        try test.neq(Float(1.5).hash(), Float(2.0).hash())
+        try test.eq(0.0.hash(), (-0.0).hash())
+    })
+    hash_suite.test("F32.hash", fun() !void {
+        try test.eq(F32(1.5).hash(), F32(1.5).hash())
+        try test.neq(F32(1.5).hash(), F32(2.0).hash())
+    })
+    _ = hash_suite.run()
+
+    let pred_suite = test.Suite.new("predicates", @local)
+    pred_suite.test("is_nan, is_inf, is_finite", fun() !void {
+        let nan = 0.0 / 0.0
+        let inf = 1.0 / 0.0
+        try test.ok(nan.is_nan())
+        try test.not_ok(1.0.is_nan())
+        try test.ok(inf.is_inf())
+        try test.ok((-1.0 / 0.0).is_inf())
+        try test.not_ok(1.0.is_inf())
+        try test.ok(1.5.is_finite())
+        try test.not_ok(nan.is_finite())
+        try test.not_ok(inf.is_finite())
+    })
+    _ = pred_suite.run()
+
+    let bits_suite = test.Suite.new("bits", @local)
+    bits_suite.test("to_bits and from_bits", fun() !void {
+        try test.eq(U64(0), Float(0.0).to_bits())
+        try test.eq(U64(0x3FF0_0000_0000_0000), Float(1.0).to_bits())
+        try test.ok(Float.from_bits(0x4000_0000_0000_0000) == 2.0)
+        try test.ok(Float.from_bits(Float(2.5).to_bits()) == 2.5)
+        try test.ok(F32.from_bits(F32(1.0).to_bits()) == 1.0)
+    })
+    _ = bits_suite.run()
+
+    -- Drive the bit-pattern tables (defined below) through the formatter. The
+    -- platform formatter (libc / the wasm harness) is shortest and round-trips,
+    -- but is not always the minimal-length string in the rare adjacent-bracket
+    -- case, so we assert the round-trip property rather than the exact string.
+    let fmt_edge_suite = test.Suite.new("fmt_edge", @local)
+    fmt_edge_suite.test("Float format round-trips", fun() !void {
+        let @local = Arena()
+        for c in fmt_float_cases() {
+            let v = Float.from_bits(c.bits)
+            if not v.is_nan() {
+                let back = try Float.from_ascii_str(fmt_float(v, @local).as_bytes())
+                try test.eq(c.bits, back.to_bits())
+            }
+        }
+    })
+    fmt_edge_suite.test("F32 format round-trips", fun() !void {
+        let @local = Arena()
+        for c in fmt_f32_cases() {
+            let v = F32.from_bits(c.bits.to_u32_wrapping())
+            if not v.is_nan() {
+                let back = try F32.from_ascii_str(fmt_f32(v, @local).as_bytes())
+                try test.eq(c.bits.to_u32_wrapping(), back.to_bits())
+            }
+        }
+    })
+    _ = fmt_edge_suite.run()
+
+    -- The reverse direction: every input string must parse to exactly these bits.
+    let parse_edge_suite = test.Suite.new("parse_edge", @local)
+    parse_edge_suite.test("Float parse table", fun() !void {
+        for c in parse_cases() {
+            let got = try Float.from_ascii_str(c.input.as_bytes())
+            try test.eq(c.bits, got.to_bits())
+        }
+    })
+    _ = parse_edge_suite.run()
+
+    -- Format then re-parse must return the identical bits, the property that makes
+    -- the shortest representation lossless.
+    let roundtrip_suite = test.Suite.new("roundtrip", @local)
+    roundtrip_suite.test("parse(format(v)) preserves bits", fun() !void {
+        let @local = Arena()
+        for bits in roundtrip_bits() {
+            let s = fmt_float(Float.from_bits(bits), @local)
+            let back = try Float.from_ascii_str(s.as_bytes())
+            try test.eq(bits, back.to_bits())
+        }
+    })
+    _ = roundtrip_suite.run()
+}
+
+--- Format a Float the way the standard library does and return it as a Str.
+
+    The fmt_edge and roundtrip suites use this to check sb.float against the
+    oracle. ---
+fun fmt_float(v Float, @a Arena) Str {
+    let sb = StrBuilder.new(32, @a)
+    sb.float(v)
+    sb.as_str()
+}
+
+--- Format an F32 and return it as a Str.
+
+    Single precision matters here: an F32 must print its own shortest string,
+    not the longer string of the double it would widen to. ---
+fun fmt_f32(v F32, @a Arena) Str {
+    let sb = StrBuilder.new(32, @a)
+    sb.f32(v)
+    sb.as_str()
+}
+
+--- The numbers in the tables below are raw IEEE-754 bit patterns, not float values.
+
+    A double is 64 bits; FmtCase.bits and roundtrip_bits hold those 64 bits as a
+    U64, and Float.from_bits turns them back into the float. For example
+    4607182418800017408 is 0x3FF0000000000000, the bits of exactly 1.0, and
+    9223372036854775808 is 0x8000000000000000, the sign bit alone, which is -0.0.
+
+    Inputs are pinned by their bits, as integers, for two reasons. First, the
+    interesting inputs have no clean source literal: a subnormal, a double one
+    unit-in-the-last-place from its neighbour, -0.0, an infinity, a NaN. Second,
+    bits keep the formatter test from depending on the literal parser, which is
+    itself under test. Sign-bit-set patterns are >= 2^63 and so are written
+    U64(...), because a bare decimal literal only lexes up to the signed-64 max.
+
+    Each `want` records the shortest round-tripping decimal for the value, kept
+    as documentation of the expected form. The parse table asserts the exact
+    resulting bits; the format suites assert that formatting then re-parsing
+    recovers the same value. ---
+struct FmtCase {
+    bits U64   -- the double's 64 bits, e.g. 0x3FF0000000000000 = 1.0
+    want Str   -- the exact string the formatter must produce
+}
+
+--- A parsing vector: an input string and the exact bit pattern the parsed double must have.
+
+    We compare bits, not values, so -0.0 and the rounding direction are checked
+    precisely. ---
+struct ParseCase {
+    input Str
+    bits U64
+}
+
+--- Double formatting, bits -> shortest string.
+
+    Spans zero and -0.0, small exact fractions, the boundary where 'g' switches
+    to scientific notation (1e+06, 1e-05), magnitudes up to MaxFloat64, the
+    smallest subnormal and the normal/subnormal edge, the 2^53 integer-precision
+    boundary, several powers of two with their neighbours one ulp away, negatives,
+    and inf / -inf / NaN. ---
+fun fmt_float_cases() []FmtCase {
+    [
+        FmtCase(0, "0"),
+        FmtCase(U64(9223372036854775808), "-0"),   -- sign bit only: -0.0
+        FmtCase(4607182418800017408, "1"),
+        FmtCase(U64(13830554455654793216), "-1"),
+        FmtCase(4611686018427387904, "2"),
+        FmtCase(4621819117588971520, "10"),
+        FmtCase(4636737291354636288, "100"),
+        FmtCase(U64(13840687554816376832), "-5"),
+        FmtCase(4602678819172646912, "0.5"),
+        FmtCase(4598175219545276416, "0.25"),
+        FmtCase(4593671619917905920, "0.125"),
+        FmtCase(4589168020290535424, "0.0625"),
+        FmtCase(4591870180066957722, "0.1"),
+        FmtCase(4596373779694328218, "0.2"),
+        FmtCase(4599075939470750515, "0.3"),
+        FmtCase(4604480259023595110, "0.7"),
+        FmtCase(4614253070214989087, "3.14"),
+        FmtCase(4613303445314885481, "2.718281828459045"),
+        FmtCase(U64(13836183955189006336), "-2.5"),
+        FmtCase(4636772475726725120, "100.5"),
+        FmtCase(4638387860618067575, "123.456"),
+        FmtCase(4681608360884174848, "100000"),    -- last magnitude printed in full
+        FmtCase(4696837146684686336, "1e+06"),     -- first magnitude printed in scientific
+        FmtCase(4711630319185297408, "9.999999e+06"),
+        FmtCase(4683220244930494464, "123456"),
+        FmtCase(4698053236609777664, "1.234567e+06"),
+        FmtCase(4547007122018943789, "0.0001"),    -- last small magnitude printed in full
+        FmtCase(4532020583610935537, "1e-05"),     -- first small magnitude printed in scientific
+        FmtCase(4562254508917369340, "0.001"),
+        FmtCase(4831355200913801216, "1e+15"),
+        FmtCase(4846369599423283200, "1e+16"),
+        FmtCase(4861130398305394688, "1e+17"),
+        FmtCase(4906019910204099648, "1e+20"),
+        FmtCase(4921056587992461136, "1e+21"),
+        FmtCase(6103021453049119613, "1e+100"),
+        FmtCase(4457293557087583675, "1e-10"),
+        FmtCase(3110860544497550640, "1e-100"),
+        FmtCase(4502148214488346440, "1e-07"),
+        FmtCase(9218868437227405311, "1.7976931348623157e+308"),       -- MaxFloat64
+        FmtCase(U64(18442240474082181119), "-1.7976931348623157e+308"),
+        FmtCase(1, "5e-324"),                      -- bits=1: smallest positive subnormal
+        FmtCase(4503599627370496, "2.2250738585072014e-308"),          -- 0x10..0: smallest normal
+        FmtCase(4845873199050653696, "9.007199254740992e+15"),
+        FmtCase(4841369599423283200, "4.503599627370496e+15"),
+        FmtCase(4962933069378480659, "6.022e+23"),
+        FmtCase(4325607224011134547, "1.602176634e-19"),
+        FmtCase(9218868437227405312, "+inf"),      -- exponent all ones, mantissa 0
+        FmtCase(U64(18442240474082181120), "-inf"),
+        FmtCase(9221120237041090561, "NaN"),       -- exponent all ones, mantissa != 0
+        FmtCase(4614256656552045848, "3.141592653589793"),
+        FmtCase(4599676419421066581, "0.3333333333333333"),
+        FmtCase(4604180019048437077, "0.6666666666666666"),
+        -- The remaining groups are a value with its +1 ulp and -1 ulp neighbours,
+        -- the rounding boundaries where the shortest digit count changes:
+        FmtCase(4427038433705197568, "9.094947017729282e-13"),
+        FmtCase(4427038433705197569, "9.094947017729284e-13"),
+        FmtCase(4427038433705197567, "9.094947017729281e-13"),
+        FmtCase(4463067230724161536, "2.3283064365386963e-10"),
+        FmtCase(4463067230724161537, "2.328306436538697e-10"),
+        FmtCase(4463067230724161535, "2.328306436538696e-10"),
+        FmtCase(4499096027743125504, "5.960464477539063e-08"),
+        FmtCase(4499096027743125505, "5.960464477539064e-08"),
+        FmtCase(4499096027743125503, "5.960464477539062e-08"),
+        FmtCase(4535124824762089472, "1.52587890625e-05"),
+        FmtCase(4535124824762089473, "1.5258789062500003e-05"),
+        FmtCase(4535124824762089471, "1.5258789062499998e-05"),
+        FmtCase(4571153621781053440, "0.00390625"),
+        FmtCase(4571153621781053441, "0.003906250000000001"),
+        FmtCase(4571153621781053439, "0.0039062499999999996"),
+        FmtCase(4607182418800017408, "1"),
+        FmtCase(4607182418800017409, "1.0000000000000002"),
+        FmtCase(4607182418800017407, "0.9999999999999999"),
+        FmtCase(4643211215818981376, "256"),
+        FmtCase(4643211215818981377, "256.00000000000006"),
+        FmtCase(4643211215818981375, "255.99999999999997"),
+        FmtCase(4679240012837945344, "65536"),
+        FmtCase(4679240012837945345, "65536.00000000001"),
+        FmtCase(4679240012837945343, "65535.99999999999"),
+        FmtCase(4715268809856909312, "1.6777216e+07"),
+        FmtCase(4715268809856909313, "1.6777216000000004e+07"),
+        FmtCase(4715268809856909311, "1.6777215999999998e+07"),
+        FmtCase(4751297606875873280, "4.294967296e+09"),
+        FmtCase(4751297606875873281, "4.294967296000001e+09"),
+        FmtCase(4751297606875873279, "4.2949672959999995e+09"),
+        FmtCase(4787326403894837248, "1.099511627776e+12"),
+        FmtCase(4787326403894837249, "1.0995116277760002e+12"),
+        FmtCase(4787326403894837247, "1.0995116277759999e+12"),
+        -- Further boundaries: the decimal/scientific switch, the subnormal/normal
+        -- edge, a sign-bit NaN, and a shortest-decimal round-half-to-even tie.
+        FmtCase(4696837138094751744, "999999"),                  -- largest 6-digit integer in plain form
+        FmtCase(4891288408196988160, "1e+19"),
+        FmtCase(4906019910204099649, "1.0000000000000002e+20"),  -- first value above 1e20
+        FmtCase(4921056587992461135, "9.999999999999999e+20"),   -- one ulp below 1e21
+        FmtCase(4547007048231967494, "9.9999e-05"),              -- scientific side of the -4/-5 switch
+        FmtCase(4562254462800509156, "0.00099999"),              -- decimal side of the -4/-5 switch
+        FmtCase(4503599627370495, "2.225073858507201e-308"),     -- largest subnormal
+        FmtCase(U64(18444492273895866368), "NaN"),               -- NaN with the sign bit set
+        FmtCase(4762856772683597824, "2.6914849015632812e+10"),  -- shortest-decimal tie, rounds to even
+    ][..]
+}
+
+--- Single-precision formatting, F32 bits (in the low 32 of a U64) -> shortest string.
+
+    Includes 0.1 and 0.3 (which round differently at single precision), 2^24
+    where consecutive integers stop being representable, MaxFloat32, the smallest
+    f32 subnormal, and the f32 specials. ---
+fun fmt_f32_cases() []FmtCase {
+    [
+        FmtCase(0, "0"),
+        FmtCase(1065353216, "1"),
+        FmtCase(1073741824, "2"),
+        FmtCase(1056964608, "0.5"),
+        FmtCase(1036831949, "0.1"),
+        FmtCase(1045220557, "0.2"),
+        FmtCase(1069547520, "1.5"),
+        FmtCase(1078523331, "3.14"),
+        FmtCase(1203982336, "100000"),
+        FmtCase(1621981420, "1e+20"),
+        FmtCase(786163455, "1e-10"),
+        FmtCase(2139095039, "3.4028235e+38"),      -- MaxFloat32
+        FmtCase(1, "1e-45"),                        -- smallest f32 subnormal
+        FmtCase(1266679808, "1.6777216e+07"),       -- 2^24
+        FmtCase(2139095040, "+inf"),
+        FmtCase(4286578688, "-inf"),
+        FmtCase(2143289344, "NaN"),
+        -- Further boundaries: double-rounding guards (must not widen to f64), the
+        -- 2^24 precision step, the subnormal/normal edge, -0.0, and a tie.
+        FmtCase(1050253722, "0.3"),             -- f64-widened would be "0.30000001192092896"
+        FmtCase(2123789977, "1e+38"),           -- f64-widened would be "9.999999680285692e+37"
+        FmtCase(1266679807, "1.6777215e+07"),   -- 2^24 - 1 ulp
+        FmtCase(1266679809, "1.6777218e+07"),   -- 2^24 + 1 ulp (skips 16777217)
+        FmtCase(8388607, "1.1754942e-38"),      -- largest subnormal
+        FmtCase(8388608, "1.1754944e-38"),      -- smallest normal
+        FmtCase(2139095038, "3.4028233e+38"),   -- MaxFloat32 - 1 ulp
+        FmtCase(2147483648, "-0"),              -- negative zero
+        FmtCase(1065385984, "1.0039062"),       -- shortest-decimal tie, rounds to even
+    ][..]
+}
+
+--- Parsing, string -> exact bits.
+
+    Covers signs, a leading or trailing dot (.5, 5.), leading zeros, scientific
+    notation in both e and E, digit separators, the largest and smallest
+    representable magnitudes, gradual underflow to zero (1e-400 -> 0, which is not
+    an error), and every inf spelling we accept. ---
+fun parse_cases() []ParseCase {
+    [
+        ParseCase("0", 0),
+        ParseCase("-0", U64(9223372036854775808)),
+        ParseCase("1", 4607182418800017408),
+        ParseCase("-1", U64(13830554455654793216)),
+        ParseCase("1.5", 4609434218613702656),
+        ParseCase("0.1", 4591870180066957722),
+        ParseCase("0.3", 4599075939470750515),
+        ParseCase("3.14", 4614253070214989087),
+        ParseCase(".5", 4602678819172646912),
+        ParseCase("5.", 4617315517961601024),
+        ParseCase("007", 4619567317775286272),
+        ParseCase("0.001", 4562254508917369340),
+        ParseCase("1e3", 4652007308841189376),
+        ParseCase("1.5e-3", 4564560351926583034),
+        ParseCase("1E10", 4756540486875873280),
+        ParseCase("1e+5", 4681608360884174848),
+        ParseCase("2.5E-2", 4582862980812216730),
+        ParseCase("-1.25e1", U64(13846598529327300608)),
+        ParseCase("3.141592653589793", 4614256656552045848),
+        ParseCase("1.7976931348623157e+308", 9218868437227405311),   -- MaxFloat64
+        ParseCase("5e-324", 1),                                       -- smallest subnormal
+        ParseCase("2.2250738585072014e-308", 4503599627370496),       -- smallest normal
+        ParseCase("9007199254740993", 4845873199050653696),           -- 2^53 + 1 rounds to 2^53
+        ParseCase("0.30000000000000004", 4599075939470750516),
+        ParseCase("123456789012345678", 4862596447618666293),
+        ParseCase("100000", 4681608360884174848),
+        ParseCase("1000000", 4696837146684686336),
+        ParseCase("0.0001", 4547007122018943789),
+        ParseCase("0.00001", 4532020583610935537),
+        ParseCase("1e-400", 0),                                        -- underflow to zero, not an error
+        ParseCase("0.0000000000000000001", 4322756117994590892),
+        ParseCase("inf", 9218868437227405312),
+        ParseCase("+inf", 9218868437227405312),
+        ParseCase("-inf", U64(18442240474082181120)),
+        ParseCase("Infinity", 9218868437227405312),
+        ParseCase("-Infinity", U64(18442240474082181120)),
+        ParseCase("INF", 9218868437227405312),
+        -- Subnormal underflow and round-half-to-even at the denormal floor:
+        ParseCase("2e-324", 0),                        -- rounds down to +0, not an error
+        ParseCase("1e-324", 0),
+        ParseCase("2.5e-324", 1),                      -- ties up to the smallest subnormal
+        ParseCase("2.4703282292062327e-324", 0),       -- just below the tie: rounds down to 0
+        ParseCase("1e-323", 2),
+        ParseCase("1e-320", 2024),
+        ParseCase("1e-310", 20240225330731),
+        -- Round-half-to-even at integer ulp boundaries:
+        ParseCase("9007199254740995", 4845873199050653698),       -- tie above 2^53, rounds to even
+        ParseCase("4503599627370497.5", 4841369599423283202),     -- fractional .5 tie at 2^52
+        ParseCase("18014398509481990", 4850376798678024194),      -- tie near 2^54 (ulp 4)
+        ParseCase("1.7976931348623158e308", 9218868437227405311), -- rounds down to MaxFloat64
+        -- Digit separators (mantissa and exponent), leading zeros, sign/dot combos:
+        ParseCase("1_2_3", 4638355772470722560),
+        ParseCase("1e1_0", 4756540486875873280),
+        ParseCase("1_000.5", 4652011706887700480),
+        ParseCase("1_000e1_0", 4801453603149578240),
+        ParseCase("0007e2", 4649368480934526976),
+        ParseCase("00.5", 4602678819172646912),
+        ParseCase("5.e3", 4662219572839972864),
+        ParseCase("+.5e+2", 4632233691727265792),
+        ParseCase("-0.0", U64(9223372036854775808)),   -- the parser produces -0.0
+    ][..]
+}
+
+--- Round-trip vectors covering the whole exponent range plus the notable values above.
+
+    The first rows step a single set bit across the exponent range; the rest are
+    the values from the tables above. The roundtrip suite asserts that formatting
+    each one and parsing the result back yields the identical bits. ---
+fun roundtrip_bits() []U64 {
+    [
+        U64(1), 137438953472, 103582791429521408, 270215977642229760, 436849163854938112,
+        603482350067646464, 770115536280354816, 936748722493063168, 1103381908705771520, 1270015094918479872,
+        1436648281131188224, 1603281467343896576, 1769914653556604928, 1936547839769313280, 2103181025982021632,
+        2269814212194729984, 2436447398407438336, 2603080584620146688, 2769713770832855040, 2936346957045563392,
+        3102980143258271744, 3269613329470980096, 3436246515683688448, 3602879701896396800, 3769512888109105152,
+        3936146074321813504, 4102779260534521856, 4269412446747230208, 4436045632959938560, 4602678819172646912,
+        4769312005385355264, 4935945191598063616, 5102578377810771968, 5269211564023480320, 5435844750236188672,
+        5602477936448897024, 5769111122661605376, 5935744308874313728, 6102377495087022080, 6269010681299730432,
+        6435643867512438784, 6602277053725147136, 6768910239937855488, 6935543426150563840, 7102176612363272192,
+        7268809798575980544, 7435442984788688896, 7602076171001397248, 7768709357214105600, 7935342543426813952,
+        8101975729639522304, 8268608915852230656, 8435242102064939008, 8601875288277647360, 8768508474490355712,
+        8935141660703064064, 9101774846915772416, 0, U64(9223372036854775808), 4607182418800017408,
+        U64(13830554455654793216), 4611686018427387904, 4621819117588971520, 4636737291354636288, U64(13840687554816376832),
+        4602678819172646912, 4598175219545276416, 4593671619917905920, 4589168020290535424, 4591870180066957722,
+        4596373779694328218, 4599075939470750515, 4604480259023595110, 4614253070214989087, 4613303445314885481,
+        U64(13836183955189006336), 4636772475726725120, 4638387860618067575, 4681608360884174848, 4696837146684686336,
+        4711630319185297408, 4683220244930494464, 4698053236609777664, 4547007122018943789, 4532020583610935537,
+        4562254508917369340, 4831355200913801216, 4846369599423283200, 4861130398305394688, 4906019910204099648,
+        4921056587992461136, 6103021453049119613, 4457293557087583675, 3110860544497550640, 4502148214488346440,
+        9218868437227405311, U64(18442240474082181119), 1, 4503599627370496, 4845873199050653696,
+        4841369599423283200, 4962933069378480659, 4325607224011134547, 9218868437227405312, U64(18442240474082181120),
+        4614256656552045848, 4599676419421066581, 4604180019048437077,
+    ][..]
+}

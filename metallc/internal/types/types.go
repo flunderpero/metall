@@ -37,6 +37,13 @@ type IntType struct {
 
 func (IntType) isTypeKind() {}
 
+type FloatType struct {
+	Name string
+	Bits int
+}
+
+func (FloatType) isTypeKind() {}
+
 type BoolType struct{}
 
 func (BoolType) isTypeKind() {}
@@ -209,4 +216,10 @@ var intTypes = []IntType{
 	{"U32", false, 32, big.NewInt(0), big.NewInt(4294967295)},
 	{"U64", false, 64, big.NewInt(0), new(big.Int).SetUint64(18446744073709551615)},
 	{"Rune", false, 32, big.NewInt(0), big.NewInt(4294967295)},
+}
+
+//nolint:gochecknoglobals
+var floatTypes = []FloatType{
+	{"Float", 64},
+	{"F32", 32},
 }

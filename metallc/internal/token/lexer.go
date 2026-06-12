@@ -39,6 +39,7 @@ const (
 	Export
 	Extern
 	False
+	Float
 	For
 	Fun
 	Gt
@@ -141,6 +142,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Export:                "<export>",
 	Extern:                "<extern>",
 	False:                 "false",
+	Float:                 "<float>",
 	For:                   "<for>",
 	Gt:                    ">",
 	Gte:                   ">=",
@@ -333,54 +335,79 @@ func peek(source *base.Source, idx int, r rune) bool {
 }
 
 // lexNumber reads a number literal starting at the leading digit. Supported
-// forms: decimal, hex (0x), octal (0o), binary (0b). Underscores are allowed
-// between digits as separators. A leading `-` is the Minus operator, never part
-// of a literal; the parser folds `-<number>` into a negative value.
+// forms: decimal, hex (0x), octal (0o), binary (0b), and decimal floats
+// (`3.14`, `1e10`, `1.5e-3`). Underscores are allowed between digits as
+// separators. A leading `-` is the Minus operator, never part of a literal; the
+// parser folds `-<number>` into a negative value. Float literals yield a Float
+// token, integers a Number.
+// scanDigits consumes a run of digitOk-or-'_' characters at *idx and returns it.
+func scanDigits(source *base.Source, idx *int, digitOk func(rune) bool) []rune {
+	begin := *idx
+	for *idx < len(source.Content) && (digitOk(source.Content[*idx]) || source.Content[*idx] == '_') {
+		*idx++
+	}
+	return source.Content[begin:*idx]
+}
+
 func lexNumber(source *base.Source, start int) Token {
 	idx := start
-	value := []rune{}
 	digitOk := isDecDigit
 	baseName := "decimal"
 	if idx+1 < len(source.Content) && source.Content[idx] == '0' {
 		switch source.Content[idx+1] {
 		case 'x':
-			digitOk = isHexDigit
-			baseName = "hex"
+			digitOk, baseName = isHexDigit, "hex"
 		case 'o':
-			digitOk = isOctDigit
-			baseName = "octal"
+			digitOk, baseName = isOctDigit, "octal"
 		case 'b':
-			digitOk = isBinDigit
-			baseName = "binary"
+			digitOk, baseName = isBinDigit, "binary"
 		}
 		if baseName != "decimal" {
-			value = append(value, source.Content[idx], source.Content[idx+1])
 			idx += 2
 		}
 	}
-	digitsStart := len(value)
-	for idx < len(source.Content) {
-		c := source.Content[idx]
-		if !digitOk(c) && c != '_' {
-			break
+	intDigits := scanDigits(source, &idx, digitOk)
+
+	// Decimal floats only. A fractional part needs a digit right after the `.` so
+	// `1.foo` stays a field access and `1..10` stays a range; the dot-less form
+	// needs an exponent so a bare integer never reads as a float.
+	isFloat := false
+	var fracDigits, expDigits []rune
+	if baseName == "decimal" {
+		if idx+1 < len(source.Content) && source.Content[idx] == '.' && isDecDigit(source.Content[idx+1]) {
+			isFloat = true
+			idx++ // the '.'
+			fracDigits = scanDigits(source, &idx, isDecDigit)
 		}
-		value = append(value, c)
-		idx++
+		if idx < len(source.Content) && (source.Content[idx] == 'e' || source.Content[idx] == 'E') {
+			signLen := 0
+			if idx+1 < len(source.Content) && (source.Content[idx+1] == '+' || source.Content[idx+1] == '-') {
+				signLen = 1
+			}
+			if idx+1+signLen < len(source.Content) && isDecDigit(source.Content[idx+1+signLen]) {
+				isFloat = true
+				idx += 1 + signLen // the 'e' and optional sign
+				expDigits = scanDigits(source, &idx, isDecDigit)
+			}
+		}
 	}
+
+	value := string(source.Content[start:idx])
 	span := base.NewSpan(source, start, idx-1)
-	digits := value[digitsStart:]
-	if len(digits) == 0 {
-		return Token{Error, fmt.Sprintf("expected %s digit after '0%c'", baseName, value[digitsStart-1]), span}
+	if len(intDigits) == 0 {
+		return Token{Error, fmt.Sprintf("expected %s digit after '0%c'", baseName, source.Content[start+1]), span}
 	}
-	if digits[0] == '_' || digits[len(digits)-1] == '_' {
-		return Token{Error, fmt.Sprintf("invalid %s literal: %s", baseName, string(value)), span}
-	}
-	for i := 1; i < len(digits); i++ {
-		if digits[i] == '_' && digits[i-1] == '_' {
-			return Token{Error, fmt.Sprintf("invalid %s literal: %s", baseName, string(value)), span}
+	// Underscores must be flanked by digits: no leading, trailing, or doubled.
+	for _, run := range [][]rune{intDigits, fracDigits, expDigits} {
+		s := string(run)
+		if strings.HasPrefix(s, "_") || strings.HasSuffix(s, "_") || strings.Contains(s, "__") {
+			return Token{Error, fmt.Sprintf("invalid %s literal: %s", baseName, value), span}
 		}
 	}
-	return Token{Number, string(value), span}
+	if isFloat {
+		return Token{Float, value, span}
+	}
+	return Token{Number, value, span}
 }
 
 func hexDigit(c rune) (rune, bool) {

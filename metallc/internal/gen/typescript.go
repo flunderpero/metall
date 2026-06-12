@@ -79,6 +79,8 @@ func tsParamType(env *types.TypeEnv, typeID types.TypeID) string {
 		return "boolean"
 	case types.IntType:
 		return tsIntType(kind)
+	case types.FloatType:
+		return "number"
 	}
 	panic(base.Errorf("tsParamType: %s is not TS-exportable", env.TypeDisplay(typeID)))
 }

@@ -59,6 +59,8 @@ func cType(env *types.TypeEnv, typeID types.TypeID) string {
 		return "bool"
 	case types.IntType:
 		return cIntTypeName(kind)
+	case types.FloatType:
+		return cFloatTypeName(kind)
 	}
 	panic(base.Errorf("cType: %s is not C-exportable", env.TypeDisplay(typeID)))
 }
@@ -104,4 +106,11 @@ func cIntTypeName(t types.IntType) string {
 		return "uint32_t"
 	}
 	panic(base.Errorf("cIntTypeName: unknown int type %q", t.Name))
+}
+
+func cFloatTypeName(t types.FloatType) string {
+	if t.Bits == 32 {
+		return "float"
+	}
+	return "double"
 }
