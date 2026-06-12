@@ -14,7 +14,7 @@ type TokenKind int
 const (
 	AllocatorIdent TokenKind = iota + 1
 	Amp
-	AmpImmediate
+	AmpAfterNewline
 	AmpEq
 	And
 	Break
@@ -62,6 +62,7 @@ const (
 	Lte
 	Match
 	Minus
+	MinusAfterNewline
 	MinusEq
 	MinusPercent
 	MinusPercentEq
@@ -115,7 +116,7 @@ const (
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AllocatorIdent:        "<allocator identifier>",
 	Amp:                   "&",
-	AmpImmediate:          "<&immediate>",
+	AmpAfterNewline:       "<&after-newline>",
 	AmpEq:                 "&=",
 	And:                   "<and>",
 	Break:                 "<break>",
@@ -163,6 +164,7 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	Lte:                   "<=",
 	Match:                 "<match>",
 	Minus:                 "-",
+	MinusAfterNewline:     "<-after-newline>",
 	MinusEq:               "-=",
 	MinusPercent:          "-%",
 	MinusPercentEq:        "-%=",
@@ -518,6 +520,20 @@ func lexStringBody(source *base.Source, idx int, span base.Span, kind TokenKind)
 	return Token{EOF, "", span}
 }
 
+func precededByNewline(source *base.Source, at int) bool {
+	for i := at - 1; i >= 0; i-- {
+		c := source.Content[i]
+		if c == '\n' {
+			return true
+		}
+		if unicode.IsSpace(c) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	start := idx
 	c := source.Content[idx]
@@ -642,6 +658,9 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			return Token{Kind: MinusEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		if !peek(source, idx, '-') {
+			if precededByNewline(source, start) {
+				return Token{Kind: MinusAfterNewline, Value: "", Span: span}
+			}
 			return Token{Kind: Minus, Value: "", Span: span}
 		}
 		value := "--"
@@ -677,9 +696,9 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		if peek(source, idx, '=') {
 			return Token{Kind: AmpEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		kind := AmpImmediate
-		if idx < len(source.Content) && unicode.IsSpace(source.Content[idx]) {
-			kind = Amp
+		kind := Amp
+		if precededByNewline(source, start) {
+			kind = AmpAfterNewline
 		}
 		return Token{Kind: kind, Value: "", Span: span}
 	case c == '[':

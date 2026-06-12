@@ -1944,6 +1944,38 @@ Binary(op===)
   rhs=Ident(name="b")
 ```
 
+**Ampersand and minus disambiguate by position, not spacing**
+
+`a &b` is infix bitwise-and. Inside the call, mid-line `& x` / `& mut y` are
+references regardless of spacing. A line-initial `&w` or `-v` starts a new
+expression instead of continuing the previous one.
+
+```metall
+{
+    a &b
+    f(& x, & mut y)
+    &w
+    -v
+}
+```
+
+```ast
+Block()
+  exprs[0]=Binary(op=&)
+    lhs=Ident(name="a")
+    rhs=Ident(name="b")
+  exprs[1]=Call()
+    callee=Ident(name="f")
+    args[0]=Ref()
+      target=Ident(name="x")
+    args[1]=Ref(mut=true)
+      target=Ident(name="y")
+  exprs[2]=Ref()
+    target=Ident(name="w")
+  exprs[3]=Unary(op=-)
+    expr=Ident(name="v")
+```
+
 **Shift precedence vs add**
 
 ```metall

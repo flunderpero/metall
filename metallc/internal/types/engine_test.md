@@ -1512,7 +1512,11 @@ struct01 = Foo { one Str, two Int }
 **Struct ref**
 
 ```metall
-{ struct Foo { one Str } let x = Foo("hello") &x }
+{
+    struct Foo { one Str }
+    let x = Foo("hello")
+    &x
+}
 ```
 
 ```types
@@ -4212,7 +4216,11 @@ fun01    = unsafe fun(Arena, Int) []mut Int
 **Ref to slice**
 
 ```metall
-{ let @a = Arena() let x = unsafe @a.slice_uninit<Int>(3) &x }
+{
+    let @a = Arena()
+    let x = unsafe @a.slice_uninit<Int>(3)
+    &x
+}
 ```
 
 ```types
