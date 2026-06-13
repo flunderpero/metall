@@ -320,7 +320,13 @@ func (g *Generics) lookupMethod(nodeID ast.NodeID, targetTyp *Type, methodName s
 		binding, ok = g.lookup(*g.instantiationScope, lookupName, -1)
 	}
 	if !ok {
-		binding, ok = g.lookupInTypeModule(targetTyp, lookupName)
+		// A shape-constrained type param's methods live in the shape's home
+		// module, not the module where the type param is declared.
+		moduleTyp := targetTyp
+		if tpt, isParam := targetTyp.Kind.(TypeParamType); isParam && tpt.Shape != nil {
+			moduleTyp = g.env.Type(typeIDOrigin(g.env, *tpt.Shape))
+		}
+		binding, ok = g.lookupInTypeModule(moduleTyp, lookupName)
 	}
 	if !ok {
 		if structType, isStruct := targetTyp.Kind.(StructType); isStruct && len(structType.TypeArgs) > 0 {

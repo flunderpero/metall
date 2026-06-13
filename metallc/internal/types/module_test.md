@@ -350,6 +350,29 @@ fun01    = sync fun() void
 fun02    = sync fun(struct01) Int
 ```
 
+**cross-module shape method dispatch**
+
+A generic function in the calling module dispatches a shape method through a
+`<T Shape>` constraint where the shape is declared in an imported module. The
+dispatch must resolve the shape method in the shape's module.
+
+```metall
+use shapes
+
+pub struct Widget { pub value Int }
+pub fun Widget.show(w Widget) Int { w.value }
+
+fun show_here<T shapes.Showable>(x T) Int { x.show() }
+
+fun main() void {
+    let w = Widget(42)
+    let r = show_here<Widget>(w)
+}
+```
+
+```error
+```
+
 ## Error
 
 **unknown symbol in import**
