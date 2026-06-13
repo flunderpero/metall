@@ -17,7 +17,8 @@ pub nocopy unsync struct Pool<T> {
     free_len Int
 }
 
-pub fun Pool.new(size Int, @a Arena) &mut Pool {
+pub fun Pool.new(size U32, @a Arena) &mut Pool {
+    let size = size.to_int()
     let slot_value = unsafe @a.slice_uninit<T>(size)
     let slot_gen = @a.slice<Int>(size, 0)
     let free = unsafe @a.slice_uninit<Int>(size)
@@ -35,7 +36,7 @@ pub fun Pool.alloc(p &mut Pool, value T) !PoolHandle<T> {
         return PoolErr.exhausted
     }
     p.free_len -= 1
-    let index = p.free_len
+    let index = p.free[p.free_len]
     p.slot_value[index] = value
     let gen = p.slot_gen[index] + 1
     p.slot_gen[index] = gen
@@ -54,7 +55,7 @@ pub unsync struct PoolHandle<T> {
     The reference is only valid for the current scope to limit the possibilities
     of misusing them. If you free the handle and acquire a new one during the 
     lifetime of the returned reference, that reference will point to the new
-    handle. So don't do that. 
+    value. So don't do that. 
 
     todo: We should be able to have a read-only Pool where this returns &T ---
 pub fun PoolHandle.get(ph PoolHandle) noescape ?&mut T {
@@ -77,5 +78,45 @@ pub fun PoolHandle.free(ph PoolHandle) void {
     ph.pool.slot_gen[ph.index] += 1
     ph.pool.free[ph.pool.free_len] = ph.index
     ph.pool.free_len += 1
+}
+
+--- Iterate over the live slots of the pool.
+
+    Yields one `PoolIterHandle` per live slot. Call `get()` on it to reach the
+    value. Like `List` and `Map`, don't allocate or free during iteration. ---
+pub fun Pool.iter(p &mut Pool) PoolIter<T> {
+    PoolIter(p, 0)
+}
+
+--- An iterator over the live slots of a `Pool`. ---
+pub struct PoolIter<T> {
+    pool &mut Pool<T>
+    pos Int
+}
+
+pub fun PoolIter.next(it &mut PoolIter) ?PoolIterHandle<T> {
+    for i in it.pos..it.pool.slot_gen.len {
+        -- An odd generation marks a live slot: `alloc` and `free` each bump the
+        -- generation by one from an even start, so parity tracks occupancy.
+        if (it.pool.slot_gen[i] % 2) == 1 {
+            it.pos = i + 1
+            return PoolIterHandle(it.pool, i)
+        }
+    }
+    None()
+}
+
+--- A handle to a live slot, yielded by `PoolIter`. ---
+pub struct PoolIterHandle<T> {
+    pool &mut Pool<T>
+    index Int
+}
+
+--- Return a mutable reference to the value.
+
+    Only valid for the current scope. Don't free or reallocate the slot
+    while the reference lives. ---
+pub fun PoolIterHandle.get(ph PoolIterHandle) noescape &mut T {
+    &mut ph.pool.slot_value[ph.index]
 }
 

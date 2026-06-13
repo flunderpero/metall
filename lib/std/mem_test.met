@@ -81,5 +81,51 @@ fun main() void {
         b.free()
         let c = try sut.alloc(4)
     })
+    pool_suite.test("free recycles the freed slot, not a live one", fun() !void {
+        let @local = Arena()
+        let sut = mem.Pool.new<Int>(3, @local)
+
+        let a = try sut.alloc(1)
+        let b = try sut.alloc(2)
+
+        -- Release a slot that is not the most-recently-allocated one
+        -- while another handle is still live.
+        a.free()
+
+        -- The next allocation must take the freed slot, never b's.
+        let c = try sut.alloc(3)
+
+        -- b was never freed, so it must stay valid and unchanged.
+        let b_ref = try b.get().or_err(test.AssertErr.mismatch)
+        try test.eq(2, b_ref.*)
+
+        let c_ref = try c.get().or_err(test.AssertErr.mismatch)
+        try test.eq(3, c_ref.*)
+    })
+    pool_suite.test("iter yields live slots only", fun() !void {
+        let @local = Arena()
+        let sut = mem.Pool.new<Int>(4, @local)
+
+        let a = try sut.alloc(10)
+        let b = try sut.alloc(20)
+        let c = try sut.alloc(30)
+
+        -- Free a middle slot to leave a hole the iterator must skip.
+        b.free()
+
+        mut it = sut.iter()
+        mut sum = 0
+        mut count = 0
+        for {
+            match it.next() {
+                case None: break
+                else h:
+                    sum += h.get().*
+                    count += 1
+            }
+        }
+        try test.eq(2, count)
+        try test.eq(40, sum)
+    })
     _ = pool_suite.run()
 }
