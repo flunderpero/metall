@@ -3989,6 +3989,55 @@ fun main() void {
 5
 ```
 
+## Match Or-Patterns
+
+**or-patterns group enum and union variants, with and without a binding**
+
+```metall
+enum Color U8 = red | green | blue
+
+union Val = Int | Bool | Str
+
+fun classify(c Color) Str {
+    match c {
+        case Color.red or Color.green: "warm"
+        case Color.blue: "cool"
+    }
+}
+
+fun name_of(c Color) Str {
+    match c {
+        case Color.red or Color.green x: x.debug_name
+        else: "other"
+    }
+}
+
+fun kind(v Val) Str {
+    match v {
+        case Int or Bool: "scalar"
+        case Str s: s
+    }
+}
+
+fun main() void {
+    DebugIntern.print_str(classify(Color.red))
+    DebugIntern.print_str(classify(Color.blue))
+    DebugIntern.print_str(name_of(Color.green))
+    DebugIntern.print_str(kind(Val(42)))
+    DebugIntern.print_str(kind(Val(true)))
+    DebugIntern.print_str(kind(Val("hi")))
+}
+```
+
+```output
+warm
+cool
+green
+scalar
+scalar
+hi
+```
+
 ## Match On References
 
 **match on a reference projects, binds references, and mutates in place**

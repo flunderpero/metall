@@ -832,6 +832,117 @@ scope05:
 enum01 = Coin = penny | dime
 ```
 
+**Enum or-pattern groups variants and stays exhaustive**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red or Color.green: 1
+        case Color.blue: 2
+    }
+}
+```
+
+```types
+Block: Int
+  Enum: enum01
+    SimpleType: U8
+    EnumVariant: ?
+    EnumVariant: ?
+    EnumVariant: ?
+  Var: void
+    Ident: enum01
+  Match: Int
+    Ident: enum01
+    FieldAccess: enum01
+      SimpleType: enum01
+    FieldAccess: enum01
+      SimpleType: enum01
+    Block: Int
+      Int: Int
+    FieldAccess: enum01
+      SimpleType: enum01
+    Block: Int
+      Int: Int
+---
+enum01 = Color = red | green | blue
+```
+
+**Enum or-pattern binds the enum type**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red or Color.green x: x.debug_name
+        else: "other"
+    }
+}
+```
+
+```types
+Block: Str
+  Enum: enum01
+    SimpleType: U8
+    EnumVariant: ?
+    EnumVariant: ?
+    EnumVariant: ?
+  Var: void
+    Ident: enum01
+  Match: Str
+    Ident: enum01
+    FieldAccess: enum01
+      SimpleType: enum01
+    FieldAccess: enum01
+      SimpleType: enum01
+    Block: Str
+      FieldAccess: Str
+        Ident: enum01
+    Block: Str
+      String: Str
+---
+enum01 = Color = red | green | blue
+```
+
+**Union or-pattern binds the whole union**
+
+```metall
+{
+    union Foo = Str | Int | Bool
+    let x = Foo(1)
+    match x {
+        case Int or Bool y: 1
+        case Str: 2
+    }
+}
+```
+
+```types
+Block: Int
+  Union: union01
+    SimpleType: ?
+    SimpleType: ?
+    SimpleType: ?
+  Var: void
+    TypeConstruction: union01
+      Ident: union01
+      Int: Int
+  Match: Int
+    Ident: union01
+    SimpleType: Int
+    SimpleType: Bool
+    Block: Int
+      Int: Int
+    SimpleType: Str
+    Block: Int
+      Int: Int
+---
+union01 = Foo = Str | Int | Bool
+```
+
 ## Errors
 
 **Match on non-union**
@@ -1422,3 +1533,69 @@ test.met:7:20: cannot assign to field of immutable value
                        ^^^
             case B &y: y.v = 6
 ```
+
+**Or-pattern still requires exhaustiveness**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red or Color.green: 1
+    }
+}
+```
+
+```error
+test.met:4:5: non-exhaustive match: missing variant Color.blue
+        let c = Color.red
+        match c {
+        ^
+            case Color.red or Color.green: 1
+        }
+        ^
+    }
+```
+
+**Duplicate variant in an or-pattern arm**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    let c = Color.red
+    match c {
+        case Color.red or Color.red: 1
+        else: 0
+    }
+}
+```
+
+```error
+test.met:5:14: duplicate variant Color.red in or-pattern
+        match c {
+            case Color.red or Color.red: 1
+                 ^^^^^^^^^
+            else: 0
+```
+
+**Duplicate variant in a union or-pattern arm**
+
+```metall
+{
+    union Foo = Int | Bool | Str
+    let x = Foo(1)
+    match x {
+        case Int or Int: 1
+        else: 0
+    }
+}
+```
+
+```error
+test.met:5:21: duplicate match arm for variant Int
+        match x {
+            case Int or Int: 1
+                        ^^^
+            else: 0
+```
+

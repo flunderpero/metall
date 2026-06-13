@@ -143,7 +143,9 @@ func TestASTDelete(t *testing.T) {
 		pattern := a.NewSimpleType(Name{"Int", makeSpan()}, nil, makeSpan())
 		guard := a.NewBool(true, makeSpan())
 		body := a.NewBlock(nil, makeSpan())
-		arms := []MatchArm{{Pattern: pattern, Binding: nil, Ref: false, Mut: false, Guard: &guard, Body: body}}
+		arms := []MatchArm{
+			{Patterns: []NodeID{pattern}, Binding: nil, Ref: false, Mut: false, Guard: &guard, Body: body},
+		}
 		matchID := a.NewMatch(expr, arms, nil, makeSpan())
 		a.DeleteNode(guard)
 		got := base.Cast[Match](a.Node(matchID).Kind)
@@ -156,7 +158,7 @@ func TestASTDelete(t *testing.T) {
 		expr := a.NewIdent("x", nil, makeSpan())
 		pattern := a.NewSimpleType(Name{"Int", makeSpan()}, nil, makeSpan())
 		body := a.NewBlock(nil, makeSpan())
-		arms := []MatchArm{{Pattern: pattern, Binding: nil, Ref: false, Mut: false, Guard: nil, Body: body}}
+		arms := []MatchArm{{Patterns: []NodeID{pattern}, Binding: nil, Ref: false, Mut: false, Guard: nil, Body: body}}
 		_ = a.NewMatch(expr, arms, nil, makeSpan())
 		defer func() {
 			if r := recover(); r == nil {
@@ -172,7 +174,7 @@ func TestASTDelete(t *testing.T) {
 		expr := a.NewIdent("x", nil, makeSpan())
 		pattern := a.NewSimpleType(Name{"Int", makeSpan()}, nil, makeSpan())
 		body := a.NewBlock(nil, makeSpan())
-		arms := []MatchArm{{Pattern: pattern, Binding: nil, Ref: false, Mut: false, Guard: nil, Body: body}}
+		arms := []MatchArm{{Patterns: []NodeID{pattern}, Binding: nil, Ref: false, Mut: false, Guard: nil, Body: body}}
 		_ = a.NewMatch(expr, arms, nil, makeSpan())
 		defer func() {
 			if r := recover(); r == nil {

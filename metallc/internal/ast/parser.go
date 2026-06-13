@@ -1868,7 +1868,7 @@ func (p *Parser) parseTry() (NodeID, bool) {
 	successIdent := p.NewIdent("__try", nil, span)
 	successBody := p.NewBlock([]NodeID{successIdent}, span)
 	arm := MatchArm{
-		Pattern: pattern, Binding: &successBinding, Ref: false, Mut: false, Guard: nil, Body: successBody,
+		Patterns: []NodeID{pattern}, Binding: &successBinding, Ref: false, Mut: false, Guard: nil, Body: successBody,
 	}
 	var else_ *MatchElse
 	if next, ok := p.mayPeek(); ok && next.Kind == token.Else && !p.isMatchElse() {
@@ -1922,12 +1922,26 @@ func (p *Parser) parseMatchArms() ([]MatchArm, *MatchElse, bool) {
 		if !ok {
 			return nil, nil, false
 		}
+		patterns := []NodeID{pattern}
+		// `case A or B:` groups variants into one arm.
+		for next, ok := p.mayPeek(); ok && next.Kind == token.Or; next, ok = p.mayPeek() {
+			p.next()
+			alt, ok := p.parseMatchPattern()
+			if !ok {
+				return nil, nil, false
+			}
+			patterns = append(patterns, alt)
+		}
 		binding, ref, mut, guard, body, ok := p.parseMatchArmBindingAndBody()
 		if !ok {
 			return nil, nil, false
 		}
+		if len(patterns) > 1 && guard != nil {
+			p.diagnostic(p.Node(*guard).Span, "a guard cannot be combined with an or-pattern")
+			return nil, nil, false
+		}
 		arms = append(arms, MatchArm{
-			Pattern: pattern, Binding: binding, Ref: ref, Mut: mut, Guard: guard, Body: body,
+			Patterns: patterns, Binding: binding, Ref: ref, Mut: mut, Guard: guard, Body: body,
 		})
 	}
 }

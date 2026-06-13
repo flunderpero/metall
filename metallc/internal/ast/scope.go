@@ -188,7 +188,9 @@ func visitMatch(
 ) {
 	visit(match.Expr)
 	for _, arm := range match.Arms {
-		visit(arm.Pattern)
+		for _, p := range arm.Patterns {
+			visit(p)
+		}
 		// Manually set the body block's scope and enter it so that
 		// both the guard and the body's children live in the same scope.
 		matchScope := g.NodeScope(matchNodeID)

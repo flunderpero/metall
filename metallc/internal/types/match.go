@@ -85,41 +85,56 @@ func (e *Engine) checkUnionMatchArms( //nolint:funlen
 	var bodies []armBody
 
 	for _, arm := range match.Arms {
-		var variantTypeID TypeID
-		if _, ok := e.ast.Node(arm.Pattern).Kind.(ast.TryPattern); ok {
-			variantTypeID = union.Variants[0]
-			variantCached, _ := e.env.cachedTypeInfo(variantTypeID)
-			e.env.setNodeType(arm.Pattern, variantCached)
-		} else {
-			var varStatus TypeStatus
-			variantTypeID, varStatus = e.Query(arm.Pattern)
-			if varStatus.Failed() {
-				return InvalidTypeID, TypeDepFailed
+		isTry := len(arm.Patterns) == 1
+		if isTry {
+			_, isTry = e.ast.Node(arm.Patterns[0]).Kind.(ast.TryPattern)
+		}
+		var firstVariantTypeID TypeID
+		for pi, pat := range arm.Patterns {
+			var variantTypeID TypeID
+			if isTry {
+				variantTypeID = union.Variants[0]
+				variantCached, _ := e.env.cachedTypeInfo(variantTypeID)
+				e.env.setNodeType(pat, variantCached)
+			} else {
+				var varStatus TypeStatus
+				variantTypeID, varStatus = e.Query(pat)
+				if varStatus.Failed() {
+					return InvalidTypeID, TypeDepFailed
+				}
 			}
-		}
-		matchedIdx := -1
-		for i, vID := range union.Variants {
-			if variantTypeID == vID {
-				matchedIdx = i
-				break
+			matchedIdx := -1
+			for i, vID := range union.Variants {
+				if variantTypeID == vID {
+					matchedIdx = i
+					break
+				}
 			}
-		}
-		if matchedIdx < 0 {
-			e.diag(e.ast.Node(arm.Pattern).Span, "type %s is not a variant of %s",
-				e.env.TypeDisplay(variantTypeID), e.env.TypeDisplay(unionTypeID))
-			return InvalidTypeID, TypeFailed
-		}
-		if arm.Guard == nil {
-			if covered[matchedIdx] {
-				e.diag(e.ast.Node(arm.Pattern).Span, "duplicate match arm for variant %s",
-					e.env.TypeDisplay(variantTypeID))
+			if matchedIdx < 0 {
+				e.diag(e.ast.Node(pat).Span, "type %s is not a variant of %s",
+					e.env.TypeDisplay(variantTypeID), e.env.TypeDisplay(unionTypeID))
 				return InvalidTypeID, TypeFailed
 			}
-			covered[matchedIdx] = true
+			if arm.Guard == nil {
+				if covered[matchedIdx] {
+					e.diag(e.ast.Node(pat).Span, "duplicate match arm for variant %s",
+						e.env.TypeDisplay(variantTypeID))
+					return InvalidTypeID, TypeFailed
+				}
+				covered[matchedIdx] = true
+			}
+			if pi == 0 {
+				firstVariantTypeID = variantTypeID
+			}
 		}
 		if arm.Binding != nil {
+			// One pattern binds that variant; an or-pattern binds the whole union.
+			bindBase := unionTypeID
+			if len(arm.Patterns) == 1 {
+				bindBase = firstVariantTypeID
+			}
 			bindTypeID, ok := e.matchBindingType(
-				e.ast.Node(arm.Pattern).Span, variantTypeID, arm.Ref, arm.Mut, matchedRefMut)
+				e.ast.Node(arm.Patterns[0]).Span, bindBase, arm.Ref, arm.Mut, matchedRefMut)
 			if !ok {
 				return InvalidTypeID, TypeFailed
 			}
@@ -251,8 +266,8 @@ func (e *Engine) checkEnumMatchArms( //nolint:funlen
 		// A `try` desugars to one narrowing arm plus an else that must break
 		// control flow. Bare `try` leaves a TryPattern, which has no subset to
 		// narrow to, so reject it here instead of in the arm loop.
-		if _, ok := e.ast.Node(match.Arms[0].Pattern).Kind.(ast.TryPattern); ok {
-			e.diag(e.ast.Node(match.Arms[0].Pattern).Span,
+		if _, ok := e.ast.Node(match.Arms[0].Patterns[0]).Kind.(ast.TryPattern); ok {
+			e.diag(e.ast.Node(match.Arms[0].Patterns[0]).Span,
 				"`try` on an enum requires a subset pattern, e.g. `try e is IOErr`")
 			return InvalidTypeID, TypeFailed
 		}
@@ -268,45 +283,64 @@ func (e *Engine) checkEnumMatchArms( //nolint:funlen
 	covered := map[string]bool{}
 	var bodies []ast.NodeID
 	for _, arm := range match.Arms {
-		// Resolve the pattern to the variant keys it covers and the type its
+		// Resolve each pattern to the variant keys it covers and the type its
 		// binding takes. `IOErr.broken_pipe` is one variant, one key. A bare
-		// subset like `IOErr` covers every variant of the subset.
-		patTypeID, status := e.Query(arm.Pattern)
-		if status.Failed() {
-			return InvalidTypeID, TypeDepFailed
-		}
-		patEnum, ok := e.env.Type(patTypeID).Kind.(EnumType)
-		if !ok {
-			e.diag(e.ast.Node(arm.Pattern).Span, "%s is not an enum variant or subset of %s",
-				e.env.TypeDisplay(patTypeID), e.env.TypeDisplay(enumTypeID))
-			return InvalidTypeID, TypeFailed
-		}
+		// subset like `IOErr` covers every variant of the subset. An or-pattern
+		// (`case a or b:`) covers the union of its patterns' keys.
 		var keys []string
-		if _, variant, isVariant := e.env.EnumVariantRef(arm.Pattern); isVariant {
-			inFamily := patTypeID == enumTypeID
-			if enum.IsOpen {
-				inFamily = patEnum.Root == enumTypeID
+		var firstPatTypeID TypeID
+		for pi, pat := range arm.Patterns {
+			patTypeID, status := e.Query(pat)
+			if status.Failed() {
+				return InvalidTypeID, TypeDepFailed
 			}
-			if !inFamily {
-				e.diag(e.ast.Node(arm.Pattern).Span, "%s.%s is not a variant of %s",
-					e.env.TypeDisplay(patTypeID), variant, e.env.TypeDisplay(enumTypeID))
-				return InvalidTypeID, TypeFailed
-			}
-			keys = []string{patEnum.Name + "." + variant}
-		} else {
-			if !enum.IsOpen || patEnum.Root != enumTypeID {
-				e.diag(e.ast.Node(arm.Pattern).Span, "%s is not a subset of %s",
+			patEnum, ok := e.env.Type(patTypeID).Kind.(EnumType)
+			if !ok {
+				e.diag(e.ast.Node(pat).Span, "%s is not an enum variant or subset of %s",
 					e.env.TypeDisplay(patTypeID), e.env.TypeDisplay(enumTypeID))
 				return InvalidTypeID, TypeFailed
 			}
-			keys = make([]string, len(patEnum.Variants))
-			for i, v := range patEnum.Variants {
-				keys[i] = patEnum.Name + "." + v.Name
+			if _, variant, isVariant := e.env.EnumVariantRef(pat); isVariant {
+				inFamily := patTypeID == enumTypeID
+				if enum.IsOpen {
+					inFamily = patEnum.Root == enumTypeID
+				}
+				if !inFamily {
+					e.diag(e.ast.Node(pat).Span, "%s.%s is not a variant of %s",
+						e.env.TypeDisplay(patTypeID), variant, e.env.TypeDisplay(enumTypeID))
+					return InvalidTypeID, TypeFailed
+				}
+				keys = append(keys, patEnum.Name+"."+variant)
+			} else {
+				if !enum.IsOpen || patEnum.Root != enumTypeID {
+					e.diag(e.ast.Node(pat).Span, "%s is not a subset of %s",
+						e.env.TypeDisplay(patTypeID), e.env.TypeDisplay(enumTypeID))
+					return InvalidTypeID, TypeFailed
+				}
+				for _, v := range patEnum.Variants {
+					keys = append(keys, patEnum.Name+"."+v.Name)
+				}
+			}
+			if pi == 0 {
+				firstPatTypeID = patTypeID
 			}
 		}
+		seen := map[string]bool{}
+		for _, k := range keys {
+			if seen[k] {
+				e.diag(e.ast.Node(arm.Patterns[0]).Span, "duplicate variant %s in or-pattern", k)
+				return InvalidTypeID, TypeFailed
+			}
+			seen[k] = true
+		}
 		if arm.Binding != nil {
+			// One pattern binds that variant/subset; an or-pattern binds the enum.
+			bindBase := enumTypeID
+			if len(arm.Patterns) == 1 {
+				bindBase = firstPatTypeID
+			}
 			bindTypeID, ok := e.matchBindingType(
-				e.ast.Node(arm.Pattern).Span, patTypeID, arm.Ref, arm.Mut, matchedRefMut)
+				e.ast.Node(arm.Patterns[0]).Span, bindBase, arm.Ref, arm.Mut, matchedRefMut)
 			if !ok {
 				return InvalidTypeID, TypeFailed
 			}
@@ -328,7 +362,7 @@ func (e *Engine) checkEnumMatchArms( //nolint:funlen
 				}
 			}
 			if !fresh {
-				e.diag(e.ast.Node(arm.Pattern).Span, "unreachable match arm: all variants already covered")
+				e.diag(e.ast.Node(arm.Patterns[0]).Span, "unreachable match arm: all variants already covered")
 				return InvalidTypeID, TypeFailed
 			}
 		}

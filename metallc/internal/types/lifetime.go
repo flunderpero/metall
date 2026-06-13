@@ -1040,19 +1040,27 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	a.Check(match.Expr)
 	exprChain := a.flow(match.Expr)
 	for _, arm := range match.Arms {
-		a.Check(arm.Pattern)
+		for _, p := range arm.Patterns {
+			a.Check(p)
+		}
 		if arm.Binding != nil {
 			ss := a.scopeFor(a.scopeGraph.IntroducedScope(arm.Body))
 			// A reference binding (`case Foo &x`) aliases the matched value's storage,
 			// so it always carries the matched value's reach. A value binding only
-			// propagates taint when the matched variant type can itself carry a
-			// borrow (a ref, allocator, or raw ffi pointer): `case Err e:` on a union
-			// that also holds `&mut File` must not taint `e`, but a value that borrows
-			// an arena through an ffi pointer must keep that borrow when unwrapped.
+			// propagates taint when a matched variant type can itself carry a borrow
+			// (a ref, allocator, or raw ffi pointer): `case Err e:` on a union that
+			// also holds `&mut File` must not taint `e`, but a value that borrows an
+			// arena through an ffi pointer must keep that borrow when unwrapped.
 			bindingChain := exprChain
 			if !arm.Ref {
-				variantType := a.env.TypeOfNode(arm.Pattern)
-				if variantType != nil && !a.typeContainsRefAllocOrFfiPtr(variantType.ID) {
+				carries := false
+				for _, p := range arm.Patterns {
+					if pt := a.env.TypeOfNode(p); pt != nil && a.typeContainsRefAllocOrFfiPtr(pt.ID) {
+						carries = true
+						break
+					}
+				}
+				if !carries {
 					bindingChain = nil
 				}
 			}
@@ -1117,10 +1125,12 @@ func (a *LifetimeCheck) elseBindingChain(match ast.Match, exprChain Chain) Chain
 	}
 	covered := make([]bool, len(union.Variants))
 	for _, arm := range match.Arms {
-		if pt := a.env.TypeOfNode(arm.Pattern); pt != nil {
-			for i, v := range union.Variants {
-				if v == pt.ID {
-					covered[i] = true
+		for _, p := range arm.Patterns {
+			if pt := a.env.TypeOfNode(p); pt != nil {
+				for i, v := range union.Variants {
+					if v == pt.ID {
+						covered[i] = true
+					}
 				}
 			}
 		}

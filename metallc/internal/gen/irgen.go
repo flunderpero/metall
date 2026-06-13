@@ -1571,19 +1571,23 @@ func (g *IRFunGen) buildMatchArmInfos(
 ) []matchArmInfo {
 	infos := make([]matchArmInfo, 0, len(match.Arms))
 	for i, arm := range match.Arms {
-		patternTypeID := g.typeIDOfNode(arm.Pattern)
-		tag := -1
-		for vi, vID := range union.Variants {
-			if patternTypeID == vID {
-				tag = vi
-				break
+		// An or-pattern contributes one switch target per variant, all jumping to
+		// the same arm body.
+		for _, pat := range arm.Patterns {
+			patternTypeID := g.typeIDOfNode(pat)
+			tag := -1
+			for vi, vID := range union.Variants {
+				if patternTypeID == vID {
+					tag = vi
+					break
+				}
 			}
+			if tag < 0 {
+				panic(base.Errorf("genMatch: variant not found"))
+			}
+			lbl := g.label(fmt.Sprintf("case_%d_%d", tag, i), id)
+			infos = append(infos, matchArmInfo{lbl, i, tag, ""})
 		}
-		if tag < 0 {
-			panic(base.Errorf("genMatch: variant not found"))
-		}
-		lbl := g.label(fmt.Sprintf("case_%d_%d", tag, i), id)
-		infos = append(infos, matchArmInfo{lbl, i, tag, ""})
 	}
 	// Chain guarded arms: if a guard fails, fall through to the next arm
 	// for the same variant tag. The last arm for a tag falls through to
@@ -1628,10 +1632,19 @@ func (g *IRFunGen) genMatchArms(
 	elseLabel Label,
 ) {
 	var phiEntries []matchPhiEntry
+	// An or-pattern produces one switch target per variant, all converging on a
+	// single body. The first target for an arm emits the body; the rest branch to
+	// it. (Or-patterns carry no guard, so the body's binding is variant-agnostic.)
+	armEntry := map[int]Label{}
 	for _, armInfo := range armInfos {
-		arm := match.Arms[armInfo.armIndex]
 		g.writeLabel(armInfo.label)
-		g.genMatchArmBinding(arm, payloadPtr)
+		if entry, ok := armEntry[armInfo.armIndex]; ok {
+			g.write("br label %%%s", entry)
+			continue
+		}
+		armEntry[armInfo.armIndex] = armInfo.label
+		arm := match.Arms[armInfo.armIndex]
+		g.genMatchArmBinding(match, arm, payloadPtr)
 		if arm.Guard != nil {
 			g.Gen(*arm.Guard)
 			guardReg := g.lookupCode(*arm.Guard)
@@ -1738,15 +1751,17 @@ func (g *IRFunGen) genEnumMatch(id ast.NodeID, match ast.Match, enumTypeID types
 		// Gather the tags this arm matches (one for a variant, every
 		// variant of a subset for a bare subset pattern), then test whether the
 		// value equals any of them.
+		// An or-pattern matches if the value equals any tag of any of its patterns.
 		var discrs []string
-		if refEnumID, variant, ok := g.env.EnumVariantRef(arm.Pattern); ok {
-			refEnum := base.Cast[types.EnumType](g.env.Type(refEnumID).Kind)
-			discrs = []string{refEnum.Variants[refEnum.VariantIndex(variant)].Tag.String()}
-		} else {
-			patEnum := base.Cast[types.EnumType](g.typeOfNode(arm.Pattern).Kind)
-			discrs = make([]string, len(patEnum.Variants))
-			for di, v := range patEnum.Variants {
-				discrs[di] = v.Tag.String()
+		for _, pat := range arm.Patterns {
+			if refEnumID, variant, ok := g.env.EnumVariantRef(pat); ok {
+				refEnum := base.Cast[types.EnumType](g.env.Type(refEnumID).Kind)
+				discrs = append(discrs, refEnum.Variants[refEnum.VariantIndex(variant)].Tag.String())
+			} else {
+				patEnum := base.Cast[types.EnumType](g.typeOfNode(pat).Kind)
+				for _, v := range patEnum.Variants {
+					discrs = append(discrs, v.Tag.String())
+				}
 			}
 		}
 		matchReg := g.reg()
@@ -1815,7 +1830,7 @@ func (g *IRFunGen) genEnumArmBinding(
 	g.setSymbol(ast.BindingID(bodyID), binding.Name, allocReg, intIR)
 }
 
-func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
+func (g *IRFunGen) genMatchArmBinding(match ast.Match, arm ast.MatchArm, payloadPtr string) {
 	body := base.Cast[ast.Block](g.ast.Node(arm.Body).Kind)
 	// An empty body never reads the binding, but a guard still can, so bind it
 	// whenever the arm is guarded even if the body is empty.
@@ -1824,8 +1839,20 @@ func (g *IRFunGen) genMatchArmBinding(arm ast.MatchArm, payloadPtr string) {
 	}
 	// Use the binding's recorded type, not the pattern's: a `&x` binding is typed
 	// `&Variant`. arm.Ref marks a projection into the (reference) matched value.
-	bindTypeID, _ := g.env.BindingType(ast.BindingID(arm.Body))
-	g.genMatchBinding(ast.BindingID(arm.Body), arm.Binding.Name, bindTypeID, payloadPtr, arm.Ref)
+	bindID := ast.BindingID(arm.Body)
+	bindTypeID, _ := g.env.BindingType(bindID)
+	// An or-pattern binds the whole matched value (its bound type is the union),
+	// not a single variant's payload, exactly as an else binding does.
+	if g.derefIfRef(bindTypeID) == g.derefIfRef(g.typeIDOfNode(match.Expr)) {
+		unionPtr := g.lookupCode(match.Expr)
+		if _, ok := g.env.Type(bindTypeID).Kind.(types.RefType); ok {
+			g.genMatchBinding(bindID, arm.Binding.Name, bindTypeID, unionPtr, arm.Ref)
+			return
+		}
+		g.setSymbol(bindID, arm.Binding.Name, unionPtr, "ptr")
+		return
+	}
+	g.genMatchBinding(bindID, arm.Binding.Name, bindTypeID, payloadPtr, arm.Ref)
 }
 
 func (g *IRFunGen) genMatchElseBinding(match ast.Match, payloadPtr string) {

@@ -4737,6 +4737,35 @@ test.met:7:15: reference escaping its allocation scope (via return)
                 case A &mut x: return x
 ```
 
+**or-pattern ref binding escapes when it borrows a local union**
+
+A `case A or B &mut x` binding aliases the whole matched value, so returning it
+escapes the local union just as a single-variant ref binding would.
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    struct C { v Int }
+    union U = A | B | C
+    fun foo() &mut U {
+        mut u = U(A(1))
+        match &mut u {
+            case A or B &mut x: return x
+            case C &mut y: return foo()
+        }
+    }
+}
+```
+
+```error
+test.met:8:15: reference escaping its allocation scope (via return)
+            mut u = U(A(1))
+            match &mut u {
+                  ^^^^^^
+                case A or B &mut x: return x
+```
+
 **ref binding borrowing a reference parameter is valid**
 
 ```metall

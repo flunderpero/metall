@@ -452,8 +452,10 @@ type Match struct {
 func (Match) isKind() {}
 
 type MatchArm struct {
-	Pattern NodeID // SimpleType (variant)
-	Binding *Name  // optional binding (nil if absent)
+	// Patterns holds one entry, or several for an or-pattern (`case A or B:`).
+	// Every entry must be a variant/subset of the matched type.
+	Patterns []NodeID
+	Binding  *Name // optional binding (nil if absent)
 	// Ref/Mut describe the binding: `&x` sets Ref, `&mut x` sets Ref+Mut.
 	Ref   bool
 	Mut   bool
@@ -976,7 +978,9 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 	case Match:
 		f(kind.Expr)
 		for _, arm := range kind.Arms {
-			f(arm.Pattern)
+			for _, p := range arm.Patterns {
+				f(p)
+			}
 			if arm.Guard != nil {
 				f(*arm.Guard)
 			}
@@ -1268,7 +1272,10 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 		} else {
 			addChild("expr", kind.Expr)
 			for i, arm := range kind.Arms {
-				addAttr(fmt.Sprintf("arm[%d].pattern", i), nodeIDKind(arm.Pattern))
+				addAttr(fmt.Sprintf("arm[%d].pattern", i), nodeIDKind(arm.Patterns[0]))
+				for j, p := range arm.Patterns[1:] {
+					addAttr(fmt.Sprintf("arm[%d].pattern.or[%d]", i, j), nodeIDKind(p))
+				}
 				if arm.Binding != nil {
 					addAttr(fmt.Sprintf("arm[%d].binding", i), arm.Binding.Name)
 				}
@@ -1893,7 +1900,9 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 	case Match:
 		required(k.Expr)
 		for i, arm := range k.Arms {
-			required(arm.Pattern)
+			for _, p := range arm.Patterns {
+				required(p)
+			}
 			required(arm.Body)
 			if arm.Guard != nil && *arm.Guard == childID {
 				arm.Guard = nil

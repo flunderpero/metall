@@ -3066,6 +3066,41 @@ Match(arms=2,arm[0].pattern=n3:FieldAccess,arm[1].pattern=n6:SimpleType,arm[1].b
     exprs=Int(value=3)
 ```
 
+**Match or-pattern**
+
+```metall
+match c {
+    case Color.red or Color.green: 1
+    case Color.blue: 2
+}
+```
+
+```ast
+Match(arms=2,arm[0].pattern=n3:FieldAccess,arm[0].pattern.or[0]=n5:FieldAccess,arm[1].pattern=n9:FieldAccess)
+  expr=Ident(name="c")
+  arm[0].body=Block()
+    exprs=Int(value=1)
+  arm[1].body=Block()
+    exprs=Int(value=2)
+```
+
+**Match guard cannot combine with an or-pattern**
+
+```metall
+match c {
+    case Color.red or Color.green if true: 1
+    else: 2
+}
+```
+
+```error
+test.met:2:38: a guard cannot be combined with an or-pattern
+    match c {
+        case Color.red or Color.green if true: 1
+                                         ^^^^
+        else: 2
+```
+
 **Match else with guard**
 
 ```metall
