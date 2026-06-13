@@ -250,6 +250,8 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID, status = e.checkMatch(nodeKind, node.Span, typeHint)
 	case ast.TypeConstruction:
 		typeID, status = e.checkTypeConstruction(nodeID, nodeKind, node.Span, typeHint)
+	case ast.ArrayConstruction:
+		typeID, status = e.checkArrayConstruction(nodeID, nodeKind, node.Span)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.SliceType:
@@ -1843,12 +1845,13 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 		return InvalidTypeID, TypeFailed
 	}
 	bindTypeID := exprTypeID
-	// This handles `mut sut = [3,2,4,1][..]` - the array literal is owned by
-	// this binding so mutation is safe.
+	// A freshly built array (`[a, b][..]` or `[N of v][..]`) is owned by this
+	// binding, so mutating through the slice is safe.
 	if varNode.Mut {
 		if sliceTyp, ok := e.env.Type(exprTypeID).Kind.(SliceType); ok && !sliceTyp.Mut {
 			if subSlice, ok := e.ast.Node(varNode.Expr).Kind.(ast.SubSlice); ok {
-				if _, ok := e.ast.Node(subSlice.Target).Kind.(ast.ArrayLiteral); ok {
+				switch e.ast.Node(subSlice.Target).Kind.(type) {
+				case ast.ArrayLiteral, ast.ArrayConstruction:
 					bindTypeID = e.env.buildSliceType(sliceTyp.Elem, true, nodeID, span)
 				}
 			}
@@ -2232,6 +2235,36 @@ func (e *Engine) checkUnionConstruction(
 		e.env.TypeDisplay(unionTypeID),
 	)
 	return InvalidTypeID, TypeFailed
+}
+
+func (e *Engine) checkArrayConstruction(
+	nodeID ast.NodeID, ac ast.ArrayConstruction, span base.Span,
+) (TypeID, TypeStatus) {
+	if ac.Elem != nil {
+		elemTypeID, status := e.Query(*ac.Elem)
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		if !ac.Unsafe {
+			e.diag(span, "uninitialized array requires unsafe: write [N of v] to fill it")
+			return InvalidTypeID, TypeFailed
+		}
+		return e.env.buildArrayType(elemTypeID, ac.Len, nodeID, span), TypeOK
+	}
+	if ac.Unsafe {
+		e.diag(span, "unsafe applies only to an uninitialized array [N uninit T]")
+		return InvalidTypeID, TypeFailed
+	}
+	valTypeID, status := e.Query(*ac.Fill)
+	if status.Failed() {
+		return InvalidTypeID, TypeDepFailed
+	}
+	if !e.isCopyable(valTypeID) {
+		e.diag(span, "cannot fill an array with nocopy type %s; use unsafe [N uninit T] and set each element",
+			e.env.TypeDisplay(valTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	return e.env.buildArrayType(valTypeID, ac.Len, nodeID, span), TypeOK
 }
 
 func (e *Engine) checkIntConstruction(

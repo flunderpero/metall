@@ -113,7 +113,13 @@ fun main() void {
 hello there 42!
 ```
 
-## Enums
+## Mutability
+
+Everything in Metall is immutable by default.
+
+## Basic Types
+
+### Enums
 
 An enum is a set of named, integer-backed constants. Variants can carry constant
 associated data and methods, and you `match` on them like on a union.
@@ -258,11 +264,79 @@ Earth
 Mars
 ```
 
-## Mutability
+### Arrays
 
-Everything in Metall is immutable by default.
+A fixed-size array `[N]T` stores its `N` elements inline. Its length is part of
+the type, which you can let the compiler infer or write out yourself. An array
+is not printable on its own; `[..]` views it as a slice.
 
-## Basic Types
+```metall
+use std.io
+
+fun main() void {
+    let xs = [1, 2, 3]
+    let ys [3]Int = [4, 5, 6]
+    io.println(xs[..])
+    io.println(ys[0])
+}
+```
+
+```output
+[1, 2, 3]
+4
+```
+
+`[N of v]` builds one by filling every element with a copy of `v`. The element
+type comes from the value, so this is a `[4]U8`.
+
+```metall
+use std.io
+
+fun main() void {
+    let zeros = [4 of U8(0)]
+    io.println(zeros[..])
+}
+```
+
+```output
+[0, 0, 0, 0]
+```
+
+Slicing a freshly built array as you define it hands you a mutable slice you
+own, so you can fill it in place.
+
+```metall
+use std.io
+
+fun main() void {
+    mut buf = [3 of Int(7)][..]
+    buf[1] = 0
+    io.println(buf)
+}
+```
+
+```output
+[7, 0, 7]
+```
+
+When every element will be overwritten anyway, `unsafe [N uninit T]` skips the
+initialization. The `unsafe` marks that the storage starts undefined.
+
+```metall
+use std.io
+
+fun main() void {
+    mut scratch = unsafe [3 uninit Int]
+    scratch[0] = 10
+    scratch[1] = 20
+    scratch[2] = 30
+    io.println(scratch[..])
+}
+```
+
+```output
+[10, 20, 30]
+```
 
 ## Terminology
 

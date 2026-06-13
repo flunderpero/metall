@@ -38,6 +38,11 @@
 (break_expression) @keyword
 (continue_expression) @keyword
 
+; `of`/`uninit` are contextual keywords: highlighted only inside array
+; construction, plain identifiers (caught by the fallback below) elsewhere.
+(array_construction "of" @keyword)
+(array_construction "uninit" @keyword)
+
 ; >>> Literals
 
 (integer_literal) @number

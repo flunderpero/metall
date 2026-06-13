@@ -204,7 +204,7 @@ fun main() void {
 
         -- Test with explicit pattern (here: `pattern.index`)
         mut it = "hi collect hi slices hi".as_bytes().lmatches(pattern.index("hi".as_bytes()))
-        try test.eq(["hi".as_bytes(), "hi".as_bytes(), "hi".as_bytes()][..], collect(it, @local))
+        try test.eq([3 of "hi".as_bytes()][..], collect(it, @local))
 
         -- From now on use `Slice` as the pattern because `Slice` satisfies `LPattern`.
         let empty [][]U8 = []
@@ -222,7 +222,7 @@ fun main() void {
 
         -- Test with explicit pattern (here: `pattern.index`)
         mut it = "hi collect hi slices hi".as_bytes().rmatches(pattern.index("hi".as_bytes()))
-        try test.eq(["hi".as_bytes(), "hi".as_bytes(), "hi".as_bytes()][..], collect(it, @local))
+        try test.eq([3 of "hi".as_bytes()][..], collect(it, @local))
 
         -- From now on use `Slice` as the pattern because `Slice` satisfies `RPattern`.
         let empty [][]U8 = []

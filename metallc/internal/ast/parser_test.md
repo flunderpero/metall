@@ -1597,6 +1597,45 @@ test.met:1:6: unexpected end of file
          ^
 ```
 
+**Array fill construction**
+
+```metall
+[4 of U8(42)]
+```
+
+```ast
+ArrayConstruction(len=4)
+  fill=TypeConstruction()
+    target=Ident(name="U8")
+    args=Int(value=42)
+```
+
+**Array uninitialized construction**
+
+```metall
+unsafe [3 uninit Int]
+```
+
+```ast
+ArrayConstruction(len=3,unsafe=true)
+  elem=SimpleType(name="Int")
+```
+
+**of is a keyword only right after the count, an identifier elsewhere**
+
+```metall
+{ let of = 99 of + 1 }
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="of")
+    expr=Int(value=99)
+  exprs[1]=Binary(op=+)
+    lhs=Ident(name="of")
+    rhs=Int(value=1)
+```
+
 ## Operators
 
 **int +**

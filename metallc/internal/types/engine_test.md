@@ -4741,6 +4741,86 @@ Fun: fun01
 fun01 = fun([3][]Int) void
 ```
 
+**Array fill construction infers the element type from the value**
+
+```metall
+[4 of U8(42)]
+```
+
+```types
+ArrayConstruction: [4]U8
+  TypeConstruction: U8
+    Ident: U8
+    Int: U8
+```
+
+**A typed binding rejects a length-mismatched construction**
+
+```metall
+{ let x [5]Int = [6 of 3] _ = x }
+```
+
+```error
+test.met:1:18: type mismatch: expected [Int 5], got [Int 6]
+    { let x [5]Int = [6 of 3] _ = x }
+                     ^^^^^^^^
+test.met:1:31: symbol not defined: x
+    { let x [5]Int = [6 of 3] _ = x }
+                                  ^
+```
+
+**Array uninitialized construction**
+
+```metall
+unsafe [3 uninit Int]
+```
+
+```types
+ArrayConstruction: [3]Int
+  SimpleType: Int
+```
+
+**Uninitialized array requires unsafe**
+
+```metall
+[3 uninit Int]
+```
+
+```error
+test.met:1:1: uninitialized array requires unsafe: write [N of v] to fill it
+    [3 uninit Int]
+    ^^^^^^^^^^^^^^
+```
+
+**Unsafe applies only to an uninitialized array**
+
+```metall
+unsafe [3 of Int(5)]
+```
+
+```error
+test.met:1:8: unsafe applies only to an uninitialized array [N uninit T]
+    unsafe [3 of Int(5)]
+           ^^^^^^^^^^^^^
+```
+
+**Array fill of a nocopy value is rejected**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let a = [3 of Handle(1)]
+}
+```
+
+```error
+test.met:3:13: cannot fill an array with nocopy type test.Handle; use unsafe [N uninit T] and set each element
+    fun foo() void {
+        let a = [3 of Handle(1)]
+                ^^^^^^^^^^^^^^^^
+    }
+```
+
 ## Arithmetic and comparison
 
 **Int +**
@@ -10239,6 +10319,18 @@ test.met:1:9: cannot infer type of empty slice []
 ```metall
 {
     mut sut = [3, 2, 4, 1][..]
+    sut[0] = 99
+}
+```
+
+```error
+```
+
+**Mut binding of array construction subslice is mutable**
+
+```metall
+{
+    mut sut = [4 of Int(0)][..]
     sut[0] = 99
 }
 ```

@@ -171,6 +171,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genReturn(id, kind)
 	case ast.TypeConstruction:
 		g.genTypeConstructionOnStack(id, kind)
+	case ast.ArrayConstruction:
+		g.genArrayConstruction(id, kind)
 	case ast.ArrayLiteral:
 		g.genArrayLiteral(id, kind)
 	case ast.EmptySlice:
@@ -444,6 +446,25 @@ func (g *IRFunGen) genTypeConstructionOnStack(id ast.NodeID, lit ast.TypeConstru
 	reg := g.reg()
 	g.writeAlloca(reg, irTyp)
 	g.genStructConstructionFields(id, id, lit, reg)
+}
+
+// genArrayConstruction lowers `[N of v]` (fill) and `unsafe [N uninit T]`
+// (uninit). The array is a stack value; fill reuses the same memory-init path
+// as the arena slice constructors, with a compile-time element count.
+func (g *IRFunGen) genArrayConstruction(id ast.NodeID, ac ast.ArrayConstruction) {
+	arrTyp := base.Cast[types.ArrayType](g.typeOfNode(id).Kind)
+	arrIRType := g.irTypeOfNode(id)
+	reg := g.reg()
+	g.writeAlloca(reg, arrIRType)
+	g.setCode(id, reg)
+	if ac.Fill == nil {
+		return
+	}
+	g.Gen(*ac.Fill)
+	valReg := g.lookupCode(*ac.Fill)
+	dataReg := g.fieldPtr(arrIRType, reg, 0)
+	n := arrTyp.Len
+	g.genInitializeMemory(dataReg, g.irType(arrTyp.Elem), valReg, arrTyp.Elem, fmt.Sprintf("%d", n), &n)
 }
 
 func (g *IRFunGen) genUnionConstruction(
@@ -3045,7 +3066,7 @@ func (g *IRFunGen) genVar(id ast.NodeID, v ast.Var) {
 			isAutoWrapped = true
 		}
 		switch exprNode.Kind.(type) {
-		case ast.TypeConstruction, ast.ArrayLiteral, ast.EmptySlice, ast.SubSlice, ast.Call:
+		case ast.TypeConstruction, ast.ArrayLiteral, ast.ArrayConstruction, ast.EmptySlice, ast.SubSlice, ast.Call:
 			g.setCode(id, exprReg)
 			g.setSymbol(ast.BindingID(id), v.Name.Name, exprReg, "ptr")
 		default:

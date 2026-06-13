@@ -101,7 +101,7 @@ pub fun RuneUTF8.as_slice(r &RuneUTF8) []U8 {
 pub fun Rune.to_bytes(r Rune) RuneUTF8 {
     -- todo: we should be able to return a slice to a locally allocated array?
     --       fun Rune.to_utf8(r Rune) []U8 { let bytes = [4][...] return bytes[0..2]}
-    mut bytes = [U8(0), 0, 0, 0]
+    mut bytes = [4 of U8(0)]
     let u = r.to_u32()
     when {
     case u < U32(1) << 7:
@@ -1803,8 +1803,7 @@ pub fun U32.fmt_into(v U32, dst []mut U8, base Int = 10, upper Bool = false, min
 }
 
 pub fun Float.fmt_into(v Float, dst []mut U8) ?Int {
-    let @local = Arena()
-    let scratch = @local.slice<U8>(48, 0)
+    mut scratch = [48 of U8(0)][..]
     let result = when {
     case v.is_nan():
         scratch[0..scratch.set("NaN".as_bytes())]

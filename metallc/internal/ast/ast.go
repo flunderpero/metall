@@ -508,6 +508,15 @@ type TypeConstruction struct {
 
 func (TypeConstruction) isKind() {}
 
+type ArrayConstruction struct {
+	Len    int64
+	Fill   *NodeID
+	Elem   *NodeID
+	Unsafe bool
+}
+
+func (ArrayConstruction) isKind() {}
+
 type Ref struct {
 	Target NodeID
 	Mut    bool
@@ -618,6 +627,14 @@ func (a *AST) NewCall(callee NodeID, args []NodeID, argNames []*Name, unsafe boo
 
 func (a *AST) NewTypeConstruction(target NodeID, args []NodeID, argNames []*Name, span base.Span) NodeID {
 	return a.node(TypeConstruction{Target: target, Args: args, ArgNames: argNames}, span)
+}
+
+func (a *AST) NewArrayFill(length int64, fill NodeID, span base.Span) NodeID {
+	return a.node(ArrayConstruction{Len: length, Fill: &fill, Elem: nil, Unsafe: false}, span)
+}
+
+func (a *AST) NewArrayUninit(length int64, elem NodeID, span base.Span) NodeID {
+	return a.node(ArrayConstruction{Len: length, Fill: nil, Elem: &elem, Unsafe: false}, span)
 }
 
 func (a *AST) NewDeref(expr NodeID, span base.Span) NodeID {
@@ -1076,6 +1093,13 @@ func (a *AST) Walk(id NodeID, f func(NodeID)) { //nolint:funlen
 		f(kind.Target)
 		for i := range len(kind.Args) {
 			f(kind.Args[i])
+		}
+	case ArrayConstruction:
+		if kind.Fill != nil {
+			f(*kind.Fill)
+		}
+		if kind.Elem != nil {
+			f(*kind.Elem)
 		}
 	case AllocatorVar:
 		f(kind.Expr)
@@ -1617,6 +1641,25 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addChild("target", kind.Target)
 			addChild("args", kind.Args...)
 		}
+	case ArrayConstruction:
+		addAttr("len", fmt.Sprintf("%d", kind.Len))
+		if kind.Unsafe {
+			addAttr("unsafe", "true")
+		}
+		if kind.Fill != nil {
+			if !children {
+				addAttr("fill", nodeIDKind(*kind.Fill))
+			} else {
+				addChild("fill", *kind.Fill)
+			}
+		}
+		if kind.Elem != nil {
+			if !children {
+				addAttr("elem", nodeIDKind(*kind.Elem))
+			} else {
+				addChild("elem", *kind.Elem)
+			}
+		}
 	case AllocatorVar:
 		addAttr("name", kind.Name.Name)
 		if !children {
@@ -1944,6 +1987,13 @@ func (a *AST) unlinkChild(parent *Node, childID NodeID) { //nolint:funlen,gocycl
 		required(k.Target)
 		k.Args = removeFromSlice(k.Args)
 		parent.Kind = k
+	case ArrayConstruction:
+		if k.Fill != nil {
+			required(*k.Fill)
+		}
+		if k.Elem != nil {
+			required(*k.Elem)
+		}
 	case AllocatorVar:
 		required(k.Expr)
 	case ArrayType:

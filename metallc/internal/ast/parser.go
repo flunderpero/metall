@@ -546,28 +546,25 @@ func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
 	return p.NewTypeConstruction(ident, args, argNames, struct_.Span.Combine(p.span())), true
 }
 
-func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
+func (p *Parser) ParseArrayLiteralOrConstruction() (NodeID, bool) {
 	t, ok := p.expect(token.LBracket)
 	if !ok {
 		return ParseFailed, false
 	}
 	span := t.Span
-	elems := []NodeID{}
+	first, ok := p.ParseExpr(0)
+	if !ok {
+		return ParseFailed, false
+	}
+	// `[N of v]` and `[N uninit T]` construct a fixed array. `of`/`uninit` are
+	// contextual keywords (plain idents elsewhere), recognized only right after
+	// the count, so they never collide with the array-literal grammar.
+	if kw, ok := p.mayPeek(); ok && kw.Kind == token.Ident && (kw.Value == "of" || kw.Value == "uninit") {
+		return p.parseArrayConstruction(first, span)
+	}
+	elems := []NodeID{first}
 	for {
-		t, ok := p.mustPeek()
-		if !ok {
-			return ParseFailed, false
-		}
-		if t.Kind == token.RBracket {
-			p.next()
-			break
-		}
-		expr, ok := p.ParseExpr(0)
-		if !ok {
-			return ParseFailed, false
-		}
-		elems = append(elems, expr)
-		t, ok = p.next()
+		t, ok := p.next()
 		if !ok {
 			return ParseFailed, false
 		}
@@ -583,6 +580,15 @@ func (p *Parser) ParseArrayLiteral() (NodeID, bool) {
 			)
 			return ParseFailed, false
 		}
+		if next, ok := p.mayPeek(); ok && next.Kind == token.RBracket {
+			p.next()
+			break
+		}
+		expr, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		elems = append(elems, expr)
 	}
 	return p.NewArrayLiteral(elems, span.Combine(p.span())), true
 }
@@ -990,7 +996,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			p.next()
 			expr = p.NewEmptySlice(t.Span.Combine(next.Span))
 		} else {
-			array, ok := p.ParseArrayLiteral()
+			array, ok := p.ParseArrayLiteralOrConstruction()
 			if !ok {
 				return ParseFailed, false
 			}
@@ -1063,13 +1069,17 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		if !ok {
 			return ParseFailed, false
 		}
-		call, isCall := p.Node(inner).Kind.(Call)
-		if !isCall {
+		switch kind := p.Node(inner).Kind.(type) {
+		case Call:
+			kind.Unsafe = true
+			p.Node(inner).Kind = kind
+		case ArrayConstruction:
+			kind.Unsafe = true
+			p.Node(inner).Kind = kind
+		default:
 			p.diagnostic(span, "unsafe can only be applied to function calls")
 			return ParseFailed, false
 		}
-		call.Unsafe = true
-		p.Node(inner).Kind = call
 		return inner, true
 	default:
 		p.diagnostic(t.Span, "unexpected token: expected start of an expression, got %s", t.Kind)
@@ -2070,6 +2080,43 @@ func (p *Parser) isStructTarget(nodeID NodeID) bool {
 	default:
 		return false
 	}
+}
+
+// parseArrayConstruction parses the tail of `[N of v]` / `[N uninit T]` after the
+// count expression. `of`/`uninit` are contextual keywords lexed as identifiers.
+func (p *Parser) parseArrayConstruction(count NodeID, span base.Span) (NodeID, bool) {
+	kw, ok := p.next()
+	if !ok {
+		return ParseFailed, false
+	}
+	if kw.Kind != token.Ident || (kw.Value != "of" && kw.Value != "uninit") {
+		p.diagnostic(kw.Span, "unexpected token: expected of or uninit, got %s", kw.Kind)
+		return ParseFailed, false
+	}
+	intKind, ok := p.Node(count).Kind.(Int)
+	if !ok || !intKind.Value.IsInt64() || intKind.Value.Int64() <= 0 {
+		p.diagnostic(p.Node(count).Span, "array length must be a positive integer literal")
+		return ParseFailed, false
+	}
+	length := intKind.Value.Int64()
+	if kw.Value == "of" {
+		value, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		if _, ok := p.expect(token.RBracket); !ok {
+			return ParseFailed, false
+		}
+		return p.NewArrayFill(length, value, span.Combine(p.span())), true
+	}
+	elem, ok := p.ParseType()
+	if !ok {
+		return ParseFailed, false
+	}
+	if _, ok := p.expect(token.RBracket); !ok {
+		return ParseFailed, false
+	}
+	return p.NewArrayUninit(length, elem, span.Combine(p.span())), true
 }
 
 func (p *Parser) parseTypeParams() ([]NodeID, bool) {

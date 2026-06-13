@@ -3943,6 +3943,52 @@ fun main() void {
 30
 ```
 
+## Array Construction
+
+**fill, zero, uninit, struct fill, and multidim**
+
+`[N of v]` fills every element with a copy of `v`; `unsafe [N uninit T]` leaves
+the storage uninitialized for later assignment. The element type is inferred
+from the fill value (so `7` is a `U8` here), and a multidim array fills with a
+row value.
+
+```metall
+struct Pt { pub x Int pub y Int }
+fun main() void {
+    let a = [4 of U8(7)]
+    DebugIntern.print_uint(a[0].to_u64())
+    DebugIntern.print_uint(a[3].to_u64())
+
+    let z = [3 of Int(0)]
+    DebugIntern.print_int(z[0] + z[1] + z[2])
+
+    mut b = unsafe [3 uninit Int]
+    b[0] = 10
+    b[1] = 20
+    b[2] = 30
+    DebugIntern.print_int(b[0] + b[1] + b[2])
+
+    let pts = [2 of Pt(1, 2)]
+    DebugIntern.print_int(pts[0].x)
+    DebugIntern.print_int(pts[1].y)
+
+    let grid = [2 of [3 of Int(5)]]
+    DebugIntern.print_int(grid[0][0])
+    DebugIntern.print_int(grid[1][2])
+}
+```
+
+```output
+7
+7
+0
+60
+1
+2
+5
+5
+```
+
 ## Match On References
 
 **match on a reference projects, binds references, and mutates in place**

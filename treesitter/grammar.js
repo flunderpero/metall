@@ -518,6 +518,7 @@ module.exports = grammar({
         $.allocator_identifier,
         $.grouped_expression,
         $.array_literal,
+        $.array_construction,
         $.empty_slice,
         $.block,
 
@@ -538,7 +539,7 @@ module.exports = grammar({
 
         // Postfix.
         $.call_expression,
-        $.unsafe_call,
+        $.unsafe_expression,
         $.field_access,
         $.index_expression,
         $.sub_slice,
@@ -708,11 +709,14 @@ module.exports = grammar({
         ),
       ),
 
-    // `unsafe foo(args)`. A dedicated rule (rather than an optional modifier on
-    // call_expression) keeps `unsafe` attached to exactly one parse, so the
+    // `unsafe foo(args)` or `unsafe [N uninit T]`. A dedicated rule (rather than
+    // an optional modifier) keeps `unsafe` attached to exactly one parse, so the
     // grammar stays conflict-free.
-    unsafe_call: ($) =>
-      prec.right(PREC.UNARY, seq("unsafe", $.call_expression)),
+    unsafe_expression: ($) =>
+      prec.right(
+        PREC.UNARY,
+        seq("unsafe", choice($.call_expression, $.array_construction)),
+      ),
 
     argument_list: ($) =>
       seq($._argument, repeat(seq(",", $._argument)), optional(",")),
@@ -925,6 +929,20 @@ module.exports = grammar({
       ),
 
     empty_slice: (_) => seq("[", "]"),
+
+    // `[N of value]` fills a fixed array; `[N uninit Type]` (under an `unsafe`
+    // prefix) leaves it uninitialized. `of`/`uninit` are contextual keywords:
+    // the `word` rule keeps them usable as ordinary identifiers elsewhere.
+    array_construction: ($) =>
+      seq(
+        "[",
+        field("length", $.integer_literal),
+        choice(
+          seq("of", field("value", $._expression)),
+          seq("uninit", field("element", $._type)),
+        ),
+        "]",
+      ),
 
     // >>> Grouped expression
 

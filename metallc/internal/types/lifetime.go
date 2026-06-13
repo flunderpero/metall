@@ -331,6 +331,8 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 		a.analyzeTypeConstruction(nodeID, kind)
 	case ast.ArrayLiteral:
 		a.analyzeArrayLiteral(nodeID, kind)
+	case ast.ArrayConstruction:
+		a.analyzeArrayConstruction(nodeID, kind)
 	case ast.EmptySlice:
 		// No children to analyze.
 	case ast.Index:
@@ -467,6 +469,11 @@ func (a *LifetimeCheck) storageScopes(nodeID ast.NodeID) TaintSet {
 		return TaintSet{vt.StorageTaint}
 	case ast.Deref:
 		return a.flow(kind.Expr).HeadTaintSet()
+	case ast.ArrayConstruction:
+		// A `[N of v]`/`[N uninit T]` temporary is a fresh stack array owned by
+		// this scope, so a slice into it cannot outlive the scope.
+		// It is different from an ArrayLiteral which is promoted to a global constant.
+		return TaintSet{a.scopeState(nodeID).ScopeTaint}
 	default:
 		return nil
 	}
@@ -716,6 +723,18 @@ func (a *LifetimeCheck) analyzeArrayLiteral(nodeID ast.NodeID, lit ast.ArrayLite
 	merged := a.mergeFlows(lit.Elems)
 	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeArrayLiteral: %s", merged)
+}
+
+// analyzeArrayConstruction: `[N of v]` carries v's chain (every element is a
+// copy of v); `[N uninit T]` has no value and so no chain. The fresh array's
+// own stack storage is scoped where it is built (see storageScopes), so only a
+// slice into it is scope-bound; the array used by value is freely copyable.
+func (a *LifetimeCheck) analyzeArrayConstruction(nodeID ast.NodeID, ac ast.ArrayConstruction) {
+	a.ast.Walk(nodeID, a.Check)
+	if ac.Fill != nil {
+		a.chains[nodeID] = a.mergeFlows([]ast.NodeID{*ac.Fill})
+	}
+	a.debug(1, nodeID, "analyzeArrayConstruction: %s", a.chains[nodeID])
 }
 
 // analyzeIndex: `arr[i]` reads an element. Type-gated like a field read.

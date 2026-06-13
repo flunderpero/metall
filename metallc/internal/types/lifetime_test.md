@@ -377,6 +377,46 @@ test.met:5:9: reference escaping its allocation scope (via block result)
         }
 ```
 
+**array fill carrying a borrow escapes**
+
+`[N of &y]` copies the borrow into every element, so the array carries `y`'s
+chain and cannot outlive it.
+
+```metall
+let x = {
+    let y = 123
+    [2 of &y]
+}
+```
+
+```error
+test.met:3:11: reference escaping its allocation scope (via block result)
+        let y = 123
+        [2 of &y]
+              ^^
+    }
+```
+
+**array construction subslice cannot escape its scope**
+
+A `[N of v]` array is a fresh stack value, so a slice into it must not outlive
+the scope that built it (unlike an immutable array literal, which is promoted to
+a global).
+
+```metall
+let x = {
+    [3 of Int(0)][..]
+}
+```
+
+```error
+test.met:2:5: reference escaping its allocation scope (via block result)
+    let x = {
+        [3 of Int(0)][..]
+        ^^^^^^^^^^^^^^^^^
+    }
+```
+
 **deref on rhs escapes**
 
 ```metall
