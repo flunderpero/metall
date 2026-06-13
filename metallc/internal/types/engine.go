@@ -251,7 +251,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.TypeConstruction:
 		typeID, status = e.checkTypeConstruction(nodeID, nodeKind, node.Span, typeHint)
 	case ast.ArrayConstruction:
-		typeID, status = e.checkArrayConstruction(nodeID, nodeKind, node.Span)
+		typeID, status = e.checkArrayConstruction(nodeID, nodeKind, node.Span, typeHint)
 	case ast.ArrayType:
 		typeID, status = e.checkArrayType(nodeID, nodeKind, node.Span)
 	case ast.SliceType:
@@ -259,7 +259,7 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.FunType:
 		typeID, status = e.checkFunType(nodeID, nodeKind, node.Span)
 	case ast.ArrayLiteral:
-		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span)
+		typeID, status = e.checkArrayLiteral(nodeID, nodeKind, node.Span, typeHint)
 	case ast.EmptySlice:
 		typeID, status = e.checkEmptySlice(node.Span, typeHint)
 	case ast.Index:
@@ -1933,16 +1933,32 @@ func (e *Engine) checkSliceType(nodeID ast.NodeID, sliceType ast.SliceType, span
 	return e.env.buildSliceType(elemTypeID, sliceType.Mut, nodeID, span), TypeOK
 }
 
-func (e *Engine) checkArrayLiteral(nodeID ast.NodeID, array ast.ArrayLiteral, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkArrayLiteral(
+	nodeID ast.NodeID, array ast.ArrayLiteral, span base.Span, typeHint *TypeID,
+) (TypeID, TypeStatus) {
 	if len(array.Elems) == 0 {
 		e.diag(span, "array literal cannot be empty")
 		return InvalidTypeID, TypeFailed
 	}
-	elemTyp, status := e.Query(array.Elems[0])
-	if status.Failed() {
-		return InvalidTypeID, TypeDepFailed
+	// An array-typed hint flows its element type into every element (so a `U8`
+	// array literal need not write `U8(..)` on the first element); otherwise the
+	// first element seeds the type.
+	var elemTyp TypeID
+	hinted := false
+	if typeHint != nil {
+		if arr, ok := e.env.Type(*typeHint).Kind.(ArrayType); ok {
+			elemTyp = arr.Elem
+			hinted = true
+		}
 	}
-	for _, elemNodeID := range array.Elems[1:] {
+	if !hinted {
+		seed, status := e.Query(array.Elems[0])
+		if status.Failed() {
+			return InvalidTypeID, TypeDepFailed
+		}
+		elemTyp = seed
+	}
+	for _, elemNodeID := range array.Elems {
 		elemTyp2, status := e.queryWithHint(elemNodeID, &elemTyp)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
@@ -2238,7 +2254,7 @@ func (e *Engine) checkUnionConstruction(
 }
 
 func (e *Engine) checkArrayConstruction(
-	nodeID ast.NodeID, ac ast.ArrayConstruction, span base.Span,
+	nodeID ast.NodeID, ac ast.ArrayConstruction, span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
 	if ac.Elem != nil {
 		elemTypeID, status := e.Query(*ac.Elem)
@@ -2255,7 +2271,16 @@ func (e *Engine) checkArrayConstruction(
 		e.diag(span, "unsafe applies only to an uninitialized array [N uninit T]")
 		return InvalidTypeID, TypeFailed
 	}
-	valTypeID, status := e.Query(*ac.Fill)
+	// An array-typed hint flows its element type into the fill value, so
+	// `[32 of 1]` against a `[32]U8` field fills with `U8`, not `Int`.
+	var elemHint *TypeID
+	if typeHint != nil {
+		if arr, ok := e.env.Type(*typeHint).Kind.(ArrayType); ok {
+			h := arr.Elem
+			elemHint = &h
+		}
+	}
+	valTypeID, status := e.queryWithHint(*ac.Fill, elemHint)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}

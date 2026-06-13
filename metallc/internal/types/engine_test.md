@@ -4769,6 +4769,77 @@ test.met:1:31: symbol not defined: x
                                   ^
 ```
 
+**Annotation flows the element type into an array literal**
+
+```metall
+{ let a [4]U8 = [1, 2, 3, 4] _ = a }
+```
+
+```types
+Block: void
+  Var: void
+    ArrayType: [4]U8
+      SimpleType: U8
+    ArrayLiteral: [4]U8
+      Int: U8
+      Int: U8
+      Int: U8
+      Int: U8
+  Assign: void
+    Ident: ?
+    Ident: [4]U8
+```
+
+**Annotation flows the element type into a fill construction**
+
+```metall
+{ let a [4]U8 = [4 of 1] _ = a }
+```
+
+```types
+Block: void
+  Var: void
+    ArrayType: [4]U8
+      SimpleType: U8
+    ArrayConstruction: [4]U8
+      Int: U8
+  Assign: void
+    Ident: ?
+    Ident: [4]U8
+```
+
+**Field type flows into a construction argument**
+
+```metall module
+struct A { a [4]U8 }
+fun f() void {
+    let x = A([4 of 1])
+    _ = x
+}
+```
+
+```types
+Module: test
+  Struct: struct01
+    StructField: ?
+      ArrayType: ?
+        SimpleType: ?
+  Fun: fun01
+    SimpleType: void
+    Block: void
+      Var: void
+        TypeConstruction: struct01
+          Ident: struct01
+          ArrayConstruction: [4]U8
+            Int: U8
+      Assign: void
+        Ident: ?
+        Ident: struct01
+---
+struct01 = A { a [4]U8 }
+fun01    = sync fun() void
+```
+
 **Array uninitialized construction**
 
 ```metall
