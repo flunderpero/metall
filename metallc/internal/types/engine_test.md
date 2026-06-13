@@ -1486,6 +1486,31 @@ struct01 = Foo { one Str }
 fun01    = sync fun(struct01) void
 ```
 
+**Field referencing a struct that fails to complete**
+
+A field naming a struct completed after this one shares that struct's cached
+type. It must not be flipped to ok before the named struct's own completion
+fails on the unknown field type.
+
+```metall
+{
+    struct A {
+        b B
+    }
+    struct B {
+        g DoesNotExist
+    }
+}
+```
+
+```error
+test.met:6:11: symbol not defined: DoesNotExist
+        struct B {
+            g DoesNotExist
+              ^^^^^^^^^^^^
+        }
+```
+
 **Struct construction**
 
 ```metall
@@ -2056,6 +2081,29 @@ test.met:2:23: symbol not defined: DoesNotExist
         union Foo = Str | DoesNotExist
                           ^^^^^^^^^^^^
         fun test(f Foo) Str {
+```
+
+**Union with unknown variant referenced by a struct field**
+
+A struct field is completed before the union it names, so the union's shared
+cached type must not be flipped to ok before its own completion fails on the
+unknown variant.
+
+```metall
+{
+    union Foo = Str | DoesNotExist
+    struct Holder {
+        f Foo
+    }
+}
+```
+
+```error
+test.met:2:23: symbol not defined: DoesNotExist
+    {
+        union Foo = Str | DoesNotExist
+                          ^^^^^^^^^^^^
+        struct Holder {
 ```
 
 ## Union Auto-Wrap
@@ -12281,6 +12329,29 @@ test.met:1:21: duplicate enum variant: a
 test.met:1:24: enum Bad must be backed by an integer type or an open enum, got S
     { struct S {} enum Bad S = a | b }
                            ^
+```
+
+**Unknown backing referenced by a struct field**
+
+A struct field naming the enum is completed before the enum, so the enum's
+shared cached type must not be flipped to ok before its own completion fails on
+the unknown backing.
+
+```metall
+{
+    enum Bad DoesNotExist = a | b
+    struct Holder {
+        f Bad
+    }
+}
+```
+
+```error
+test.met:2:14: symbol not defined: DoesNotExist
+    {
+        enum Bad DoesNotExist = a | b
+                 ^^^^^^^^^^^^
+        struct Holder {
 ```
 
 **Subset variant cannot have an explicit tag**

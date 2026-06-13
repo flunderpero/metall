@@ -254,18 +254,25 @@ func (c *TypeContext) updateCachedType(
 	if !ok {
 		panic(base.Errorf("type %s not found for %s", typeID, c.ast.Debug(node.ID, false, 0)))
 	}
-	if cached.Status != status && cached.Status != TypeInProgress {
-		panic(
-			base.Errorf(
-				"invalid status transition for type %s of %s: %s -> %s",
-				typeID,
-				c.ast.Debug(node.ID, false, 0),
-				cached.Status,
-				status,
-			),
-		)
+	// Only the node that declares a type owns its lifecycle status. A node that
+	// merely references a still-forward-declared type (e.g. a struct field whose
+	// type is a union not yet completed) shares the same cachedType pointer; if it
+	// wrote its own <ok> here, the type's later genuine completion would trip the
+	// transition guard as <ok> -> <failed dependency>.
+	if cached.Type.NodeID == node.ID {
+		if cached.Status != status && cached.Status != TypeInProgress {
+			panic(
+				base.Errorf(
+					"invalid status transition for type %s of %s: %s -> %s",
+					typeID,
+					c.ast.Debug(node.ID, false, 0),
+					cached.Status,
+					status,
+				),
+			)
+		}
+		cached.Status = status
 	}
-	cached.Status = status
 	c.env.setNodeType(node.ID, cached)
 	if status.Failed() {
 		return InvalidTypeID, status
