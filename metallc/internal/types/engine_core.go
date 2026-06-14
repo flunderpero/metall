@@ -116,6 +116,16 @@ func (c *TypeContext) bind(
 	span base.Span,
 	blockExprsIndex int,
 ) bool {
+	// A prelude top-level symbol is reserved: redefining or shadowing it in any scope
+	// is an error.
+	if existing, ok := c.lookup(nodeID, name, blockExprsIndex); ok &&
+		ast.IsMinPreludeNode(c.ast, existing.Decl) && !ast.IsPreludeNode(nodeID) {
+		switch c.ast.Node(existing.Decl).Kind.(type) {
+		case ast.Struct, ast.Union, ast.Enum, ast.Shape, ast.Fun:
+			c.diag(span, "reserved symbol: %s (defined in prelude)", name)
+			return false
+		}
+	}
 	if !c.env.bind(nodeID, name, mut, typeID, blockExprsIndex) && c.env.IsRoot() {
 		c.diag(span, "symbol already defined: %s", name)
 		return false

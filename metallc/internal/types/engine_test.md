@@ -8321,16 +8321,16 @@ fun06    = fun(struct03) Int
 
 ```metall
 {
-    shape Iter<T> {
-        fun Iter.next(it Iter) ?T
+    shape Seq<T> {
+        fun Seq.next(it Seq) ?T
     }
-    struct Range { cur Int max Int }
-    fun Range.next(r Range) ?Int {
+    struct Counter { cur Int max Int }
+    fun Counter.next(r Counter) ?Int {
         if r.cur >= r.max { return None() }
         Option(r.cur)
     }
-    fun sum<T Iter<Int>>(it T) Int { 0 }
-    sum<Range>(Range(0, 10))
+    fun sum<T Seq<Int>>(it T) Int { 0 }
+    sum<Counter>(Counter(0, 10))
 }
 ```
 
@@ -8383,13 +8383,13 @@ Block: Int
       Int: Int
       Int: Int
 ---
-shape01  = Iter {  }
-struct01 = Range { cur Int, max Int }
+shape01  = Seq {  }
+struct01 = Counter { cur Int, max Int }
 struct02 = None {  }
 union01  = Option<Int> = Int | struct02
 fun01    = sync fun(struct01) union01
 fun02    = fun(T) Int
-shape02  = Iter {  }
+shape02  = Seq {  }
 fun03    = fun(struct01) Int
 ```
 
@@ -8397,12 +8397,12 @@ fun03    = fun(struct01) Int
 
 ```metall
 {
-    shape Iter<T> {
-        fun Iter.next(it &mut Iter) ?T
+    shape Seq<T> {
+        fun Seq.next(it &mut Seq) ?T
     }
     struct Nums { i Int }
     fun Nums.next(n &mut Nums) ?Int { let v = n.i n.i = n.i + 1 Option(v) }
-    fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
+    fun first<E, T Seq<E>>(it &mut T) ?E { it.next() }
     mut n = Nums(0)
     first<Int, Nums>(&mut n)
 }
@@ -8465,12 +8465,12 @@ Block: union01
 ---
 struct01 = None {  }
 union01  = Option<Int> = Int | struct01
-shape01  = Iter {  }
+shape01  = Seq {  }
 struct02 = Nums { i Int }
 fun01    = fun(&mut struct02) union01
 union02  = Option<E> = E | struct01
 fun02    = fun(&mut T) union02
-shape02  = Iter {  }
+shape02  = Seq {  }
 fun03    = fun(&mut T) union02
 fun04    = fun(&mut struct02) union01
 ```
@@ -8479,12 +8479,12 @@ fun04    = fun(&mut struct02) union01
 
 ```metall
 {
-    shape Iter<T> {
-        fun Iter.next(it &mut Iter) ?T
+    shape Seq<T> {
+        fun Seq.next(it &mut Seq) ?T
     }
     struct Nums { i Int }
     fun Nums.next(n &mut Nums) ?Int { let v = n.i n.i = n.i + 1 Option(v) }
-    fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
+    fun first<E, T Seq<E>>(it &mut T) ?E { it.next() }
     mut n = Nums(0)
     first(&mut n)
 }
@@ -8547,12 +8547,12 @@ Block: union01
 ---
 struct01 = None {  }
 union01  = Option<Int> = Int | struct01
-shape01  = Iter {  }
+shape01  = Seq {  }
 struct02 = Nums { i Int }
 fun01    = fun(&mut struct02) union01
 union02  = Option<E> = E | struct01
 fun02    = fun(&mut T) union02
-shape02  = Iter {  }
+shape02  = Seq {  }
 fun03    = fun(&mut T) union02
 fun04    = fun(&mut struct02) union01
 ```
@@ -8583,19 +8583,19 @@ fun main() !void {
 
 ```metall
 {
-    shape Iter<T> {
-        fun Iter.next(it &mut Iter) ?T
+    shape Seq<T> {
+        fun Seq.next(it &mut Seq) ?T
     }
     struct Foo { }
     fun Foo.next(f &mut Foo) ?Str { None() }
-    fun first<E, T Iter<E>>(it &mut T) ?E { it.next() }
+    fun first<E, T Seq<E>>(it &mut T) ?E { it.next() }
     mut f = Foo()
     first<Int, Foo>(&mut f)
 }
 ```
 
 ```error
-test.met:9:5: type mismatch: expected Iter<Int>, got Iter<Str>
+test.met:9:5: type mismatch: expected Seq<Int>, got Seq<Str>
         mut f = Foo()
         first<Int, Foo>(&mut f)
         ^^^^^^^^^^^^^^^
@@ -9682,6 +9682,18 @@ test.met:1:19: symbol already defined: x
 test.met:1:25: symbol already defined: foo
     { fun foo() void {} fun foo() void {} }
                             ^^^
+```
+
+**Redefining a prelude symbol is reserved**
+
+```metall module
+struct Int { x U8 }
+```
+
+```error
+test.met:1:8: reserved symbol: Int (defined in prelude)
+    struct Int { x U8 }
+           ^^^
 ```
 
 **Duplicate generic method called (module)**

@@ -10,8 +10,7 @@ pub struct Void_ {}
 --- A placeholder type for the builtin `Never` type. ---
 pub struct Never_ {}
 
---- A placeholder type for the builtin `Arena` type. ---
-pub struct Arena_ {}
+pub struct Arena {}
 
 pub fun Arena.new<T>(@a Arena, value T) &mut T {}
 pub fun Arena.slice<T>(@a Arena, len Int, default T) []mut T {}
@@ -20,10 +19,10 @@ pub fun Arena.grow<T>(@a Arena, s []T, new_len Int, default T) []mut T {}
 pub unsafe fun Arena.grow_uninit<T>(@a Arena, s []T, new_len Int) []mut T {}
 
 --- A placeholder type for the builtin `Bool` type. ---
-pub struct Bool_ {}
+pub struct Bool {}
 
 --- A placeholder type for the builtin `I8` type. ---
-pub struct I8_ {}
+pub struct I8 {}
 
 pub fun I8.to_i16(self I8) I16 {}
 pub fun I8.to_i32(self I8) I32 {}
@@ -34,7 +33,7 @@ pub fun I8.to_u32_wrapping(self I8) U32 {}
 pub fun I8.to_u64_wrapping(self I8) U64 {}
 
 --- A placeholder type for the builtin `I16` type. ---
-pub struct I16_ {}
+pub struct I16 {}
 
 pub fun I16.to_i32(self I16) I32 {}
 pub fun I16.to_int(self I16) Int {}
@@ -45,7 +44,7 @@ pub fun I16.to_u32_wrapping(self I16) U32 {}
 pub fun I16.to_u64_wrapping(self I16) U64 {}
 
 --- A placeholder type for the builtin `I32` type. ---
-pub struct I32_ {}
+pub struct I32 {}
 
 pub fun I32.to_int(self I32) Int {}
 pub fun I32.to_i8_wrapping(self I32) I8 {}
@@ -56,7 +55,7 @@ pub fun I32.to_u32_wrapping(self I32) U32 {}
 pub fun I32.to_u64_wrapping(self I32) U64 {}
 
 --- A placeholder type for the builtin `Int` type. ---
-pub struct Int_ {}
+pub struct Int {}
 
 pub fun Int.to_i8_wrapping(self Int) I8 {}
 pub fun Int.to_i16_wrapping(self Int) I16 {}
@@ -69,7 +68,7 @@ pub fun Int.to_float(self Int) Float {}
 pub fun Int.to_f32(self Int) F32 {}
 
 --- A placeholder type for the builtin `U8` type. ---
-pub struct U8_ {}
+pub struct U8 {}
 
 pub fun U8.to_u16(self U8) U16 {}
 pub fun U8.to_u32(self U8) U32 {}
@@ -80,7 +79,7 @@ pub fun U8.to_int(self U8) Int {}
 pub fun U8.to_i8_wrapping(self U8) I8 {}
 
 --- A placeholder type for the builtin `U16` type. ---
-pub struct U16_ {}
+pub struct U16 {}
 
 pub fun U16.to_u32(self U16) U32 {}
 pub fun U16.to_u64(self U16) U64 {}
@@ -91,7 +90,7 @@ pub fun U16.to_i16_wrapping(self U16) I16 {}
 pub fun U16.to_i8_wrapping(self U16) I8 {}
 
 --- A placeholder type for the builtin `U32` type. ---
-pub struct U32_ {}
+pub struct U32 {}
 
 pub fun U32.to_u64(self U32) U64 {}
 pub fun U32.to_int(self U32) Int {}
@@ -102,7 +101,7 @@ pub fun U32.to_i16_wrapping(self U32) I16 {}
 pub fun U32.to_i8_wrapping(self U32) I8 {}
 
 --- A placeholder type for the builtin `U64` type. ---
-pub struct U64_ {}
+pub struct U64 {}
 
 pub fun U64.to_u8_wrapping(self U64) U8 {}
 pub fun U64.to_u16_wrapping(self U64) U16 {}
@@ -111,7 +110,7 @@ pub fun U64.to_int_wrapping(self U64) Int {}
 pub fun U64.to_i32_wrapping(self U64) I32 {}
 
 --- A placeholder type for the builtin `Float` type. ---
-pub struct Float_ {}
+pub struct Float {}
 
 pub fun Float.to_f32(self Float) F32 {}
 pub fun Float.to_int(self Float) Int {}
@@ -121,7 +120,7 @@ pub fun Float.to_bits(self Float) U64 {}
 pub fun Float.from_bits(bits U64) Float {}
 
 --- A placeholder type for the builtin `F32` type. ---
-pub struct F32_ {}
+pub struct F32 {}
 
 pub fun F32.to_float(self F32) Float {}
 pub fun F32.to_int(self F32) Int {}
@@ -131,15 +130,15 @@ pub fun F32.to_bits(self F32) U32 {}
 pub fun F32.from_bits(bits U32) F32 {}
 
 --- A placeholder type for the builtin `Rune` type. ---
-pub struct Rune_ {}
+pub struct Rune {}
 
 pub fun Rune.to_u32(r Rune) U32 {}
 
 --- A placeholder type for the builtin `Str` type. ---
-pub unsafe sync struct Str_ { data []U8 }
+pub unsafe sync struct Str { data []U8 }
 
 --- A placeholder type for the builtin `None` type. ---
-pub struct None_ {}
+pub struct None {}
 
 --- A placeholder type for the builtin `Option` type. ---
 pub union Option_<T> = T | None
@@ -159,10 +158,10 @@ pub shape Iter<T> {
 pub shape Enum<Item> {}
 
 --- Built-in error enum. ---
-pub enum Err_(code ?Int, description ?Str) U32
+pub enum Err(code ?Int, description ?Str) U32
 
 --- A placeholder for all internal debug functions. ---
-pub struct DebugIntern_ {}
+pub struct DebugIntern {}
 
 pub fun DebugIntern.print_str(s Str, fd Int = 1, new_line Bool = true) void {}
 pub fun DebugIntern.print_int(n Int, fd Int = 1, new_line Bool = true) void {}

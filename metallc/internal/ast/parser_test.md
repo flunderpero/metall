@@ -2805,18 +2805,6 @@ test.met:1:13: union requires at least 2 variants
                 ^^^
 ```
 
-**Union reserved word**
-
-```metall
-union Arena = Str | Int
-```
-
-```error
-test.met:1:7: reserved word: Arena
-    union Arena = Str | Int
-          ^^^^^
-```
-
 ## Enums
 
 **Closed enum, compiler-assigned**
@@ -2958,18 +2946,6 @@ Enum(name="Color")
   variants=EnumVariant(name="red",args[0].name="rgb",args[1].name="name")
     args[0]=Int(value=16711680)
     args[1]=String(value="Red")
-```
-
-**Enum reserved word**
-
-```metall
-enum Err U8 = a | b
-```
-
-```error
-test.met:1:6: reserved word: Err
-    enum Err U8 = a | b
-         ^^^
 ```
 
 **Generic enums are rejected**
@@ -3546,42 +3522,6 @@ test.met:1:1: unexpected token: expected start of an expression, got =
 test.met:1:10: unexpected token: expected start of an expression, got }
     { return }
              ^
-```
-
-**Reserved word Arena**
-
-```metall
-struct Arena{one Str}
-```
-
-```error
-test.met:1:8: reserved word: Arena
-    struct Arena{one Str}
-           ^^^^^
-```
-
-**Reserved word panic (fun)**
-
-```metall
-fun panic() void {}
-```
-
-```error
-test.met:1:5: reserved word: panic
-    fun panic() void {}
-        ^^^^^
-```
-
-**Reserved word panic (var)**
-
-```metall
-let panic = 123
-```
-
-```error
-test.met:1:5: reserved word: panic
-    let panic = 123
-        ^^^^^
 ```
 
 **Method fun missing method name**

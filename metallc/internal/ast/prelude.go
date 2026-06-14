@@ -17,15 +17,25 @@ var minPreludeSrc string
 
 const PreludeFirstID = NodeID(1_000_000_000)
 
+const minPreludeFileName = "prelude"
+
 func IsPreludeNode(id NodeID) bool {
 	return id >= PreludeFirstID
+}
+
+func IsMinPreludeNode(a *AST, id NodeID) bool {
+	if !IsPreludeNode(id) {
+		return false
+	}
+	src := a.Node(id).Span.Source
+	return src != nil && src.FileName == minPreludeFileName
 }
 
 // PreludeAST parses the minimal prelude (prelude_min.met) with built-in types
 // and extern function stubs) and, when minimal is false, also the
 // stdlib prelude (prelude.met).
 func PreludeAST(minimal bool) (*AST, NodeID) {
-	source := base.NewSource("prelude", "", false, []rune(minPreludeSrc))
+	source := base.NewSource(minPreludeFileName, "", false, []rune(minPreludeSrc))
 	tokens := token.Lex(source)
 	a := NewAST(PreludeFirstID)
 	parser := NewParser(tokens, a)
@@ -61,7 +71,7 @@ func updateMinimalPrelude(a *AST) {
 				kind.Name.Name = s
 				node.Kind = kind
 			}
-			if slices.Contains([]string{"None", "Err"}, kind.Name.Name) {
+			if slices.Contains([]string{"None", "Err", "Range"}, kind.Name.Name) {
 				return true
 			}
 			kind.Builtin = true
@@ -80,7 +90,11 @@ func updateMinimalPrelude(a *AST) {
 			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {
 				kind.Name.Name = s
 			}
-			kind.Builtin = true
+			// Empty-bodied funs are compiler intrinsics; a real body is ordinary
+			// code that must be type-checked and emitted.
+			if block, ok := a.Node(kind.Block).Kind.(Block); ok && len(block.Exprs) == 0 {
+				kind.Builtin = true
+			}
 			node.Kind = kind
 		case SimpleType:
 			if s, ok := strings.CutSuffix(kind.Name.Name, "_"); ok {

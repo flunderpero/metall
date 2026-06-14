@@ -4534,12 +4534,12 @@ a fixpoint.
 ```metall
 struct Pos { a U32 b Int }
 
-struct Iter {
+struct Cursor {
     data []U8
     pos Int
 }
 
-fun Iter.next(it &mut Iter) ?Pos {
+fun Cursor.next(it &mut Cursor) ?Pos {
     if it.pos == it.data.len {
         return None()
     }
@@ -4573,7 +4573,7 @@ fun Iter.next(it &mut Iter) ?Pos {
 }
 
 fun main() void {
-    mut it = Iter([U8('h'), 'i'][..], 0)
+    mut it = Cursor([U8('h'), 'i'][..], 0)
     match (&mut it).next() {
         case Pos p: DebugIntern.print_int(p.a.to_int())
         else: DebugIntern.print_str("none")

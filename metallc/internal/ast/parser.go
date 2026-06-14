@@ -12,29 +12,6 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/token"
 )
 
-var ReservedWords = []string{ //nolint:gochecknoglobals
-	"Arena",
-	"None",
-	"Option",
-	"Err",
-	"Result",
-	"CStr",
-	"Bool",
-	"I8",
-	"I16",
-	"I32",
-	"Int",
-	"U8",
-	"U16",
-	"U32",
-	"U64",
-	"Rune",
-	"Slice",
-	"Str",
-	"DebugIntern",
-	"panic",
-}
-
 const ParseFailed = NodeID(0)
 
 type Parser struct {
@@ -359,10 +336,6 @@ func (p *Parser) ParseStruct() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	if slices.Contains(ReservedWords, nameToken.Value) {
-		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
-		return ParseFailed, false
-	}
 	name := Name{nameToken.Value, nameToken.Span}
 	typeParams, ok := p.parseTypeParams()
 	if !ok {
@@ -437,10 +410,6 @@ func (p *Parser) ParseUnion() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	if slices.Contains(ReservedWords, nameToken.Value) {
-		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
-		return ParseFailed, false
-	}
 	name := Name{nameToken.Value, nameToken.Span}
 	typeParams, ok := p.parseTypeParams()
 	if !ok {
@@ -478,10 +447,6 @@ func (p *Parser) ParseEnum() (NodeID, bool) {
 	}
 	nameToken, ok := p.expect(token.TypeIdent)
 	if !ok {
-		return ParseFailed, false
-	}
-	if slices.Contains(ReservedWords, nameToken.Value) {
-		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
@@ -1227,10 +1192,6 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 	}
 	nameToken, ok := p.expect(token.Ident)
 	if !ok {
-		return ParseFailed, false
-	}
-	if slices.Contains(ReservedWords, nameToken.Value) {
-		p.diagnostic(nameToken.Span, "reserved word: %s", nameToken.Value)
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
@@ -2250,10 +2211,6 @@ func (p *Parser) parseFunDecl() (FunDecl, base.Span, bool) {
 	} else {
 		ident, ok := p.expect(token.Ident)
 		if !ok {
-			return FunDecl{}, base.Span{}, false
-		}
-		if slices.Contains(ReservedWords, ident.Value) {
-			p.diagnostic(ident.Span, "reserved word: %s", ident.Value)
 			return FunDecl{}, base.Span{}, false
 		}
 		name = Name{ident.Value, ident.Span}
