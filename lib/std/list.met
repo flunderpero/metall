@@ -84,7 +84,7 @@ pub fun List.fmt<U HasFmt>(l &List<U>, sb &mut StrBuilder) void {
 --- Sort the list in place. 
 
     todo: Use a proper `Ordering` enum once we support enums. ---
-pub fun List.sort_in_place(l &mut List, cmp fun(T, T) Int) void {
+pub fun List.sort_in_place(l &mut List, cmp fun(T, T) Ordering) void {
     l.data[0..l.len].sort_in_place(cmp)
 }
 

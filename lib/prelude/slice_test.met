@@ -84,7 +84,7 @@ fun main() void {
         mut sut1 = [3, 2, 4, 1]
         mut sut = sut1[..]
         sut[0] = 3
-        sut.sort_in_place(fun (a Int, b Int) Int { if a == b { return 0 } if a < b { return 0 - 1 } return 1 })
+        sut.sort_in_place(Int.cmp)
         try test.eq([1, 2, 3, 4][..], sut)
     })
     suite.test("contains", fun() !void {

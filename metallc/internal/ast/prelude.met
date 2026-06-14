@@ -4,8 +4,17 @@ pub shape HasEq {
 }
 
 --- Ordering ---
+
+pub enum Ordering U8 = less | equal | greater
+
+pub fun Ordering.eq(o Ordering, other Ordering) Bool { o == other }
+
+pub fun Ordering.fmt(o Ordering, sb &mut StrBuilder) void {
+    sb.str(o.debug_name)
+}
+
 pub shape HasCmp {
-    pub fun HasCmp.cmp(c HasCmp, other HasCmp) Int
+    pub fun HasCmp.cmp(c HasCmp, other HasCmp) Ordering
 }
 
 --- Hash function for use in hash map implementations.
@@ -1084,12 +1093,12 @@ pub fun Slice.eq<U HasEq>(s []U, other []U) Bool {
     return true
 }
 
-pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Int) void {
-    fun partition(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) Int {
+pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Ordering) void {
+    fun partition(s []mut T, lo Int, hi Int, cmp fun(T, T) Ordering) Int {
         let pivot = s[hi]
         mut i = lo
         for j in lo..hi {
-            if cmp(s[j], pivot) < 0 {
+            if cmp(s[j], pivot) == Ordering.less {
                 let swap = s[i]
                 s[i] = s[j]
                 s[j] = swap
@@ -1101,7 +1110,7 @@ pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Int) void {
         s[hi] = swap
         i
     }
-    fun qs(s []mut T, lo Int, hi Int, cmp fun(T, T) Int) void {
+    fun qs(s []mut T, lo Int, hi Int, cmp fun(T, T) Ordering) void {
         if lo >= hi {
             return void
         }
@@ -1112,18 +1121,18 @@ pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Int) void {
     qs(s, 0, s.len - 1, cmp)
 }
 
-pub fun Slice.cmp<U HasCmp>(s []U, other []U) Int {
+pub fun Slice.cmp<U HasCmp>(s []U, other []U) Ordering {
     when {
-        case s.len > other.len: return -1
-        case s.len < other.len: return 1
+        case s.len > other.len: return Ordering.less
+        case s.len < other.len: return Ordering.greater
     }
     for e, i in s {
         let res = e.cmp(other[i])
-        if res != 0 {
+        if res != Ordering.equal {
             return res
         }
     }
-    0
+    Ordering.equal
 }
 
 --- Return a sub-slice starting at the first index that is not one of the given elements. ---
@@ -1356,28 +1365,46 @@ pub fun Result.is_ok(r Result) Bool {
 --- Number conversion errors. ---
 pub enum NumConvErr Err = out_of_range
 
-pub fun I8.cmp(i I8, other I8) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
-pub fun I16.cmp(i I16, other I16) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
-pub fun I32.cmp(i I32, other I32) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
-pub fun Int.cmp(i Int, other Int) Int { when { case i == other: 0 case i > other: 1 else: -1 } }
-pub fun U8.cmp(u U8, other U8) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
-pub fun U16.cmp(u U16, other U16) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
-pub fun U32.cmp(u U32, other U32) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
-pub fun U64.cmp(u U64, other U64) Int { when { case u == other: 0 case u > other: 1 else: -1 } }
-pub fun Bool.cmp(b Bool, other Bool) Int { when { case b == other: 0 case not other: 1 else: -1 } }
+pub fun I8.cmp(i I8, other I8) Ordering { 
+    when { case i == other: Ordering.equal case i > other: Ordering.greater else: Ordering.less }
+}
+pub fun I16.cmp(i I16, other I16) Ordering { 
+    when { case i == other: Ordering.equal case i > other: Ordering.greater else: Ordering.less }
+}
+pub fun I32.cmp(i I32, other I32) Ordering { 
+    when { case i == other: Ordering.equal case i > other: Ordering.greater else: Ordering.less }
+}
+pub fun Int.cmp(i Int, other Int) Ordering { 
+    when { case i == other: Ordering.equal case i > other: Ordering.greater else: Ordering.less }
+}
+pub fun U8.cmp(u U8, other U8) Ordering { 
+    when { case u == other: Ordering.equal case u > other: Ordering.greater else: Ordering.less }
+}
+pub fun U16.cmp(u U16, other U16) Ordering { 
+    when { case u == other: Ordering.equal case u > other: Ordering.greater else: Ordering.less }
+}
+pub fun U32.cmp(u U32, other U32) Ordering { 
+    when { case u == other: Ordering.equal case u > other: Ordering.greater else: Ordering.less }
+}
+pub fun U64.cmp(u U64, other U64) Ordering { 
+    when { case u == other: Ordering.equal case u > other: Ordering.greater else: Ordering.less }
+}
+pub fun Bool.cmp(b Bool, other Bool) Ordering { 
+    when { case b == other: Ordering.equal case not other: Ordering.greater else: Ordering.less }
+}
 
 --- A total order for sorting: NaN sorts after every number and equals itself. ---
-pub fun Float.cmp(a Float, other Float) Int {
+pub fun Float.cmp(a Float, other Float) Ordering {
     when {
-    case a.is_nan() and other.is_nan(): 0
-    case a.is_nan(): 1
-    case other.is_nan(): -1
-    case a == other: 0
-    case a > other: 1
-    else: -1
+    case a.is_nan() and other.is_nan(): Ordering.equal
+    case a.is_nan(): Ordering.greater
+    case other.is_nan(): Ordering.less
+    case a == other: Ordering.equal
+    case a > other: Ordering.greater
+    else: Ordering.less
     }
 }
-pub fun F32.cmp(a F32, other F32) Int { a.to_float().cmp(other.to_float()) }
+pub fun F32.cmp(a F32, other F32) Ordering { a.to_float().cmp(other.to_float()) }
 
 pub fun I8.eq(i I8, other I8) Bool { i == other }
 pub fun I16.eq(i I16, other I16) Bool { i == other }

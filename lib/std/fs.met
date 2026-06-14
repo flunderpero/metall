@@ -96,7 +96,7 @@ pub fun Path.eq(p Path, other Path) Bool {
     p.raw.eq(other.raw)
 }
 
-pub fun Path.cmp(p Path, other Path) Int {
+pub fun Path.cmp(p Path, other Path) Ordering {
     p.raw.cmp(other.raw)
 }
 
@@ -229,9 +229,9 @@ pub fun DirEntry.eq(d DirEntry, other DirEntry) Bool {
     d.name.eq(other.name) and d.type.eq(other.type)
 }
 
-pub fun DirEntry.cmp(d DirEntry, other DirEntry) Int {
+pub fun DirEntry.cmp(d DirEntry, other DirEntry) Ordering {
     let res = d.name.cmp(other.name)
-    if res == 0 {
+    if res == Ordering.equal {
         return d.type.cmp(other.type)
     }
     res

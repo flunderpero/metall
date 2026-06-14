@@ -85,17 +85,17 @@ fun main() void {
 
     let cmp_suite = test.Suite.new("cmp", @local)
     cmp_suite.test("Float.cmp", fun() !void {
-        try test.eq(-1, Float(1.5).cmp(2.0))
-        try test.eq(1, Float(2.0).cmp(1.5))
-        try test.eq(0, Float(1.5).cmp(1.5))
+        try test.eq(Ordering.less, Float(1.5).cmp(2.0))
+        try test.eq(Ordering.greater, Float(2.0).cmp(1.5))
+        try test.eq(Ordering.equal, Float(1.5).cmp(1.5))
         let nan = 0.0 / 0.0
-        try test.eq(1, nan.cmp(1.0))
-        try test.eq(-1, Float(1.0).cmp(nan))
-        try test.eq(0, nan.cmp(nan))
+        try test.eq(Ordering.greater, nan.cmp(1.0))
+        try test.eq(Ordering.less, Float(1.0).cmp(nan))
+        try test.eq(Ordering.equal, nan.cmp(nan))
     })
     cmp_suite.test("F32.cmp", fun() !void {
-        try test.eq(-1, F32(1.5).cmp(2.0))
-        try test.eq(0, F32(1.5).cmp(1.5))
+        try test.eq(Ordering.less, F32(1.5).cmp(2.0))
+        try test.eq(Ordering.equal, F32(1.5).cmp(1.5))
     })
     _ = cmp_suite.run()
 

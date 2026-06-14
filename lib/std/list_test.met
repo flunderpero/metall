@@ -86,7 +86,7 @@ fun main() void {
         sut.push(2)
         sut.push(4)
         sut.push(1)
-        sut.sort_in_place(fun (a Int, b Int) Int { if a == b { return 0 } if a < b { return 0 - 1 } return 1 })
+        sut.sort_in_place(Int.cmp)
         try test.eq(1, sut.get(0))
         try test.eq(2, sut.get(1))
         try test.eq(3, sut.get(2))
