@@ -87,6 +87,10 @@ pub fun Rune.from_u32_checked(n U32) !Rune {
     Rune(n)
 }
 
+pub fun Rune.eq(r Rune, other Rune) Bool { r == other }
+
+pub fun Rune.cmp(r Rune, other Rune) Ordering { r.to_u32().cmp(other.to_u32()) }
+
 --- The utf8 representation of a rune. ---
 pub struct RuneUTF8 {
     pub bytes [4]U8
@@ -456,6 +460,10 @@ pub fun Str.contains<P LPattern<[]U8>>(s Str, pattern P) Bool {
 
 pub fun Str.eq(s Str, other Str) Bool {
     s.data.eq(other.data)
+}
+
+pub fun Str.cmp(s Str, other Str) Ordering {
+    s.data.cmp(other.data)
 }
 
 pub fun Str.starts_with(s Str, other Str) Bool {
@@ -1122,17 +1130,18 @@ pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Ordering) void {
 }
 
 pub fun Slice.cmp<U HasCmp>(s []U, other []U) Ordering {
-    when {
-        case s.len > other.len: return Ordering.less
-        case s.len < other.len: return Ordering.greater
-    }
-    for e, i in s {
-        let res = e.cmp(other[i])
+    let len = if s.len > other.len { other.len } else { s.len }
+    for i in 0..len {
+        let res = s[i].cmp(other[i])
         if res != Ordering.equal {
             return res
         }
     }
-    Ordering.equal
+    when {
+        case s.len > other.len: Ordering.greater
+        case s.len < other.len: Ordering.less
+        else: Ordering.equal
+    }
 }
 
 --- Return a sub-slice starting at the first index that is not one of the given elements. ---
@@ -1414,7 +1423,6 @@ pub fun U8.eq(u U8, other U8) Bool { u == other }
 pub fun U16.eq(u U16, other U16) Bool { u == other }
 pub fun U32.eq(u U32, other U32) Bool { u == other }
 pub fun U64.eq(u U64, other U64) Bool { u == other }
-pub fun Rune.eq(r Rune, other Rune) Bool { r == other }
 pub fun Bool.eq(b Bool, other Bool) Bool { b == other }
 
 --- IEEE-754 equality, so NaN is never equal to anything (use cmp for a total order). ---

@@ -341,5 +341,22 @@ fun main() void {
         try test.eq(empty, collect("".rmatches("hi"), @local), "empty string does not match anything")
         try test.eq(empty, collect("test".rmatches(""), @local), "empty pattern does not match anything")
     })
+    suite.test("cmp", fun() !void {
+        -- Lexicographic over the utf8 bytes, which is codepoint order.
+        try test.eq(Ordering.equal, "abc".cmp("abc"))
+        try test.eq(Ordering.less, "abc".cmp("abd"))
+        try test.eq(Ordering.greater, "abd".cmp("abc"))
+        -- A prefix is less than the longer string.
+        try test.eq(Ordering.less, "ab".cmp("abc"))
+        try test.eq(Ordering.greater, "abc".cmp("ab"))
+        -- The empty string is the smallest.
+        try test.eq(Ordering.equal, "".cmp(""))
+        try test.eq(Ordering.less, "".cmp("a"))
+        -- ASCIIbetical. Uppercase sorts before lowercase.
+        try test.eq(Ordering.less, "Z".cmp("a"))
+        -- Multi-byte runes still sort by codepoint.
+        try test.eq(Ordering.less, "a".cmp("ä"))
+        try test.eq(Ordering.less, "äb".cmp("äc"))
+    })
     _ = suite.run()
 }

@@ -133,5 +133,17 @@ fun main() void {
         try test.eq(true, 'a'.is_alphanumeric())
         try test.eq(true, 'z'.is_alphanumeric())
     })
+    suite.test("cmp", fun() !void {
+        -- Runes compare by Unicode codepoint (the u32 value).
+        try test.eq(Ordering.equal, 'a'.cmp('a'))
+        try test.eq(Ordering.less, 'a'.cmp('b'))
+        try test.eq(Ordering.greater, 'b'.cmp('a'))
+        -- Codepoint order is ASCIIbetical. Uppercase before lowercase, digits
+        -- before letters, ASCII before everything else.
+        try test.eq(Ordering.less, 'A'.cmp('a'))
+        try test.eq(Ordering.less, '9'.cmp('A'))
+        try test.eq(Ordering.less, 'z'.cmp('ä'))
+        try test.eq(Ordering.less, 'ä'.cmp('€'))
+    })
     _ = suite.run()
 }

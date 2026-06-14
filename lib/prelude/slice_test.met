@@ -234,5 +234,17 @@ fun main() void {
             collect("test".as_bytes().rmatches("".as_bytes()), @local),
             "empty pattern does not match anything")
     })
+    suite.test("cmp", fun() !void {
+        -- Element-wise lexicographic order, ties broken by length.
+        try test.eq(Ordering.equal, [1, 2, 3][..].cmp([1, 2, 3][..]))
+        try test.eq(Ordering.less, [1, 2, 3][..].cmp([1, 2, 4][..]))
+        try test.eq(Ordering.greater, [1, 2, 4][..].cmp([1, 2, 3][..]))
+        -- A prefix is less than the longer slice. Length is only the tie-breaker.
+        try test.eq(Ordering.less, [1, 2][..].cmp([1, 2, 3][..]))
+        try test.eq(Ordering.greater, [1, 2, 3][..].cmp([1, 2][..]))
+        -- The first differing element decides, even against length.
+        try test.eq(Ordering.less, [1][..].cmp([2, 9][..]))
+        try test.eq(Ordering.greater, [3, 0][..].cmp([2][..]))
+    })
     _ = suite.run()
 }
