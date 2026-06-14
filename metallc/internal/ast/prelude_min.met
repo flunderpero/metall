@@ -1,8 +1,10 @@
 --- This is the minimal prelude that declares everything that is built-in
     or at the core of the language.
 
-    This file is not parsed in the usual way. All types are automatically
-    declared as `extern`. ---
+    This file is not parsed in the usual way.
+
+    Most of the types and functions are built-in and are 
+    treated as extern (implemented by the runtime). ---
 
 --- A placeholder type for the builtin `void` type. ---
 pub struct Void_ {}
@@ -152,6 +154,22 @@ pub struct Slice_<T> {}
 --- Iterator ---
 pub shape Iter<T> {
     pub fun Iter.next(it &mut Iter) ?T
+}
+
+--- A range with `start` inclusive and `end` exclusive. ---
+pub struct Range {
+    pub start Int
+    pub end Int
+}
+
+--- Iterate over range modifying its `start`. ---
+pub fun Range.next(r &mut Range) ?Int {
+    if r.start == r.end {
+        return None()
+    }
+    let ret = r.start
+    r.start += 1
+    ret
 }
 
 --- Built-in constraint satisfied by any enum. `T.Item` is the backing int. ---

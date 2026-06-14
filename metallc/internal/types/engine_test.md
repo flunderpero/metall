@@ -4007,9 +4007,11 @@ Block: []Int
       Int: Int
   SubSlice: []Int
     Ident: [3]Int
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **Subslice array lo..=hi**
@@ -4027,9 +4029,11 @@ Block: []Int
       Int: Int
   SubSlice: []Int
     Ident: [3]Int
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **Subslice array ..hi**
@@ -4047,8 +4051,10 @@ Block: []Int
       Int: Int
   SubSlice: []Int
     Ident: [3]Int
-    Range: void
+    Range: struct01
       Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **Subslice array lo..**
@@ -4066,8 +4072,10 @@ Block: []Int
       Int: Int
   SubSlice: []Int
     Ident: [3]Int
-    Range: void
+    Range: struct01
       Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **Array len**
@@ -4465,9 +4473,11 @@ Block: []mut Int
       Int: Int
   SubSlice: []mut Int
     Ident: [3]Int
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **Subslice mut slice**
@@ -4489,11 +4499,12 @@ Block: []mut Int
       Int: Int
   SubSlice: []mut Int
     Ident: []mut Int
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
 ---
-fun01 = unsafe fun(Arena, Int) []mut Int
+fun01    = unsafe fun(Arena, Int) []mut Int
+struct01 = Range { start Int, end Int }
 ```
 
 **Subslice mut slice through mut ref**
@@ -4518,11 +4529,12 @@ Block: []mut Int
       Ident: []mut Int
   SubSlice: []mut Int
     Ident: &mut []mut Int
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
 ---
-fun01 = unsafe fun(Arena, Int) []mut Int
+fun01    = unsafe fun(Arena, Int) []mut Int
+struct01 = Range { start Int, end Int }
 ```
 
 **Subslice mut slice through immutable ref**
@@ -4547,11 +4559,12 @@ Block: []Int
       Ident: []mut Int
   SubSlice: []Int
     Ident: &[]mut Int
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
 ---
-fun01 = unsafe fun(Arena, Int) []mut Int
+fun01    = unsafe fun(Arena, Int) []mut Int
+struct01 = Range { start Int, end Int }
 ```
 
 **Subslice through ref**
@@ -4572,9 +4585,11 @@ Block: []Int
       Ident: [3]Int
   SubSlice: []Int
     Ident: &[3]Int
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **Empty slice in make**
@@ -5365,10 +5380,29 @@ Block: void
 ```types
 Block: void
   For: void
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
     Block: void
+---
+struct01 = Range { start Int, end Int }
+```
+
+**Range as a value expression**
+
+```metall
+{ let r = 0..4 r }
+```
+
+```types
+Block: struct01
+  Var: void
+    Range: struct01
+      Int: Int
+      Int: Int
+  Ident: struct01
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in range inclusive**
@@ -5380,10 +5414,12 @@ Block: void
 ```types
 Block: void
   For: void
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
     Block: void
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in range with break**
@@ -5395,7 +5431,7 @@ Block: void
 ```types
 Block: void
   For: void
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
     Block: void
@@ -5405,6 +5441,8 @@ Block: void
           Int: Int
         Block: never
           Break: never
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in range binding is Int**
@@ -5416,7 +5454,7 @@ Block: void
 ```types
 Block: void
   For: void
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
     Block: void
@@ -5424,6 +5462,8 @@ Block: void
         Binary: Int
           Ident: Int
           Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in range binding shadows outer**
@@ -5437,10 +5477,12 @@ Block: void
   Var: void
     Int: Int
   For: void
-    Range: void
+    Range: struct01
       Int: Int
       Int: Int
     Block: void
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in slice binding is the element type**
@@ -5493,7 +5535,7 @@ Block: void
         Int: Int
         Int: Int
         Int: Int
-      Range: void
+      Range: struct01
   For: void
     Ident: []Int
     Block: void
@@ -5501,6 +5543,8 @@ Block: void
         Binary: Int
           Ident: Int
           Int: Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in over a non-iterable is rejected**
@@ -5569,16 +5613,21 @@ test.met:4:14: cannot iterate over nocopy iterator Counter
     }
 ```
 
-**For in index binding on a range is rejected**
+**For in index binding on a range**
 
 ```metall
 { for x, i in 0..10 { } }
 ```
 
-```error
-test.met:1:10: for-in over a range cannot bind an index
-    { for x, i in 0..10 { } }
-             ^
+```types
+Block: void
+  For: void
+    Range: struct01
+      Int: Int
+      Int: Int
+    Block: void
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in by reference binds an immutable ref**
@@ -5615,10 +5664,12 @@ Block: void
   For: void
     SubSlice: []mut Int
       Ident: [3]Int
-      Range: void
+      Range: struct01
     Block: void
       Var: void
         Ident: &mut Int
+---
+struct01 = Range { start Int, end Int }
 ```
 
 **For in mutable reference over a mutable array binds an &mut element**
@@ -5684,7 +5735,7 @@ test.met:1:12: `for &mut` requires a mutable slice ([]mut T) or a mutable array,
 ```
 
 ```error
-test.met:1:8: for-in over a range cannot bind a reference
+test.met:1:8: for-in over an iterator cannot bind a reference; have next() yield one
     { for &x in 0..3 { } }
            ^
 ```
@@ -11516,13 +11567,14 @@ Block: Int
     FieldAccess: fun04
       SubSlice: []Int
         Ident: [3]Int
-        Range: void
+        Range: struct01
 ---
-shape01 = Show {  }
-fun01   = fun([]U) Int
-fun02   = fun(U) Int
-fun03   = sync fun(Int) Int
-fun04   = fun([]Int) Int
+shape01  = Show {  }
+fun01    = fun([]U) Int
+fun02    = fun(U) Int
+fun03    = sync fun(Int) Int
+fun04    = fun([]Int) Int
+struct01 = Range { start Int, end Int }
 ```
 
 ## Panic

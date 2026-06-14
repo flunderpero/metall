@@ -28,35 +28,30 @@ pub fun Err.eq(e Err, other Err) Bool { e == other }
 
 pub fun Err.hash(e Err) U64 { e.tag.hash() }
 
-pub struct Range<T> {
-    pub start T
-    pub end T
-}
+--- The range type. ---
 
-pub fun Range.eq<U HasEq>(r Range<U>, other Range<U>) Bool {
+pub fun Range.eq(r Range, other Range) Bool {
     r.start.eq(other.start) and r.end.eq(other.end)
 }
 
-pub fun Range.hash<U HasHash>(r Range<U>) U64 {
+pub fun Range.hash(r Range) U64 {
     r.start.hash() +% r.end.hash()
 }
 
-pub fun Range.fmt<U HasFmt>(r Range<U>, sb &mut StrBuilder) void {
-    sb.str("Range(")
+pub fun Range.fmt(r Range, sb &mut StrBuilder) void {
     sb.fmt(r.start)
-    sb.str(", ")
+    sb.str("..")
     sb.fmt(r.end)
-    sb.str(")")
 }
 
 --- Left oriented pattern for slices and Str. ---
 shape LPattern<T> {
-    pub fun LPattern.lfind_pattern(p LPattern, haystack T) ?Range<Int>
+    pub fun LPattern.lfind_pattern(p LPattern, haystack T) ?Range
 }
 
 --- Right oriented pattern for slices and Str. ---
 shape RPattern<T> {
-    pub fun RPattern.rfind_pattern(p RPattern, haystack T) ?Range<Int>
+    pub fun RPattern.rfind_pattern(p RPattern, haystack T) ?Range
 }
 
 --- Unicode (and utf8) related errors. ---
@@ -397,12 +392,12 @@ pub fun Str.rtrim(s Str, runes [] Rune = default_trim_runes) Str {
 }
 
 --- `Str` can be used as an `LPattern`. ---
-pub fun Str.lfind_pattern(needle Str, haystack []U8) ?Range<Int> {
+pub fun Str.lfind_pattern(needle Str, haystack []U8) ?Range {
     needle.data.lfind_pattern(haystack)
 }
 
 --- `Str` can be used as an `RPattern`. ---
-pub fun Str.rfind_pattern(needle Str, haystack []U8) ?Range<Int> {
+pub fun Str.rfind_pattern(needle Str, haystack []U8) ?Range {
     needle.data.rfind_pattern(haystack) 
 }
 
@@ -430,7 +425,7 @@ pub fun Str.substr(s Str, i Int) Str {
 
     It is not guaranteed that the range returned points at a valid rune boundary - `s.is_valid_index()` would
     return false. This only happens if the pattern itself does not respect utf8 encoding. ---
-pub fun Str.lfind<P LPattern<[]U8>>(s Str, pattern P) ?Range<Int> {
+pub fun Str.lfind<P LPattern<[]U8>>(s Str, pattern P) ?Range {
     pattern.lfind_pattern(s.data)
 }
 
@@ -439,7 +434,7 @@ pub fun Str.lfind<P LPattern<[]U8>>(s Str, pattern P) ?Range<Int> {
 
     It is not guaranteed that the range returned points at a valid rune boundary - `s.is_valid_index()` would
     return false. This only happens if the pattern itself does not respect utf8 encoding. ---
-pub fun Str.rfind<P RPattern<[]U8>>(s Str, pattern P) ?Range<Int> {
+pub fun Str.rfind<P RPattern<[]U8>>(s Str, pattern P) ?Range {
     pattern.rfind_pattern(s.data)
 }
 
@@ -837,7 +832,7 @@ pub fun Slice.set(dst []mut T, src []T) Int {
 }
 
 --- `Slice` can be used as an `LPattern`. ---
-pub fun Slice.lfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
+pub fun Slice.lfind_pattern<U HasEq>(needle []U, haystack []U) ?Range {
     if needle.len == 0 {
         return Range(0, 0)
     }
@@ -861,7 +856,7 @@ pub fun Slice.lfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
 }
 
 --- `Slice` can be used as an `RPattern`. ---
-pub fun Slice.rfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
+pub fun Slice.rfind_pattern<U HasEq>(needle []U, haystack []U) ?Range {
     if needle.len == 0 {
         return Range(0, 0)
     }
@@ -886,11 +881,11 @@ pub fun Slice.rfind_pattern<U HasEq>(needle []U, haystack []U) ?Range<Int> {
     None()
 }
 
-pub fun Slice.lfind<P LPattern<[]T>>(s []T, pattern P) ?Range<Int> {
+pub fun Slice.lfind<P LPattern<[]T>>(s []T, pattern P) ?Range {
     pattern.lfind_pattern(s)
 }
 
-pub fun Slice.rfind<P RPattern<[]T>>(s []T, pattern P) ?Range<Int> {
+pub fun Slice.rfind<P RPattern<[]T>>(s []T, pattern P) ?Range {
     pattern.rfind_pattern(s)
 }
 

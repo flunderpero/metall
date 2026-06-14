@@ -3292,12 +3292,12 @@ fun main() void {
 **for-in over iterators: concrete, index, type parameter, break/continue**
 
 ```metall
-struct Range {
+struct Span {
     cur Int
     end Int
 }
 
-pub fun Range.next(r &mut Range) ?Int {
+pub fun Span.next(r &mut Span) ?Int {
     if r.cur >= r.end {
         return None()
     }
@@ -3316,21 +3316,21 @@ fun count<A, I Iter<A>>(it I) Int {
 
 fun main() void {
     mut sum = 0
-    for x in Range(0, 4) {
+    for x in Span(0, 4) {
         sum += x
     }
     DebugIntern.print_int(sum)
 
     mut total = 0
-    for x, i in Range(10, 13) {
+    for x, i in Span(10, 13) {
         total += x + i
     }
     DebugIntern.print_int(total)
 
-    DebugIntern.print_int(count(Range(0, 5)))
+    DebugIntern.print_int(count(Span(0, 5)))
 
     mut seen = 0
-    for x in Range(0, 10) {
+    for x in Span(0, 10) {
         if x == 0 {
             continue
         }
@@ -3348,6 +3348,36 @@ fun main() void {
 36
 5
 6
+```
+
+**range as a value: stored, passed, inclusive, in an array**
+
+```metall
+fun sum(r Range) Int {
+    mut total = 0
+    for x in r {
+        total += x
+    }
+    total
+}
+
+fun main() void {
+    let r = 0..4
+    DebugIntern.print_int(sum(r))
+    DebugIntern.print_int(sum(1..=4))
+    let rs = [0..2, 5..7]
+    mut n = 0
+    for r in rs {
+        n += sum(r)
+    }
+    DebugIntern.print_int(n)
+}
+```
+
+```output
+6
+10
+12
 ```
 
 **integer types**

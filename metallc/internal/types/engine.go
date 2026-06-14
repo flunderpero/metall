@@ -51,6 +51,7 @@ type Engine struct {
 	u8Typ           TypeID
 	floatTyp        TypeID
 	f32Typ          TypeID
+	rangeTyp        TypeID
 }
 
 func NewEngine(
@@ -685,24 +686,13 @@ func (e *Engine) checkWhen(when ast.When, typeHint *TypeID) (TypeID, TypeStatus)
 func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) { //nolint:funlen
 	if for_.Binding != nil {
 		cond := e.ast.Node(*for_.Cond)
-		if range_, ok := cond.Kind.(ast.Range); ok {
-			if range_.Lo == nil || range_.Hi == nil {
-				e.diag(cond.Span, "for-in range requires both lower and upper bound")
-				return InvalidTypeID, TypeFailed
-			}
-			if for_.Index != nil {
-				e.diag(for_.Index.Span, "for-in over a range cannot bind an index")
-				return InvalidTypeID, TypeFailed
-			}
-			if for_.Ref {
-				e.diag(for_.Binding.Span, "for-in over a range cannot bind a reference")
-				return InvalidTypeID, TypeFailed
-			}
-			if _, status := e.Query(*for_.Cond); status.Failed() {
-				return InvalidTypeID, status
-			}
-			e.bind(for_.Body, for_.Binding.Name, false, e.intTyp, for_.Binding.Span, -1)
-		} else {
+		// A literal `lo..hi` range needs both bounds; it then iterates as a Range
+		// value through the same iterator protocol as any other iterable.
+		if range_, ok := cond.Kind.(ast.Range); ok && (range_.Lo == nil || range_.Hi == nil) {
+			e.diag(cond.Span, "for-in range requires both lower and upper bound")
+			return InvalidTypeID, TypeFailed
+		}
+		{
 			iterTypeID, status := e.Query(*for_.Cond)
 			if status.Failed() {
 				return InvalidTypeID, status
@@ -837,7 +827,7 @@ func (e *Engine) checkRange(range_ ast.Range) (TypeID, TypeStatus) {
 	if !checkBound(range_.Lo) || !checkBound(range_.Hi) {
 		return InvalidTypeID, TypeFailed
 	}
-	return e.voidTyp, TypeOK
+	return e.rangeTyp, TypeOK
 }
 
 func (e *Engine) checkBreak(span base.Span) (TypeID, TypeStatus) {
@@ -2597,6 +2587,8 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 		e.boolTyp = typ.Type.ID
 	case "Str":
 		e.strTyp = typ.Type.ID
+	case "Range":
+		e.rangeTyp = typ.Type.ID
 	default:
 		for _, intTyp := range intTypes {
 			if intTyp.Name == structNode.Name.Name {

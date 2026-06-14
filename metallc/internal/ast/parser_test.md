@@ -1597,6 +1597,46 @@ test.met:1:6: unexpected end of file
          ^
 ```
 
+**Range expression lo..hi**
+
+```metall
+1..3
+```
+
+```ast
+Range(inclusive=false)
+  lo=Int(value=1)
+  hi=Int(value=3)
+```
+
+**Range expression lo..=hi**
+
+```metall
+1..=3
+```
+
+```ast
+Range(inclusive=true)
+  lo=Int(value=1)
+  hi=Int(value=3)
+```
+
+**Range expression binds looser than arithmetic**
+
+```metall
+1 + 1..2 * 3
+```
+
+```ast
+Range(inclusive=false)
+  lo=Binary(op=+)
+    lhs=Int(value=1)
+    rhs=Int(value=1)
+  hi=Binary(op=*)
+    lhs=Int(value=2)
+    rhs=Int(value=3)
+```
+
 **Array fill construction**
 
 ```metall

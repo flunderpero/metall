@@ -113,6 +113,121 @@ fun main() void {
 hello there 42!
 ```
 
+### For Loops
+
+`for` is the only loop in Metall, and it takes three forms. It walks an iterable,
+repeats while a condition holds, or, written bare, loops until a `break`. An
+iterable is a slice, an array, a range, or any type with a `next` method. The loop
+binds each item in turn. Add `, i` to also bind the index, or `&mut x` to change
+items in place. `break` and `continue` work in every form.
+
+```metall
+use std.io
+
+fun main() void {
+    for fruit, i in ["apple", "pear", "plum"][..] {
+        io.print(i)
+        io.print(" = ")
+        io.println(fruit)
+    }
+}
+```
+
+```output
+0 = apple
+1 = pear
+2 = plum
+```
+
+A boolean condition makes it a `while`:
+
+```metall
+use std.io
+
+fun main() void {
+    mut count = 3
+    for count > 0 {
+        io.println(count)
+        count = count - 1
+    }
+}
+```
+
+```output
+3
+2
+1
+```
+
+### Ranges
+
+`lo..hi` counts from `lo` up to but not including `hi`. `lo..=hi` includes `hi`.
+
+```metall
+use std.io
+
+fun main() void {
+    for i in 0..3 {
+        io.print(i)
+    }
+    io.println("")
+    for i in 0..=3 {
+        io.print(i)
+    }
+    io.println("")
+}
+```
+
+```output
+012
+0123
+```
+
+A range is a value, not just loop syntax: name it, pass it, return it, then iterate
+it whenever you like.
+
+```metall
+use std.io
+
+fun main() void {
+    let r = 1..4
+    for x in r {
+        io.println(x)
+    }
+}
+```
+
+```output
+1
+2
+3
+```
+
+### Slice Ranges
+
+Inside `[]`, a range slices a slice or array instead. Either bound may be
+left off: a missing lower bound starts at the front, a missing upper bound
+runs to the end, and `[..]` is the whole slice.
+
+```metall
+use std.io
+
+fun main() void {
+    let xs = [10, 20, 30, 40][..]
+    io.println(xs[1..3])
+    io.println(xs[2..])
+    io.println(xs[..2])
+    io.println(xs[..])
+}
+```
+
+```output
+[20, 30]
+[30, 40]
+[10, 20]
+[10, 20, 30, 40]
+```
+
 ## Mutability
 
 Everything in Metall is immutable by default.
@@ -268,7 +383,7 @@ Mars
 
 A fixed-size array `[N]T` stores its `N` elements inline. Its length is part of
 the type, which you can let the compiler infer or write out yourself. An array
-is not printable on its own; `[..]` views it as a slice.
+is not printable on its own. `[..]` views it as a slice.
 
 ```metall
 use std.io

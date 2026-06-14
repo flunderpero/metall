@@ -15,7 +15,7 @@ fun main() void {
         try test.eq(Option(Range(0, 2)), sut.lfind_pattern("aa".as_bytes()), "exact match")
         try test.eq(Option(Range(0, 2)), sut.rfind_pattern("aa".as_bytes()), "exact match")
 
-        let not_found = Option<Range<Int>>(None())
+        let not_found = Option<Range>(None())
         try test.eq(not_found, sut.lfind_pattern("bb cc dd".as_bytes()), "not found")
         try test.eq(not_found, sut.rfind_pattern("bb cc dd".as_bytes()), "not found")
 
@@ -34,7 +34,7 @@ fun main() void {
         try test.eq(Option(Range(2, 3)), sut.lfind_pattern("aa bb cc".as_bytes()))
         try test.eq(Option(Range(5, 6)), sut.rfind_pattern("aa bb cc".as_bytes()))
 
-        let not_found = Option<Range<Int>>(None())
+        let not_found = Option<Range>(None())
         try test.eq(not_found, sut.lfind_pattern("aabb".as_bytes()))
         try test.eq(not_found, sut.rfind_pattern("aabb".as_bytes()))
     })
@@ -42,7 +42,7 @@ fun main() void {
         let sut = pattern.rune_pred(Rune.is_lower)
         try test.eq(Option(Range(3, 4)), sut.lfind_pattern("BB aa".as_bytes()))
 
-        let not_found = Option<Range<Int>>(None())
+        let not_found = Option<Range>(None())
         try test.eq(not_found, sut.lfind_pattern("BB AA".as_bytes()))
     })
     _ = suite.run()

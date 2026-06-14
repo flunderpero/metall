@@ -245,7 +245,7 @@ fun main() void {
         try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".lfind(pattern.index("bb".as_bytes())))
 
         -- From now on use `Str` as the pattern because `Str` satisfies `LPattern`.
-        let not_found = Option<Range<Int>>(None())
+        let not_found = Option<Range>(None())
         try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".lfind("bb"))
         try test.eq(not_found, "aa bb aa".lfind("cc"))
         try test.eq(not_found, "".lfind("aa"), "empty haystack")
@@ -259,7 +259,7 @@ fun main() void {
         try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".rfind(pattern.index("bb".as_bytes())))
 
         -- From now on use `Str` as the pattern because `Str` satisfies `LPattern`.
-        let not_found = Option<Range<Int>>(None())
+        let not_found = Option<Range>(None())
         try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".rfind("bb"))
         try test.eq(not_found, "aa bb aa".rfind("cc"))
         try test.eq(not_found, "".rfind("aa"), "empty haystack")

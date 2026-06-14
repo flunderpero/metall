@@ -1,11 +1,11 @@
 --- Left oriented pattern for slices and Str. ---
 pub shape LPattern<T> {
-    pub fun LPattern.lfind_pattern(p LPattern, haystack T) ?Range<Int>
+    pub fun LPattern.lfind_pattern(p LPattern, haystack T) ?Range
 }
 
 --- Right oriented pattern for slices and Str. ---
 pub shape RPattern<T> {
-    pub fun RPattern.rfind_pattern(p RPattern, haystack T) ?Range<Int>
+    pub fun RPattern.rfind_pattern(p RPattern, haystack T) ?Range
 }
 
 
@@ -14,7 +14,7 @@ pub struct Index<T HasEq> {
     needle []T
 }
 
-pub fun Index.lfind_pattern(p Index, haystack []T) ?Range<Int> {
+pub fun Index.lfind_pattern(p Index, haystack []T) ?Range {
     let needle = p.needle
     if needle.len == 0 {
         return Range(0, 0)
@@ -38,7 +38,7 @@ pub fun Index.lfind_pattern(p Index, haystack []T) ?Range<Int> {
     None()
 }
 
-pub fun Index.rfind_pattern(p Index, haystack []T) ?Range<Int> {
+pub fun Index.rfind_pattern(p Index, haystack []T) ?Range {
     let needle = p.needle
     if needle.len == 0 {
         return Range(0, 0)
@@ -73,7 +73,7 @@ pub struct RunePred {
     predicate fun(Rune) Bool
 }
 
-pub fun RunePred.lfind_pattern(p RunePred, haystack []U8) ?Range<Int> {
+pub fun RunePred.lfind_pattern(p RunePred, haystack []U8) ?Range {
     mut it = StrRuneIndexIter.new(haystack) 
     for {
         match it.next() {
@@ -95,7 +95,7 @@ pub struct Pred<T> {
     predicate fun(T) Bool
 }
 
-pub fun Pred.lfind_pattern(p Pred, haystack []T) ?Range<Int> {
+pub fun Pred.lfind_pattern(p Pred, haystack []T) ?Range {
     for elem, i in haystack {
         if p.predicate(elem) {
             return Range(i, i + 1)
@@ -104,7 +104,7 @@ pub fun Pred.lfind_pattern(p Pred, haystack []T) ?Range<Int> {
     None()
 }
 
-pub fun Pred.rfind_pattern(p Pred, haystack []T) ?Range<Int> {
+pub fun Pred.rfind_pattern(p Pred, haystack []T) ?Range {
     mut i = haystack.len - 1
     for i >= 0 {
         if p.predicate(haystack[i]) {

@@ -695,6 +695,12 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			token.GtGt:  BinaryOpShr,
 		}[t.Kind]
 		if !ok {
+			// `..`/`..=` is the lowest-precedence operator and builds a Range value.
+			// Handled only at the outermost level (minPrecedence 0) so it binds looser
+			// than every binary operator; chaining `a..b..c` is rejected downstream.
+			if minPrecedence == 0 && t.Kind == token.DotDot {
+				return p.parseRangeRHS(&lhs)
+			}
 			return lhs, true
 		}
 		precedence := map[BinaryOp]int{
@@ -1670,6 +1676,11 @@ func (p *Parser) ParseRange() (nodeID NodeID, isRange bool, ok bool) {
 	lo, ok := p.ParseExpr(0)
 	if !ok {
 		return ParseFailed, false, false
+	}
+	// ParseExpr already folds a trailing `..` into a Range value (general expression
+	// position); recognize that so `s[lo..hi]` is a subslice, not an index.
+	if _, isRange := p.Node(lo).Kind.(Range); isRange {
+		return lo, true, true
 	}
 	if next, ok := p.mayPeek(); ok && next.Kind == token.DotDot {
 		range_, ok := p.parseRangeRHS(&lo)

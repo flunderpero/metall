@@ -201,6 +201,8 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		g.genRef(id, kind)
 	case ast.AllocatorVar:
 		g.genAllocatorVar(id, kind)
+	case ast.Range:
+		g.genRange(id, kind)
 	case ast.Struct,
 		ast.Union,
 		ast.Enum,
@@ -215,8 +217,7 @@ func (g *IRFunGen) Gen(id ast.NodeID) { //nolint:funlen
 		ast.RefType,
 		ast.ArrayType,
 		ast.SliceType,
-		ast.FunType,
-		ast.Range:
+		ast.FunType:
 	default:
 		panic(base.Errorf("unknown node kind: %T", kind))
 	}
@@ -1229,9 +1230,7 @@ func (g *IRFunGen) genBlock(id ast.NodeID, block ast.Block) {
 
 func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 	if forNode.Binding != nil {
-		if _, ok := g.ast.Node(*forNode.Cond).Kind.(ast.Range); ok {
-			g.genForInRange(id, forNode)
-		} else if _, isIter := g.env.ForIterRet(id); isIter {
+		if _, isIter := g.env.ForIterRet(id); isIter {
 			g.genForInIter(id, forNode)
 		} else {
 			g.genForInSlice(id, forNode)
@@ -1257,8 +1256,7 @@ func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 	g.setCode(id, voidValue)
 }
 
-func (g *IRFunGen) genForInRange(id ast.NodeID, forNode ast.For) {
-	range_ := base.Cast[ast.Range](g.ast.Node(*forNode.Cond).Kind)
+func (g *IRFunGen) genRange(id ast.NodeID, range_ ast.Range) {
 	g.Gen(*range_.Lo)
 	g.Gen(*range_.Hi)
 	loReg := g.lookupCode(*range_.Lo)
@@ -1268,35 +1266,14 @@ func (g *IRFunGen) genForInRange(id ast.NodeID, forNode ast.For) {
 		g.write("%s = add i64 %s, 1", incReg, hiReg)
 		hiReg = incReg
 	}
-	counterReg := g.reg()
-	g.writeAlloca(counterReg, "i64")
-	g.write("store i64 %s, ptr %s", loReg, counterReg)
-	g.setSymbol(ast.BindingID(forNode.Body), forNode.Binding.Name, counterReg, "i64")
-	labelCond := g.label("for", id)
-	labelBody := g.label("body", id)
-	labelIncr := g.label("incr", id)
-	labelEnd := g.label("endfor", id)
-	g.write("br label %%%s", labelCond)
-	g.writeLabel(labelCond)
-	iReg := g.reg()
-	g.write("%s = load i64, ptr %s", iReg, counterReg)
-	condReg := g.reg()
-	g.write("%s = icmp slt i64 %s, %s", condReg, iReg, hiReg)
-	g.write("br i1 %s, label %%%s, label %%%s", condReg, labelBody, labelEnd)
-	g.writeLabel(labelBody)
-	g.loopStack = append(g.loopStack, LoopLabels{labelIncr, labelEnd, len(g.arenaRegStack)})
-	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
-	g.Gen(forNode.Body)
-	g.write("br label %%%s", labelIncr)
-	g.writeLabel(labelIncr)
-	nextReg := g.reg()
-	g.write("%s = load i64, ptr %s", nextReg, counterReg)
-	incrReg := g.reg()
-	g.write("%s = add i64 %s, 1", incrReg, nextReg)
-	g.write("store i64 %s, ptr %s", incrReg, counterReg)
-	g.write("br label %%%s", labelCond)
-	g.writeLabel(labelEnd)
-	g.setCode(id, voidValue)
+	rangeTyp := g.typeOfNode(id)
+	structTyp := base.Cast[types.StructType](rangeTyp.Kind)
+	irTyp := g.irType(rangeTyp.ID)
+	reg := g.reg()
+	g.writeAlloca(reg, irTyp)
+	g.storeValue(loReg, g.fieldPtr(irTyp, reg, 0), structTyp.Fields[0].Type)
+	g.storeValue(hiReg, g.fieldPtr(irTyp, reg, 1), structTyp.Fields[1].Type)
+	g.setCode(id, reg)
 }
 
 func (g *IRFunGen) genForInSlice(id ast.NodeID, forNode ast.For) { //nolint:funlen

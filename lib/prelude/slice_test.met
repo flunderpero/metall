@@ -102,7 +102,7 @@ fun main() void {
         try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".as_bytes().lfind(pattern.index("bb".as_bytes())))
 
         -- From now on use `Slice` as the pattern because `Slice` satisfies `LPattern`.
-        let not_found = Option<Range<Int>>(None())
+        let not_found = Option<Range>(None())
         try test.eq(Option(Range(3, 5)), "aa bb aa bb aa".as_bytes().lfind("bb".as_bytes()))
         try test.eq(not_found, "aa bb aa".as_bytes().lfind("cc".as_bytes()))
         try test.eq(not_found, "".as_bytes().lfind("aa".as_bytes()), "empty haystack")
@@ -116,7 +116,7 @@ fun main() void {
         try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".as_bytes().rfind(pattern.index("bb".as_bytes())))
 
         -- From now on use `Slice` as the pattern because `Slice` satisfies `LPattern`.
-        let not_found = Option<Range<Int>>(None())
+        let not_found = Option<Range>(None())
         try test.eq(Option(Range(9, 11)), "aa bb aa bb aa".as_bytes().rfind("bb".as_bytes()))
         try test.eq(not_found, "aa bb aa".as_bytes().rfind("cc".as_bytes()))
         try test.eq(not_found, "".rfind("aa".as_bytes()), "empty haystack")
