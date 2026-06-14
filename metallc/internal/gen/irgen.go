@@ -91,6 +91,7 @@ type IRGen struct {
 	strConsts      map[string]string // dedup: value → global name
 	constGlobals   strings.Builder   // global constant declarations (strings, const arrays)
 	funValWrappers map[string]string // irName → wrapper name
+	externSyms     map[string]bool   // C symbols of extern funs; their narrow-int args need C-ABI extension
 	opts           IROpts
 }
 
@@ -115,6 +116,16 @@ type IRFunGen struct {
 }
 
 func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
+	// Extern (C) functions follow the C ABI, which sign/zero-extends narrow
+	// integer arguments. Internal Metall calls keep their own convention, so we
+	// record the C symbols here and extend only at extern call boundaries.
+	externSyms := map[string]bool{}
+	a.Iter(func(nodeID ast.NodeID) bool {
+		if fd, ok := a.Node(nodeID).Kind.(ast.FunDecl); ok && fd.Extern {
+			externSyms[fd.ExternName] = true
+		}
+		return true
+	})
 	return &IRGen{
 		CodeWriter:     *NewCodeWriter(),
 		ast:            a,
@@ -125,6 +136,7 @@ func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 		strConsts:      map[string]string{},
 		constGlobals:   strings.Builder{},
 		funValWrappers: map[string]string{},
+		externSyms:     externSyms,
 		opts:           opts,
 	}
 }
@@ -2709,6 +2721,9 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 	}
 	sb := strings.Builder{}
 	funName, _ := g.env.NamedFunRef(call.Callee)
+	// Extern (C) callees follow the C ABI: narrow int args and return are
+	// sign/zero-extended. Internal Metall calls keep their own convention.
+	isExtern := g.externSyms[funName]
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIR := g.irReturnType(fun.Return)
 	var resReg string
@@ -2724,11 +2739,14 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		sb.WriteString(reg + " = ")
 		g.setCode(id, reg)
 	}
-	sb.WriteString("call ")
+	sb.WriteString("call")
 	if isRetAggregate {
-		sb.WriteString("void")
+		sb.WriteString(" void")
 	} else {
-		sb.WriteString(retIR)
+		if isExtern {
+			sb.WriteString(cABIExtAttr(g.env, fun.Return))
+		}
+		sb.WriteString(" " + retIR)
 	}
 	fmt.Fprintf(&sb, " @%s", irName(funName))
 	sb.WriteString("(")
@@ -2748,9 +2766,12 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		}
 		typeID := g.typeIDOfNode(nodeID)
 		reg := g.lookupCode(nodeID)
-		if g.isAggregateType(typeID) {
+		switch {
+		case g.isAggregateType(typeID):
 			fmt.Fprintf(&sb, "ptr byval(%s) %s", g.irType(typeID), reg)
-		} else {
+		case isExtern:
+			fmt.Fprintf(&sb, "%s%s %s", g.irType(typeID), cABIExtAttr(g.env, typeID), reg)
+		default:
 			fmt.Fprintf(&sb, "%s %s", g.irType(typeID), reg)
 		}
 		hasArg = true
@@ -2877,7 +2898,7 @@ func (g *IRFunGen) emitFunValue(id ast.NodeID, name string) {
 // genFunValWrapperIfNeeded generates a wrapper for a non-capturing function so
 // it can be called indirectly with the uniform {fn, ctx} convention. The wrapper
 // accepts ptr %__ctx as first param (ignored) and forwards to the real function.
-func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string {
+func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string { //nolint:funlen
 	irN := irName(name)
 	if tn, ok := g.funValWrappers[irN]; ok {
 		return tn
@@ -2886,6 +2907,9 @@ func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string {
 	g.funValWrappers[irN] = wrapperName
 
 	funType := base.Cast[types.FunType](g.typeOfNode(id).Kind)
+	// The wrapper receives args in Metall's convention and forwards them. If it
+	// wraps an extern (C) function, the forward must use the C ABI extension.
+	isExtern := g.externSyms[name]
 	isRetAggregate := g.isAggregateType(funType.Return)
 	retIRTyp := g.irType(funType.Return)
 
@@ -2910,7 +2934,11 @@ func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string {
 			fmt.Fprintf(&fwd, "ptr byval(%s) %s", paramIRTyp, pname)
 		} else {
 			fmt.Fprintf(&sig, "%s %s", paramIRTyp, pname)
-			fmt.Fprintf(&fwd, "%s %s", paramIRTyp, pname)
+			fwdExt := ""
+			if isExtern {
+				fwdExt = cABIExtAttr(g.env, paramTypeID)
+			}
+			fmt.Fprintf(&fwd, "%s%s %s", paramIRTyp, fwdExt, pname)
 		}
 		hasFwd = true
 	}
@@ -2926,7 +2954,11 @@ func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string {
 		fmt.Fprintf(&w, "  call void @%s(%s)\n", irN, fwd.String())
 		w.WriteString("  ret void\n")
 	} else {
-		fmt.Fprintf(&w, "  %%r = call %s @%s(%s)\n", retIRTyp, irN, fwd.String())
+		retExt := ""
+		if isExtern {
+			retExt = cABIExtAttr(g.env, funType.Return)
+		}
+		fmt.Fprintf(&w, "  %%r = call%s %s @%s(%s)\n", retExt, retIRTyp, irN, fwd.String())
 		fmt.Fprintf(&w, "  ret %s %%r\n", retIRTyp)
 	}
 	w.WriteString("}\n\n")
@@ -3637,10 +3669,10 @@ func (g *IRGen) genExternDecls(funs []types.FunWork) {
 			if isAggregateTypeEnv(env, paramTypeID) {
 				fmt.Fprintf(&params, "ptr byval(%s)", irType(env, paramTypeID))
 			} else {
-				params.WriteString(irType(env, paramTypeID))
+				params.WriteString(irType(env, paramTypeID) + cABIExtAttr(env, paramTypeID))
 			}
 		}
-		g.write("declare %s @%s(%s)", retIR, name, params.String())
+		g.write("declare%s %s @%s(%s)", cABIExtAttr(env, funType.Return), retIR, name, params.String())
 		return true
 	})
 	g.write("")

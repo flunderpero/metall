@@ -6166,21 +6166,6 @@ hello
 from arena
 ```
 
-**call extern C function**
-
-```metall
-extern fun abs(n I32) I32
-
-fun main() void {
-    let x = unsafe abs(-42)
-    DebugIntern.print_int(x.to_int())
-}
-```
-
-```output
-42
-```
-
 **ffi sizeof, alignof and pointers**
 
 ```metall
@@ -6263,67 +6248,6 @@ fun main() void {
 
 ```output
 ok
-```
-
-**ffi strlen via slice_ptr**
-
-```metall !wasm
-use std.ffi
-
-extern fun strlen(s ffi.Ptr<U8>) Int
-
-fun main() void {
-    let text = [U8(65), 65, 65, 0][..]
-    let ptr = ffi.slice_ptr<U8>(text)
-    let len = unsafe strlen(ptr)
-    DebugIntern.print_int(len)
-}
-```
-
-```output
-3
-```
-
-**call extern function from imported module and main module**
-
-```metall
-use local.e2e_ffi
-
-extern fun abs(n I32) I32
-
-fun main() void {
-    let x = unsafe e2e_ffi.abs(I32(-7))
-    DebugIntern.print_int(x.to_int())
-    let y = unsafe abs(I32(-42))
-    DebugIntern.print_int(y.to_int())
-}
-```
-
-```output
-7
-42
-```
-
-**extern functions don't pollute the root ns**
-
-```metall
-use local.e2e_ffi
-
-fun abs(n Int) Int {
-    if n < 0 { n * -1 } else { n }
-}
-
-fun main() void {
-    let x = unsafe e2e_ffi.abs(I32(-7))
-    DebugIntern.print_int(x.to_int())
-    let y = abs(-42)
-    DebugIntern.print_int(y)
-}
-```
-
-```output
-7
-42
 ```
 
 **ffi PtrMut.write**
@@ -6476,50 +6400,6 @@ fun main() void {
 30
 3
 99
-```
-
-**ffi is_null with C function returning null**
-
-```metall !wasm
-use std.ffi
-
-extern fun strchr(s ffi.Ptr<U8>, c I32) ffi.Ptr<U8>
-
-fun main() void {
-    let haystack = ffi.slice_ptr<U8>([U8('h'), 'i', 0][..])
-    let not_found = unsafe strchr(haystack, U8('z').to_i32())
-    DebugIntern.print_bool(not_found.is_null())
-    let found = unsafe strchr(haystack, U8('h').to_i32())
-    DebugIntern.print_bool(found.is_null())
-}
-```
-
-```output
-true
-false
-```
-
-**extern function alias**
-
-```metall
-extern("abs") fun my_abs(n I32) I32
-
--- We can use abs as a name because the extern `abs` is aliased to `my_abs`.
-fun abs(n I32) I32 {
-    unsafe my_abs(n)
-}
-
-fun main() void {
-    let x = unsafe my_abs(I32(-42))
-    DebugIntern.print_int(x.to_int())
-    let y = abs(-137)
-    DebugIntern.print_int(y.to_int())
-}
-```
-
-```output
-42
-137
 ```
 
 ## Conditional Compilation

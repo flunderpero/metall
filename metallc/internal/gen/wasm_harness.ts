@@ -202,6 +202,9 @@ function defaultImports(
             view().setBigInt64(Number(consumedPtr), BigInt(consumed), true)
             return v
         },
+        // The wasm build is -nostdlib, so libc externs like `abs` become `env`
+        // imports instead of resolving to libc. The extern-C e2e tests call it.
+        abs: (n: number) => Math.abs(n),
     }
     return {imports: {env}}
 }
