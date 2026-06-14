@@ -408,6 +408,13 @@ func (a *LifetimeCheck) projection(nodeID ast.NodeID) (target ast.NodeID, throug
 		target = kind.Target
 	case ast.Index:
 		target = kind.Target
+		// A slice value is itself a pointer to its data, so `s[i]` projects into
+		// the referent (like indexing through a ref), not into the slice's own
+		// storage. An array stores its elements inline, so `a[i]` stays in the
+		// array's storage and is not through-ref.
+		if _, isSlice := a.env.TypeOfNode(target).Kind.(SliceType); isSlice {
+			return target, true, true
+		}
 	default:
 		return 0, false, false
 	}

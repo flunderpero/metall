@@ -483,6 +483,39 @@ test.met:6:13: reference escaping its allocation scope (via block result)
         }
 ```
 
+**ref into a slice parameter does not escape**
+
+A slice carries a pointer to its data, which the caller owns, so a reference into
+a slice parameter is bounded by the caller and may be returned.
+
+```metall
+{
+    fun first_ref(s []Int) &Int { &s[0] }
+}
+```
+
+```error
+```
+
+**ref into an array parameter escapes**
+
+An array parameter is passed by value, so its elements live in the callee's copy.
+A reference into them cannot outlive the call.
+
+```metall
+{
+    fun first_ref(a [3]Int) &Int { &a[0] }
+}
+```
+
+```error
+test.met:2:36: reference escaping its allocation scope (via block result)
+    {
+        fun first_ref(a [3]Int) &Int { &a[0] }
+                                       ^^^^^
+    }
+```
+
 **call returns struct with ref to local**
 
 ```metall
