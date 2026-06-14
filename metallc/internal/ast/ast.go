@@ -821,12 +821,8 @@ func (a *AST) NewRef(target NodeID, mut bool, span base.Span) NodeID {
 	return a.node(Ref{Target: target, Mut: mut}, span)
 }
 
-func (a *AST) NewString(value string, span base.Span) NodeID {
-	return a.node(String{Value: value, Bytes: false}, span)
-}
-
-func (a *AST) NewBytes(value string, span base.Span) NodeID {
-	return a.node(String{Value: value, Bytes: true}, span)
+func (a *AST) NewString(value string, bytes bool, span base.Span) NodeID {
+	return a.node(String{Value: value, Bytes: bytes}, span)
 }
 
 func (a *AST) NewRuneLiteral(value uint32, span base.Span) NodeID {

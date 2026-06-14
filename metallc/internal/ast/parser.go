@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/token"
@@ -236,7 +237,11 @@ func (p *Parser) ParseExternFun() (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
-		externName = linkTok.Value
+		value, _, ok := p.stringLiteralValue(linkTok)
+		if !ok {
+			return ParseFailed, false
+		}
+		externName = value
 		if _, ok := p.expect(token.RParen); !ok {
 			return ParseFailed, false
 		}
@@ -996,10 +1001,14 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		expr = p.NewBool(false, t.Span)
 	case token.String:
 		p.next()
-		expr = p.NewString(t.Value, t.Span.Combine(p.span()))
-	case token.Bytes:
-		p.next()
-		expr = p.NewBytes(t.Value, t.Span.Combine(p.span()))
+		str, ok := p.parseStringLiteral(t)
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = str
+	case token.Error:
+		p.diagnostic(t.Span, "%s", t.Value)
+		return ParseFailed, false
 	case token.Rune:
 		p.next()
 		runes := []rune(t.Value)
@@ -1687,6 +1696,163 @@ func (p *Parser) ParseRange() (nodeID NodeID, isRange bool, ok bool) {
 		return range_, true, ok
 	}
 	return lo, false, true
+}
+
+// parseStringLiteral turns a String token into a String node. The lexer kept the
+// text between the quotes verbatim; here we read the modifier (the leading
+// letters of the lexeme), apply the multi-line rules, and decode the escapes.
+func (p *Parser) parseStringLiteral(t *token.Token) (NodeID, bool) {
+	value, bytes, ok := p.stringLiteralValue(t)
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewString(value, bytes, t.Span), true
+}
+
+func (p *Parser) stringLiteralValue(t *token.Token) (string, bool, bool) { //nolint:funlen
+	content := t.Span.Source.Content
+	mod := t.Span.Start
+	for mod < len(content) && unicode.IsLetter(content[mod]) {
+		mod++
+	}
+	bytes, multiline := false, false
+	for _, m := range content[t.Span.Start:mod] {
+		switch m {
+		case 'b':
+			bytes = true
+		case 'm':
+			multiline = true
+		default:
+			p.diagnostic(t.Span, "unknown string modifier %q", string(m))
+			return "", false, false
+		}
+	}
+
+	raw := []rune(t.Value)
+	if multiline {
+		dedented, ok := p.dedentMultiline(raw, t.Span)
+		if !ok {
+			return "", false, false
+		}
+		raw = dedented
+	}
+
+	out := []byte{}
+	idx := 0
+	for idx < len(raw) {
+		c := raw[idx]
+		if c == '\\' {
+			// A backslash, optional trailing horizontal whitespace, then a newline
+			// continues the line, dropping the next line's leading whitespace. Any
+			// other whitespace after the backslash is an error.
+			ws := idx + 1
+			for ws < len(raw) && (raw[ws] == ' ' || raw[ws] == '\t') {
+				ws++
+			}
+			if ws < len(raw) && raw[ws] == '\n' {
+				idx = ws + 1
+				for idx < len(raw) && (raw[idx] == ' ' || raw[idx] == '\t') {
+					idx++
+				}
+				continue
+			}
+			if ws > idx+1 {
+				p.diagnostic(t.Span, "expected a newline after a line-continuation backslash")
+				return "", false, false
+			}
+			r, next, errMsg := token.ParseEscape(raw, idx, '"')
+			if errMsg != "" {
+				p.diagnostic(t.Span, "%s", errMsg)
+				return "", false, false
+			}
+			// In a bytes literal `\xNN` is a raw byte, not a utf-8 encoded rune.
+			if bytes && raw[idx+1] == 'x' {
+				out = append(out, byte(r))
+			} else {
+				out = utf8.AppendRune(out, r)
+			}
+			idx = next
+			continue
+		}
+		if c == '\n' && !multiline {
+			p.diagnostic(t.Span, `newline in single-line string; use a multi-line string (m"...")`)
+			return "", false, false
+		}
+		out = utf8.AppendRune(out, c)
+		idx++
+	}
+	return string(out), bytes, true
+}
+
+// dedentMultiline applies the m"..." rules to the raw content: the opening quote
+// must be followed by a newline and the closing quote must sit on its own line
+// (only horizontal whitespace may precede each, and it is ignored). Both framing
+// newlines are dropped and every line is dedented by the longest run of leading
+// whitespace common to all non-blank lines. The closing quote's own indentation
+// does not set the dedent. raw still holds escapes verbatim, so only real
+// newlines split lines.
+func (p *Parser) dedentMultiline(raw []rune, span base.Span) ([]rune, bool) {
+	open := 0
+	for open < len(raw) && (raw[open] == ' ' || raw[open] == '\t') {
+		open++
+	}
+	if open >= len(raw) || raw[open] != '\n' {
+		p.diagnostic(span, "multi-line string: the opening quote must be followed by a newline")
+		return nil, false
+	}
+	end := len(raw)
+	for end > 0 && (raw[end-1] == ' ' || raw[end-1] == '\t') {
+		end--
+	}
+	if end == 0 || raw[end-1] != '\n' {
+		p.diagnostic(span, "multi-line string: the closing quote must be on its own line")
+		return nil, false
+	}
+	if open >= end-1 {
+		return []rune{}, true
+	}
+
+	var lines [][]rune
+	lineStart := open + 1
+	for i := open + 1; i <= end-1; i++ {
+		if i == end-1 || raw[i] == '\n' {
+			lines = append(lines, raw[lineStart:i])
+			lineStart = i + 1
+		}
+	}
+
+	var indent []rune
+	haveIndent := false
+	for _, line := range lines {
+		ws := 0
+		for ws < len(line) && (line[ws] == ' ' || line[ws] == '\t') {
+			ws++
+		}
+		if ws == len(line) {
+			continue // a blank line does not constrain the dedent
+		}
+		if !haveIndent {
+			indent, haveIndent = line[:ws], true
+			continue
+		}
+		n := 0
+		for n < len(indent) && n < ws && indent[n] == line[n] {
+			n++
+		}
+		indent = indent[:n]
+	}
+
+	out := []rune{}
+	for i, line := range lines {
+		if i > 0 {
+			out = append(out, '\n')
+		}
+		if strings.TrimLeft(string(line), " \t") == "" {
+			continue // a blank line contributes only its newline
+		}
+		out = append(out, line[len(indent):]...)
+	}
+	return out, true
 }
 
 func (p *Parser) parseRangeRHS(lo *NodeID) (NodeID, bool) {

@@ -2,14 +2,29 @@
 
 ## Compile
 
-**print str**
+**print str, multi-line, and continuation**
 
 ```metall
-fun main() void { DebugIntern.print_str("hello") }
+fun main() void {
+    DebugIntern.print_str("hello")
+    let m = m"
+        line one
+            line two
+        line three
+        "
+    DebugIntern.print_str(m)
+    let c = "joined \
+        text"
+    DebugIntern.print_str(c)
+}
 ```
 
 ```output
 hello
+line one
+    line two
+line three
+joined text
 ```
 
 **int literal**
@@ -108,7 +123,7 @@ false
 true
 ```
 
-**bytes literal**
+**bytes literal, multi-line, and continuation**
 
 ```metall
 fun main() void {
@@ -118,6 +133,17 @@ fun main() void {
     DebugIntern.print_uint(x[1].to_u64())
     DebugIntern.print_uint(x[2].to_u64())
     DebugIntern.print_uint(x[3].to_u64())
+    let m = bm"
+        AB
+        "
+    DebugIntern.print_int(m.len)
+    DebugIntern.print_uint(m[0].to_u64())
+    DebugIntern.print_uint(m[1].to_u64())
+    let c = b"x\
+        y"
+    DebugIntern.print_int(c.len)
+    DebugIntern.print_uint(c[0].to_u64())
+    DebugIntern.print_uint(c[1].to_u64())
 }
 ```
 
@@ -127,6 +153,12 @@ fun main() void {
 98
 10
 255
+2
+65
+66
+2
+120
+121
 ```
 
 **bool var**

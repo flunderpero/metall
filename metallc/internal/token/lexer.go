@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
 )
@@ -18,7 +17,6 @@ const (
 	AmpEq
 	And
 	Break
-	Bytes
 	Caret
 	CaretEq
 	Case
@@ -121,7 +119,6 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AmpEq:                 "&=",
 	And:                   "<and>",
 	Break:                 "<break>",
-	Bytes:                 "<bytes>",
 	Caret:                 "^",
 	CaretEq:               "^=",
 	Case:                  "<case>",
@@ -423,13 +420,13 @@ func hexDigit(c rune) (rune, bool) {
 }
 
 // parseHexEscape parses \xNN byte escapes. idx points to the first hex digit after \x.
-func parseHexEscape(source *base.Source, idx int) (rune, int, bool) {
-	if idx+2 > len(source.Content) {
+func parseHexEscape(content []rune, idx int) (rune, int, bool) {
+	if idx+2 > len(content) {
 		return 0, idx, false
 	}
 	val := rune(0)
 	for i := range 2 {
-		d, ok := hexDigit(source.Content[idx+i])
+		d, ok := hexDigit(content[idx+i])
 		if !ok {
 			return 0, idx, false
 		}
@@ -439,15 +436,15 @@ func parseHexEscape(source *base.Source, idx int) (rune, int, bool) {
 }
 
 // parseUnicodeEscape parses \u{NNNNNN} unicode escapes. idx points to the '{' after \u.
-func parseUnicodeEscape(source *base.Source, idx int) (rune, int, bool) {
-	if !peek(source, idx, '{') {
+func parseUnicodeEscape(content []rune, idx int) (rune, int, bool) {
+	if idx >= len(content) || content[idx] != '{' {
 		return 0, idx, false
 	}
 	idx++ // skip {
 	val := rune(0)
 	digits := 0
-	for idx < len(source.Content) && source.Content[idx] != '}' {
-		d, ok := hexDigit(source.Content[idx])
+	for idx < len(content) && content[idx] != '}' {
+		d, ok := hexDigit(content[idx])
 		if !ok {
 			return 0, idx, false
 		}
@@ -458,18 +455,22 @@ func parseUnicodeEscape(source *base.Source, idx int) (rune, int, bool) {
 		val = val*16 + d
 		idx++
 	}
-	if idx >= len(source.Content) || digits == 0 || val > 0x10FFFF {
+	if idx >= len(content) || digits == 0 || val > 0x10FFFF {
 		return 0, idx, false
 	}
 	idx++ // skip }
 	return val, idx, true
 }
 
-func parseEscape(source *base.Source, idx int, quote rune) (rune, int, string) {
-	if idx+1 >= len(source.Content) {
+// ParseEscape decodes the escape sequence at content[idx] (which must be the
+// backslash). quote is the enclosing quote so `\'` and `\"` only unescape inside
+// their own literal. It returns the decoded rune, the index past the escape, and
+// an error message that is empty on success.
+func ParseEscape(content []rune, idx int, quote rune) (rune, int, string) {
+	if idx+1 >= len(content) {
 		return 0, idx, "unexpected end of escape sequence"
 	}
-	escapeChar := source.Content[idx+1]
+	escapeChar := content[idx+1]
 	switch escapeChar {
 	case 'n':
 		return '\n', idx + 2, ""
@@ -490,12 +491,12 @@ func parseEscape(source *base.Source, idx int, quote rune) (rune, int, string) {
 			return '"', idx + 2, ""
 		}
 	case 'x':
-		if r, newIdx, ok := parseHexEscape(source, idx+2); ok {
+		if r, newIdx, ok := parseHexEscape(content, idx+2); ok {
 			return r, newIdx, ""
 		}
 		return 0, idx, "invalid byte escape sequence"
 	case 'u':
-		if r, newIdx, ok := parseUnicodeEscape(source, idx+2); ok {
+		if r, newIdx, ok := parseUnicodeEscape(content, idx+2); ok {
 			return r, newIdx, ""
 		}
 		return 0, idx, "invalid unicode escape sequence"
@@ -518,33 +519,58 @@ func skipToClosingQuote(source *base.Source, idx int, quote rune) int {
 	return idx
 }
 
-func lexStringBody(source *base.Source, idx int, span base.Span, kind TokenKind) Token {
-	value := []byte{}
-	for idx < len(source.Content) {
-		c := source.Content[idx]
-		if c == '"' {
-			span.End = idx
-			return Token{kind, string(value), span}
-		}
-		if c == '\\' {
-			r, newIdx, errMsg := parseEscape(source, idx, '"')
-			if errMsg != "" {
-				span.End = skipToClosingQuote(source, idx+1, '"')
-				return Token{Error, errMsg, span}
-			}
-			// In a bytes literal `\xNN` is a raw byte instead of a utf-8 encoded rune.
-			if kind == Bytes && source.Content[idx+1] == 'x' {
-				value = append(value, byte(r))
-			} else {
-				value = utf8.AppendRune(value, r)
-			}
-			idx = newIdx
-		} else {
-			idx += 1
-			value = utf8.AppendRune(value, c)
+// stringPrefix reports whether a string literal begins at start and, if so,
+// returns the length of the modifier (the leading run of letters) and the number
+// of sigil `#`s before the opening quote. The lexed form is [letter]*[#]*".
+func stringPrefix(source *base.Source, start int) (modLen, sigils int, ok bool) {
+	content := source.Content
+	i := start
+	for i < len(content) && unicode.IsLetter(content[i]) {
+		i++
+	}
+	modLen = i - start
+	for i < len(content) && content[i] == '#' {
+		i++
+	}
+	sigils = i - start - modLen
+	return modLen, sigils, i < len(content) && content[i] == '"'
+}
+
+func matchSigils(content []rune, idx, n int) bool {
+	if idx+n > len(content) {
+		return false
+	}
+	for i := range n {
+		if content[idx+i] != '#' {
+			return false
 		}
 	}
-	return Token{EOF, "", span}
+	return true
+}
+
+// lexString lexes [letter]*[#]*"..."[#]* into a single String token whose value
+// is the raw text between the quotes. Escape decoding, the line-continuation
+// rules, and the multi-line rules are all the parser's job; the lexer only finds
+// the terminator (a `"` followed by the matching sigil count) and skips the
+// character after a backslash so an escaped quote does not end the string.
+func lexString(source *base.Source, start, modLen, sigils int) Token {
+	content := source.Content
+	span := base.NewSpan(source, start, start)
+	bodyStart := start + modLen + sigils + 1
+	idx := bodyStart
+	for idx < len(content) {
+		switch {
+		case content[idx] == '\\':
+			idx += 2
+		case content[idx] == '"' && matchSigils(content, idx+1, sigils):
+			span.End = idx + sigils
+			return Token{String, string(content[bodyStart:idx]), span}
+		default:
+			idx++
+		}
+	}
+	span.End = len(content) - 1
+	return Token{Error, "unterminated string literal", span}
 }
 
 func precededByNewline(source *base.Source, at int) bool {
@@ -569,15 +595,14 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	if kind, ok := simpleTokens[c]; ok {
 		return Token{Kind: kind, Value: "", Span: span}
 	}
+	if modLen, sigils, ok := stringPrefix(source, start); ok {
+		return lexString(source, start, modLen, sigils)
+	}
 	switch {
-	case c == '"':
-		return lexStringBody(source, idx, span, String)
-	case c == 'b' && peek(source, idx, '"'):
-		return lexStringBody(source, idx+1, span, Bytes)
 	case c == '\'':
 		if idx < len(source.Content) && source.Content[idx] != '\'' {
 			if source.Content[idx] == '\\' {
-				r, newIdx, errMsg := parseEscape(source, idx, '\'')
+				r, newIdx, errMsg := ParseEscape(source.Content, idx, '\'')
 				if errMsg != "" {
 					span.End = skipToClosingQuote(source, idx+1, '\'')
 					return Token{Error, errMsg, span}

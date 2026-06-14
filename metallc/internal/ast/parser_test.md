@@ -736,6 +736,199 @@ Int(value=170)
 Int(value=1000000)
 ```
 
+## Strings
+
+**String literal**
+
+```metall
+"hello"
+```
+
+```ast
+String(value="hello")
+```
+
+**Empty string**
+
+```metall
+""
+```
+
+```ast
+String(value="")
+```
+
+**String escapes**
+
+```metall
+"a\nb\tc\rd\0e"
+```
+
+```ast
+String(value="a\nb\tc\rd\x00e")
+```
+
+**String escaped quote and backslash**
+
+```metall
+"q=\" p=\\"
+```
+
+```ast
+String(value="q=\" p=\\")
+```
+
+**String hex and unicode escapes**
+
+```metall
+"\x41\u{20AC}\u{1F600}"
+```
+
+```ast
+String(value="A€😀")
+```
+
+**String hex byte is encoded as UTF-8**
+
+```metall
+"\xc0"
+```
+
+```ast
+String(value="À")
+```
+
+**String unknown escape**
+
+```metall
+"\q"
+```
+
+```error
+test.met:1:1: unknown escape sequence '\q'
+    "\q"
+    ^^^^
+```
+
+**String invalid hex escape**
+
+```metall
+"\xZZ"
+```
+
+```error
+test.met:1:1: invalid byte escape sequence
+    "\xZZ"
+    ^^^^^^
+```
+
+**String invalid unicode escape**
+
+```metall
+"\u{XY}"
+```
+
+```error
+test.met:1:1: invalid unicode escape sequence
+    "\u{XY}"
+    ^^^^^^^^
+```
+
+**Single-line string rejects a raw newline**
+
+```metall
+"line one
+line two"
+```
+
+```error
+test.met:1:1: newline in single-line string; use a multi-line string (m"...")
+    "line one
+    ^
+    line two"
+            ^
+```
+
+**Unterminated string literal**
+
+```metall
+"abc
+```
+
+```error
+test.met:1:1: unterminated string literal
+    "abc
+    ^^^^
+```
+
+**String line continuation**
+
+```metall
+"a \
+  b"
+```
+
+```ast
+String(value="a b")
+```
+
+**String line continuation drops the next line's indentation**
+
+```metall
+"a\
+      b"
+```
+
+```ast
+String(value="ab")
+```
+
+**String line continuation ignores whitespace after the backslash**
+
+```metall
+"a \   
+b"
+```
+
+```ast
+String(value="a b")
+```
+
+**String multiple line continuations**
+
+```metall
+"a\
+b\
+c"
+```
+
+```ast
+String(value="abc")
+```
+
+**String line continuation at the start**
+
+```metall
+"\
+  x"
+```
+
+```ast
+String(value="x")
+```
+
+**Backslash then whitespace then non-newline is rejected**
+
+```metall
+"a\ b"
+```
+
+```error
+test.met:1:1: expected a newline after a line-continuation backslash
+    "a\ b"
+    ^^^^^^
+```
+
 **Bytes literal**
 
 ```metall
@@ -746,16 +939,6 @@ b"abc"
 String(value="abc",bytes=true)
 ```
 
-**Empty bytes literal**
-
-```metall
-b""
-```
-
-```ast
-String(value="",bytes=true)
-```
-
 **Bytes literal with escapes**
 
 ```metall
@@ -764,6 +947,311 @@ b"\n\t\xFF"
 
 ```ast
 String(value="\n\t\xff",bytes=true)
+```
+
+**Bytes literal keeps a raw hex byte**
+
+```metall
+b"\xc0"
+```
+
+```ast
+String(value="\xc0",bytes=true)
+```
+
+**Bytes line continuation**
+
+```metall
+b"x\
+  y"
+```
+
+```ast
+String(value="xy",bytes=true)
+```
+
+**Bytes multi-line**
+
+```metall
+bm"
+  AB
+  "
+```
+
+```ast
+String(value="AB",bytes=true)
+```
+
+**String with sigils carries bare quotes**
+
+```metall
+#"he said "hi""#
+```
+
+```ast
+String(value="he said \"hi\"")
+```
+
+**String with triple sigils**
+
+```metall
+###"x"###
+```
+
+```ast
+String(value="x")
+```
+
+**Bytes literal with sigils**
+
+```metall
+b###"raw"###
+```
+
+```ast
+String(value="raw",bytes=true)
+```
+
+**Escapes still apply inside sigil strings**
+
+```metall
+#"a\nb"#
+```
+
+```ast
+String(value="a\nb")
+```
+
+**Sigil count mismatch is unterminated**
+
+```metall
+#"abc"
+```
+
+```error
+test.met:1:1: unterminated string literal
+    #"abc"
+    ^^^^^^
+```
+
+**Unknown string modifier**
+
+```metall
+boo"x"
+```
+
+```error
+test.met:1:1: unknown string modifier "o"
+    boo"x"
+    ^^^^^^
+```
+
+**Multi-line bytes with modifiers in either order**
+
+```metall
+mb"
+  AB
+  "
+```
+
+```ast
+String(value="AB",bytes=true)
+```
+
+**Multi-line string is dedented**
+
+```metall
+m"
+    hello
+    world
+    "
+```
+
+```ast
+String(value="hello\nworld")
+```
+
+**Empty multi-line string**
+
+```metall
+m"
+"
+```
+
+```ast
+String(value="")
+```
+
+**Multi-line string ignores the closing quote indentation when it is shallower**
+
+```metall
+m"
+    a
+    b
+"
+```
+
+```ast
+String(value="a\nb")
+```
+
+**Multi-line string ignores the closing quote indentation when it is deeper**
+
+```metall
+m"
+  a
+  b
+      "
+```
+
+```ast
+String(value="a\nb")
+```
+
+**Multi-line string dedents by the least-indented line**
+
+```metall
+m"
+    a
+      b
+    "
+```
+
+```ast
+String(value="a\n  b")
+```
+
+**Multi-line string keeps relative indentation**
+
+```metall
+m"
+    outer
+        inner
+    "
+```
+
+```ast
+String(value="outer\n    inner")
+```
+
+**Multi-line string single line**
+
+```metall
+m"
+    only
+    "
+```
+
+```ast
+String(value="only")
+```
+
+**Multi-line string keeps blank lines**
+
+```metall
+m"
+    a
+
+    b
+    "
+```
+
+```ast
+String(value="a\n\nb")
+```
+
+**Multi-line string treats a whitespace-only line as blank**
+
+```metall
+m"
+    a
+      
+    b
+    "
+```
+
+```ast
+String(value="a\n\nb")
+```
+
+**Multi-line string keeps trailing whitespace on a line**
+
+```metall
+m"
+    a   
+    "
+```
+
+```ast
+String(value="a   ")
+```
+
+**Multi-line string ignores whitespace after the opening quote**
+
+```metall
+m"   
+    x
+    "
+```
+
+```ast
+String(value="x")
+```
+
+**Multi-line string with tab indentation**
+
+```metall
+m"
+		a
+		b
+		"
+```
+
+```ast
+String(value="a\nb")
+```
+
+**Multi-line string with a line continuation**
+
+```metall
+m"
+    a \
+    b
+    "
+```
+
+```ast
+String(value="a b")
+```
+
+**Multi-line string opening quote must be followed by a newline**
+
+```metall
+m"oops
+    "
+```
+
+```error
+test.met:1:1: multi-line string: the opening quote must be followed by a newline
+    m"oops
+    ^
+        "
+        ^
+```
+
+**Multi-line string closing quote must be on its own line**
+
+```metall
+m"
+    text"
+```
+
+```error
+test.met:1:1: multi-line string: the closing quote must be on its own line
+    m"
+    ^
+        text"
+            ^
 ```
 
 ## If
