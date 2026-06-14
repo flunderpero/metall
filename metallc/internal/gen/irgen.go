@@ -62,6 +62,11 @@ type matchArmInfo struct {
 	armIndex  int
 	tag       int
 	guardFail Label
+	// discrs is non-empty for an enum-component arm (`case Color.red` / `case IOErr.x`):
+	// the enum discriminants to test within the variant's payload, with enumIR the
+	// enum's int IR type. A whole-variant arm matches its tag unconditionally.
+	discrs []string
+	enumIR string
 }
 
 type Symbol struct {
@@ -1621,6 +1626,40 @@ func (g *IRFunGen) genMatch(id ast.NodeID, match ast.Match) {
 	g.genMatchArms(id, match, armInfos, contLabel, payloadPtr, defaultLabel)
 }
 
+// unionPatternTag returns the union variant tag a match pattern dispatches to.
+// For an enum-component pattern (`case Color.red` / `case IOErr.x`) it also
+// returns the enum discriminants it matches and the enum's int IR type; a
+// whole-variant pattern returns nil discriminants (matches its tag unconditionally).
+func (g *IRFunGen) unionPatternTag(pat ast.NodeID, union types.UnionType) (tag int, discrs []string, enumIR string) {
+	if enumID, variant, ok := g.env.EnumVariantRef(pat); ok {
+		enum := base.Cast[types.EnumType](g.env.Type(enumID).Kind)
+		for i, vID := range union.Variants {
+			if enumID == vID || enum.Root == vID {
+				return i, []string{enum.Variants[enum.VariantIndex(variant)].Tag.String()}, g.irType(enumID)
+			}
+		}
+		panic(base.Errorf("unionPatternTag: enum variant ref not in union"))
+	}
+	patTypeID := g.typeIDOfNode(pat)
+	for i, vID := range union.Variants {
+		if patTypeID == vID {
+			return i, nil, ""
+		}
+	}
+	if enum, ok := g.env.Type(patTypeID).Kind.(types.EnumType); ok {
+		for i, vID := range union.Variants {
+			if enum.Root == vID {
+				ds := make([]string, len(enum.Variants))
+				for j, v := range enum.Variants {
+					ds[j] = v.Tag.String()
+				}
+				return i, ds, g.irType(patTypeID)
+			}
+		}
+	}
+	panic(base.Errorf("unionPatternTag: pattern not a variant"))
+}
+
 func (g *IRFunGen) buildMatchArmInfos(
 	id ast.NodeID,
 	match ast.Match,
@@ -1632,26 +1671,18 @@ func (g *IRFunGen) buildMatchArmInfos(
 		// An or-pattern contributes one switch target per variant, all jumping to
 		// the same arm body.
 		for _, pat := range arm.Patterns {
-			patternTypeID := g.typeIDOfNode(pat)
-			tag := -1
-			for vi, vID := range union.Variants {
-				if patternTypeID == vID {
-					tag = vi
-					break
-				}
-			}
-			if tag < 0 {
-				panic(base.Errorf("genMatch: variant not found"))
-			}
+			tag, discrs, enumIR := g.unionPatternTag(pat, union)
 			lbl := g.label(fmt.Sprintf("case_%d_%d", tag, i), id)
-			infos = append(infos, matchArmInfo{lbl, i, tag, ""})
+			infos = append(infos, matchArmInfo{lbl, i, tag, "", discrs, enumIR})
 		}
 	}
 	// Chain guarded arms: if a guard fails, fall through to the next arm
 	// for the same variant tag. The last arm for a tag falls through to
 	// the else label (or unreachable).
 	for i := range infos {
-		if match.Arms[infos[i].armIndex].Guard == nil {
+		// Guarded and enum-component arms can fall through (a guard fails or a
+		// discriminant misses), so they chain to the next arm for the same variant tag.
+		if match.Arms[infos[i].armIndex].Guard == nil && len(infos[i].discrs) == 0 {
 			continue
 		}
 		nextLabel := elseLabel
@@ -1702,6 +1733,24 @@ func (g *IRFunGen) genMatchArms(
 		}
 		armEntry[armInfo.armIndex] = armInfo.label
 		arm := match.Arms[armInfo.armIndex]
+		if len(armInfo.discrs) > 0 {
+			// Enum-component arm: the variant payload is an enum value. Test its
+			// discriminant and fall through to the next same-tag arm on a miss.
+			discrReg := g.reg()
+			g.write("%s = load %s, ptr %s", discrReg, armInfo.enumIR, payloadPtr)
+			matchReg := g.reg()
+			g.write("%s = icmp eq %s %s, %s", matchReg, armInfo.enumIR, discrReg, armInfo.discrs[0])
+			for _, d := range armInfo.discrs[1:] {
+				eq := g.reg()
+				g.write("%s = icmp eq %s %s, %s", eq, armInfo.enumIR, discrReg, d)
+				combined := g.reg()
+				g.write("%s = or i1 %s, %s", combined, matchReg, eq)
+				matchReg = combined
+			}
+			bodyLabel := g.label(fmt.Sprintf("discr_ok_%d", armInfo.armIndex), id)
+			g.write("br i1 %s, label %%%s, label %%%s", matchReg, bodyLabel, armInfo.guardFail)
+			g.writeLabel(bodyLabel)
+		}
 		g.genMatchArmBinding(match, arm, payloadPtr)
 		if arm.Guard != nil {
 			g.Gen(*arm.Guard)

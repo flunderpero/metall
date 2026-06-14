@@ -77,7 +77,13 @@ func (e *Engine) checkUnionMatchArms( //nolint:funlen
 	match ast.Match, union UnionType, unionTypeID TypeID, matchedRefMut *bool,
 	span base.Span, typeHint *TypeID,
 ) (TypeID, TypeStatus) {
-	covered := make([]bool, len(union.Variants))
+	// covered[i] is the set of coverage keys seen for union variant i: "" for a
+	// whole non-enum variant, the enum variant names for an enum component, and "*"
+	// for a whole/root arm that catches an open enum (see variantCovered).
+	covered := make([]map[string]bool, len(union.Variants))
+	for i := range covered {
+		covered[i] = map[string]bool{}
+	}
 	type armBody struct {
 		body   ast.NodeID
 		typeID TypeID
@@ -91,40 +97,42 @@ func (e *Engine) checkUnionMatchArms( //nolint:funlen
 		}
 		var firstVariantTypeID TypeID
 		for pi, pat := range arm.Patterns {
-			var variantTypeID TypeID
+			var matchedIdx int
+			var keys []string
+			var bindTypeID TypeID
 			if isTry {
-				variantTypeID = union.Variants[0]
-				variantCached, _ := e.env.cachedTypeInfo(variantTypeID)
+				matchedIdx, keys, bindTypeID = 0, []string{""}, union.Variants[0]
+				variantCached, _ := e.env.cachedTypeInfo(union.Variants[0])
 				e.env.setNodeType(pat, variantCached)
 			} else {
-				var varStatus TypeStatus
-				variantTypeID, varStatus = e.Query(pat)
+				patTypeID, varStatus := e.Query(pat)
 				if varStatus.Failed() {
 					return InvalidTypeID, TypeDepFailed
 				}
-			}
-			matchedIdx := -1
-			for i, vID := range union.Variants {
-				if variantTypeID == vID {
-					matchedIdx = i
-					break
-				}
-			}
-			if matchedIdx < 0 {
-				e.diag(e.ast.Node(pat).Span, "type %s is not a variant of %s",
-					e.env.TypeDisplay(variantTypeID), e.env.TypeDisplay(unionTypeID))
-				return InvalidTypeID, TypeFailed
-			}
-			if arm.Guard == nil {
-				if covered[matchedIdx] {
-					e.diag(e.ast.Node(pat).Span, "duplicate match arm for variant %s",
-						e.env.TypeDisplay(variantTypeID))
+				var ok bool
+				matchedIdx, keys, bindTypeID, ok = e.unionArmKeys(pat, patTypeID, union)
+				if !ok {
+					e.diag(e.ast.Node(pat).Span, "type %s is not a variant of %s",
+						e.env.TypeDisplay(patTypeID), e.env.TypeDisplay(unionTypeID))
 					return InvalidTypeID, TypeFailed
 				}
-				covered[matchedIdx] = true
+			}
+			if arm.Guard == nil {
+				fresh := false
+				for _, k := range keys {
+					if !covered[matchedIdx][k] {
+						covered[matchedIdx][k] = true
+						fresh = true
+					}
+				}
+				if !fresh {
+					e.diag(e.ast.Node(pat).Span, "duplicate match arm for variant %s",
+						e.env.TypeDisplay(union.Variants[matchedIdx]))
+					return InvalidTypeID, TypeFailed
+				}
 			}
 			if pi == 0 {
-				firstVariantTypeID = variantTypeID
+				firstVariantTypeID = bindTypeID
 			}
 		}
 		if arm.Binding != nil {
@@ -151,14 +159,14 @@ func (e *Engine) checkUnionMatchArms( //nolint:funlen
 	if match.Else != nil {
 		// A `try` desugars to an else that propagates the error variant, so it is
 		// never redundant. Otherwise an else over an already-exhaustive match is.
-		if !match.Try && len(uncoveredVariants(covered, union)) == 0 {
+		if !match.Try && len(e.uncoveredUnionVariants(covered, union)) == 0 {
 			e.diag(span, "else is not allowed in a match on %s; it is exhaustive",
 				e.env.TypeDisplay(unionTypeID))
 			return InvalidTypeID, TypeFailed
 		}
 		if match.Else.Binding != nil {
 			bindTypeID := unionTypeID
-			if uncovered := uncoveredVariants(covered, union); len(uncovered) == 1 {
+			if uncovered := e.uncoveredUnionVariants(covered, union); len(uncovered) == 1 {
 				bindTypeID = uncovered[0]
 			}
 			bindTypeID, ok := e.matchBindingType(
@@ -171,10 +179,10 @@ func (e *Engine) checkUnionMatchArms( //nolint:funlen
 		}
 		bodies = append(bodies, armBody{match.Else.Body, InvalidTypeID})
 	} else {
-		for i, c := range covered {
-			if !c {
+		for i, vID := range union.Variants {
+			if !e.variantCovered(covered[i], vID) {
 				e.diag(span, "non-exhaustive match: missing variant %s",
-					e.env.TypeDisplay(union.Variants[i]))
+					e.env.TypeDisplay(vID))
 				return InvalidTypeID, TypeFailed
 			}
 		}
@@ -239,6 +247,98 @@ func (e *Engine) checkGuard(guardID ast.NodeID) TypeStatus {
 	return TypeOK
 }
 
+// unionArmKeys resolves one match-arm pattern against a union. matchedIdx is the
+// union variant it targets. keys is what it covers: [""] for a whole non-enum
+// variant; for an enum variant, the variant names (a whole-enum arm covers all of
+// them, plus "*" when the enum is open). bindTypeID is the type the arm's binding
+// takes. ok=false (no diagnostic) when the pattern is neither a variant nor an
+// enum-component of the union.
+func (e *Engine) unionArmKeys(
+	pat ast.NodeID, patTypeID TypeID, union UnionType,
+) (matchedIdx int, keys []string, bindTypeID TypeID, ok bool) {
+	if enumID, variant, isVariantRef := e.env.EnumVariantRef(pat); isVariantRef {
+		// `case Color.red` / `case IOErr.not_found`: one variant of an enum component.
+		patEnum, ok := e.env.Type(enumID).Kind.(EnumType)
+		if !ok {
+			panic(base.Errorf("unionArmKeys: enum variant ref %q has a non-enum type", variant))
+		}
+		for i, vID := range union.Variants {
+			if enumID == vID || patEnum.Root == vID {
+				return i, []string{variant}, enumID, true
+			}
+		}
+		return -1, nil, enumID, false
+	}
+	// A whole-variant match: `case Int n` / `case Color c` / `case Err e`.
+	for i, vID := range union.Variants {
+		if patTypeID == vID {
+			return i, e.wholeVariantKeys(vID), patTypeID, true
+		}
+	}
+	// A bare subset of an open enum component: `case IOErr io`.
+	if patEnum, isEnum := e.env.Type(patTypeID).Kind.(EnumType); isEnum {
+		for i, vID := range union.Variants {
+			if patEnum.Root == vID {
+				keys = make([]string, len(patEnum.Variants))
+				for j, v := range patEnum.Variants {
+					keys[j] = v.Name
+				}
+				return i, keys, patTypeID, true
+			}
+		}
+	}
+	return -1, nil, patTypeID, false
+}
+
+// wholeVariantKeys is the coverage-key set a whole-variant arm covers: "" for a
+// non-enum variant, every variant name for an enum, plus "*" when the enum is
+// open (the catch that makes an open enum exhaustive).
+func (e *Engine) wholeVariantKeys(vID TypeID) []string {
+	enum, isEnum := e.env.Type(vID).Kind.(EnumType)
+	if !isEnum {
+		return []string{""}
+	}
+	keys := make([]string, 0, len(enum.Variants)+1)
+	for _, v := range enum.Variants {
+		keys = append(keys, v.Name)
+	}
+	if enum.IsOpen {
+		keys = append(keys, "*")
+	}
+	return keys
+}
+
+// variantCovered reports whether the keys seen for union variant vID exhaust it:
+// "" for a non-enum variant, every variant name for a closed enum, or "*" (from a
+// whole/root arm) for an open enum.
+func (e *Engine) variantCovered(coveredKeys map[string]bool, vID TypeID) bool {
+	enum, isEnum := e.env.Type(vID).Kind.(EnumType)
+	if !isEnum {
+		return coveredKeys[""]
+	}
+	if enum.IsOpen {
+		return coveredKeys["*"]
+	}
+	for _, v := range enum.Variants {
+		if !coveredKeys[v.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Engine) uncoveredUnionVariants(covered []map[string]bool, union UnionType) []TypeID {
+	var result []TypeID
+	for i, vID := range union.Variants {
+		if !e.variantCovered(covered[i], vID) {
+			result = append(result, vID)
+		}
+	}
+	return result
+}
+
+// uncoveredVariants is the lifetime analyzer's coarse whole-variant view (an
+// enum-component arm leaves its variant uncovered here, which is conservative).
 func uncoveredVariants(covered []bool, union UnionType) []TypeID {
 	var result []TypeID
 	for i, c := range covered {

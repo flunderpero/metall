@@ -582,6 +582,87 @@ enum01 = AppErr
 enum02 = IOErr = file_not_found | broken_pipe
 ```
 
+**Match a union on a variant and whole of its enum component**
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    union U = Int | Color
+    let u U = Color.red
+    match u {
+        case Int n: n
+        case Color.red: 2
+        case Color c: 3
+    }
+}
+```
+
+```error
+```
+
+**Match a union exhaustively over a closed enum component's variants**
+
+A closed enum component is exhausted by listing all its variants, no catch needed.
+
+```metall
+{
+    enum Color U8 = red | green | blue
+    union U = Int | Color
+    let u U = Color.red
+    match u {
+        case Int n: n
+        case Color.red: 1
+        case Color.green: 2
+        case Color.blue: 3
+    }
+}
+```
+
+```error
+```
+
+**Match a !T carrier on an error subset and variant**
+
+```metall
+{
+    enum IOErr Err = not_found | broken_pipe
+    fun parse(ok Bool) !Int { if ok { 1 } else { IOErr.not_found } }
+    match parse(false) {
+        case Int n: n
+        case IOErr.not_found: 2
+        case Err e: 3
+    }
+}
+```
+
+```error
+```
+
+**Match a !T carrier without an error catch is non-exhaustive**
+
+```metall
+{
+    enum IOErr Err = not_found | broken_pipe
+    fun parse(ok Bool) !Int { if ok { 1 } else { IOErr.not_found } }
+    match parse(false) {
+        case Int n: n
+        case IOErr.not_found: 2
+    }
+}
+```
+
+```error
+test.met:4:5: non-exhaustive match: missing variant Err
+        fun parse(ok Bool) !Int { if ok { 1 } else { IOErr.not_found } }
+        match parse(false) {
+        ^
+            case Int n: n
+            case IOErr.not_found: 2
+        }
+        ^
+    }
+```
+
 **try narrows an open enum to a subset**
 
 ```metall

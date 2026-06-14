@@ -3744,6 +3744,56 @@ fun main() void {
 true
 ```
 
+**union match dispatches on an enum component**
+
+```metall
+enum IOErr Err = not_found | broken_pipe
+enum Color U8 = red | green | blue
+union U = Int | Color
+
+fun parse(code Int) !Int {
+    when {
+    case code == 0: 7
+    case code == 1: IOErr.not_found
+    else: IOErr.broken_pipe
+    }
+}
+
+fun classify(code Int) Str {
+    match parse(code) {
+        case Int n: "ok"
+        case IOErr.not_found: "not_found"
+        case Err e: "other"
+    }
+}
+
+fun tag(u U) Int {
+    match u {
+        case Int n: n
+        case Color.red: 100
+        case Color c: 200
+    }
+}
+
+fun main() void {
+    DebugIntern.print_str(classify(0))
+    DebugIntern.print_str(classify(1))
+    DebugIntern.print_str(classify(2))
+    DebugIntern.print_int(tag(U(5)))
+    DebugIntern.print_int(tag(U(Color.red)))
+    DebugIntern.print_int(tag(U(Color.green)))
+}
+```
+
+```output
+ok
+not_found
+other
+5
+100
+200
+```
+
 **union match with struct variant**
 
 ```metall
