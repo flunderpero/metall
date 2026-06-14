@@ -6069,7 +6069,7 @@ fun main() void {
 42
 ```
 
-**ffi sizeof and pointers**
+**ffi sizeof, alignof and pointers**
 
 ```metall
 use std.ffi
@@ -6083,6 +6083,14 @@ fun main() void {
     DebugIntern.print_int(ffi.sizeof<Str>())
     struct Pair { a Int b Int }
     DebugIntern.print_int(ffi.sizeof<Pair>())
+
+    struct Bytes { a U8 b U8 c U8 }
+    DebugIntern.print_int(ffi.alignof<U8>())
+    DebugIntern.print_int(ffi.alignof<I32>())
+    DebugIntern.print_int(ffi.alignof<Int>())
+    DebugIntern.print_int(ffi.alignof<[]U8>())
+    DebugIntern.print_int(ffi.alignof<Pair>())
+    DebugIntern.print_int(ffi.alignof<Bytes>())
 
     let x = 42
     let p = ffi.ref_ptr<Int>(&x)
@@ -6102,6 +6110,12 @@ fun main() void {
 16
 16
 16
+1
+4
+8
+8
+8
+1
 true
 true
 ```

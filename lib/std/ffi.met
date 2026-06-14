@@ -155,6 +155,14 @@ pub fun sizeof<T>() Int {
     panic("this is implemented by the runtime")
 }
 
+--- Return the alignment of the given type.
+
+    This is just a stub, the actual implementation is built-in.
+---
+pub fun alignof<T>() Int {
+  panic("this is implemented by the runtime")
+}
+
 --- A function pointer points to a free function and - if it's a capturing closure -
     to its captured data. ---
 pub unsync struct FunPtr {

@@ -9,6 +9,7 @@ import (
 
 var builtinFuns = []string{ //nolint:gochecknoglobals
 	"std::ffi.sizeof",
+	"std::ffi.alignof",
 	"std::ffi.ref_ptr",
 	"std::ffi.ref_ptr_mut",
 	"std::ffi.slice_ptr",

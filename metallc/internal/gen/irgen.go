@@ -2429,6 +2429,11 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		size := g.irTypeSize(g.env, argTypeID)
 		g.setCode(id, "%d", size)
 		return true
+	case "ffi::alignof":
+		argTypeID := g.typeIDOfNode(g.calleeTypeArgs(call)[0])
+		align := g.irTypeAlign(g.env, argTypeID)
+		g.setCode(id, "%d", align)
+		return true
 	case "ffi::Ptr.as_u64", "ffi::PtrMut.as_u64":
 		receiver, ok := g.env.MethodCallReceiver(id)
 		if !ok {
