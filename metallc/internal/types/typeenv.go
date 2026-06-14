@@ -114,6 +114,9 @@ type TypeEnv struct {
 	unionWraps            map[ast.NodeID]unionWrap
 	constArrays           map[ast.NodeID]bool
 	enumVariantRefs       map[ast.NodeID]enumVariantRef
+	// forIterRet carries a `for x in <iter>` loop's next() return type (an
+	// optional ?T) from checkFor down to codegen.
+	forIterRet map[ast.NodeID]TypeID
 }
 
 type enumVariantRef struct {
@@ -153,6 +156,7 @@ func NewRootEnv(a *ast.AST, g *ast.ScopeGraph) *TypeEnv {
 		unionWraps:            map[ast.NodeID]unionWrap{},
 		constArrays:           map[ast.NodeID]bool{},
 		enumVariantRefs:       map[ast.NodeID]enumVariantRef{},
+		forIterRet:            map[ast.NodeID]TypeID{},
 	}
 }
 
@@ -180,6 +184,7 @@ func (e *TypeEnv) NewChildEnv(node ast.NodeID) *TypeEnv {
 		unionWraps:            map[ast.NodeID]unionWrap{},
 		constArrays:           map[ast.NodeID]bool{},
 		enumVariantRefs:       map[ast.NodeID]enumVariantRef{},
+		forIterRet:            map[ast.NodeID]TypeID{},
 	}
 }
 
@@ -232,6 +237,16 @@ func (e *TypeEnv) NamedFunRef(id ast.NodeID) (string, bool) {
 		return e.parent.NamedFunRef(id)
 	}
 	return "", false
+}
+
+func (e *TypeEnv) ForIterRet(forID ast.NodeID) (TypeID, bool) {
+	if t, ok := e.forIterRet[forID]; ok {
+		return t, true
+	}
+	if e.parent != nil {
+		return e.parent.ForIterRet(forID)
+	}
+	return InvalidTypeID, false
 }
 
 // PathBinding returns the binding recorded for nodeID, walking up parent envs.
@@ -700,6 +715,10 @@ func (e *TypeEnv) buildFunType(typ FunType, nodeID ast.NodeID, span base.Span) T
 
 func (e *TypeEnv) setNamedFunRef(nodeID ast.NodeID, name string) {
 	e.namedFunRef[nodeID] = name
+}
+
+func (e *TypeEnv) setForIterRet(forID ast.NodeID, retType TypeID) {
+	e.forIterRet[forID] = retType
 }
 
 func (e *TypeEnv) copyNamedFunRef(dst ast.NodeID, src ast.NodeID) {

@@ -1231,6 +1231,8 @@ func (g *IRFunGen) genFor(id ast.NodeID, forNode ast.For) {
 	if forNode.Binding != nil {
 		if _, ok := g.ast.Node(*forNode.Cond).Kind.(ast.Range); ok {
 			g.genForInRange(id, forNode)
+		} else if _, isIter := g.env.ForIterRet(id); isIter {
+			g.genForInIter(id, forNode)
 		} else {
 			g.genForInSlice(id, forNode)
 		}
@@ -1370,6 +1372,85 @@ func (g *IRFunGen) genForInSlice(id ast.NodeID, forNode ast.For) { //nolint:funl
 	// itself an i64, so the increment can never overflow.
 	g.write("%s = add i64 %s, 1", incrReg, nextReg)
 	g.write("store i64 %s, ptr %s", incrReg, idxReg)
+	g.write("br label %%%s", labelCond)
+	g.writeLabel(labelEnd)
+	g.setCode(id, voidValue)
+}
+
+// genForInIter lowers `for x in <iter>` over a type whose next() returns ?T.
+// next() fills the optional result into one reused slot via sret each iteration;
+// x binds directly to the stable payload address.
+func (g *IRFunGen) genForInIter(id ast.NodeID, forNode ast.For) { //nolint:funlen
+	g.Gen(*forNode.Cond)
+	srcPtr := g.lookupCode(*forNode.Cond)
+	// Iterate a private copy: next() mutates the iterator and the source may be
+	// an immutable binding.
+	iterType := g.typeOfNode(*forNode.Cond)
+	iterPtr := g.reg()
+	g.writeAlloca(iterPtr, g.irType(iterType.ID))
+	g.storeValue(g.loadValue(srcPtr, iterType.ID), iterPtr, iterType.ID)
+
+	nextName, ok := g.env.NamedFunRef(id)
+	if !ok {
+		panic(base.Errorf("genForInIter: no next() recorded for %s", id))
+	}
+	optTypeID, _ := g.env.ForIterRet(id)
+	optIR := g.irType(optTypeID)
+	optUnion := base.Cast[types.UnionType](g.env.Type(optTypeID).Kind)
+	elemTypeID := optUnion.TypeArgs[0]
+	noneTag := 0
+	for i, vID := range optUnion.Variants {
+		if vID != elemTypeID {
+			noneTag = i
+			break
+		}
+	}
+
+	resReg := g.reg()
+	g.writeAlloca(resReg, optIR)
+	tagPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", tagPtr, optIR, resReg)
+	payloadPtr := g.reg()
+	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", payloadPtr, optIR, resReg)
+	xType := g.irType(elemTypeID)
+	if g.isAggregateType(elemTypeID) {
+		xType = "ptr"
+	}
+	g.setSymbol(ast.BindingID(forNode.Body), forNode.Binding.Name, payloadPtr, xType)
+
+	var idxReg string
+	if forNode.Index != nil {
+		idxReg = g.reg()
+		g.writeAlloca(idxReg, "i64")
+		g.write("store i64 0, ptr %s", idxReg)
+		g.setSymbol(ast.BindingID(*forNode.Cond), forNode.Index.Name, idxReg, "i64")
+	}
+
+	labelCond := g.label("for", id)
+	labelBody := g.label("body", id)
+	labelIncr := g.label("incr", id)
+	labelEnd := g.label("endfor", id)
+	g.write("br label %%%s", labelCond)
+	g.writeLabel(labelCond)
+	g.write("call void @%s(ptr sret(%s) %s, ptr %s)", irName(nextName), optIR, resReg, iterPtr)
+	tagReg := g.reg()
+	g.write("%s = load i64, ptr %s", tagReg, tagPtr)
+	condReg := g.reg()
+	g.write("%s = icmp ne i64 %s, %d", condReg, tagReg, noneTag)
+	g.write("br i1 %s, label %%%s, label %%%s", condReg, labelBody, labelEnd)
+	g.writeLabel(labelBody)
+	g.loopStack = append(g.loopStack, LoopLabels{labelIncr, labelEnd, len(g.arenaRegStack)})
+	defer func() { g.loopStack = g.loopStack[:len(g.loopStack)-1] }()
+	g.Gen(forNode.Body)
+	g.write("br label %%%s", labelIncr)
+	g.writeLabel(labelIncr)
+	if forNode.Index != nil {
+		cur := g.reg()
+		g.write("%s = load i64, ptr %s", cur, idxReg)
+		inc := g.reg()
+		g.write("%s = add i64 %s, 1", inc, cur)
+		g.write("store i64 %s, ptr %s", inc, idxReg)
+	}
 	g.write("br label %%%s", labelCond)
 	g.writeLabel(labelEnd)
 	g.setCode(id, voidValue)

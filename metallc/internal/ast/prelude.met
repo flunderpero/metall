@@ -20,11 +20,6 @@ pub shape HasFmt {
     pub fun HasFmt.fmt(f HasFmt, sb &mut StrBuilder) void
 }
 
---- Iterator ---
-pub shape Iter<T> {
-    pub fun Iter.next(it &mut Iter) ?T
-}
-
 --- The error type. ---
 
 pub fun Err.fmt(e Err, sb &mut StrBuilder) void { sb.str("error: ") sb.str(e.debug_name) }

@@ -709,6 +709,7 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 			}
 			var elemTypeID TypeID
 			var elemMut bool
+			isIter := false
 			switch k := e.env.Type(iterTypeID).Kind.(type) {
 			case ArrayType:
 				elemTypeID = k.Elem
@@ -717,11 +718,20 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 				elemTypeID = k.Elem
 				elemMut = k.Mut
 			default:
-				e.diag(cond.Span, "cannot iterate over %s", e.env.TypeDisplay(iterTypeID))
-				return InvalidTypeID, TypeFailed
+				var status TypeStatus
+				elemTypeID, status = e.checkForInIter(nodeID, for_, iterTypeID, cond.Span)
+				if status.Failed() {
+					return InvalidTypeID, status
+				}
+				isIter = true
 			}
 			bindTypeID := elemTypeID
 			if for_.Ref {
+				if isIter {
+					e.diag(for_.Binding.Span,
+						"for-in over an iterator cannot bind a reference; have next() yield one")
+					return InvalidTypeID, TypeFailed
+				}
 				if for_.Mut && !elemMut {
 					e.diag(for_.Binding.Span,
 						"`for &mut` requires a mutable slice ([]mut T) or a mutable array, got %s",
@@ -759,6 +769,53 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK
+}
+
+// checkForInIter resolves `for x in <iter>` over a type whose next() returns
+// ?T, returning the element type T. It records next()'s mangled name, the
+// optional return type, and next's noescape flag for codegen and lifetime. The
+// loop iterates a private copy of the iterator, so the iterand need not be a
+// mutable place.
+func (e *Engine) checkForInIter(
+	forNodeID ast.NodeID, for_ ast.For, iterTypeID TypeID, span base.Span,
+) (TypeID, TypeStatus) {
+	// Resolve next() by looking up `<iterable>.next` through the normal method
+	// resolver. The synthesized field-access (off-tree, only here to drive
+	// resolution) lets one call cover all receiver shapes: a concrete type finds
+	// next in its module, a type parameter dispatches through its Iter shape, and
+	// a generic instance gets monomorphized and registered for codegen.
+	faNode := e.ast.NewFieldAccess(*for_.Cond, ast.Name{Name: "next", Span: span}, nil, span)
+	e.scopeGraph.SetNodeScope(faNode, e.scopeGraph.NodeScope(forNodeID))
+	// A non-iterable fails here with the resolver's own "unknown field next"
+	// diagnostic, which is left to stand.
+	nextTypeID, status := e.Query(faNode)
+	if status.Failed() {
+		return InvalidTypeID, status
+	}
+	nextFun, ok := e.env.Type(nextTypeID).Kind.(FunType)
+	if !ok {
+		e.diag(span, "cannot iterate over %s", e.env.TypeDisplay(iterTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	retUnion, ok := e.env.Type(nextFun.Return).Kind.(UnionType)
+	if !ok || len(retUnion.TypeArgs) == 0 {
+		e.diag(span, "cannot iterate over %s: its next() must return an optional ?T",
+			e.env.TypeDisplay(iterTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	// Codegen iterates a private copy of the iterator, so it must be copyable.
+	if !e.isCopyable(iterTypeID) {
+		e.diag(span, "cannot iterate over nocopy iterator %s", e.env.TypeDisplay(iterTypeID))
+		return InvalidTypeID, TypeFailed
+	}
+	// The mangled next() name lands on the field-access; carry it to the For node
+	// for codegen. Absent at the generic level (shape dispatch), which is fine:
+	// only concrete instances are emitted.
+	if name, ok := e.env.NamedFunRef(faNode); ok {
+		e.env.setNamedFunRef(forNodeID, name)
+	}
+	e.env.setForIterRet(forNodeID, nextFun.Return)
+	return retUnion.TypeArgs[0], TypeOK
 }
 
 func (e *Engine) checkRange(range_ ast.Range) (TypeID, TypeStatus) {

@@ -150,6 +150,11 @@ pub union Result_<T> = T | Err
 --- Placeholder type for slice method namespace. ---
 pub struct Slice_<T> {}
 
+--- Iterator ---
+pub shape Iter<T> {
+    pub fun Iter.next(it &mut Iter) ?T
+}
+
 --- Built-in constraint satisfied by any enum. `T.Item` is the backing int. ---
 pub shape Enum<Item> {}
 

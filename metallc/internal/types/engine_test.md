@@ -5510,9 +5510,63 @@ Block: void
 ```
 
 ```error
-test.met:1:12: cannot iterate over Int
+test.met:1:12: unknown field: Int.next
     { for x in 0 { } }
                ^
+```
+
+**For in over an iterator binds the element type**
+
+```metall
+{
+    struct Counter { n Int }
+    fun Counter.next(c &mut Counter) ?Int { None() }
+    for x in Counter(0) { let y Str = x }
+}
+```
+
+```error
+test.met:4:39: type mismatch: expected Str, got Int
+        fun Counter.next(c &mut Counter) ?Int { None() }
+        for x in Counter(0) { let y Str = x }
+                                          ^
+    }
+```
+
+**For in over an iterator cannot bind a reference**
+
+```metall
+{
+    struct Counter { n Int }
+    fun Counter.next(c &mut Counter) ?Int { None() }
+    for &x in Counter(0) { }
+}
+```
+
+```error
+test.met:4:10: for-in over an iterator cannot bind a reference; have next() yield one
+        fun Counter.next(c &mut Counter) ?Int { None() }
+        for &x in Counter(0) { }
+             ^
+    }
+```
+
+**For in over a nocopy iterator is rejected**
+
+```metall
+{
+    nocopy struct Counter { n Int }
+    fun Counter.next(c &mut Counter) ?Int { None() }
+    for x in Counter(0) { }
+}
+```
+
+```error
+test.met:4:14: cannot iterate over nocopy iterator Counter
+        fun Counter.next(c &mut Counter) ?Int { None() }
+        for x in Counter(0) { }
+                 ^^^^^^^^^^
+    }
 ```
 
 **For in index binding on a range is rejected**
