@@ -31,6 +31,20 @@ module.exports = grammar({
 
   word: ($) => $.identifier,
 
+  // String lexing is done by the external scanner (src/scanner.c): it matches
+  // sigils without counting and splits f-strings into fragments + interpolations.
+  externals: ($) => [
+    $.string_prefix,
+    $.fstring_prefix,
+    $.string_content,
+    $.string_suffix,
+    $.fstring_start,
+    $.string_fragment,
+    $.interp_start,
+    $.interp_end,
+    $.fstring_end,
+  ],
+
   // Two GLR conflicts the grammar cannot resolve without unbounded lookahead:
   //
   // - `function_declaration`/`struct_declaration`/`union_declaration`: a leading
@@ -210,9 +224,30 @@ module.exports = grammar({
         ),
       ),
 
-    string_literal: (_) => seq('"', /([^"\\]|\\.)*/, '"'),
+    // A non-f string (incl. sigils) is scanned externally. Its modifiers+sigils
+    // (`string_prefix`) and closing sigils (`string_suffix`) are separate tokens
+    // so they can be highlighted apart from the `"..."` body.
+    string_literal: ($) =>
+      seq(
+        optional($.string_prefix),
+        $.string_content,
+        optional($.string_suffix),
+      ),
 
-    bytes_literal: (_) => seq('b"', /([^"\\]|\\.)*/, '"'),
+    // An f-string is structured so each `{expr}` interpolation is a real
+    // expression node, highlighted as code rather than as part of the string. The
+    // delimiters (`fstring_prefix`, `fstring_start`, `interp_start`/`interp_end`,
+    // `fstring_end`, `string_suffix`) come from the external scanner.
+    format_string: ($) =>
+      seq(
+        $.fstring_prefix,
+        $.fstring_start,
+        repeat(choice($.string_fragment, $.interpolation)),
+        $.fstring_end,
+        optional($.string_suffix),
+      ),
+
+    interpolation: ($) => seq($.interp_start, $._expression, $.interp_end),
 
     rune_literal: (_) => seq("'", /([^'\\]|\\.|\{[^}]*\})+/, "'"),
 
@@ -510,7 +545,7 @@ module.exports = grammar({
         $.integer_literal,
         $.float_literal,
         $.string_literal,
-        $.bytes_literal,
+        $.format_string,
         $.rune_literal,
         $.boolean_literal,
         $.void,

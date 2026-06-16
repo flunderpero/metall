@@ -120,9 +120,9 @@ fun main() void {
         sut.push("there")
         sut.push("again")
 
-        let sb = StrBuilder.new(32, @local)
-        sb.fmt(sut)
-        try test.eq("[hello, there, again]", sb.as_str())
+        let sw = StrWriter.new(32, @local)
+        sw.write(sut)
+        try test.eq("[hello, there, again]", sw.as_str())
     })
     _ = suite.run()
 }

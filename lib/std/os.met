@@ -22,13 +22,19 @@ extern("chdir") fun c_chdir(dir ffi.Ptr<U8>) I32
 ---
 pub fun shell(cmd []Str, @a Arena) !RunResult {
     let @local = Arena()
-    let sb = StrBuilder.new(256, @local)
+    let sw = StrWriter.new(256, @local)
     -- todo: This is so not cool. We need to quote every cmd part to prevent shell injection.
-    sb.slice(cmd, " ")
-    sb.str(" 2>&1")
+    for x, i in cmd {
+        if i > 0 {
+            sw.write(" ")
+        }
+        sw.write(x)
+    }
+    sw.write(" 2>&1")
+    unsafe sw.write_utf8_unchecked(b"\0") -- Make it a C string.
     posix.reset_errno()
     let f = unsafe popen(
-        ffi.slice_ptr(sb.as_cstr()),
+        ffi.slice_ptr(sw.as_str().as_bytes()),
         ffi.slice_ptr(popen_mode),
     )
     if f.is_null() {
@@ -39,7 +45,7 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
         }
         return io.IOErr.from_errno(errno)
     }
-    let out = StrBuilder.new(4096, @a)
+    let out = StrWriter.new(4096, @a)
     let buf = unsafe @a.slice_uninit<U8>(4096)
     let buf_ptr = ffi.slice_ptr_mut(buf)
     for {
@@ -52,7 +58,9 @@ pub fun shell(cmd []Str, @a Arena) !RunResult {
             }
             return io.IOErr.from_errno(errno)
         }
-        out.utf8_lossy(buf[0..bytes_read])
+        let @local = Arena()
+        -- todo: There should be StrWriter.write_utf8_lossy.
+        out.write(Str.from_utf8_lossy(buf[0..bytes_read], @local))
     }
     posix.reset_errno()
     let raw_status = unsafe pclose(f)

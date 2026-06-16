@@ -30,4 +30,4 @@ test-met:
 
 build:
     mkdir -p parser
-    cc -shared -fPIC -O2 -o parser/metall.so src/parser.c -I src
+    cc -shared -fPIC -O2 -o parser/metall.so src/parser.c src/scanner.c -I src

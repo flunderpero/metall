@@ -12,8 +12,14 @@ struct Foo {
 (source_file
   (struct_declaration
     name: (type_identifier)
-    (struct_field name: (identifier) type: (simple_type (type_identifier)))
-    (struct_field name: (identifier) type: (simple_type (type_identifier)))))
+    (struct_field
+      name: (identifier)
+      type: (simple_type
+        (type_identifier)))
+    (struct_field
+      name: (identifier)
+      type: (simple_type
+        (type_identifier)))))
 
 ================================================================================
 Nocopy struct
@@ -28,7 +34,10 @@ nocopy struct Handle {
 (source_file
   (struct_declaration
     name: (type_identifier)
-    (struct_field name: (identifier) type: (simple_type (type_identifier)))))
+    (struct_field
+      name: (identifier)
+      type: (simple_type
+        (type_identifier)))))
 
 ================================================================================
 Struct with allocator field
@@ -41,7 +50,10 @@ struct Foo { @a Arena }
 (source_file
   (struct_declaration
     name: (type_identifier)
-    (struct_field name: (allocator_identifier) type: (simple_type (type_identifier)))))
+    (struct_field
+      name: (allocator_identifier)
+      type: (simple_type
+        (type_identifier)))))
 
 ================================================================================
 Struct literal
@@ -53,12 +65,16 @@ fun f() void { Foo(1, "hello") }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
       (type_construction
         type: (type_identifier)
-        arguments: (argument_list (integer_literal) (string_literal))))))
+        arguments: (argument_list
+          (integer_literal)
+          (string_literal
+            (string_content)))))))
 
 ================================================================================
 Named struct literal
@@ -70,7 +86,8 @@ fun f() void { Foo(y = 2, x = 1) }
 
 (source_file
   (function_declaration
-    name: (function_name (identifier))
+    name: (function_name
+      (identifier))
     return_type: (simple_type)
     body: (block
       (type_construction
@@ -96,4 +113,6 @@ pub unsafe sync struct Str_ { data []U8 }
     name: (type_identifier)
     (struct_field
       name: (identifier)
-      type: (slice_type (simple_type (type_identifier))))))
+      type: (slice_type
+        (simple_type
+          (type_identifier))))))

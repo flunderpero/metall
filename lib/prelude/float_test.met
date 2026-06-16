@@ -200,24 +200,16 @@ fun main() void {
     _ = roundtrip_suite.run()
 }
 
---- Format a Float the way the standard library does and return it as a Str.
-
-    The fmt_edge and roundtrip suites use this to check sb.float against the
-    oracle. ---
 fun fmt_float(v Float, @a Arena) Str {
-    let sb = StrBuilder.new(32, @a)
-    sb.float(v)
-    sb.as_str()
+    let sw = StrWriter.new(48, @a)
+    sw.write(v)
+    sw.as_str()
 }
 
---- Format an F32 and return it as a Str.
-
-    Single precision matters here: an F32 must print its own shortest string,
-    not the longer string of the double it would widen to. ---
 fun fmt_f32(v F32, @a Arena) Str {
-    let sb = StrBuilder.new(32, @a)
-    sb.f32(v)
-    sb.as_str()
+    let sw = StrWriter.new(48, @a)
+    sw.write(v)
+    sw.as_str()
 }
 
 --- The numbers in the tables below are raw IEEE-754 bit patterns, not float values.

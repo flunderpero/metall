@@ -116,18 +116,18 @@ extern fun write(fd I32, buf ffi.Ptr<U8>, len Int) Int
 pub fun print<T HasFmt>(obj T) void {
     -- todo: We should be able to have a shortcut if is is Str.
     let @a = Arena()
-    let sb = StrBuilder.new(32, @a)
-    obj.fmt(sb)
-    let s = sb.as_str()
+    let sw = StrWriter.new(32, @a)
+    sw.write(obj)
+    let s = sw.as_str()
     _ = unsafe write(1, ffi.slice_ptr(s.as_bytes()), s.bytes_len())
 }
 
 pub fun println<T HasFmt>(obj T) void {
     -- todo: We should be able to have a shortcut if is is Str.
     let @a = Arena()
-    let sb = StrBuilder.new(32, @a)
-    obj.fmt(sb)
-    sb.rune('\n')
-    let s = sb.as_str()
+    let sw = StrWriter.new(32, @a)
+    sw.write(obj)
+    sw.write("\n")
+    let s = sw.as_str()
     _ = unsafe write(1, ffi.slice_ptr(s.as_bytes()), s.bytes_len())
 }

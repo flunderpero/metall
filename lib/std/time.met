@@ -66,14 +66,15 @@ pub fun Duration.times(d Duration, multiplier Int) Duration {
 
     The zero duration is formatted as `0s`.
 ---
-pub fun Duration.fmt(d Duration, sb &mut StrBuilder) void {
+pub fun Duration.fmt(d Duration, sw &mut StrWriter) void {
     if d.nsec == 0 {
-        sb.str("0s")
+        sw.write("0s")
         return void
     }
+    let @local = Arena()
     mut nsec = d.nsec
     if d.nsec < 0 {
-        sb.rune('-')
+        sw.write('-')
         nsec *= -1
     }
 
@@ -86,14 +87,18 @@ pub fun Duration.fmt(d Duration, sb &mut StrBuilder) void {
             let t = steps[i]
             if nsec < t {
                 let div = steps[i - 1]
-                sb.int(nsec / div)
+                sw.write(nsec / div)
                 let rem = nsec % div
                 if rem != 0 {
-                    sb.rune('.')
-                    sb.int(rem, 10, false, fraction_width)
-                    sb.rtrim(['0'][..])
+                    sw.write('.')
+                    -- todo: StrWriter should support rtrim
+                    mut buf = [48 of U8(0)][..]
+                    let n = try 
+                        rem.fmt_into(buf, 10, false, fraction_width) 
+                        else { panic("reserved too few bytes") }
+                    sw.write(Str.from_utf8_lossy(buf[0..n], @local).rtrim(['0'][..]))
                 }
-                sb.str(units[i - 1])
+                sw.write(units[i - 1])
                 return void
             }
             fraction_width += 3
@@ -113,19 +118,21 @@ pub fun Duration.fmt(d Duration, sb &mut StrBuilder) void {
         let value = steps[step]
         let n = nsec / value
         nsec -= n*value
-        sb.int(n)
-        sb.str(units[step])
+        sw.write(n)
+        sw.write(units[step])
         step -= 1
     } 
     -- The remaining seconds fraction.
-    sb.int(nsec / second.nsec)
+    sw.write(nsec / second.nsec)
     let rem = nsec % second.nsec
     if rem > 0 {
-        sb.rune('.')
-        sb.int(rem, 10, false, 9)
-        sb.rtrim(['0'][..])
+        sw.write('.')
+        -- todo: StrWriter should support rtrim
+        mut buf = [48 of U8(0)][..]
+        let n = try rem.fmt_into(buf, 10, false, 9) else { panic("reserved too few bytes")}
+        sw.write(Str.from_utf8_lossy(buf[0..n], @local).rtrim(['0'][..]))
     }
-    sb.rune('s')
+    sw.write('s')
 }
 
 pub fun sleep(d Duration) void {

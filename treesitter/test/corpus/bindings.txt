@@ -180,13 +180,20 @@ let c = b"\xFF\n"
 (source_file
   (let_binding
     name: (identifier)
-    value: (bytes_literal))
+    value: (string_literal
+      (string_prefix)
+      (string_content)))
   (let_binding
     name: (identifier)
-    value: (bytes_literal))
+    value: (string_literal
+      (string_prefix)
+      (string_content)))
   (let_binding
     name: (identifier)
-    value: (bytes_literal)))
+    value: (string_literal
+      (string_prefix)
+      (string_content))))
+
 ================================================================================
 Let binding with type annotation
 ================================================================================
@@ -206,7 +213,6 @@ fun f() void { let x AppErr = none }
         type: (simple_type
           (type_identifier))
         value: (identifier)))))
-
 
 ================================================================================
 Public let binding with type

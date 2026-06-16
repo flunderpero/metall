@@ -39,6 +39,11 @@ const (
 	False
 	Float
 	For
+	FStringStart
+	FStringText
+	FStringEnd
+	FExprStart
+	FExprEnd
 	Fun
 	Gt
 	Gte
@@ -141,6 +146,11 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	False:                 "false",
 	Float:                 "<float>",
 	For:                   "<for>",
+	FStringStart:          "<f-string start>",
+	FStringText:           "<f-string text>",
+	FStringEnd:            "<f-string end>",
+	FExprStart:            "<f-string interpolation start>",
+	FExprEnd:              "<f-string interpolation end>",
 	Gt:                    ">",
 	Gte:                   ">=",
 	GtGt:                  ">>",
@@ -548,29 +558,149 @@ func matchSigils(content []rune, idx, n int) bool {
 	return true
 }
 
-// lexString lexes [letter]*[#]*"..."[#]* into a single String token whose value
-// is the raw text between the quotes. Escape decoding, the line-continuation
-// rules, and the multi-line rules are all the parser's job; the lexer only finds
-// the terminator (a `"` followed by the matching sigil count) and skips the
-// character after a backslash so an escaped quote does not end the string.
+// lexString lexes a non-f string ([letter]*[#]*"..."[#]*) into one String token
+// holding the raw text between the quotes. The terminator is a `"` followed by the
+// matching sigil run; a backslash escapes the next char. The parser decodes the
+// escapes and applies the multi-line rules.
 func lexString(source *base.Source, start, modLen, sigils int) Token {
 	content := source.Content
-	span := base.NewSpan(source, start, start)
 	bodyStart := start + modLen + sigils + 1
-	idx := bodyStart
-	for idx < len(content) {
+	for idx := bodyStart; idx < len(content); {
 		switch {
 		case content[idx] == '\\':
 			idx += 2
 		case content[idx] == '"' && matchSigils(content, idx+1, sigils):
-			span.End = idx + sigils
-			return Token{String, string(content[bodyStart:idx]), span}
+			return Token{String, string(content[bodyStart:idx]), base.NewSpan(source, start, idx+sigils)}
 		default:
 			idx++
 		}
 	}
-	span.End = len(content) - 1
-	return Token{Error, "unterminated string literal", span}
+	return Token{Error, "unterminated string literal", base.NewSpan(source, start, len(content)-1)}
+}
+
+// lexChunk lexes the next unit: an f-string expands into several tokens, anything
+// else into one. The top loop and interpolation lexing both call it, so a nested
+// f-string inside an interpolation just works.
+func lexChunk(source *base.Source, idx int) []Token {
+	if modLen, sigils, ok := stringPrefix(source, idx); ok {
+		for i := idx; i < idx+modLen; i++ {
+			if source.Content[i] == 'f' {
+				return lexFString(source, idx, modLen, sigils)
+			}
+		}
+	}
+	return []Token{lexToken(source, idx)}
+}
+
+// lexFString lexes an f-string into structured tokens: FStringStart, alternating
+// FStringText fragments and interpolations (FExprStart, the expression's own
+// tokens, FExprEnd), and FStringEnd. Sigils mark the opener (`#`*N`{`) and the
+// terminator (`"`*N) and make bare braces literal; the interpolation closer is
+// always `}`.
+func lexFString(source *base.Source, start, modLen, sigils int) []Token { //nolint:funlen
+	content := source.Content
+	bodyStart := start + modLen + sigils + 1
+	toks := []Token{{FStringStart, string(content[start:bodyStart]), base.NewSpan(source, start, bodyStart-1)}}
+
+	idx := bodyStart
+	fragStart := idx
+	var frag []rune
+	flush := func(end int) {
+		if len(frag) > 0 {
+			toks = append(toks, Token{FStringText, string(frag), base.NewSpan(source, fragStart, end-1)})
+		}
+		frag = nil
+	}
+	for idx < len(content) {
+		c := content[idx]
+		// Terminator, unless it is the `"`+sigils+`{` literal-quote-then-opener.
+		if c == '"' && matchSigils(content, idx+1, sigils) {
+			if sigils > 0 && idx+1+sigils < len(content) && content[idx+1+sigils] == '{' {
+				frag = append(frag, '"')
+				idx++
+				continue
+			}
+			flush(idx)
+			end := idx + sigils
+			toks = append(toks, Token{FStringEnd, string(content[idx : end+1]), base.NewSpan(source, idx, end)})
+			return toks
+		}
+		// Interpolation opener: `{` (plain) or `#`*N`{` (sigil).
+		openLen := 0
+		if sigils == 0 {
+			if c == '{' && (idx+1 >= len(content) || content[idx+1] != '{') {
+				openLen = 1
+			}
+		} else if matchSigils(content, idx, sigils) && idx+sigils < len(content) && content[idx+sigils] == '{' {
+			openLen = sigils + 1
+		}
+		if openLen > 0 {
+			flush(idx)
+			open := base.NewSpan(source, idx, idx+openLen-1)
+			toks = append(toks, Token{FExprStart, string(content[idx : idx+openLen]), open})
+			idx += openLen
+			// Interpolation body: ordinary tokens until the `}` that closes it,
+			// balancing braces from blocks or struct literals in the expression.
+			depth := 0
+			for idx < len(content) && (content[idx] != '}' || depth != 0) {
+				chunk := lexChunk(source, idx)
+				for i := range chunk {
+					switch chunk[i].Kind { //nolint:exhaustive
+					case LCurly:
+						depth++
+					case RCurly:
+						depth--
+					}
+				}
+				toks = append(toks, chunk...)
+				idx = chunk[len(chunk)-1].Span.End + 1
+			}
+			if idx >= len(content) {
+				break
+			}
+			toks = append(toks, Token{FExprEnd, "}", base.NewSpan(source, idx, idx)})
+			idx++
+			fragStart = idx
+			continue
+		}
+		// Literal text: `{{`/`}}` collapse to one brace, a lone `}` is an error, and
+		// an escape is copied raw so a `\u{...}` brace is not read as an opener.
+		switch {
+		case sigils == 0 && c == '{' && idx+1 < len(content) && content[idx+1] == '{':
+			frag = append(frag, '{')
+			idx += 2
+		case sigils == 0 && c == '}' && idx+1 < len(content) && content[idx+1] == '}':
+			frag = append(frag, '}')
+			idx += 2
+		case sigils == 0 && c == '}':
+			// Emit an error at the stray `}` but keep scanning, so the f-string still
+			// terminates and the lexer recovers cleanly after it.
+			flush(idx)
+			msg := "unmatched '}' in format string; write '}}' for a literal brace"
+			toks = append(toks, Token{Error, msg, base.NewSpan(source, idx, idx)})
+			idx++
+			fragStart = idx
+		case c == '\\':
+			frag = append(frag, c)
+			idx++
+			if idx+1 < len(content) && content[idx] == 'u' && content[idx+1] == '{' {
+				for idx < len(content) && content[idx] != '}' {
+					frag = append(frag, content[idx])
+					idx++
+				}
+			}
+			if idx < len(content) {
+				frag = append(frag, content[idx])
+				idx++
+			}
+		default:
+			frag = append(frag, c)
+			idx++
+		}
+	}
+	flush(len(content))
+	toks = append(toks, Token{Error, "unterminated string literal", base.NewSpan(source, start, len(content)-1)})
+	return toks
 }
 
 func precededByNewline(source *base.Source, at int) bool {
@@ -829,9 +959,9 @@ func Lex(source *base.Source) []Token {
 	tokens := []Token{}
 	idx := 0
 	for idx < len(source.Content) {
-		token := lexToken(source, idx)
-		tokens = append(tokens, token)
-		idx = token.Span.End + 1
+		chunk := lexChunk(source, idx)
+		tokens = append(tokens, chunk...)
+		idx = chunk[len(chunk)-1].Span.End + 1
 	}
 	end := len(source.Content)
 	if end > 0 {

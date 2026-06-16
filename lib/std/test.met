@@ -31,18 +31,7 @@ pub fun Suite.run(s &mut Suite) SuiteResult {
     mut failed = 0
     for test_index in 0..s.tests.len {
         let test = s.tests.get(test_index)
-        let prefix = {
-            let sb = StrBuilder.new(32, @local)
-            sb.str(s.name)
-            sb.str("(")
-            sb.int(test_index + 1)
-            sb.str("/")
-            sb.int(s.tests.len)
-            sb.str(") ")
-            sb.tab()
-            sb.str(test.name)
-            sb.as_str() 
-        }
+        let prefix = f"{s.name}({test_index + 1}/{s.tests.len})\t{test.name}".build(@local)
         io.println(prefix)
         match test.f() {
             case Err e: 
@@ -65,7 +54,7 @@ pub enum AssertErr Err =
 
 shape HasEqFmt {
     pub fun HasEqFmt.eq(e HasEqFmt, other HasEqFmt) Bool
-    pub fun HasEqFmt.fmt(e HasEqFmt, sb &mut StrBuilder) void
+    pub fun HasEqFmt.fmt(e HasEqFmt, sw &mut StrWriter) void
 }
 
 pub fun ok(b Bool, msg Str = "") !void { 
@@ -85,13 +74,7 @@ pub fun not_ok(b Bool, msg Str = "") !void {
 pub fun contains_str(haystack Str, needle Str, msg Str = "") !void {
     if not haystack.contains(needle) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want '")
-        sb.str(haystack)
-        sb.str("' to contain '")
-        sb.str(needle)
-        sb.str("'")
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want '{haystack}' to contain {needle}'".build(@local))
         return AssertErr.not_found
     }
 }
@@ -99,12 +82,7 @@ pub fun contains_str(haystack Str, needle Str, msg Str = "") !void {
 pub fun eq<T HasEqFmt>(want T, got T, msg Str = "") !void {
     if not want.eq(got) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.fmt<T>(want)
-        sb.str(", got ")
-        sb.fmt<T>(got)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {want}, got {got}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -112,12 +90,7 @@ pub fun eq<T HasEqFmt>(want T, got T, msg Str = "") !void {
 pub fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
     if want.eq(got) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.fmt<T>(want)
-        sb.str("not to equal ")
-        sb.fmt<T>(got)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {want} not to equal {got}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -125,12 +98,7 @@ pub fun neq<T HasEqFmt>(want T, got T, msg Str = "") !void {
 pub fun gt_int(left Int, right Int, msg Str = "") !void {
     if not (left > right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.int(left)
-        sb.str(" > ")
-        sb.int(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} > {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -138,12 +106,7 @@ pub fun gt_int(left Int, right Int, msg Str = "") !void {
 pub fun gte_int(left Int, right Int, msg Str = "") !void {
     if not (left >= right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.int(left)
-        sb.str(" >= ")
-        sb.int(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} >= {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -151,12 +114,7 @@ pub fun gte_int(left Int, right Int, msg Str = "") !void {
 pub fun lt_int(left Int, right Int, msg Str = "") !void {
     if not (left < right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.int(left)
-        sb.str(" < ")
-        sb.int(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} < {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -164,12 +122,7 @@ pub fun lt_int(left Int, right Int, msg Str = "") !void {
 pub fun lte_int(left Int, right Int, msg Str = "") !void {
     if not (left <= right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.int(left)
-        sb.str(" <= ")
-        sb.int(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} <= {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -177,12 +130,7 @@ pub fun lte_int(left Int, right Int, msg Str = "") !void {
 pub fun gt_u64(left U64, right U64, msg Str = "") !void {
     if not (left > right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.u64(left)
-        sb.str(" > ")
-        sb.u64(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} > {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -190,12 +138,7 @@ pub fun gt_u64(left U64, right U64, msg Str = "") !void {
 pub fun gte_u64(left U64, right U64, msg Str = "") !void {
     if not (left >= right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.u64(left)
-        sb.str(" >= ")
-        sb.u64(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} >= {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -203,12 +146,7 @@ pub fun gte_u64(left U64, right U64, msg Str = "") !void {
 pub fun lt_u64(left U64, right U64, msg Str = "") !void {
     if not (left < right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.u64(left)
-        sb.str(" < ")
-        sb.u64(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} < {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -216,12 +154,7 @@ pub fun lt_u64(left U64, right U64, msg Str = "") !void {
 pub fun lte_u64(left U64, right U64, msg Str = "") !void {
     if not (left <= right) {
         let @local = Arena()
-        let sb = StrBuilder.new(32, @local)
-        sb.str("want ")
-        sb.u64(left)
-        sb.str(" <= ")
-        sb.u64(right)
-        print_assert_err_msg(msg, sb.as_str())
+        print_assert_err_msg(msg, f"want {left} <= {right}".build(@local))
         return AssertErr.mismatch
     }
 }
@@ -231,12 +164,7 @@ pub fun err<T>(obj !T, expected Err, msg Str = "") !void {
         case Err e if e == expected: 
         case Err e if e != expected: 
             let @local = Arena()
-            let sb = StrBuilder.new(32, @local)
-            sb.str("want error to be '")
-            sb.str(expected.debug_name)
-            sb.str("', but got: ")
-            sb.str(e.debug_name)
-            print_assert_err_msg(msg, sb.as_str())
+            print_assert_err_msg(msg, f"want error to be '{expected.debug_name}', but got '{e.debug_name}'".build(@local))
             return AssertErr.mismatch
         else: 
             print_assert_err_msg(msg, "want an error")
@@ -252,11 +180,5 @@ fun print_assert_err_msg(user_provided Str, err Str) void {
         io.println("\x1b[0m")
         return void
     }
-    let sb = StrBuilder.new(user_provided.bytes_len() + err.bytes_len() + 3, @local)
-    sb.str(user_provided)
-    sb.str(" (")
-    sb.str(err)
-    sb.str(")")
-    sb.str("\x1b[0m")
-    io.println(sb.as_str())
+    io.println(f"{user_provided} ({err})\x1b[0m".build(@local))
 }

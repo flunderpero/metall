@@ -842,7 +842,7 @@ line two"
 ```
 
 ```error
-test.met:1:1: newline in single-line string; use a multi-line string (m"...")
+test.met:1:1: newline in single-line string; use a multi-line string
     "line one
     ^
     line two"
@@ -1046,16 +1046,28 @@ test.met:1:1: unknown string modifier "o"
     ^^^^^^
 ```
 
-**Multi-line bytes with modifiers in either order**
+**Multi-line bytes (modifiers in f, b, m order)**
 
 ```metall
-mb"
+bm"
   AB
   "
 ```
 
 ```ast
 String(value="AB",bytes=true)
+```
+
+**String modifiers out of order**
+
+```metall
+mb"x"
+```
+
+```error
+test.met:1:1: string modifiers must be written in the order f, b, m, each at most once
+    mb"x"
+    ^^^^^
 ```
 
 **Multi-line string is dedented**
@@ -1252,6 +1264,651 @@ test.met:1:1: multi-line string: the closing quote must be on its own line
     ^
         text"
             ^
+```
+
+## Format Strings
+
+An f-string desugars at parse time into a block that builds the result with a
+StrWriter, so the rest of the compiler sees only ordinary calls.
+
+**Simple interpolation**
+
+```metall
+f"hi {x}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=35)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="hi ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Several interpolations and literals**
+
+```metall
+f"{a} and {b}!".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=54)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="a")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value=" and ")
+  exprs[3]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="b")
+  exprs[4]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="!")
+  exprs[5]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**No interpolation**
+
+```metall
+f"plain".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=21)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="plain")
+  exprs[2]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Empty format string**
+
+```metall
+f"".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=16)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Literal braces are written doubled**
+
+```metall
+f"{{lit}} {x}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=38)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="{lit} ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**An interpolation may hold any expression**
+
+```metall
+f"{a + b * 2}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=32)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Binary(op=+)
+      lhs=Ident(name="a")
+      rhs=Binary(op=*)
+        lhs=Ident(name="b")
+        rhs=Int(value=2)
+  exprs[2]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**An interpolation may hold a method call**
+
+```metall
+f"{p.dist(q)}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=32)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Call()
+      callee=FieldAccess(field=dist)
+        target=Ident(name="p")
+      args=Ident(name="q")
+  exprs[2]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**An interpolation may hold a string literal, even one containing braces**
+
+```metall
+f"{join(parts, "}")}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=32)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Call()
+      callee=Ident(name="join")
+      args[0]=Ident(name="parts")
+      args[1]=String(value="}")
+  exprs[2]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**An interpolation may hold an if-expression with braced branches**
+
+```metall
+f#"status: #{if ok { "up" } else { "down" }}"#.build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=40)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="status: ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=If()
+      cond=Ident(name="ok")
+      then=Block()
+        exprs=String(value="up")
+      else=Block()
+        exprs=String(value="down")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Sigils carry literal braces**
+
+```metall
+f#"a #{x} {b}"#.build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=38)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="a ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value=" {b}")
+  exprs[4]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Sigils with several hashes**
+
+```metall
+f##"hi {literal braces}  ##{x}"##.build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=53)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="hi {literal braces}  ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Bytes format string**
+
+```metall
+fb"x{n}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=33)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="x")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="n")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_bytes)
+      target=Call()
+        callee=FieldAccess(field=as_str)
+          target=Ident(name="$fstr")
+```
+
+**Multi-line format string**
+
+```metall
+fm"
+    Hello {name}
+    bye
+    ".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=42)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="Hello ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="name")
+  exprs[3]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="\nbye")
+  exprs[4]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Write directly into a StrWriter with .write_to**
+
+```metall
+f"v={x}".write_to(sw)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Ident(name="sw")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="v=")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+```
+
+**The .write_to target is bound once, never re-evaluated per segment**
+
+```metall
+f"{a}{b}".write_to(make())
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="make")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="a")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="b")
+```
+
+**A bytes format string cannot use .write_to**
+
+```metall
+fb"{x}".write_to(sw)
+```
+
+```error
+test.met:1:9: a bytes format string (b) cannot be used with .write_to; use .build(@a)
+    fb"{x}".write_to(sw)
+            ^^^^^^^^
+```
+
+**Format string requires a .build or .write_to suffix**
+
+```metall
+f"{x}"
+```
+
+```error
+test.met:1:1: a format string must be followed by .build(@a) or .write_to(sw)
+    f"{x}"
+    ^^
+```
+
+**Empty interpolation is rejected**
+
+```metall
+f"{}".build(@a)
+```
+
+```error
+test.met:1:3: empty interpolation in format string
+    f"{}".build(@a)
+      ^
+```
+
+**Unterminated interpolation is rejected**
+
+```metall
+f"{x".build(@a)
+```
+
+```error
+test.met:1:4: unterminated string literal
+    f"{x".build(@a)
+       ^^^^^^^^^^^^
+```
+
+**Unmatched closing brace is rejected**
+
+```metall
+f"a}".build(@a)
+```
+
+```error
+test.met:1:4: unmatched '}' in format string; write '}}' for a literal brace
+    f"a}".build(@a)
+       ^
+```
+
+**A malformed interpolation expression is rejected**
+
+```metall
+f"{a +}".build(@a)
+```
+
+```error
+test.met:1:7: unexpected token: expected start of an expression, got <f-string interpolation end>
+    f"{a +}".build(@a)
+          ^
+```
+
+**Escapes are decoded in literal text**
+
+```metall
+f"a\tb={x}\nz".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=40)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="a\tb=")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="\nz")
+  exprs[4]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Line continuation works in literal text**
+
+```metall
+f"a \
+  b {x}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=40)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="a b ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**Adjacent interpolations need no literal between them**
+
+```metall
+f"{a}{b}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=48)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="a")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="b")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**An interpolation may span lines**
+
+```metall
+f"{
+    a + b
+}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=32)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Binary(op=+)
+      lhs=Ident(name="a")
+      rhs=Ident(name="b")
+  exprs[2]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**A lone sigil character stays literal**
+
+```metall
+f#"a # b #{x}"#.build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=38)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="a # b ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**A bytes format string keeps a raw byte in its literal**
+
+```metall
+fb"\xff{x}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=36)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="\xff")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_bytes)
+      target=Call()
+        callee=FieldAccess(field=as_str)
+          target=Ident(name="$fstr")
+```
+
+**A raw newline in a single-line literal is rejected**
+
+```metall
+f"a
+b {x}".build(@a)
+```
+
+```error
+test.met:1:1: newline in single-line string; use a multi-line string
+    f"a
+    ^^
+    b {x}".build(@a)
 ```
 
 ## If

@@ -34,7 +34,7 @@ func runEngineTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 	}
 	assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 
-	preludeAST, _ := ast.PreludeAST(true)
+	preludeAST, _ := ast.PreludeAST(!slices.Contains(tc.Tags, "fullprelude"))
 	e := NewEngine(parser.AST, preludeAST, &modules.ModuleResolution{}, nil)
 	if slices.Contains(tc.Tags, "debug") {
 		e.SetDebug(base.NewStdoutDebug("types"))

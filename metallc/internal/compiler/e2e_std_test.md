@@ -28,35 +28,35 @@ hello std
 ```module.type_name_macro
 use std.comp
 
-fun type_name(name Str, info comp.Type, sb &mut StrBuilder, @a Arena) void {
-    sb.str("fun ")
-    sb.str(name)
-    sb.str("() Str { ")
-    sb.rune('"')
+fun type_name(name Str, info comp.Type, sw &mut StrWriter, @a Arena) void {
+    sw.write("fun ")
+    sw.write(name)
+    sw.write("() Str { ")
+    sw.write('"')
     match info {
-        case comp.BoolType b: { sb.str("Bool") }
-        case comp.StrType s: { sb.str("Str") }
-        case comp.VoidType v: { sb.str("void") }
-        case comp.NeverType v: { sb.str("never") }
-        case comp.IntType i: { sb.str(i.name) }
-        case comp.StructType s: { sb.str("struct ") sb.str(s.name) }
-        case comp.UnionType u: { sb.str("union ") sb.str(u.name) }
-        case comp.EnumType e: { sb.str("enum ") sb.str(e.name) }
+        case comp.BoolType b: { sw.write("Bool") }
+        case comp.StrType s: { sw.write("Str") }
+        case comp.VoidType v: { sw.write("void") }
+        case comp.NeverType v: { sw.write("never") }
+        case comp.IntType i: { sw.write(i.name) }
+        case comp.StructType s: { sw.write("struct ") sw.write(s.name) }
+        case comp.UnionType u: { sw.write("union ") sw.write(u.name) }
+        case comp.EnumType e: { sw.write("enum ") sw.write(e.name) }
     }
-    sb.rune('"')
-    sb.str(" }")
-    sb.nl()
+    sw.write('"')
+    sw.write(" }")
+    sw.write("\n")
 }
 
-fun field_count(name Str, info comp.Type, sb &mut StrBuilder, @a Arena) void {
+fun field_count(name Str, info comp.Type, sw &mut StrWriter, @a Arena) void {
     match info {
         case comp.StructType s: {
-            sb.str("fun ")
-            sb.str(name)
-            sb.str("() Int { ")
-            sb.int(s.fields.len)
-            sb.str(" }")
-            sb.nl()
+            sw.write("fun ")
+            sw.write(name)
+            sw.write("() Int { ")
+            sw.write(s.fields.len)
+            sw.write(" }")
+            sw.write("\n")
         }
         else: { }
     }
@@ -66,56 +66,56 @@ fun field_count(name Str, info comp.Type, sb &mut StrBuilder, @a Arena) void {
 ```module.fmtstr_macro
 use std.comp
 
-fun quote(sb &mut StrBuilder) void {
-    sb.rune(34)
+fun quote(sw &mut StrWriter) void {
+    sw.write('"')
 }
 
-fun gen_fmt(info comp.Type, sb &mut StrBuilder, @a Arena) void {
+fun gen_fmt(info comp.Type, sw &mut StrWriter, @a Arena) void {
     match info {
         case comp.StructType s: {
-            sb.str("fun ")
-            sb.str(s.name)
-            sb.str(".fmt(v ")
-            sb.str(s.name)
-            sb.str(", sb &mut StrBuilder) void {")
-            sb.nl()
-            sb.str("    sb.str(")
-            quote(sb)
-            sb.str(s.name)
-            sb.str("{")
-            quote(sb)
-            sb.str(")")
-            sb.nl()
+            sw.write("fun ")
+            sw.write(s.name)
+            sw.write(".fmt(v ")
+            sw.write(s.name)
+            sw.write(", sw &mut StrWriter) void {")
+            sw.write("\n")
+            sw.write("    sw.write(")
+            quote(sw)
+            sw.write(s.name)
+            sw.write("{")
+            quote(sw)
+            sw.write(")")
+            sw.write("\n")
             for i in 0..s.fields.len {
                 let f = s.fields[i]
                 if i > 0 {
-                    sb.str("    sb.str(")
-                    quote(sb)
-                    sb.str(", ")
-                    sb.str(f.name)
-                    sb.str("=")
-                    quote(sb)
-                    sb.str(")")
-                    sb.nl()
+                    sw.write("    sw.write(")
+                    quote(sw)
+                    sw.write(", ")
+                    sw.write(f.name)
+                    sw.write("=")
+                    quote(sw)
+                    sw.write(")")
+                    sw.write("\n")
                 } else {
-                    sb.str("    sb.str(")
-                    quote(sb)
-                    sb.str(f.name)
-                    sb.str("=")
-                    quote(sb)
-                    sb.str(")")
-                    sb.nl()
+                    sw.write("    sw.write(")
+                    quote(sw)
+                    sw.write(f.name)
+                    sw.write("=")
+                    quote(sw)
+                    sw.write(")")
+                    sw.write("\n")
                 }
-                sb.str("    sb.fmt(v.") sb.str(f.name) sb.str(")") sb.nl()
+                sw.write("    sw.write(v.") sw.write(f.name) sw.write(")") sw.write("\n")
             }
-            sb.str("    sb.str(")
-            quote(sb)
-            sb.str("}")
-            quote(sb)
-            sb.str(")")
-            sb.nl()
-            sb.str("}")
-            sb.nl()
+            sw.write("    sw.write(")
+            quote(sw)
+            sw.write("}")
+            quote(sw)
+            sw.write(")")
+            sw.write("\n")
+            sw.write("}")
+            sw.write("\n")
         }
         case comp.BoolType b: { }
         case comp.StrType s: { }
@@ -210,10 +210,10 @@ fmtstr_macro.gen_fmt(comp.type_of<Point>())
 
 fun main() void {
     let @a = Arena()
-    let sb = StrBuilder.new(256, @a)
+    let sw = StrWriter.new(256, @a)
     let p = Point(10, 20)
-    p.fmt(sb)
-    io.println(sb.as_str())
+    p.fmt(sw)
+    io.println(sw.as_str())
 }
 ```
 
@@ -234,9 +234,9 @@ fun main() void {
     fmtstr_macro.gen_fmt(comp.type_of<Pair>())
 
     let @a = Arena()
-    let sb = StrBuilder.new(256, @a)
-    Pair("hello", 42).fmt(sb)
-    io.println(sb.as_str())
+    let sw = StrWriter.new(256, @a)
+    Pair("hello", 42).fmt(sw)
+    io.println(sw.as_str())
 }
 ```
 
@@ -268,20 +268,20 @@ fun main() void {
 ```module.enum_reflect_macro
 use std.comp
 
-fun variant_names(name Str, info comp.Type, sb &mut StrBuilder, @a Arena) void {
+fun variant_names(name Str, info comp.Type, sw &mut StrWriter, @a Arena) void {
     match info {
         case comp.EnumType e: {
-            sb.str("fun ") sb.str(name) sb.str("() Str { ")
-            sb.rune('"')
-            sb.str(e.name)
-            sb.str(":")
+            sw.write("fun ") sw.write(name) sw.write("() Str { ")
+            sw.write('"')
+            sw.write(e.name)
+            sw.write(":")
             for i in 0..e.variants.len {
-                if i > 0 { sb.str(",") }
-                sb.str(e.variants[i].name)
+                if i > 0 { sw.write(",") }
+                sw.write(e.variants[i].name)
             }
-            sb.rune('"')
-            sb.str(" }")
-            sb.nl()
+            sw.write('"')
+            sw.write(" }")
+            sw.write("\n")
         }
         else: { }
     }
@@ -501,4 +501,69 @@ fun main() void {
 1
 blue
 out of range
+```
+
+## Format Strings
+
+**format string forms**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let x = 42
+    -- Each line is labeled with the modifier it exercises, so the output maps
+    -- one-to-one to the input.
+
+    -- f: a string, an expression, a bool, a float, and {{ }} literal braces.
+    DebugIntern.print_str(f"f: {"s"} {1 + 2} {true} {3.5} {{lit}}".build(@a))
+
+    -- f#: #{...} interpolates; bare braces stay literal.
+    DebugIntern.print_str(f#"f#: {bare} #{x}"#.build(@a))
+
+    -- f##: needs ##{...}, so a lone #{ stays literal.
+    DebugIntern.print_str(f##"f##: #{lone} ##{x}"##.build(@a))
+
+    -- if-expression with braced, string-literal branches; the braces balance.
+    DebugIntern.print_str(f"if: {if x > 0 { "pos" } else { "neg" }}".build(@a))
+
+    -- fm: dedented; an interpolated value keeps its own newlines verbatim.
+    let two = "p\n  q"
+    DebugIntern.print_str(fm"
+        fm: x={x}
+        {two}
+        ".build(@a))
+
+    -- write_to: two f-strings append into one StrWriter, no intermediate Str.
+    let sw = StrWriter.new(16, @a)
+    f"wr: a={x}".write_to(sw)
+    f" b={true}".write_to(sw)
+    DebugIntern.print_str(sw.as_str())
+
+    -- fb: bytes round-trip to text; é is multi-byte UTF-8.
+    DebugIntern.print_str(Str.from_utf8_lossy(fb"fb: café {x}".build(@a), @a))
+
+    -- fb byte length exceeds the character count: é is 2 bytes, \xff a raw byte.
+    let raw = fb"é\xff".build(@a)
+    DebugIntern.print_str(f"fb.len: {raw.len}".build(@a))
+
+    -- fbm: multi-line bytes; \u{1F600} is a single 4-byte char.
+    let smile = fbm"
+        \u{1F600}
+        ".build(@a)
+    DebugIntern.print_str(f"fbm.len: {smile.len}".build(@a))
+}
+```
+
+```output
+f: s 3 true 3.5 {lit}
+f#: {bare} 42
+f##: #{lone} 42
+if: pos
+fm: x=42
+p
+  q
+wr: a=42 b=true
+fb: café 42
+fb.len: 3
+fbm.len: 4
 ```

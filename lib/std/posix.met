@@ -29,8 +29,8 @@ pub fun Errno.eq(e Errno, o Errno) Bool { e.value == o.value }
 
 pub fun Errno.hash(e Errno) U64 { e.value.hash() }
 
-pub fun Errno.fmt(e Errno, sb &mut StrBuilder) void {
-    sb.str(e.to_str())
+pub fun Errno.fmt(e Errno, sw &mut StrWriter) void {
+    sw.write(e.to_str())
 }
 
 pub fun Errno.to_str(e Errno) Str {

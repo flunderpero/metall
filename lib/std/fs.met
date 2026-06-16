@@ -100,10 +100,10 @@ pub fun Path.cmp(p Path, other Path) Ordering {
     p.raw.cmp(other.raw)
 }
 
-pub fun Path.fmt(p Path, sb &mut StrBuilder) void {
+pub fun Path.fmt(p Path, sw &mut StrWriter) void {
     -- todo: We should escape non-utf8 characters.
     let @local = Arena()
-    sb.str(Str.from_utf8_lossy(p.raw, @local))
+    sw.write(Str.from_utf8_lossy(p.raw, @local))
 }
 
 pub nocopy unsync struct File {
@@ -217,12 +217,8 @@ pub struct DirEntry {
     pub type U8 -- todo: Once we have enums, use an enum.
 }
 
-pub fun DirEntry.fmt(d DirEntry, sb &mut StrBuilder) void {
-    sb.str("DirEntry{name=")
-    sb.fmt(d.name)
-    sb.str(", type=")
-    sb.u8(d.type)
-    sb.str("}")
+pub fun DirEntry.fmt(d DirEntry, sw &mut StrWriter) void {
+    f#"DirEntry{name=#{d.name}, type=#{d.type}}"#.write_to(sw)
 }
 
 pub fun DirEntry.eq(d DirEntry, other DirEntry) Bool {

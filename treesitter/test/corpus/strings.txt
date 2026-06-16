@@ -1,0 +1,194 @@
+================================================================================
+Plain string
+================================================================================
+
+let s = "hello"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (string_literal
+      (string_content))))
+
+================================================================================
+String modifiers (bytes, multi-line, format, combined)
+================================================================================
+
+let a = b"bytes"
+let b = m"multi"
+let c = f"fmt"
+let d = fbm"combo"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (string_literal
+      (string_prefix)
+      (string_content)))
+  (let_binding
+    name: (identifier)
+    value: (string_literal
+      (string_prefix)
+      (string_content)))
+  (let_binding
+    name: (identifier)
+    value: (format_string
+      (fstring_prefix)
+      (fstring_start)
+      (string_fragment)
+      (fstring_end)))
+  (let_binding
+    name: (identifier)
+    value: (format_string
+      (fstring_prefix)
+      (fstring_start)
+      (string_fragment)
+      (fstring_end))))
+
+================================================================================
+Escapes stay inside the body
+================================================================================
+
+let s = "line1\nline2\t\"q\""
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (string_literal
+      (string_content))))
+
+================================================================================
+Multi-line string spans lines
+================================================================================
+
+let s = m"
+    one
+    two
+    "
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (string_literal
+      (string_prefix)
+      (string_content))))
+
+================================================================================
+Sigil string keeps embedded quotes literal
+================================================================================
+
+let s = #"raw "quotes" ok"#
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (string_literal
+      (string_prefix)
+      (string_content)
+      (string_suffix))))
+
+================================================================================
+Format string built with .build
+================================================================================
+
+let s = f"hi {name}, n={n + 1}".build(@a)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    (identifier)
+    (call_expression
+      (field_access
+        (format_string
+          (fstring_prefix)
+          (fstring_start)
+          (string_fragment)
+          (interpolation
+            (interp_start)
+            (identifier)
+            (interp_end))
+          (string_fragment)
+          (interpolation
+            (interp_start)
+            (binary_expression
+              (identifier)
+              (integer_literal))
+            (interp_end))
+          (fstring_end))
+        (identifier))
+      (argument_list
+        (allocator_identifier)))))
+
+================================================================================
+Sigil format string: prefix, quote-before-interpolation literal, suffix
+================================================================================
+
+let s = f#"q="#{v}" r"#.build(@a)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (call_expression
+      callee: (field_access
+        object: (format_string
+          (fstring_prefix)
+          (fstring_start)
+          (string_fragment)
+          (string_fragment)
+          (interpolation
+            (interp_start)
+            (identifier)
+            (interp_end))
+          (string_fragment)
+          (fstring_end)
+          (string_suffix))
+        field: (identifier))
+      arguments: (argument_list
+        (allocator_identifier)))))
+
+================================================================================
+Interpolation holds an if-expression with braced branches
+================================================================================
+
+let s = f#"status: #{if ok { "up" } else { "down" }}"#.build(@a)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    (identifier)
+    (call_expression
+      (field_access
+        (format_string
+          (fstring_prefix)
+          (fstring_start)
+          (string_fragment)
+          (interpolation
+            (interp_start)
+            (if_expression
+              (identifier)
+              (block
+                (string_literal
+                  (string_content)))
+              (block
+                (string_literal
+                  (string_content))))
+            (interp_end))
+          (fstring_end)
+          (string_suffix))
+        (identifier))
+      (argument_list
+        (allocator_identifier)))))

@@ -75,13 +75,15 @@ enum Color(name Str, rgb U32) U8 = red("Red", 1) = 1 | green("Green", 2) = 2
         (enum_variant
           name: (identifier)
           (argument_list
-            (string_literal)
+            (string_literal
+              (string_content))
             (integer_literal))
           discriminant: (integer_literal)))
       (enum_variant
         name: (identifier)
         (argument_list
-          (string_literal)
+          (string_literal
+            (string_content))
           (integer_literal))
         discriminant: (integer_literal)))))
 
@@ -194,7 +196,6 @@ fun main() void { enum Local U8 = a | b }
               name: (identifier)))
           (enum_variant
             name: (identifier)))))))
-
 
 ================================================================================
 Enum variant with named associated data

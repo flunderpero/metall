@@ -14,9 +14,9 @@ fun main() void {
     suite.test("Duration.fmt", fun() !void {
         let @local = Arena()
         let fmt = fun[@local](d time.Duration) Str {
-            let sb = StrBuilder.new(32, @local)
-            sb.fmt(d)
-            sb.as_str()
+            let sw = StrWriter.new(32, @local)
+            sw.write(d)
+            sw.as_str()
         }
         -- Sub 1-second formats
         try test.eq("0s", fmt(time.nanosecond.times(0)))

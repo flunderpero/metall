@@ -50,7 +50,7 @@ pub fun List.ensure_capacity(l &mut List, cap Int) void {
     The returned slice will not reflect items added to the list
     and it points to stale data once the backing slice gets re-allocated
     by `List.push()`. ---
-pub fun List.as_slice(l &List) []mut T {
+pub fun List.as_slice(l &List) noescape []mut T {
     l.data[..l.len]
 }
 
@@ -77,8 +77,8 @@ pub fun List.eq<U HasEq>(l &List<U>, other &List<U>) Bool {
     l.as_slice().eq(other.as_slice())
 }
 
-pub fun List.fmt<U HasFmt>(l &List<U>, sb &mut StrBuilder) void {
-    sb.fmt(l.as_slice())
+pub fun List.fmt<U HasFmt>(l &List<U>, sw &mut StrWriter) void {
+    sw.write(l.as_slice())
 }
 
 --- Sort the list in place. 

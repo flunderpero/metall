@@ -1,0 +1,33 @@
+use std.test
+
+fun main() void {
+    let @local = Arena()
+    let suite = test.Suite.new("StrWriter", @local)
+
+    suite.test("write", fun() !void {
+        let @local = Arena()
+        let sw = StrWriter.new(4, @local)
+
+        sw.write("test")
+        let first = sw.as_str()
+        try test.eq("test", first)
+
+        -- Should realloc the backup buffer.
+        sw.write(" there")
+        try test.eq("test there", sw.as_str())
+        try test.eq("test", first, "previous `sw.as_str()` is preserved")
+    })
+
+    suite.test("write_utf8_unchecked", fun() !void {
+        let @local = Arena()
+        let sw = StrWriter.new(4, @local)
+
+        unsafe sw.write_utf8_unchecked(b"test")
+        try test.eq("test", sw.as_str())
+
+        unsafe sw.write_utf8_unchecked(b" there")
+        try test.eq("test there", sw.as_str())
+    })
+
+    _ = suite.run()
+}

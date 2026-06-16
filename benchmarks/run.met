@@ -97,12 +97,8 @@ fun Benchmark.run(b Benchmark, recompile Bool, @a Arena) !Bool {
 fun run(cmd []Str, @a Arena) !Str {
     let res = try os.shell(cmd , @a)
     if res.status != 0 {
-        let sb = StrBuilder.new(32, @a)
-        sb.str("Rust compilation failed with exit code ")
-        sb.int(res.status)
-        sb.str(": ")
-        sb.str(res.output)
-        io.println(sb.as_str())
+        let @local = Arena()
+        io.println(f"Compilation failed with exit code {res.status}: {res.output}".build(@local))
         return io.IOErr.other
     }
     res.output

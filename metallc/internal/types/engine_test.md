@@ -8283,17 +8283,17 @@ fun06   = fun(Int) Int
 
 ```metall
 {
-    shape HasFmt {
-        fun HasFmt.fmt(self HasFmt, x Int) Int
+    shape Fmt {
+        fun Fmt.fmt(self Fmt, x Int) Int
     }
-    shape HasEqFmt {
-        fun HasEqFmt.eq(self HasEqFmt, other HasEqFmt) Bool
-        fun HasEqFmt.fmt(self HasEqFmt, x Int) Int
+    shape EqFmt {
+        fun EqFmt.eq(self EqFmt, other EqFmt) Bool
+        fun EqFmt.fmt(self EqFmt, x Int) Int
     }
     fun Int.fmt(i Int, x Int) Int { i + x }
     fun Int.eq(i Int, other Int) Bool { true }
-    fun format<T HasFmt>(t T, x Int) Int { t.fmt(x) }
-    fun compare_and_format<T HasEqFmt>(a T, b T, x Int) Int {
+    fun format<T Fmt>(t T, x Int) Int { t.fmt(x) }
+    fun compare_and_format<T EqFmt>(a T, b T, x Int) Int {
         if a.eq(b) { format<T>(a, x) } else { 0 }
     }
     compare_and_format<Int>(1, 2, 3)
@@ -8383,8 +8383,8 @@ Block: Int
     Int: Int
     Int: Int
 ---
-shape01 = HasFmt {  }
-shape02 = HasEqFmt {  }
+shape01 = Fmt {  }
+shape02 = EqFmt {  }
 fun01   = sync fun(Int, Int) Int
 fun02   = sync fun(Int, Int) Bool
 fun03   = fun(T, Int) Int
@@ -9548,12 +9548,12 @@ test.met:1:23: union constructor takes exactly 1 argument, got 0
 
 ```metall
 {
-    shape HasFmt {
-        fun HasFmt.fmt(f HasFmt) Str
+    shape Fmt {
+        fun Fmt.fmt(f Fmt) Str
     }
     struct Foo { x Int }
     fun Foo.fmt(f Foo) Str { "foo" }
-    fun show<T HasFmt>(t T, prefix Str = "") Str { t.fmt() }
+    fun show<T Fmt>(t T, prefix Str = "") Str { t.fmt() }
     show<Foo>(Foo(1))
 }
 ```
@@ -9594,7 +9594,7 @@ Block: Str
       Int: Int
     String: Str
 ---
-shape01  = HasFmt {  }
+shape01  = Fmt {  }
 struct01 = Foo { x Int }
 fun01    = sync fun(struct01) Str
 fun02    = fun(T, Str) Str
@@ -13274,4 +13274,106 @@ scope03:
 scope04:
 enum01 = AppErr
 enum02 = IOErr = a | b
+```
+
+## Format Strings
+
+These use `fullprelude` because formatting an interpolated value relies on the
+per-type `fmt` impls (Int.fmt, Str.fmt, ...) which live in the full prelude.
+
+**Format string is a Str**
+
+```metall fullprelude
+{ let @a = Arena()  let x = 1  f"x is {x}".build(@a) }
+```
+
+```types
+Block: Str
+  AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
+  Var: void
+    Int: Int
+  Block: Str
+    Var: void
+      Call: &mut struct01
+        Ident: fun01
+        Int: Int
+        Ident: Arena
+    Call: void
+      FieldAccess: fun02
+        Ident: &mut struct01
+      String: Str
+    Call: void
+      FieldAccess: fun03
+        Ident: &mut struct01
+      Ident: Int
+    Call: Str
+      FieldAccess: fun04
+        Ident: &mut struct01
+---
+struct01 = StrWriter { out []mut U8, len Int, @a Arena }
+fun01    = fun(Int, Arena) &mut struct01
+fun02    = fun(&mut struct01, Str) void
+fun03    = fun(&mut struct01, Int) void
+fun04    = fun(&struct01) Str
+```
+
+**Bytes format string is a byte slice**
+
+```metall fullprelude
+{ let @a = Arena()  let x = 1  fb"x is {x}".build(@a) }
+```
+
+```types
+Block: []U8
+  AllocatorVar: void
+    TypeConstruction: Arena
+      Ident: Arena
+  Var: void
+    Int: Int
+  Block: []U8
+    Var: void
+      Call: &mut struct01
+        Ident: fun01
+        Int: Int
+        Ident: Arena
+    Call: void
+      FieldAccess: fun02
+        Ident: &mut struct01
+      String: Str
+    Call: void
+      FieldAccess: fun03
+        Ident: &mut struct01
+      Ident: Int
+    Call: []U8
+      FieldAccess: fun04
+        Call: Str
+          FieldAccess: fun05
+            Ident: &mut struct01
+---
+struct01 = StrWriter { out []mut U8, len Int, @a Arena }
+fun01    = fun(Int, Arena) &mut struct01
+fun02    = fun(&mut struct01, Str) void
+fun03    = fun(&mut struct01, Int) void
+fun04    = fun(Str) []U8
+fun05    = fun(&struct01) Str
+```
+
+**Interpolating a value that is not formattable is rejected**
+
+```metall module fullprelude
+struct Point { x Int  y Int }
+
+fun show(p Point, @a Arena) Str {
+    f"point {p}".build(@a)
+}
+```
+
+```error
+test.met:4:5: type test.Point does not satisfy shape HasFmt: missing method fmt
+    fun show(p Point, @a Arena) Str {
+        f"point {p}".build(@a)
+        ^^
+    }
 ```

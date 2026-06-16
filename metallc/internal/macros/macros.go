@@ -25,7 +25,7 @@ func GenerateWrapper(macroSource string, funName string, args []MacroArg) string
 	sb.WriteString(macroSource)
 	sb.WriteString("\nfun main() void {\n")
 	sb.WriteString("    let @a = Arena()\n")
-	sb.WriteString("    let sb = StrBuilder.new(1024, @a)\n")
+	sb.WriteString("    let sw = StrWriter.new(1024, @a)\n")
 	for _, arg := range args {
 		sb.WriteString(arg.Preamble)
 	}
@@ -41,8 +41,8 @@ func GenerateWrapper(macroSource string, funName string, args []MacroArg) string
 	if len(args) > 0 {
 		sb.WriteString(", ")
 	}
-	sb.WriteString("sb, @a)\n")
-	sb.WriteString("    DebugIntern.print_str(sb.as_str())\n")
+	sb.WriteString("sw, @a)\n")
+	sb.WriteString("    DebugIntern.print_str(sw.as_str())\n")
 	sb.WriteString("}\n")
 	return sb.String()
 }

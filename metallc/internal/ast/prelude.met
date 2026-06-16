@@ -9,8 +9,8 @@ pub enum Ordering U8 = less | equal | greater
 
 pub fun Ordering.eq(o Ordering, other Ordering) Bool { o == other }
 
-pub fun Ordering.fmt(o Ordering, sb &mut StrBuilder) void {
-    sb.str(o.debug_name)
+pub fun Ordering.fmt(o Ordering, sw &mut StrWriter) void {
+    sw.write(o.debug_name)
 }
 
 pub shape HasCmp {
@@ -24,14 +24,12 @@ pub shape HasHash {
     pub fun HasHash.hash(h HasHash) U64
 }
 
---- Format an object to Str. ---
-pub shape HasFmt {
-    pub fun HasFmt.fmt(f HasFmt, sb &mut StrBuilder) void
-}
-
 --- The error type. ---
 
-pub fun Err.fmt(e Err, sb &mut StrBuilder) void { sb.str("error: ") sb.str(e.debug_name) }
+pub fun Err.fmt(e Err, sw &mut StrWriter) void {
+    sw.write("error: ")
+    sw.write(e.debug_name)
+}
 
 pub fun Err.eq(e Err, other Err) Bool { e == other }
 
@@ -47,10 +45,10 @@ pub fun Range.hash(r Range) U64 {
     r.start.hash() +% r.end.hash()
 }
 
-pub fun Range.fmt(r Range, sb &mut StrBuilder) void {
-    sb.fmt(r.start)
-    sb.str("..")
-    sb.fmt(r.end)
+pub fun Range.fmt(r Range, sw &mut StrWriter) void {
+    sw.write(r.start)
+    sw.write("..")
+    sw.write(r.end)
 }
 
 --- Left oriented pattern for slices and Str. ---
@@ -128,6 +126,10 @@ pub fun Rune.to_bytes(r Rune) RuneUTF8 {
     }
 }
 
+pub fun Rune.fmt(r Rune, sw &mut StrWriter) void {
+    unsafe sw.write_utf8_unchecked(r.to_bytes().as_slice())
+}
+
 --- Check whether the given byte marks the start of a unicode rune in utf8. ---
 pub fun Rune.is_valid_utf8(b U8) Bool {
     (b & 0xC0) != 0x80
@@ -196,12 +198,8 @@ pub fun RuneIndex.eq(r RuneIndex, other RuneIndex) Bool {
     r.index == other.index and r.rune == other.rune
 }
 
-pub fun RuneIndex.fmt(r RuneIndex, sb &mut StrBuilder) void {
-    sb.str("RuneIndex(")
-    sb.rune(r.rune)
-    sb.str(", ")
-    sb.int(r.index)
-    sb.str(")")
+pub fun RuneIndex.fmt(r RuneIndex, sw &mut StrWriter) void {
+    f"RuneIndex({r.rune}, {r.index})".write_to(sw)
 }
 
 pub struct StrRuneIndexIter {
@@ -646,190 +644,6 @@ pub fun Str.rsplit<P RPattern<[]U8>>(s Str, pattern P, max_splits ?Int = None())
     StrRSplitIter(s.data, pattern, false, max_splits.or_default(1000000000))
 }
 
---- A convenient way to build strings. ---
-pub nocopy struct StrBuilder {
-    out []mut U8
-    pub len Int
-    @a Arena
-}
-
-pub fun StrBuilder.new(capacity Int, @a Arena) &mut StrBuilder {
-    let out = unsafe @a.slice_uninit<U8>(capacity)
-    @a.new<StrBuilder>(StrBuilder(out, 0, @a))
-}
-
-pub fun StrBuilder.u64(sb &mut StrBuilder, v U64, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    let cap = if min_width < 64 { 64 } else { min_width }
-    sb.ensure_capacity(cap)
-    let len = try v.fmt_into(sb.out[sb.len..], base, upper, min_width) else { panic("reserved too few bytes") }
-    sb.len += len
-}
-
-pub fun StrBuilder.int(sb &mut StrBuilder, v Int, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    let cap = if min_width < 65 { 65 } else { min_width }
-    sb.ensure_capacity(cap)
-    let len = try v.fmt_into(sb.out[sb.len..], base, upper, min_width) else { panic("reserved too few bytes") }
-    sb.len += len
-}
-
-pub fun StrBuilder.u8(sb &mut StrBuilder, v U8, base Int = 10, upper Bool = false, min_width Int = 0) void { 
-    sb.u64(v.to_u64(), base, upper, min_width) 
-}
-
-pub fun StrBuilder.u16(sb &mut StrBuilder, v U16, base Int = 10, upper Bool = false, min_width Int = 0) void { 
-    sb.u64(v.to_u64(), base, upper, min_width)
-}
-
-pub fun StrBuilder.u32(sb &mut StrBuilder, v U32, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    sb.u64(v.to_u64(), base, upper, min_width)
-}
-
-pub fun StrBuilder.i8(sb &mut StrBuilder, v I8, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    sb.int(v.to_int(), base, upper, min_width)
-}
-
-pub fun StrBuilder.i16(sb &mut StrBuilder, v I16, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    sb.int(v.to_int(), base, upper, min_width)
-}
-
-pub fun StrBuilder.i32(sb &mut StrBuilder, v I32, base Int = 10, upper Bool = false, min_width Int = 0) void {
-    sb.int(v.to_int(), base, upper, min_width)
-}
-
-pub fun StrBuilder.str(sb &mut StrBuilder, s Str) void {
-    sb.slice_raw(s.as_bytes())
-}
-
-pub fun StrBuilder.bool(sb &mut StrBuilder, b Bool) void {
-    if b {
-        sb.str("true")
-    } else {
-        sb.str("false")
-    }
-}
-
-pub fun StrBuilder.rune(sb &mut StrBuilder, r Rune) void {
-    let bytes = r.to_bytes()
-    sb.slice_raw((&bytes).as_slice())
-}
-
-pub fun StrBuilder.float(sb &mut StrBuilder, v Float) void {
-    sb.ensure_capacity(48)
-    let len = try v.fmt_into(sb.out[sb.len..]) else { panic("reserved too few bytes") }
-    sb.len += len
-}
-
-pub fun StrBuilder.f32(sb &mut StrBuilder, v F32) void {
-    sb.float(v.to_float())
-}
-
-pub fun StrBuilder.fmt<T HasFmt>(sb &mut StrBuilder, t T) void { t.fmt(sb) }
-
-pub fun StrBuilder.nl(sb &mut StrBuilder) void { sb.rune('\n') }
-
-pub fun StrBuilder.space(sb &mut StrBuilder) void { sb.rune(' ') }
-
-pub fun StrBuilder.tab(sb &mut StrBuilder) void { sb.rune('\t' ) }
-
---- Trim matching runes from the right. ---
-pub fun StrBuilder.rtrim(sb &mut StrBuilder, runes []Rune = default_trim_runes) void {
-    let out = sb.out[0..sb.len].rtrim_utf8(runes)
-    sb.len = out.len
-}
-
---- Format the slice and cap the output at *roughly* `max_len` bytes. ---
-pub fun StrBuilder.slice<T HasFmt>(
-    sb &mut StrBuilder, 
-    v []T, 
-    sep Str = ", ", 
-    max_len Int = 9223372036854775807, 
-    remaining Bool = false
-) void {
-    if max_len <= 3 {
-        sb.str("...")
-        return void
-    }
-    let start = sb.len
-    for e, i in v {
-        if i > 0 {
-            sb.str(sep)
-        }
-        sb.fmt<T>(e)
-        if max_len > 0 and sb.len - start > max_len - 3 {
-            sb.len = start + max_len - 3
-            -- walk back to the start of a rune
-            for (sb.out[sb.len] & 0xC0) == 0x80 {
-                sb.len -= 1
-            }
-            sb.str("...")
-            if remaining {
-                let rest = v.len - i - 1
-                if rest > 0 {
-                    sb.str(" +")
-                    sb.int(rest)
-                    sb.str(" more")
-                }
-            }
-            break
-        }
-    } 
-}
-
-pub fun StrBuilder.join<T HasFmt, I Iter<T>>(sb &mut StrBuilder, it &mut I, sep Str) void {
-    mut first = true
-    for {
-        match it.next() {
-            case None: break
-            else a: 
-                if first {
-                    first = false
-                } else {
-                    sb.str(sep)
-                }
-                sb.fmt(a)
-        } 
-    }
-}
-
-pub fun StrBuilder.ensure_capacity(sb &mut StrBuilder, capacity Int) void {
-    if sb.out.len - sb.len < capacity {
-        sb.out = unsafe sb.@a.grow_uninit<U8>(sb.out, (sb.len + capacity) * 2)
-    }
-}
-
---- Return a view to the underlying slice up to this point. 
-
-    Future changes are not reflected. ---
-pub fun StrBuilder.as_str(sb &StrBuilder) Str {
-    Str(sb.out[0..sb.len])
-}
-
---- Append '\0' to make it a valid C-style string and return a view to the underlying slice.
-
-    Future changes are not reflected. ---
-pub fun StrBuilder.as_cstr(sb &mut StrBuilder) []U8 {
-    sb.byte_raw(0)
-    sb.out[0..sb.len]
-}
-
-pub fun StrBuilder.utf8_lossy(sb &mut StrBuilder, bytes []U8) void {
-    let @local = Arena()
-    let s = Str.from_utf8_lossy(bytes, @local)
-    sb.str(s)
-}
-
-fun StrBuilder.slice_raw(sb &mut StrBuilder, bytes []U8) void {
-    sb.ensure_capacity(bytes.len)
-    _ = sb.out[sb.len..].set(bytes)
-    sb.len += bytes.len
-}
-
-fun StrBuilder.byte_raw(sb &mut StrBuilder, b U8) void {
-    sb.ensure_capacity(1)
-    sb.out[sb.len] = b
-    sb.len += 1
-}
-
 pub fun Slice.copy(s []T, @a Arena) []mut T {
     let c = unsafe @a.slice_uninit<T>(s.len)
     _ = c.set(s)
@@ -1083,10 +897,23 @@ pub fun Slice.concat(first []T, others [][]T, @a Arena) []mut T {
     new
 }
 
-pub fun Slice.fmt<U HasFmt>(s []U, sb &mut StrBuilder) void {
-    sb.rune('[')
-    sb.slice(s, ", ", 240, true)
-    sb.rune(']')
+pub fun Slice.fmt<U HasFmt>(s []U, sw &mut StrWriter) void {
+    let cap = 240
+    sw.write("[")
+    let l = sw.len
+    for x, i in s {
+        if i > 0 {
+            sw.write(", ")
+        }
+        sw.write(x)
+        if sw.len - l > cap {
+            if i < s.len - 1 {
+                f"... {s.len - i - 1} more".write_to(sw)
+            }
+            break
+        }
+    }
+    sw.write("]")
 }
 
 pub fun Slice.eq<U HasEq>(s []U, other []U) Bool {
@@ -1265,7 +1092,7 @@ pub fun Slice.iter(s []T) SliceIter<T> {
 --- None represents the absence of something. ---
 -- struct None {}
 
-pub fun None.fmt(n None, sb &mut StrBuilder) void { sb.str("<none>") }
+pub fun None.fmt(n None, sw &mut StrWriter) void { sw.write("<none>") }
 
 pub fun None.eq(n None, other None) Bool { true }
 
@@ -1274,10 +1101,10 @@ pub fun None.hash(n None) U64 { 0 }
 --- Option represents a value that is either present or not. ---
 -- union Option<T> = T | None
 
-pub fun Option.fmt<U HasFmt>(o Option<U>, sb &mut StrBuilder) void {
+pub fun Option.fmt<U HasFmt>(o Option<U>, sw &mut StrWriter) void {
     match o {
-        case U t: sb.fmt(t)
-        case None n: sb.fmt(n)
+        case U v: sw.write(v)
+        case None n: sw.write(n)
     } 
 }
 
@@ -1328,10 +1155,10 @@ pub fun Option.or_err(o Option, err Err) !T {
 --- A result type. Use this to distinct between "success" and "error" ---
 -- union Result<T> = T | Err
 
-pub fun Result.fmt<U HasFmt>(r Result<U>, sb &mut StrBuilder) void {
+pub fun Result.fmt<U HasFmt>(r Result<U>, sw &mut StrWriter) void {
     match r {
-        case U t: sb.fmt(t)
-        case Err e: sb.fmt(e)
+        case U v: sw.write(v)
+        case Err e: sw.write(e)
     }
 }
 
@@ -1456,22 +1283,38 @@ pub fun F32.hash(a F32) U64 {
     bits *% 0x517CC1B727220A95
 }
 
-pub fun Str.fmt(s Str, sb &mut StrBuilder) void { sb.str(s) }
-pub fun Int.fmt(i Int, sb &mut StrBuilder) void { sb.int(i) }
-pub fun I32.fmt(i I32, sb &mut StrBuilder) void { sb.i32(i) }
-pub fun I16.fmt(i I16, sb &mut StrBuilder) void { sb.i16(i) }
-pub fun I8.fmt(i I8, sb &mut StrBuilder) void { sb.i8(i) }
-pub fun U64.fmt(i U64, sb &mut StrBuilder) void { sb.u64(i) }
-pub fun U32.fmt(i U32, sb &mut StrBuilder) void { sb.u32(i) }
-pub fun U16.fmt(i U16, sb &mut StrBuilder) void { sb.u16(i) }
-pub fun U8.fmt(i U8, sb &mut StrBuilder) void { sb.u8(i) }
-pub fun Rune.fmt(r Rune, sb &mut StrBuilder) void { sb.rune(r) }
-pub fun Bool.fmt(b Bool, sb &mut StrBuilder) void { sb.bool(b) }
-pub fun Float.fmt(v Float, sb &mut StrBuilder) void { sb.float(v) }
-pub fun F32.fmt(v F32, sb &mut StrBuilder) void { sb.f32(v) }
+pub fun Str.fmt(s Str, sw &mut StrWriter) void { unsafe sw.write_utf8_unchecked(s.data) }
+pub fun Int.fmt(i Int, sw &mut StrWriter) void { 
+    -- An Int can be at most 64 bytes stringified.
+    let buf = unsafe sw.reserve(64)
+    let n = try i.fmt_into(buf) else { panic("Int.fmt() did not reserve enough bytes") }
+    sw.advance(n)
+}
+pub fun I32.fmt(i I32, sw &mut StrWriter) void { sw.write(i.to_int()) }
+pub fun I16.fmt(i I16, sw &mut StrWriter) void { sw.write(i.to_int()) }
+pub fun I8.fmt(i I8, sw &mut StrWriter) void { sw.write(i.to_int()) }
+pub fun U64.fmt(u U64, sw &mut StrWriter) void { 
+    -- An U64 can be at most 65 bytes stringified.
+    let buf = unsafe sw.reserve(65)
+    let n = try u.fmt_into(buf) else { panic("U64.fmt() did not reserve enough bytes") }
+    sw.advance(n)
+}
+pub fun U32.fmt(u U32, sw &mut StrWriter) void { sw.write(u.to_u64()) }
+pub fun U16.fmt(u U16, sw &mut StrWriter) void { sw.write(u.to_u64()) }
+pub fun U8.fmt(u U8, sw &mut StrWriter) void { sw.write(u.to_u64()) }
+pub fun Bool.fmt(b Bool, sw &mut StrWriter) void {
+    sw.write(if b { "true" } else { "false" })
+}
+pub fun Float.fmt(f Float, sw &mut StrWriter) void {
+    -- An Float can be at most 48 bytes stringified.
+    let buf = unsafe sw.reserve(48)
+    let n = try f.fmt_into(buf) else { panic("Float.fmt() did not reserve enough bytes") }
+    sw.advance(n)
+}
+pub fun F32.fmt(f F32, sw &mut StrWriter) void { sw.write(f.to_float()) }
 
-pub fun Float.is_finite(v Float) Bool { not v.is_nan() and not v.is_inf() }
-pub fun F32.is_finite(v F32) Bool { not v.is_nan() and not v.is_inf() }
+pub fun Float.is_finite(f Float) Bool { not f.is_nan() and not f.is_inf() }
+pub fun F32.is_finite(f F32) Bool { not f.is_nan() and not f.is_inf() }
 
 pub fun U8.to_i8_checked(u U8) !I8 { if u > U8(0x7F) { return NumConvErr.out_of_range } u.to_i8_wrapping() }
 pub fun U16.to_i16_checked(u U16) !I16 { if u > U16(0x7FFF) { return NumConvErr.out_of_range } u.to_i16_wrapping() }

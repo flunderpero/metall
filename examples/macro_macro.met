@@ -1,7 +1,8 @@
-fun apply(s Str, sb &mut StrBuilder, @a Arena) void {
-    sb.str("fun hello_from_macro(s Str, @a Arena) Str {")
-    sb.rune('"')
-    sb.str(s)
-    sb.rune('"')
-    sb.str(".concat(s, @a)}")
+fun apply(s Str, sw &mut StrWriter, @a Arena) void {
+    let @local = Arena()
+    sw.write(fm#"
+        fun hello_from_macro(s Str, @a Arena) Str {
+            "#{s}".concat(s, @a)
+        }
+    "#.build(@local))
 }

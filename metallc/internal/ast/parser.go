@@ -237,7 +237,22 @@ func (p *Parser) ParseExternFun() (NodeID, bool) {
 		if !ok {
 			return ParseFailed, false
 		}
-		value, _, ok := p.stringLiteralValue(linkTok)
+		fstr, bytes, multiline, ok := p.stringModifiers(linkTok)
+		if !ok {
+			return ParseFailed, false
+		}
+		if fstr {
+			p.diagnostic(linkTok.Span, "an extern link name cannot be a format string")
+			return ParseFailed, false
+		}
+		raw := []rune(linkTok.Value)
+		if multiline {
+			raw, ok = p.dedentMultiline(raw, linkTok.Span)
+			if !ok {
+				return ParseFailed, false
+			}
+		}
+		value, ok := p.unescapeSegment(raw, bytes, multiline, linkTok.Span)
 		if !ok {
 			return ParseFailed, false
 		}
@@ -1006,6 +1021,13 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			return ParseFailed, false
 		}
 		expr = str
+	case token.FStringStart:
+		p.next()
+		fstr, ok := p.parseFString(t)
+		if !ok {
+			return ParseFailed, false
+		}
+		expr = fstr
 	case token.Error:
 		p.diagnostic(t.Span, "%s", t.Value)
 		return ParseFailed, false
@@ -1698,45 +1720,64 @@ func (p *Parser) ParseRange() (nodeID NodeID, isRange bool, ok bool) {
 	return lo, false, true
 }
 
-// parseStringLiteral turns a String token into a String node. The lexer kept the
-// text between the quotes verbatim; here we read the modifier (the leading
-// letters of the lexeme), apply the multi-line rules, and decode the escapes.
+// parseStringLiteral turns a (non-f) String token into a String node. The lexer
+// kept the text between the quotes verbatim; here we read the modifier, apply the
+// multi-line rules, and decode the escapes. F-strings arrive as structured tokens
+// and are handled by parseFString instead.
 func (p *Parser) parseStringLiteral(t *token.Token) (NodeID, bool) {
-	value, bytes, ok := p.stringLiteralValue(t)
+	_, bytes, multiline, ok := p.stringModifiers(t)
+	if !ok {
+		return ParseFailed, false
+	}
+	raw := []rune(t.Value)
+	if multiline {
+		raw, ok = p.dedentMultiline(raw, t.Span)
+		if !ok {
+			return ParseFailed, false
+		}
+	}
+	value, ok := p.unescapeSegment(raw, bytes, multiline, t.Span)
 	if !ok {
 		return ParseFailed, false
 	}
 	return p.NewString(value, bytes, t.Span), true
 }
 
-func (p *Parser) stringLiteralValue(t *token.Token) (string, bool, bool) { //nolint:funlen
+// stringModifiers reads the leading modifier letters of a string lexeme and
+// returns the f/b/m flags. The modifiers must appear in the order f, b, m, each
+// at most once.
+func (p *Parser) stringModifiers(t *token.Token) (fstr, bytes, multiline, ok bool) {
+	const order = "fbm"
 	content := t.Span.Source.Content
-	mod := t.Span.Start
-	for mod < len(content) && unicode.IsLetter(content[mod]) {
-		mod++
-	}
-	bytes, multiline := false, false
-	for _, m := range content[t.Span.Start:mod] {
-		switch m {
+	pos := 0
+	for i := t.Span.Start; i < len(content) && unicode.IsLetter(content[i]); i++ {
+		c := content[i]
+		at := strings.IndexRune(order, c)
+		if at < 0 {
+			p.diagnostic(t.Span, "unknown string modifier %q", string(c))
+			return false, false, false, false
+		}
+		if at < pos {
+			p.diagnostic(t.Span, "string modifiers must be written in the order f, b, m, each at most once")
+			return false, false, false, false
+		}
+		pos = at + 1
+		switch c {
+		case 'f':
+			fstr = true
 		case 'b':
 			bytes = true
 		case 'm':
 			multiline = true
-		default:
-			p.diagnostic(t.Span, "unknown string modifier %q", string(m))
-			return "", false, false
 		}
 	}
+	return fstr, bytes, multiline, true
+}
 
-	raw := []rune(t.Value)
-	if multiline {
-		dedented, ok := p.dedentMultiline(raw, t.Span)
-		if !ok {
-			return "", false, false
-		}
-		raw = dedented
-	}
-
+// unescapeSegment decodes escapes and line continuations in raw string text.
+// raw is one stretch of literal text: the whole string for a plain literal, or a
+// single between-interpolation run for an f-string.
+func (p *Parser) unescapeSegment(raw []rune, bytes, multiline bool, span base.Span) (string, bool) {
 	out := []byte{}
 	idx := 0
 	for idx < len(raw) {
@@ -1757,13 +1798,13 @@ func (p *Parser) stringLiteralValue(t *token.Token) (string, bool, bool) { //nol
 				continue
 			}
 			if ws > idx+1 {
-				p.diagnostic(t.Span, "expected a newline after a line-continuation backslash")
-				return "", false, false
+				p.diagnostic(span, "expected a newline after a line-continuation backslash")
+				return "", false
 			}
 			r, next, errMsg := token.ParseEscape(raw, idx, '"')
 			if errMsg != "" {
-				p.diagnostic(t.Span, "%s", errMsg)
-				return "", false, false
+				p.diagnostic(span, "%s", errMsg)
+				return "", false
 			}
 			// In a bytes literal `\xNN` is a raw byte, not a utf-8 encoded rune.
 			if bytes && raw[idx+1] == 'x' {
@@ -1775,13 +1816,13 @@ func (p *Parser) stringLiteralValue(t *token.Token) (string, bool, bool) { //nol
 			continue
 		}
 		if c == '\n' && !multiline {
-			p.diagnostic(t.Span, `newline in single-line string; use a multi-line string (m"...")`)
-			return "", false, false
+			p.diagnostic(span, "newline in single-line string; use a multi-line string")
+			return "", false
 		}
 		out = utf8.AppendRune(out, c)
 		idx++
 	}
-	return string(out), bytes, true
+	return string(out), true
 }
 
 // dedentMultiline applies the m"..." rules to the raw content: the opening quote

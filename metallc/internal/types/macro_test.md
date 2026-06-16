@@ -6,8 +6,8 @@
 ```
 
 ```module.hello_macro
-fun apply(sb &mut StrBuilder, @a Arena) void {
-    sb.str("fun greet() void { DebugIntern.print_str(").rune('"').str("hi").rune('"').str(") }")
+fun apply(sw &mut StrWriter, @a Arena) void {
+    sw.write("fun greet() void { DebugIntern.print_str(\"hi\") }")
 }
 ```
 
@@ -16,8 +16,10 @@ fun helper(x Int) Int { x }
 ```
 
 ```module.param_macro
-fun apply(n Int, sb &mut StrBuilder, @a Arena) void {
-    sb.str("fun value() Int { ").int(n).str(" }")
+fun apply(n Int, sw &mut StrWriter, @a Arena) void {
+    sw.write("fun value() Int { ")
+    sw.write(n)
+    sw.write(" }")
 }
 ```
 

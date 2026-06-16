@@ -46,7 +46,19 @@
 ; >>> Literals
 
 (integer_literal) @number
-(string_literal) @string
+; String bodies, quotes, and literal fragments are @string. The modifiers+sigils
+; (`f`/`b`/`m` and `#`) and the interpolation braces are punctuation, kept apart
+; from the body. Interpolation expressions are left alone so their own (deeper)
+; rules apply, making `{expr}` read as code.
+(string_content) @string
+(fstring_start) @string
+(fstring_end) @string
+(string_fragment) @string
+(string_prefix) @punctuation.special
+(fstring_prefix) @punctuation.special
+(string_suffix) @punctuation.special
+(interp_start) @punctuation.special
+(interp_end) @punctuation.special
 (rune_literal) @character
 (boolean_literal) @constant.builtin
 (void) @type

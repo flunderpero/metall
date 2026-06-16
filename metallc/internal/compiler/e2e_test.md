@@ -5754,9 +5754,9 @@ fun main() void {
 ```
 
 ```output
-hello 
-hello 
-hello 
+hello
+hello
+hello
 ```
 
 **and short-circuits on false**

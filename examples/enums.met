@@ -56,14 +56,14 @@ enum ParseErr AppErr = unexpected_token | unexpected_eof
     `.debug_name` is generated for every enum variant. For open enums it is the
     fully-qualified name (e.g. "examples.enums.IOErr.broken_pipe"); for closed
     enums it is the bare variant name (e.g. "red"). There is no from_debug_name. ---
-pub fun AppErr.fmt(e AppErr, sb &mut StrBuilder) void {
-    sb.str(e.debug_name)
+pub fun AppErr.fmt(e AppErr, sw &mut StrWriter) void {
+    sw.write(e.debug_name)
     match e.posix_code {
         case None:
         else code:
-            sb.str(" (errno ")
-            sb.int(code)
-            sb.str(")")
+            sw.write(" (errno ")
+            sw.write(code)
+            sw.write(")")
     }
 }
 
@@ -94,13 +94,7 @@ fun classify(e AppErr) Str {
 }
 
 fun describe_color(c Color, @a Arena) Str {
-    let sb = StrBuilder.new(32, @a)
-    sb.str(c.debug_name)
-    sb.str(" = ")
-    sb.str(c.name)
-    sb.str(" #")
-    sb.u32(c.rgb, 16, false, 6)
-    sb.as_str()
+    f"{c.debug_name} = {c.name} #{c.rgb}".build(@a)
 }
 
 fun main() void {
@@ -113,33 +107,27 @@ fun main() void {
     io.println(HttpStatus.teapot.debug_name)
 
     -- Signed backing stores negative discriminants verbatim; `.tag` reads one.
-    let sb6 = StrBuilder.new(16, @a)
-    sb6.i8(Sign.negative.tag)
-    io.println(sb6.as_str())
+    io.println(Sign.negative.tag)
 
     -- Associated data, read from a variant constant and from a value.
     io.println(describe_color(Color.green, @a))
 
     -- `variants<T>()` yields every variant of a closed enum as a slice.
-    let sb = StrBuilder.new(64, @a)
+    let sw = StrWriter.new(64, @a)
     let all = enums.variants<Color>()
     for color in all {
-        sb.str(color.name)
-        sb.str(" ")
+        sw.write(color.name)
+        sw.write(" ")
     }
-    io.println(sb.as_str())
+    io.println(sw.as_str())
 
     -- Open enums: a subset value coerces to the root, and a root method works.
     let broken AppErr = IOErr.broken_pipe
-    let sb2 = StrBuilder.new(64, @a)
-    broken.fmt(sb2)
-    io.println(sb2.as_str())
+    io.println(broken)
 
     -- A subset variant whose optional associated data defaults to `none`.
     let eof AppErr = ParseErr.unexpected_eof
-    let sb3 = StrBuilder.new(64, @a)
-    eof.fmt(sb3)
-    io.println(sb3.as_str())
+    io.println(eof)
 
     -- Namespaced vs. whole-subset matching on an open enum.
     io.println(classify(IOErr.file_not_found))
@@ -150,15 +138,13 @@ fun main() void {
     match IOErr.file_not_found.posix_code {
         case None: io.println("no errno")
         else code:
-            let sb4 = StrBuilder.new(16, @a)
-            sb4.str("errno ")
-            sb4.int(code)
-            io.println(sb4.as_str())
+            let sw4 = StrWriter.new(16, @a)
+            sw4.write("errno ")
+            sw4.write(code)
+            io.println(sw4.as_str())
     }
 
     -- Reflection: RawEnum<Color>.value is U8 because Color is backed by U8.
     let raw = RawEnum<Color>(2)
-    let sb5 = StrBuilder.new(16, @a)
-    sb5.u8(raw.value)
-    io.println(sb5.as_str())
+    io.println(raw.value)
 }

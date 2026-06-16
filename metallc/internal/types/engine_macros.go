@@ -36,12 +36,15 @@ func (e *Engine) checkMacroModule(
 }
 
 func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
+	// A macro function is identified by its trailing parameters: `&mut StrWriter`
+	// then an allocator. The names are irrelevant; only the types matter.
 	lastTwo := fun.Params[len(fun.Params)-2:]
-	sbParam := e.ast.Node(lastTwo[0])
-	arenaParam := e.ast.Node(lastTwo[1])
-	sbFunParam, sbOK := sbParam.Kind.(ast.FunParam)
-	arenaFunParam, arenaOK := arenaParam.Kind.(ast.FunParam)
-	if !sbOK || !arenaOK || sbFunParam.Name.Name != "sb" || arenaFunParam.Name.Name != "@a" {
+	writerType, status := e.Query(lastTwo[0])
+	if status.Failed() {
+		return false
+	}
+	allocType, status := e.Query(lastTwo[1])
+	if status.Failed() || !e.isStrWriterRef(writerType) || !e.holdsAllocator(allocType) {
 		return false
 	}
 	visibleParams := fun.Params[:len(fun.Params)-2]
@@ -71,6 +74,16 @@ func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
 	e.env.bindInScope(scope, node.ID, fun.Name.Name, funTypeID)
 	e.env.setNamedFunRef(node.ID, fun.Name.Name)
 	return true
+}
+
+// isStrWriterRef reports whether typeID is `&mut StrWriter`.
+func (e *Engine) isStrWriterRef(typeID TypeID) bool {
+	ref, ok := e.env.Type(typeID).Kind.(RefType)
+	if !ok || !ref.Mut {
+		return false
+	}
+	st, ok := e.env.Type(ref.Type).Kind.(StructType)
+	return ok && st.Name == "StrWriter"
 }
 
 func (e *Engine) expandMacrosInModule(nodeID ast.NodeID, module *ast.Module) ([]ast.NodeID, bool) {

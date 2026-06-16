@@ -172,6 +172,74 @@ pub fun Range.next(r &mut Range) ?Int {
     ret
 }
 
+--- Format an object to Str. ---
+pub shape HasFmt {
+    pub fun HasFmt.fmt(f HasFmt, sw &mut StrWriter) void
+}
+
+--- Write to a Str. ---
+pub nocopy struct StrWriter {
+    out []mut U8
+    pub len Int
+    @a Arena
+}
+
+pub fun StrWriter.new(capacity Int, @a Arena) &mut StrWriter {
+    let out = unsafe @a.slice_uninit<U8>(capacity)
+    @a.new(StrWriter(out, 0, @a))
+}
+
+pub fun StrWriter.write<T HasFmt>(sw &mut StrWriter, v T) void {
+    v.fmt(sw)
+}
+
+--- Write valid utf8 to the backing buffer directly.
+
+    This function is deemed unsafe because it relies on the caller
+    to actually write valid utf8. ---
+pub unsafe fun StrWriter.write_utf8_unchecked(sw &mut StrWriter, buf []U8) void {
+    sw.ensure_capacity(buf.len)
+    for x in buf {
+        sw.out[sw.len] = x
+        sw.len += 1
+    }
+}
+
+--- Ensure the backing buffer has at lest the given capacity and 
+    then return a slice into it.
+
+    This allows you to write utf8 directly to the backing buffer.
+    You must call `advance(n)` with the number of bytes written
+    to the backing buffer.
+
+    Important: Don't call other mutating methods like `write()` and
+    `reserve()` itself until you are done and called `advance()`. ---
+pub unsafe fun StrWriter.reserve(sw &mut StrWriter, n Int) []mut U8 {
+    sw.ensure_capacity(n)
+    sw.out[sw.len..sw.len + n]
+}
+
+--- Advance the length of the backing buffer by `n` number of bytes.
+
+    This is the counterpart to `reserve()`. 
+    Panics if `n` is larger than the underlying buffer. ---
+pub fun StrWriter.advance(sw &mut StrWriter, n Int) void {
+    if sw.len + n >= sw.out.len {
+        panic("StrWriter.advance() beyond the backing buffer")
+    }
+    sw.len += n
+}
+
+fun StrWriter.ensure_capacity(sw &mut StrWriter, n Int) void {
+    if sw.out.len - sw.len < n {
+        sw.out = unsafe sw.@a.grow_uninit<U8>(sw.out, (sw.len + n) * 2)
+    }
+}
+
+pub fun StrWriter.as_str(sw &StrWriter) Str {
+    Str(sw.out[0..sw.len])
+}
+
 --- Built-in constraint satisfied by any enum. `T.Item` is the backing int. ---
 pub shape Enum<Item> {}
 

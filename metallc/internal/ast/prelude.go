@@ -71,7 +71,7 @@ func updateMinimalPrelude(a *AST) {
 				kind.Name.Name = s
 				node.Kind = kind
 			}
-			if slices.Contains([]string{"None", "Err", "Range"}, kind.Name.Name) {
+			if slices.Contains([]string{"None", "Err", "Range", "StrWriter"}, kind.Name.Name) {
 				return true
 			}
 			kind.Builtin = true
