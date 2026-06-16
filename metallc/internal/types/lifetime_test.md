@@ -4924,3 +4924,73 @@ test.met:9:15: reference escaping its allocation scope (via mutation of outer va
 
 ```error
 ```
+
+**slice into a runtime array literal escapes**
+
+A runtime-valued array literal is a fresh stack array, so a slice into it cannot
+outlive the function.
+
+```metall
+fun mk(a Int, b Int) []Int {
+    [a, b][..]
+}
+```
+
+```error
+test.met:2:5: reference escaping its allocation scope (via block result)
+    fun mk(a Int, b Int) []Int {
+        [a, b][..]
+        ^^^^^^^^^^
+    }
+```
+
+**slice into a const array literal does not escape**
+
+A const array literal is promoted to a global, so a slice into it stays valid
+after the function returns.
+
+```metall
+fun lut() []Int {
+    [10, 20, 30][..]
+}
+```
+
+```error
+```
+
+**slice into an array of module constants does not escape**
+
+A reference to a module-level constant is itself const, so an array built from
+them is promoted to a global like a literal one.
+
+```metall
+let lo = 1
+let hi = 9
+fun span() []Int {
+    [lo, hi][..]
+}
+```
+
+```error
+```
+
+**slice into an array of local bindings escapes**
+
+A local `let` is not a compile-time constant (it may hold a runtime value), so its
+array is a fresh stack array.
+
+```metall
+fun span() []Int {
+    let lo = 1
+    let hi = 9
+    [lo, hi][..]
+}
+```
+
+```error
+test.met:4:5: reference escaping its allocation scope (via block result)
+        let hi = 9
+        [lo, hi][..]
+        ^^^^^^^^^^^^
+    }
+```

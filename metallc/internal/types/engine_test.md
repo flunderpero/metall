@@ -1339,12 +1339,14 @@ test.met:4:14: cannot copy value of nocopy type test.Handle
 
 **Can build an array literal from fresh nocopy values**
 
-Freshly constructed nocopy elements are moved into the array, not copied.
+Freshly constructed nocopy elements are moved into the array, not copied, whether
+the literal is bound directly or immediately sliced.
 
 ```metall module
 nocopy struct Handle { id Int }
 fun foo() void {
-    let s = [Handle(1), Handle(2)][..]
+    let arr = [Handle(1), Handle(2)]
+    let s = [Handle(3), Handle(4)][..]
 }
 ```
 
@@ -11531,9 +11533,49 @@ fun main() void {}
 ```
 
 ```error
-test.met:1:9: function calls are not allowed in module-level constants
+test.met:1:9: module-level constant must be a constant expression
     let x = 'a'.to_u32()
             ^^^^^^^^^^^^
+    fun main() void {}
+```
+
+**Module-level let with const expressions**
+
+Unary, binary, index, subslice, enum-variant, and enum-field reads are all
+constant expressions, so they are valid module-level constants.
+
+```metall module
+enum Level(weight Int) U8 = low(1) | high(10)
+struct Point { x Int y Int }
+let base = 42
+let neg = -base
+let sum = base + 8
+let pt = Point(1, 2)
+let arr = [10, 20, 30]
+let idx = arr[1]
+let sl = [1, 2, 3][1..]
+let lvl = Level.high
+let w = Level.low.weight + Level.high.weight
+fun main() void {}
+```
+
+```error
+```
+
+**Module-level let with a function call inside an expression is rejected**
+
+A non-const operand anywhere in the expression (here a method call nested in a
+binary) fails the check.
+
+```metall module
+let x = 'a'.to_u32() + 'b'.to_u32()
+fun main() void {}
+```
+
+```error
+test.met:1:9: module-level constant must be a constant expression
+    let x = 'a'.to_u32() + 'b'.to_u32()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
     fun main() void {}
 ```
 
@@ -12816,7 +12858,7 @@ test.met:2:22: symbol not defined: f
 ```
 
 ```error
-test.met:1:24: enum associated values cannot contain function calls
+test.met:1:24: enum associated value must be a constant expression
     { enum C(x U32) U8 = a(U8(1).to_u32()) }
                            ^^^^^^^^^^^^^^
 ```

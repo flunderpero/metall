@@ -231,14 +231,14 @@ func (e *Engine) resolveEnumAssocArgs(v ast.EnumVariant, params []StructField) (
 				field.Name, e.env.TypeDisplay(field.Type), e.env.TypeDisplay(argType))
 			return nil, TypeFailed
 		}
-		// Associated values are emitted as compile-time constants, so they follow
-		// the same restriction as module-level constants: no function calls.
-		if callNodeID, ok := ast.FindNode[ast.Call](e.ast, argNodeID); ok {
-			e.diag(e.ast.Node(callNodeID).Span, "enum associated values cannot contain function calls")
+		// Associated values are emitted as compile-time constants.
+		if !e.isConstExpr(argNodeID) {
+			e.diag(e.ast.Node(argNodeID).Span, "enum associated value must be a constant expression")
 			return nil, TypeFailed
 		}
-		// Reading a member off an enum value lowers to a runtime table load whose
-		// fill order is unspecified, so it would silently read a zero table.
+		// Beyond being const, reading a member off another enum's value lowers to a
+		// runtime table load whose cross-enum fill order is unspecified, so it would
+		// silently read a zero table.
 		if memberID, ok := e.assocValueReadsEnumMember(argNodeID); ok {
 			e.diag(e.ast.Node(memberID).Span, "enum associated values cannot read enum fields")
 			return nil, TypeFailed

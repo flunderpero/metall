@@ -430,18 +430,12 @@ func (e *Engine) checkModule( //nolint:funlen
 			depFailed = true
 			continue
 		}
-		if callNodeID, ok := ast.FindNode[ast.Call](e.ast, varNode.Expr); ok {
-			e.diag(e.ast.Node(callNodeID).Span, "function calls are not allowed in module-level constants")
+		if !e.isConstExpr(varNode.Expr) {
+			e.diag(e.ast.Node(varNode.Expr).Span, "module-level constant must be a constant expression")
 			depFailed = true
 			continue
 		}
 		typeID := e.env.TypeOfNode(varNode.Expr).ID
-		if e.env.containsMutablePart(typeID) {
-			exprSpan := e.ast.Node(varNode.Expr).Span
-			e.diag(exprSpan, "module-level constants cannot contain mutable references or slices")
-			depFailed = true
-			continue
-		}
 		name := e.declMangledName(declNodeID, varNode.Name.Name)
 		e.consts = append(e.consts, ConstWork{NodeID: declNodeID, TypeID: typeID, Name: name, Env: e.env})
 	}
@@ -2036,7 +2030,10 @@ func (e *Engine) checkArrayLiteral(
 		}
 	}
 	typeID := e.env.buildArrayType(elemTyp, int64(len(array.Elems)), nodeID, span)
-	if !e.env.containsMutablePart(typeID) {
+	// Promote to a shared immutable global only when the value is genuinely
+	// compile-time constant. A runtime-valued array must not share storage, two
+	// evaluations would alias the same global and clobber each other's data.
+	if e.isConstExpr(nodeID) && !e.env.containsMutablePart(typeID) {
 		e.env.constArrays[nodeID] = true
 	}
 	return typeID, TypeOK
@@ -2694,9 +2691,85 @@ func (e *Engine) isFreshValue(nodeID ast.NodeID) bool {
 		return true
 	case ast.If:
 		return e.isFreshValue(kind.Then) && (kind.Else == nil || e.isFreshValue(*kind.Else))
+	case ast.ArrayLiteral:
+		for _, elem := range kind.Elems {
+			if !e.isFreshValue(elem) {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
+}
+
+func (e *Engine) isConstExpr(nodeID ast.NodeID) bool {
+	// A bare enum variant (e.g. `Color.red`) is a constant discriminant.
+	if _, _, ok := e.env.EnumVariantRef(nodeID); ok {
+		return true
+	}
+	// A reference to a module-level constant, possibly qualified (`mod.x`).
+	if e.resolvesToModuleConst(nodeID) {
+		return true
+	}
+	switch kind := e.ast.Node(nodeID).Kind.(type) {
+	case ast.Int, ast.Float, ast.Bool, ast.String, ast.RuneLiteral:
+		return true
+	case ast.Unary:
+		return e.isConstExpr(kind.Expr)
+	case ast.Binary:
+		return e.isConstExpr(kind.LHS) && e.isConstExpr(kind.RHS)
+	case ast.Ref:
+		// `&` of a const place is a static address; `&mut` is never const.
+		return !kind.Mut && e.isConstExpr(kind.Target)
+	case ast.FieldAccess:
+		// A field read of a const value (`pt.x`, `Level.low.weight`).
+		return e.isConstExpr(kind.Target)
+	case ast.Index:
+		return e.isConstExpr(kind.Target) && e.isConstExpr(kind.Index)
+	case ast.SubSlice:
+		return e.isConstExpr(kind.Target) && e.isConstExpr(kind.Range)
+	case ast.Range:
+		return (kind.Lo == nil || e.isConstExpr(*kind.Lo)) &&
+			(kind.Hi == nil || e.isConstExpr(*kind.Hi))
+	case ast.TypeConstruction:
+		for _, arg := range kind.Args {
+			if !e.isConstExpr(arg) {
+				return false
+			}
+		}
+		return true
+	case ast.ArrayLiteral:
+		for _, elem := range kind.Elems {
+			if !e.isConstExpr(elem) {
+				return false
+			}
+		}
+		return true
+	case ast.ArrayConstruction:
+		// `[N of v]` is const iff v is; `[N uninit T]` is uninitialized.
+		return kind.Fill != nil && e.isConstExpr(*kind.Fill)
+	default:
+		return false
+	}
+}
+
+// resolvesToModuleConst reports whether nodeID is a reference (an identifier or
+// qualified `mod.x`) bound to a module-level `let`.
+func (e *Engine) resolvesToModuleConst(nodeID ast.NodeID) bool {
+	binding, ok := e.env.PathBinding(nodeID)
+	if !ok || binding.Decl == 0 {
+		return false
+	}
+	if _, isVar := e.ast.Node(binding.Decl).Kind.(ast.Var); !isVar {
+		return false
+	}
+	scope := e.scopeGraph.NodeScope(binding.Decl)
+	if scope.Node == 0 {
+		return false
+	}
+	_, atModule := e.ast.Node(scope.Node).Kind.(ast.Module)
+	return atModule
 }
 
 // checkNocopy verifies that a nocopy value is not being copied. Returns true

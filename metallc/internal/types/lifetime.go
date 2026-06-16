@@ -479,7 +479,14 @@ func (a *LifetimeCheck) storageScopes(nodeID ast.NodeID) TaintSet {
 	case ast.ArrayConstruction:
 		// A `[N of v]`/`[N uninit T]` temporary is a fresh stack array owned by
 		// this scope, so a slice into it cannot outlive the scope.
-		// It is different from an ArrayLiteral which is promoted to a global constant.
+		return TaintSet{a.scopeState(nodeID).ScopeTaint}
+	case ast.ArrayLiteral:
+		// A const literal is promoted to a global, so a slice into it is unscoped.
+		// A non-const (runtime-valued) literal is a fresh stack array like the
+		// `[N of v]` case above, so a slice into it cannot outlive the scope.
+		if a.env.IsConstArray(nodeID) {
+			return nil
+		}
 		return TaintSet{a.scopeState(nodeID).ScopeTaint}
 	default:
 		return nil

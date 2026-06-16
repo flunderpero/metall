@@ -1960,6 +1960,37 @@ fun main() void {
 2.5
 ```
 
+**const array literal promotes; runtime array literal is local**
+
+A const array literal is promoted to a shared global, so a slice into it survives
+the function return. A const nocopy array literal promotes too (the values are not
+copied), readable by field and by reference. A runtime-valued literal is a local.
+
+```metall
+fun lut() []Int { [10, 20, 30][..] }
+nocopy struct Handle { fd Int }
+fun main() void {
+    let s = lut()
+    DebugIntern.print_int(s[0])
+    DebugIntern.print_int(s[2])
+    let arr = [Handle(7), Handle(9)]
+    DebugIntern.print_int(arr[0].fd)
+    let r = &arr[1]
+    DebugIntern.print_int(r.fd)
+    let x = 4
+    let local = [x, x]
+    DebugIntern.print_int(local[1])
+}
+```
+
+```output
+10
+30
+7
+9
+4
+```
+
 **make uninit then write**
 
 ```metall
@@ -5896,6 +5927,8 @@ let f = [10, 20, 30]
 let g = &a
 let h = a + 1
 let i = U8(32)
+let j = -a
+let k = f[1]
 
 fun get_point_x() Int { e.x }
 
@@ -5913,6 +5946,8 @@ fun main() void {
     DebugIntern.print_int(h)
     DebugIntern.print_int(get_point_x())
     DebugIntern.print_uint(i.to_u64())
+    DebugIntern.print_int(j)
+    DebugIntern.print_int(k)
 }
 ```
 
@@ -5930,6 +5965,8 @@ true
 43
 1
 32
+-42
+20
 ```
 
 **module-level let imported from another module**
