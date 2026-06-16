@@ -1490,7 +1490,14 @@ func (e *Engine) tryAutoRefReceiver(
 	if _, recvIsRef := e.env.Type(recvTypeID).Kind.(RefType); recvIsRef {
 		return false, TypeOK
 	}
-	if !e.isAssignableTo(recvTypeID, refParam.Type) {
+	// Auto-ref binds a reference to the place, so a `&mut` receiver (which can write
+	// the place back via `self.*`) needs the place type to equal the pointee
+	// exactly, while a read-only `&` receiver only needs it readable as the pointee.
+	if refParam.Mut {
+		if recvTypeID != refParam.Type {
+			return false, TypeOK
+		}
+	} else if !e.isAssignableTo(recvTypeID, refParam.Type) {
 		return false, TypeOK
 	}
 	if refParam.Mut && !isTemporaryExpr(e.ast.Node(recvNodeID).Kind) {

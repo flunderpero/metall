@@ -10767,6 +10767,26 @@ test.met:5:5: cannot call a method requiring a mutable receiver on an immutable 
     }
 ```
 
+**Method receiver auto-ref of a `&mut` must match the place type exactly**
+
+```metall
+{
+    fun Slice.overwrite(dst &mut []Int, src []Int) void { dst.* = src }
+    mut a = [1, 2, 3]
+    mut hot = a[..]
+    let frozen = [4, 5, 6][..]
+    hot.overwrite(frozen)
+}
+```
+
+```error
+test.met:6:5: type mismatch at receiver: expected &mut []Int, got []mut Int
+        let frozen = [4, 5, 6][..]
+        hot.overwrite(frozen)
+        ^^^
+    }
+```
+
 **Generic struct type arg count too few**
 
 ```metall
