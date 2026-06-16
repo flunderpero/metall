@@ -156,16 +156,16 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 	}
 
 	opts := CompileOpts{ //nolint:exhaustruct
-		ProjectRoot:      projectDir,
-		IncludePaths:     []string{"../../../lib"},
-		Tags:             compileTags,
-		Output:           outputPath,
-		OptLevel:         optLevel,
-		KeepIR:           true,
-		LLVMPasses:       llvmPasses,
-		AddressSanitizer: true,
-		MinimalPrelude:   r.cfg.minimalPrelude,
-		ErrorTracing:     true,
+		ProjectRoot:    projectDir,
+		IncludePaths:   []string{"../../../lib"},
+		Tags:           compileTags,
+		Output:         outputPath,
+		OptLevel:       optLevel,
+		KeepIR:         true,
+		LLVMPasses:     llvmPasses,
+		Sanitizers:     gen.AllSanitizers(),
+		MinimalPrelude: r.cfg.minimalPrelude,
+		ErrorTracing:   true,
 		// We deliberately use small stack buf sizes and small page sizes
 		// to force more allocations and stress test the allocator.
 		ArenaStackBufSize: 32,

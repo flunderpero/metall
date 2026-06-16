@@ -16,9 +16,9 @@ fun main() void {
 
         mut first_page = ffi.slice_ptr_mut<U8>(first_page_buf)
         try test.eq(
-            first_page.as_u64() + ffi.sizeof<ffi.Ptr<U8>>().to_u64_wrapping(), 
+            first_page.as_u64() + 8,
             a.bump.as_u64(),
-            "bump should be first_page + sizeof<Ptr>")
+            "bump should be first_page + 8")
         try test.eq(
             first_page.as_u64() + 32, 
             a.page_end.as_u64(),
@@ -175,7 +175,7 @@ fun main() void {
         try verify(p2, 16)
 
         -- Verify that bump and page_end account for the prev-page pointer.
-        let expected_page_size = 48 + ffi.sizeof<ffi.Ptr<U8>>()
+        let expected_page_size = 48 + 8 -- `8` because currently everything is 8 aligned.
         try test.eq(a.page_end.as_u64(), a.page_start.as_u64() + expected_page_size.to_u64_wrapping())
         try test.eq(a.bump.as_u64(), a.page_end.as_u64(), "bump should equal page_end since object fills the page")
     })

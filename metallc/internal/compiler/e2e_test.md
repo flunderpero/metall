@@ -6419,6 +6419,24 @@ fun main() void {
 99
 ```
 
+## Sanitizers
+
+**alignment sanitizer traps a misaligned read**
+
+```metall
+use std.ffi
+
+fun main() void {
+    mut buf = (unsafe [16 uninit U8])[..]
+    let p = unsafe ffi.slice_ptr_mut(buf).offset(1).cast_ptr<U64>()
+    _ = unsafe p.read()
+}
+```
+
+```panic
+test.met:6:16: misaligned pointer
+```
+
 ## Conditional Compilation
 
 **compile-if active on matching tag**

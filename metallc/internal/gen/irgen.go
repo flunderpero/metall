@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -1044,7 +1045,7 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		}
 	}
 	attrs := ""
-	if g.opts.AddressSanitizer {
+	if slices.Contains(g.opts.Sanitizers, SanitizerAddress) {
 		attrs = "sanitize_address "
 	}
 	internal := ""
@@ -2164,6 +2165,31 @@ func (g *IRFunGen) emitCheckedArithmeticOp(id ast.NodeID, reg, irTyp, op, lhs, r
 	g.write("%s = call %s %s(%s %s, %s %s, ptr %s)", reg, irTyp, fn, irTyp, lhs, irTyp, rhs, locReg)
 }
 
+func (g *IRFunGen) alignmentCheck(id ast.NodeID, ptrReg string, typeID types.TypeID) {
+	if !slices.Contains(g.opts.Sanitizers, SanitizerAlignment) {
+		return
+	}
+	align := g.irTypeAlign(g.env, typeID)
+	if align <= 1 {
+		return
+	}
+	span := g.ast.Node(id).Span
+	locReg := g.addStrConst(span.String())
+	panicLabel := g.label("align_panic", id)
+	okLabel := g.label("align_ok", id)
+	addrReg := g.reg()
+	maskedReg := g.reg()
+	misalignedReg := g.reg()
+	g.write("%s = ptrtoint ptr %s to i64", addrReg, ptrReg)
+	g.write("%s = and i64 %s, %d", maskedReg, addrReg, align-1)
+	g.write("%s = icmp ne i64 %s, 0", misalignedReg, maskedReg)
+	g.write("br i1 %s, label %%%s, label %%%s", misalignedReg, panicLabel, okLabel)
+	g.writeLabel(panicLabel)
+	g.write("call void @panic(ptr @str_misaligned_pointer, ptr %s)", locReg)
+	g.write("unreachable")
+	g.writeLabel(okLabel)
+}
+
 func (g *IRFunGen) runeCheckIfNeeded(id ast.NodeID, reg string) {
 	if intTyp, ok := g.typeOfNode(id).Kind.(types.IntType); ok && intTyp.Name == "Rune" {
 		span := g.ast.Node(id).Span
@@ -2531,6 +2557,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		g.Gen(receiver)
 		ptrReg := g.lookupCode(receiver)
 		retTypeID := base.Cast[types.FunType](g.env.Type(g.typeIDOfNode(call.Callee)).Kind).Return
+		g.alignmentCheck(id, ptrReg, retTypeID)
 		g.setCode(id, g.loadValue(ptrReg, retTypeID))
 		return true
 	case "ffi::Ptr.as_slice", "ffi::PtrMut.as_slice":
@@ -2624,6 +2651,7 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		g.Gen(call.Args[0])
 		valReg := g.lookupCode(call.Args[0])
 		valTypeID := g.typeIDOfNode(call.Args[0])
+		g.alignmentCheck(id, ptrReg, valTypeID)
 		g.storeValue(valReg, ptrReg, valTypeID)
 		g.setCode(id, voidValue)
 		return true
@@ -3597,11 +3625,23 @@ func (g *IRFunGen) writeAlloca(reg, irTyp string) {
 	fmt.Fprintf(&g.entryAllocas, "    %s = alloca %s\n", reg, irTyp)
 }
 
+type Sanitizer string
+
+const (
+	SanitizerAddress   Sanitizer = "address"
+	SanitizerAlignment Sanitizer = "alignment"
+)
+
+// AllSanitizers returns every implemented sanitizer.
+func AllSanitizers() []Sanitizer {
+	return []Sanitizer{SanitizerAddress, SanitizerAlignment}
+}
+
 type IROpts struct {
 	TargetDataLayout        string
 	TargetTriple            string
 	ArithmeticOverflowCheck bool
-	AddressSanitizer        bool
+	Sanitizers              []Sanitizer
 	ArenaDebug              bool
 	ArenaStackBufSize       int
 	ArenaPageMinSize        int

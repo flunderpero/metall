@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ type CompileOpts struct {
 	KeepIR              bool
 	LLVMPasses          string
 	OptLevel            OptLevel
-	AddressSanitizer    bool
+	Sanitizers          []gen.Sanitizer
 	DebugArenaAllocator bool
 	ArenaStackBufSize   int
 	ArenaPageMinSize    int
@@ -220,7 +221,7 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 			TargetDataLayout:        targetDataLayout,
 			TargetTriple:            targetTriple,
 			ArithmeticOverflowCheck: opts.OptLevel != OptLevelFast,
-			AddressSanitizer:        opts.AddressSanitizer,
+			Sanitizers:              opts.Sanitizers,
 			ArenaDebug:              opts.DebugArenaAllocator,
 			ArenaStackBufSize:       opts.ArenaStackBufSize,
 			ArenaPageMinSize:        opts.ArenaPageMinSize,
@@ -345,7 +346,7 @@ func CompileAndRun(
 	} else {
 		cmd = exec.CommandContext(ctx, runOpts.Output) //nolint:gosec
 	}
-	if opts.AddressSanitizer {
+	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) {
 		cmd.Env = append(os.Environ(), "ASAN_OPTIONS=detect_stack_use_after_return=1")
 	}
 	var cmdOutput []byte
@@ -723,7 +724,7 @@ func runClang(
 	if opts.OptLevel != OptLevelNone {
 		cmdline = append(cmdline, "-O3")
 	}
-	if opts.AddressSanitizer && !opts.Target.IsWasm() {
+	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) && !opts.Target.IsWasm() {
 		cmdline = append(cmdline, "-fsanitize=address")
 	}
 	env := os.Environ()

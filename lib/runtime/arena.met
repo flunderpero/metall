@@ -16,8 +16,8 @@
 
     ## Implementation notes
 
-    For simplicity's sake, we always align all allocations to `sizeof<Ptr>()` which
-    is 8 bytes on all supported platforms.
+    For simplicity's sake, we always align all allocations to 8 bytes on all
+    supported platforms.
 
     This module must not import other modules and has to comply with the minimal
     prelude.
@@ -37,6 +37,8 @@ struct ArenaAllocator {
     next_page_size Int
     debug_enabled Bool
 }
+
+let alignment = 8
 
 #if os.wasm
 
@@ -91,7 +93,7 @@ fun arena_create(
     max_page_size Int,
     debug_enabled Bool
 ) void {
-    if first_page_size < ffi.sizeof<ffi.Ptr<U8>>() {
+    if first_page_size < alignment {
         panic("first_page is too small")
     }
     a.next_page_size = min_page_size
@@ -111,7 +113,8 @@ fun init_page(a &mut ArenaAllocator, start_ptr ffi.PtrMut<U8>, size Int) void {
     unsafe ptr.write(a.page_start)
     a.page_start = start_ptr
     a.page_end = start_ptr.offset(size)
-    a.bump = start_ptr.offset(ffi.sizeof<ffi.Ptr<U8>>())
+    -- We treat everything as 8 aligned for now.
+    a.bump = start_ptr.offset(alignment)
 }
 
 fun arena_alloc(a &mut ArenaAllocator, requested_size Int) ffi.PtrMut<U8> {
@@ -132,7 +135,7 @@ fun arena_alloc(a &mut ArenaAllocator, requested_size Int) ffi.PtrMut<U8> {
     }
     -- We need to create a new page.
     let page_size = 
-        if size <= a.next_page_size - ffi.sizeof<ffi.Ptr<U8>>() { 
+        if size <= a.next_page_size - alignment { 
             -- The object would fit into a regular page, so allocate a regular page.
             let page_size = a.next_page_size
             -- Increase the page size up to `a.max_page_size` to minimize future allocations.
@@ -142,7 +145,7 @@ fun arena_alloc(a &mut ArenaAllocator, requested_size Int) ffi.PtrMut<U8> {
             }
             page_size
         } else {
-            size + ffi.sizeof<ffi.Ptr<U8>>()
+            size + alignment
         }
     if a.debug_enabled { 
         let prev_free = a.page_end.as_u64() - a.bump.as_u64()
@@ -178,9 +181,9 @@ fun arena_realloc(a &mut ArenaAllocator, p ffi.PtrMut<U8>, old_size Int, new_siz
         } 
         -- No, we need to allocate.
         -- Is `p` the only thing that lives in this page?
-        if p.as_u64() == a.page_start.as_u64() + ffi.sizeof<ffi.Ptr<U8>>().to_u64_wrapping() {
+        if p.as_u64() == a.page_start.as_u64() + alignment.to_u64_wrapping() {
             -- Yes, we can use realloc.
-            let page_size = new_size + ffi.sizeof<ffi.Ptr<U8>>()
+            let page_size = new_size + alignment
             let page_ptr = unsafe realloc(a.page_start, page_size)
             if a.debug_enabled {
                 debug(a, debug_realloc_page, page_size, if page_ptr.as_u64() == a.page_start.as_u64() { 1 } else { 0 })
@@ -188,7 +191,7 @@ fun arena_realloc(a &mut ArenaAllocator, p ffi.PtrMut<U8>, old_size Int, new_siz
             a.page_start = page_ptr
             a.page_end = page_ptr.offset(page_size)
             a.bump = page_ptr.offset(page_size)
-            return page_ptr.offset(ffi.sizeof<ffi.Ptr<U8>>())
+            return page_ptr.offset(alignment)
         } 
         -- No, allocate the regular way.
         arena_alloc(a, new_size)

@@ -39,6 +39,16 @@ pub unsafe fun Ptr.read(p Ptr) T {
     panic("this is implemented by the runtime")
 }
 
+--- Re-interpret `p` as `Target` and read at the *byte* offset.
+
+    The caller needs to make sure they take alignment into account
+    - or not if reading from packed structs. ---
+pub unsafe fun Ptr.read_at<Target>(p Ptr, byte_offset Int) Target {
+    let op = (unsafe p.cast_ptr<U8>()).offset(byte_offset)
+    let tp = unsafe op.cast_ptr<Target>()
+    unsafe tp.read()
+}
+
 --- Add the given offset as `sizeof<T> * offset` to the raw pointer. ---
 pub fun Ptr.offset(p Ptr, offset Int) Ptr {
     panic("this is implemented by the runtime")
@@ -98,6 +108,24 @@ pub unsafe fun PtrMut.write(p PtrMut, v T) void {
 --- Derefence the raw pointer and read. ---
 pub unsafe fun PtrMut.read(p PtrMut) T {
     panic("this is implemented by the runtime")
+}
+
+--- Re-interpret `p` as `Target` and read at the *byte* offset.
+
+    The caller needs to make sure they take alignment into account
+    - or not if reading from packed structs. ---
+pub unsafe fun PtrMut.read_at<Target>(p PtrMut, byte_offset Int) Target {
+    unsafe p.as_ptr().read_at<Target>(byte_offset)
+}
+
+--- Re-interpret `p` as `Target` and write to the *byte* offset.
+
+    The caller needs to make sure they take alignment into account
+    - or not if reading from packed structs. ---
+pub unsafe fun PtrMut.write_at<Target>(p PtrMut, byte_offset Int, v Target) void {
+    let op = (unsafe p.cast_ptr<U8>()).offset(byte_offset)
+    let tp = unsafe op.cast_ptr<Target>()
+    unsafe tp.write(v)
 }
 
 --- Interpret the raw pointer as a mutable slice of the given length. 
@@ -205,6 +233,27 @@ pub fun cstr_mut(b []U8, @a Arena) PtrMut<U8> {
     }
     s[s.len - 1] = 0
     slice_ptr_mut<U8>(s)
+}
+
+--- Treat a C-style string as a Metall []U8.
+
+    If p is null an empty []U8 will be returned.
+    The data is *not* copied and no lifetime guarantees are made. ---
+pub unsafe fun from_cstr(p Ptr<U8>) []U8 {
+    mut i = 0
+    if not p.is_null() {
+        -- We don't use strlen() because we don't want any dependencies here.
+        mut r = p
+        for true {
+            let c = unsafe r.read()
+            if c == 0 {
+                break
+            }
+            r = r.offset(1)
+            i += 1
+        }
+    }
+    unsafe p.as_slice(i)
 }
 
 --- Copy `n * sizeof<T>()` bytes from `src` to `dst`. ---

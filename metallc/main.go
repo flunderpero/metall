@@ -103,6 +103,27 @@ func (f *linkFlags) Set(value string) error {
 	return nil
 }
 
+// sanitizeFlags collects the --sanitize selections. The flag is repeatable and
+// each occurrence names one sanitizer; we validate against the closed set here
+// rather than forwarding unknown names to clang/LLVM. "all" enables every
+// implemented sanitizer.
+type sanitizeFlags []gen.Sanitizer
+
+func (f *sanitizeFlags) String() string { return fmt.Sprintf("%v", *f) }
+func (f *sanitizeFlags) Set(value string) error {
+	switch value {
+	case "all":
+		*f = append(*f, gen.AllSanitizers()...)
+	case string(gen.SanitizerAddress):
+		*f = append(*f, gen.SanitizerAddress)
+	case string(gen.SanitizerAlignment):
+		*f = append(*f, gen.SanitizerAlignment)
+	default:
+		return fmt.Errorf("unknown sanitizer %q (valid: all, address, alignment)", value)
+	}
+	return nil
+}
+
 func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //nolint:funlen
 	opts := compiler.NewCompileOptsWithDefaults()
 	var includes includeFlags
@@ -137,7 +158,12 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 		opts.OptLevel = level
 		return nil
 	})
-	flags.BoolVar(&opts.AddressSanitizer, "asan", false, "enable AddressSanitizer")
+	var sanitize sanitizeFlags
+	flags.Var(
+		&sanitize,
+		"sanitize",
+		"enable a runtime sanitizer (repeatable): all, address, alignment",
+	)
 	flags.BoolVar(
 		&opts.MinimalPrelude,
 		"minimal-prelude",
@@ -188,6 +214,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 	opts.IncludePaths = includes
 	opts.Tags = tags
 	opts.LinkFlags = link
+	opts.Sanitizers = sanitize
 	opts.ErrorTracing = !noErrtrace
 	opts.LLVMPasses = compiler.DefaultLLVMPasses
 	src, err := os.ReadFile(fileName)

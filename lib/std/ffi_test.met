@@ -74,10 +74,55 @@ fun main() void {
             y Int
         }
         let p = Point(3, 4)
-        let ptr = ffi.ref_ptr<Point>(&p)
+        let ptr = ffi.ref_ptr(&p)
         let r = unsafe ptr.cast()
         try test.eq(3, r.x)
         try test.eq(4, r.y)
     })
     _ = cast_suite.run()
+
+    let rw_suite = test.Suite.new("read/write", @local)
+    rw_suite.test("Ptr.read_at", fun() !void {
+        struct Foo {
+            a Bool
+            b U32
+            c U32
+            d [3]U8
+        }
+        let f = Foo(false, 1, 2, [U8('b'), 'a', 'r'])
+        let ptr = ffi.ref_ptr(&f)
+        -- Foo.a is 1 byte
+        -- Foo.b is aligned at 4
+        -- Foo.c is aligned at 8
+        try test.eq(U32(2), unsafe ptr.read_at<U32>(8))
+        try test.eq(U32(1), unsafe ptr.read_at<U32>(4))
+        let u8_arr = unsafe ptr.read_at<[3]U8>(12)
+        try test.eq(U8('b'), u8_arr[0])
+        try test.eq(U8('a'), u8_arr[1])
+        try test.eq(U8('r'), u8_arr[2])
+    })
+    rw_suite.test("PtrMut.read_at + write_at", fun() !void {
+        struct Foo {
+            a Bool
+            b U32
+            c U32
+            d [3]U8
+        }
+        mut f = Foo(false, 1, 2, [U8('b'), 'a', 'r'])
+        let ptr = ffi.ref_ptr_mut(&mut f)
+        -- Foo.a is 1 byte
+        -- Foo.b is aligned at 4
+        -- Foo.c is aligned at 8
+        try test.eq(U32(2), unsafe ptr.read_at<U32>(8))
+        try test.eq(U32(1), unsafe ptr.read_at<U32>(4))
+        let u8_arr = unsafe ptr.read_at<[3]U8>(12)
+        try test.eq(U8('b'), u8_arr[0])
+        try test.eq(U8('a'), u8_arr[1])
+        try test.eq(U8('r'), u8_arr[2])
+
+        unsafe ptr.write_at<U32>(8, 42)
+        try test.eq(U32(42), unsafe ptr.read_at<U32>(8))
+        try test.eq(U32(42), f.c)
+    })
+    _ = rw_suite.run()
 }
