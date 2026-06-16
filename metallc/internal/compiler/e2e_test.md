@@ -1943,6 +1943,23 @@ fun main() void {
 77
 ```
 
+**make float slice with default value**
+
+```metall
+fun main() void {
+    let @a = Arena()
+    let xs = @a.slice<Float>(3, 1.5)
+    let ys = @a.slice<F32>(2, 2.5)
+    DebugIntern.print_float(xs[2])
+    DebugIntern.print_f32(ys[1])
+}
+```
+
+```output
+1.5
+2.5
+```
+
 **make uninit then write**
 
 ```metall

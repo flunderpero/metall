@@ -3875,6 +3875,8 @@ func GenIR( //nolint:funlen
 		}
 	}
 	g.write(builtinFill("i1"))
+	g.write(builtinFill("float"))
+	g.write(builtinFill("double"))
 	return g.sb.String(), nil
 }
 
