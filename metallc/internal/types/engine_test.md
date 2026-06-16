@@ -1319,6 +1319,105 @@ test.met:6:9: symbol not defined: r
     }
 ```
 
+**Cannot copy a nocopy binding into an array literal**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let h = Handle(1)
+    let s = [h, h][..]
+}
+```
+
+```error
+test.met:4:14: cannot copy value of nocopy type test.Handle
+        let h = Handle(1)
+        let s = [h, h][..]
+                 ^
+    }
+```
+
+**Can build an array literal from fresh nocopy values**
+
+Freshly constructed nocopy elements are moved into the array, not copied.
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let s = [Handle(1), Handle(2)][..]
+}
+```
+
+```error
+```
+
+**Cannot capture a nocopy value by value**
+
+A by-value closure capture copies the captured binding while the original stays
+live, so it is rejected for a nocopy value.
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let h = Handle(1)
+    let f = fun[h]() Int { h.id }
+}
+```
+
+```error
+test.met:4:17: cannot copy value of nocopy type test.Handle
+        let h = Handle(1)
+        let f = fun[h]() Int { h.id }
+                    ^
+    }
+```
+
+**Can capture a nocopy value by reference**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo() void {
+    let h = Handle(1)
+    let f = fun[&h]() Int { h.id }
+}
+```
+
+```error
+```
+
+**Cannot bind a nocopy element by value in for-in**
+
+`for v in xs` copies each element out of the iterand; iterate by reference instead.
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo(xs []Handle) void {
+    for v in xs {
+    }
+}
+```
+
+```error
+test.met:3:9: cannot copy value of nocopy type test.Handle; iterate by reference with `for &`
+    fun foo(xs []Handle) void {
+        for v in xs {
+            ^
+        }
+```
+
+**Can bind a nocopy element by reference in for-in**
+
+```metall module
+nocopy struct Handle { id Int }
+fun foo(xs []Handle) void {
+    for &v in xs {
+    }
+}
+```
+
+```error
+```
+
 ## Defer
 
 **Defer block is void**

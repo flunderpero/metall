@@ -729,6 +729,11 @@ func (e *Engine) checkFor(nodeID ast.NodeID, for_ ast.For) (TypeID, TypeStatus) 
 					return InvalidTypeID, TypeFailed
 				}
 				bindTypeID = e.env.buildRefType(nodeID, elemTypeID, for_.Mut, for_.Binding.Span)
+			} else if !e.isCopyable(elemTypeID) {
+				e.diag(for_.Binding.Span,
+					"cannot copy value of nocopy type %s; iterate by reference with `for &`",
+					e.env.TypeDisplay(elemTypeID))
+				return InvalidTypeID, TypeFailed
 			}
 			e.bind(for_.Body, for_.Binding.Name, false, bindTypeID, for_.Binding.Span, -1)
 			if for_.Index != nil {
@@ -2026,6 +2031,9 @@ func (e *Engine) checkArrayLiteral(
 			)
 			return InvalidTypeID, TypeFailed
 		}
+		if !e.checkNocopy(elemNodeID, elemTyp2, e.ast.Node(elemNodeID).Span) {
+			return InvalidTypeID, TypeFailed
+		}
 	}
 	typeID := e.env.buildArrayType(elemTyp, int64(len(array.Elems)), nodeID, span)
 	if !e.env.containsMutablePart(typeID) {
@@ -2721,6 +2729,9 @@ func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Captur
 	switch capture.Mode {
 	case ast.CaptureByValue:
 		captureTypeID = outerTypeID
+		if !e.checkNocopy(capNodeID, outerTypeID, capture.Name.Span) {
+			return
+		}
 	case ast.CaptureByRef:
 		captureTypeID = e.env.buildRefType(capNodeID, outerTypeID, false, capture.Name.Span)
 	case ast.CaptureByMutRef:
