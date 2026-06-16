@@ -115,6 +115,9 @@ fun init_page(a &mut ArenaAllocator, start_ptr ffi.PtrMut<U8>, size Int) void {
 }
 
 fun arena_alloc(a &mut ArenaAllocator, requested_size Int) ffi.PtrMut<U8> {
+    if requested_size < 0 {
+        panic("requested_size must not be negative")
+    }
     -- Align the size to pointer size (8 bytes).
     let size = (requested_size + 7) & (~7)
     if a.debug_enabled {

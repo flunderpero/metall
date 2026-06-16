@@ -9,13 +9,12 @@ fun main() void {
     let suite = test.Suite.new("Arena", @local)
 
     suite.test("arena_create sets up first page correctly", fun() !void {
-        mut first_page_buf = [
-            U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        mut first_page_buf = [32 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
-        mut first_page = ffi.slice_ptr_mut<U8>(first_page_buf[..])
+        mut first_page = ffi.slice_ptr_mut<U8>(first_page_buf)
         try test.eq(
             first_page.as_u64() + ffi.sizeof<ffi.Ptr<U8>>().to_u64_wrapping(), 
             a.bump.as_u64(),
@@ -31,11 +30,10 @@ fun main() void {
     })
 
     suite.test("arena_alloc bumps pointer only if size fits in page", fun() !void {
-        mut first_page_buf = [
-            U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        mut first_page_buf = [32 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
         let bump_before = a.bump.as_u64()
         let p = arena.arena_alloc(&mut a, 8)
@@ -43,12 +41,22 @@ fun main() void {
         try test.eq(bump_before + 8, a.bump.as_u64())
     })
 
-    suite.test("arena_alloc alignment", fun() !void {
-        mut first_page_buf = [
-            U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    suite.test("arena_alloc allocates zero-size", fun() !void {
+        mut first_page_buf = [32 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
+
+        let bump_before = a.bump.as_u64()
+        let p = arena.arena_alloc(&mut a, 0)
+        try test.eq(bump_before, a.bump.as_u64())
+    })
+
+    suite.test("arena_alloc alignment", fun() !void {
+        mut first_page_buf = [32 of U8(0)][..]
+        let null = ffi.PtrMut.null<U8>()
+        mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
         let bump_before = a.bump.as_u64()
         let p = arena.arena_alloc(&mut a, 1)
@@ -57,11 +65,10 @@ fun main() void {
     })
 
     suite.test("arena_alloc allocates new pages", fun() !void {
-        mut first_page_buf = [
-            U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        mut first_page_buf = [32 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 16384, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 16384, debug)
 
         -- Allocate more than fits into the first (stack) page. A new page should be allocated.
         let first_page = a.page_start.as_u64()
@@ -101,11 +108,10 @@ fun main() void {
     })
 
     suite.test("arena_destroy frees overflow pages but not first page", fun() !void {
-        mut first_page_buf = [
-            U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        mut first_page_buf = [32 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
         let first_page = a.page_start.as_u64()
         -- Force overflow pages.
@@ -118,11 +124,10 @@ fun main() void {
     })
 
     suite.test("arena_realloc bumps if ptr is last and page has room", fun() !void {
-        mut first_page_buf = [
-            U8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        mut first_page_buf = [32 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
         let bump_before = a.bump.as_u64()
         let p = arena.arena_alloc(&mut a, 5)
@@ -137,10 +142,10 @@ fun main() void {
     suite.test("arena_realloc allocates in same if ptr is not last and page has room", fun() !void {
         -- We use the smallest first page possible so that we know that our first allocation will
         -- create a page on the heap (malloc) and we can build our test expectations on that.
-        mut first_page_buf = [8 of U8(0)]
+        mut first_page_buf = [8 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 4096, 8192, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
         let p = arena.arena_alloc(&mut a, 8)
         write(p, 8)
@@ -158,10 +163,10 @@ fun main() void {
     suite.test("arena_realloc tries to realloc if ptr is the only alloc in the page and new_size is too large", fun() !void {
         -- We use the smallest first page possible so that we know that our first allocation will
         -- create a page on the heap (malloc) and we can build our test expectations on that.
-        mut first_page_buf = [8 of U8(0)]
+        mut first_page_buf = [8 of U8(0)][..]
         let null = ffi.PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
-        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf[..]), first_page_buf.len, 32, 32, debug)
+        arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 32, 32, debug)
 
         let p = arena.arena_alloc(&mut a, 16)
         write(p, 16)
