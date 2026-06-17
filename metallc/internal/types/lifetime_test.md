@@ -3361,6 +3361,97 @@ borrow does not outlive its backing, so the side effect is not an escape.
 ```error
 ```
 
+**side effect through a local alias of a &mut param escapes**
+
+Rebinding the `&mut` param to a local and writing through the alias must still
+record the side effect, so storing a shorter-lived `&local` through it is caught
+at the call site, exactly as the direct `dst.* = ...` form is.
+
+```metall
+{
+    struct RefBox { p &Int }
+    fun store(dst &mut RefBox, src &Int) void {
+        let alias = dst
+        alias.* = RefBox(src)
+    }
+    fun fill(dst &mut RefBox) void {
+        mut local = 12345
+        store(dst, &local)
+    }
+    fun main() void {
+        mut sink = 0
+        mut box = RefBox(&sink)
+        fill(&mut box)
+    }
+}
+```
+
+```error
+test.met:9:20: reference escaping its allocation scope (via mutation of outer variable)
+            mut local = 12345
+            store(dst, &local)
+                       ^^^^^^
+        }
+```
+
+**side effect through a local alias into a same-scope place does not escape**
+
+When the aliased write stores a borrow that lives as long as the destination,
+there is no escape.
+
+```metall
+{
+    struct RefBox { p &Int }
+    fun store(dst &mut RefBox, src &Int) void {
+        let alias = dst
+        alias.* = RefBox(src)
+    }
+    fun main() void {
+        mut n = 7
+        mut box = RefBox(&n)
+        store(&mut box, &n)
+    }
+}
+```
+
+```error
+```
+
+**side effect through a struct field aliasing a &mut param escapes**
+
+The alias need not be a plain local. Storing the `&mut` param in a struct field
+and writing through `h.r.*` is a write through the same pointee, so the side
+effect is attributed to the param through the storage taint, not a special-cased
+local-alias rule.
+
+```metall
+{
+    struct RefBox { p &Int }
+    struct Holder { r &mut RefBox }
+    fun store(dst &mut RefBox, src &Int) void {
+        let h = Holder(dst)
+        h.r.* = RefBox(src)
+    }
+    fun fill(dst &mut RefBox) void {
+        mut local = 12345
+        store(dst, &local)
+    }
+    fun main() void {
+        mut sink = 0
+        mut box = RefBox(&sink)
+        fill(&mut box)
+    }
+}
+```
+
+```error
+test.met:10:20: reference escaping its allocation scope (via mutation of outer variable)
+            mut local = 12345
+            store(dst, &local)
+                       ^^^^^^
+        }
+```
+
 **function type with noescape: violating function rejected**
 
 ```metall

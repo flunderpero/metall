@@ -255,6 +255,10 @@ type LifetimeCheck struct {
 	instanceInProgress  map[TypeID]bool        // instances mid-analysis (cycle guard)
 	analyzingFun        []ast.NodeID           // decls whose body is on the current analysis stack
 	analyzingInstance   bool                   // true while re-analyzing a generic instance, not the decl
+
+	// Source borrows a write deposited into each storage taint, per function.
+	// Keyed by storage taint so a write through any alias of a param reaches it.
+	sideEffectByParamTaint map[TaintID]TaintSet
 }
 
 type escapeDiagKey struct {
@@ -291,6 +295,8 @@ func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []Fun
 		instanceInProgress:  map[TypeID]bool{},
 		analyzingFun:        nil,
 		analyzingInstance:   false,
+
+		sideEffectByParamTaint: map[TaintID]TaintSet{},
 	}
 	lc.shapeContracts = &shapeContractsCheck{LifetimeCheck: lc, funWorks: funWorks}
 	return lc
@@ -1002,7 +1008,9 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 //	fun foo(a &mut Foo, b &Int) { a.one = b }
 //	foo(&mut y, &z)   --> &z checked against scope(y), then merged into y
 func (a *LifetimeCheck) writeThroughArg(nodeID, arg ast.NodeID, src Chain) {
-	a.checkEscape(nodeID, src.CarriedTaints(), a.flow(arg).HeadTaintSet(), "via mutation of outer variable")
+	// Applying a callee's side effect is itself a write through the arg's storage,
+	// so a caller that forwards a &mut param inherits the effect.
+	a.checkWrite(nodeID, src, a.flow(arg).HeadTaintSet(), "via mutation of outer variable")
 	// Peel a leading `&`/`&mut` to find the referenced variable to accumulate
 	// into. A computed pointer (e.g. `identity(&mut y)`) has no root ident, so
 	// the escape check above is the only effect.
@@ -1236,7 +1244,7 @@ func (a *LifetimeCheck) funTypeReturnCanEscape(typeID TypeID) bool {
 // borrowKind names a category of type that can carry a borrow out of its scope.
 // The lifetime walks share one recursive fold (typeContains) and differ only in
 // which kinds they look for, so a new type case lands in one place and no walk
-// can silently omit it (the bug class behind G09/G31/G32).
+// can silently omit it.
 type borrowKind uint8
 
 const (
@@ -1371,7 +1379,7 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 		// `w.*.*` that slot is chain(w)[1], so the deep write is caught at its
 		// exact depth. We accumulate rhs into the root pointer's chain but do not
 		// write back into the specific pointee (unobservable without aliases).
-		a.checkEscape(nodeID, rhs.CarriedTaints(), a.storageScopes(assign.LHS), "via deref assignment")
+		a.checkWrite(nodeID, rhs, a.storageScopes(assign.LHS), "via deref assignment")
 		a.accumulateIntoRoot(nodeID, a.placeRoot(assign.LHS), rhs)
 	default:
 		panic(base.Errorf("unknown LHS kind: %T", lhsKind))
@@ -1390,9 +1398,8 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 //	struct Foo { one &Int }
 //	mut y = Foo(&x); { mut z = 99; y.one = &z }  --> &z escapes y's scope
 func (a *LifetimeCheck) writeInto(nodeID ast.NodeID, place ast.NodeID, rhs Chain, detail string) {
-	a.checkEscape(nodeID, rhs.CarriedTaints(), a.storageScopes(place), detail)
-	root := a.placeRoot(place)
-	a.accumulateIntoRoot(nodeID, root, rhs)
+	a.checkWrite(nodeID, rhs, a.storageScopes(place), detail)
+	a.accumulateIntoRoot(nodeID, a.placeRoot(place), rhs)
 }
 
 // placeRoot peels field/index/deref projections to the root expression.
@@ -1431,6 +1438,20 @@ func (a *LifetimeCheck) accumulateIntoRoot(nodeID ast.NodeID, root ast.NodeID, r
 	}
 	vt.Chain = vt.Chain.Merge(rhs)
 	a.debug(1, nodeID, "accumulateIntoRoot: %s += %s --> %s", ident.Name, rhs, vt.Chain)
+}
+
+// checkWrite handles a write of rhs into `storage`: it reports an in-function
+// escape and records the cross-function side effect a forwarding caller inherits.
+// Both halves belong to every write through a referenced place.
+func (a *LifetimeCheck) checkWrite(nodeID ast.NodeID, rhs Chain, storage TaintSet, detail string) {
+	src := rhs.CarriedTaints()
+	a.checkEscape(nodeID, src, storage, detail)
+	if len(src) == 0 {
+		return
+	}
+	for _, st := range storage {
+		a.sideEffectByParamTaint[st] = a.sideEffectByParamTaint[st].Merge(src)
+	}
 }
 
 // checkEscape reports an escape when rhs borrows storage that outlives the
@@ -1531,6 +1552,9 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	// across the generic-body vs per-instance re-analysis).
 	a.analyzingFun = append(a.analyzingFun, nodeID)
 	defer func() { a.analyzingFun = a.analyzingFun[:len(a.analyzingFun)-1] }()
+	prevSideEffects := a.sideEffectByParamTaint
+	a.sideEffectByParamTaint = map[TaintID]TaintSet{}
+	defer func() { a.sideEffectByParamTaint = prevSideEffects }()
 	// Walk type params and return type (no special handling needed).
 	for _, tp := range fun.TypeParams {
 		a.Check(tp)
@@ -1546,13 +1570,15 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	// `fun store(dst &mut Buf, src []Int) { dst.* = Buf(src) }` is a side effect.
 	paramTaintToIdx := map[TaintID]int{}
 	sideEffectSrc := map[TaintID]bool{}
+	paramIdentityTaint := make([]TaintSet, len(fun.Params))
 	for i, paramNodeID := range fun.Params {
 		a.Check(paramNodeID)
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
 		paramTypeID := a.env.TypeOfNode(paramNodeID).ID
 		isSrc := a.typeContains(paramTypeID, borrowRefOrAllocator|borrowShape|borrowSlice|borrowClosure)
 		if vt := a.lookupVar(paramNodeID, name); vt != nil {
-			for _, t := range vt.Chain.CarriedTaints() {
+			paramIdentityTaint[i] = vt.Chain.CarriedTaints()
+			for _, t := range paramIdentityTaint[i] {
 				paramTaintToIdx[t] = i
 				sideEffectSrc[t] = isSrc
 			}
@@ -1610,18 +1636,16 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		}
 	}
 
-	// Which params had foreign param taints merged into them (side effects)?
-	// e.g. `fun foo(a &mut Int, b &Int) { a.* = b.* }` --> param 0 got param 1's taint.
-	for i, paramNodeID := range fun.Params {
-		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
-		vt := a.lookupVar(paramNodeID, name)
-		if vt == nil {
-			continue
-		}
-		for _, t := range vt.Chain.CarriedTaints() {
-			if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i && sideEffectSrc[t] {
-				if !slices.Contains(effects.SideEffects[i], srcIdx) {
-					effects.SideEffects[i] = append(effects.SideEffects[i], srcIdx)
+	// A param receives a side effect when a write deposited a foreign source borrow
+	// into its storage taint (storageScopes already resolved aliases to that taint).
+	//   fun foo(a &mut Int, b &Int) { a.* = b.* }  --> param 0 received param 1.
+	for i := range fun.Params {
+		for _, pt := range paramIdentityTaint[i] {
+			for _, t := range a.sideEffectByParamTaint[pt] {
+				if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i && sideEffectSrc[t] {
+					if !slices.Contains(effects.SideEffects[i], srcIdx) {
+						effects.SideEffects[i] = append(effects.SideEffects[i], srcIdx)
+					}
 				}
 			}
 		}
