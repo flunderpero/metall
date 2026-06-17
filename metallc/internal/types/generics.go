@@ -725,8 +725,11 @@ func (g *Generics) solveAndMaterializeFun(
 // otherwise instantiate Box<Box<Box<...>>> forever. No real type nests this deep.
 const genericDepthLimit = 64
 
-// typeNestingDepth returns the structural nesting depth of a type's arguments
-// (Box<Box<Int>> is 2), bounded by `budget` so it never recurses past the limit.
+// typeNestingDepth returns the structural nesting depth of a type's arguments and
+// pointer-ish wrappers (Box<Box<Int>>, [][]Int, and &&Int are each 2), bounded by
+// `budget` so it never recurses past the limit. Counting slices/refs/arrays too is
+// what catches recursion that grows through them (e.g. `rec(&x)` instantiating
+// rec<&T>, rec<&&T>, ... for ever).
 func (g *Generics) typeNestingDepth(typeID TypeID, budget int) int {
 	if budget <= 0 || typeID == InvalidTypeID {
 		return 0
@@ -737,6 +740,12 @@ func (g *Generics) typeNestingDepth(typeID TypeID, budget int) int {
 		args = kind.TypeArgs
 	case UnionType:
 		args = kind.TypeArgs
+	case SliceType:
+		args = []TypeID{kind.Elem}
+	case ArrayType:
+		args = []TypeID{kind.Elem}
+	case RefType:
+		args = []TypeID{kind.Type}
 	default:
 		return 0
 	}
@@ -847,6 +856,15 @@ func (g *Generics) materializeNamedType(originTypeID TypeID, typeArgIDs []TypeID
 	}
 	if cached, ok := decl.lookupTypeWork(g, inst.Name); ok {
 		return cached.TypeID, TypeOK
+	}
+	for _, argID := range typeArgIDs {
+		if g.typeNestingDepth(argID, genericDepthLimit) >= genericDepthLimit {
+			g.diag(g.ast.Node(decl.declNodeID).Span,
+				"generic type %s nests deeper than %d levels; likely unbounded recursion",
+				decl.name, genericDepthLimit)
+			g.recursionAborted = true
+			return InvalidTypeID, TypeFailed
+		}
 	}
 	var (
 		typeID   TypeID

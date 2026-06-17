@@ -1245,7 +1245,7 @@ const (
 	borrowSlice          borrowKind = 4  // a by-value slice (its data is borrowed)
 	borrowClosure        borrowKind = 8  // a closure (it may capture references)
 	borrowShape          borrowKind = 16 // a type param whose constraining shape carries refs
-	borrowAny = borrowRefOrAllocator | borrowFFIPtr | borrowSlice | borrowClosure
+	borrowAny                       = borrowRefOrAllocator | borrowFFIPtr | borrowSlice | borrowClosure
 )
 
 // typeContains reports whether typeID is, or transitively contains by value, a

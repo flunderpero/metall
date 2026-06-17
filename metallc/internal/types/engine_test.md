@@ -7106,10 +7106,56 @@ fun main() void {
 ```
 
 ```error
-test.met:5:5: generic instantiation of depth nests deeper than 64 levels; likely unbounded recursion
+test.met:1:1: generic type test.Box nests deeper than 64 levels; likely unbounded recursion
+    struct Box<T> { v T }
+    ^^^^^^^^^^^^^^^^^^^^^
+```
+
+**Recursive generic type with a growing argument is bounded**
+
+`Nest<T>` references itself through a field with a larger type argument
+(`Nest<Box<T>>`), so instantiating it would materialize forever; the depth limit
+stops it instead of hanging.
+
+```metall module
+struct Box<T> { v T }
+struct Nest<T> {
+    depth Int
+    child ?&Nest<Box<T>>
+}
+fun main() void {
+    let n = Nest<Int>(0, None())
+}
+```
+
+```error
+test.met:1:1: generic type test.Box nests deeper than 64 levels; likely unbounded recursion
+    struct Box<T> { v T }
+    ^^^^^^^^^^^^^^^^^^^^^
+    struct Nest<T> {
+```
+
+**Generic recursion growing through a reference is bounded**
+
+`rec` recurses with `&x`, instantiating `rec<&T>`, `rec<&&T>`, ... forever; the
+depth limit counts reference nesting and stops it.
+
+```metall module
+fun rec<T>(x &T, n Int) Int {
+    if n == 0 { return 0 }
+    rec(&x, n - 1)
+}
+fun main() void {
+    let v = 1
+    DebugIntern.print_int(rec(&v, 5))
+}
+```
+
+```error
+test.met:3:5: generic instantiation of rec nests deeper than 64 levels; likely unbounded recursion
         if n == 0 { return 0 }
-        depth(Box(x), n - 1) + 1
-        ^^^^^
+        rec(&x, n - 1)
+        ^^^
     }
 ```
 
