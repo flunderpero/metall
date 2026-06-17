@@ -733,6 +733,11 @@ func runClang(
 	return nil
 }
 
+// wasmShadowStackSize is the wasm linear-memory stack reservation. wasm-ld
+// defaults to 64 KiB, which a modestly deep recursion silently overflows; 1 MiB
+// is the common wasm stack size (matching Rust's wasm32 default).
+const wasmShadowStackSize = 1 << 20
+
 // clangLinkFlags returns link-time flags (and the environment clang should be
 // run in) for the active target: wasm linker directives + a PATH override so
 // clang finds the matching wasm-ld, or a macOS sysroot so the bundled LLVM
@@ -750,10 +755,15 @@ func clangLinkFlags(
 			"-Wl,--export=main",
 			"-Wl,--export=memory",
 			"-Wl,--allow-undefined",
+			// Raise the shadow stack off wasm-ld's 64 KiB default, which a
+			// modestly deep recursion silently overflows.
+			fmt.Sprintf("-Wl,-z,stack-size=%d", wasmShadowStackSize),
 		}
 		for _, name := range wasmExports {
 			flags = append(flags, "-Wl,--export="+name)
 		}
+		// User -link flags last so an explicit -z stack-size overrides the default.
+		flags = append(flags, opts.LinkFlags...)
 		llvmBin := filepath.Join(llvmHome, "bin")
 		env = append(env, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 		return flags, env, nil
