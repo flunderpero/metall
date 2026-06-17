@@ -2634,43 +2634,57 @@ func (e *Engine) fixPreludeType(node *ast.Node, typ *cachedType) {
 // A struct/union becomes non-copyable when marked `nocopy` or when any of
 // its fields/variants is non-copyable.
 func (e *Engine) isCopyable(typeID TypeID) bool {
-	typ := e.env.Type(typeID)
-	switch kind := typ.Kind.(type) {
-	case VoidType, NeverType, BoolType, IntType, FloatType:
-		return true
-	case StructType:
-		declNode := e.env.DeclNode(typeID)
-		if declNode != 0 {
-			if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Nocopy {
-				return false
+	// visit guards the recursive walk against a value type of infinite size (a
+	// recursive type, diagnosed separately when types are completed): a type
+	// already on the path returns true so the walk terminates instead of
+	// overflowing. The per-type nocopy check runs first, so a nocopy recursive
+	// type is still reported non-copyable.
+	var visit func(typeID TypeID, visiting map[TypeID]bool) bool
+	visit = func(typeID TypeID, visiting map[TypeID]bool) bool {
+		switch kind := e.env.Type(typeID).Kind.(type) {
+		case VoidType, NeverType, BoolType, IntType, FloatType:
+			return true
+		case StructType:
+			if declNode := e.env.DeclNode(typeID); declNode != 0 {
+				if s, ok := e.ast.Node(declNode).Kind.(ast.Struct); ok && s.Nocopy {
+					return false
+				}
 			}
-		}
-		for _, field := range kind.Fields {
-			if !e.isCopyable(field.Type) {
-				return false
+			if visiting[typeID] {
+				return true
 			}
-		}
-		return true
-	case UnionType:
-		declNode := e.env.DeclNode(typeID)
-		if declNode != 0 {
-			if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Nocopy {
-				return false
+			visiting[typeID] = true
+			for _, field := range kind.Fields {
+				if !visit(field.Type, visiting) {
+					return false
+				}
 			}
-		}
-		for _, variant := range kind.Variants {
-			if !e.isCopyable(variant) {
-				return false
+			return true
+		case UnionType:
+			if declNode := e.env.DeclNode(typeID); declNode != 0 {
+				if u, ok := e.ast.Node(declNode).Kind.(ast.Union); ok && u.Nocopy {
+					return false
+				}
 			}
+			if visiting[typeID] {
+				return true
+			}
+			visiting[typeID] = true
+			for _, variant := range kind.Variants {
+				if !visit(variant, visiting) {
+					return false
+				}
+			}
+			return true
+		case ArrayType:
+			return visit(kind.Elem, visiting)
+		case RefType, SliceType, FunType, AllocatorType, TypeParamType, ShapeType, EnumType:
+			return true
+		default:
+			panic(fmt.Sprintf("isCopyable: unknown type: %T", kind))
 		}
-		return true
-	case ArrayType:
-		return e.isCopyable(kind.Elem)
-	case RefType, SliceType, FunType, AllocatorType, TypeParamType, ShapeType, EnumType:
-		return true
-	default:
-		panic(fmt.Sprintf("isCopyable: unknown type: %T", kind))
 	}
+	return visit(typeID, map[TypeID]bool{})
 }
 
 // isFreshValue reports whether the expression creates a new value rather

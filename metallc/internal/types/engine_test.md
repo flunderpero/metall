@@ -12771,6 +12771,45 @@ test.met:1:9: parameter type 'void' is not exportable to C
 ```error
 ```
 
+**Recursive value-typed struct has infinite size**
+
+A field holding the struct by value (`?List` is `Option<List>`, which holds a
+`List`) makes the type infinitely large; it is reported instead of overflowing
+the compiler.
+
+```metall
+{
+    struct List {
+        head Int
+        tail ?List
+    }
+}
+```
+
+```error
+test.met:4:9: recursive type List has infinite size; break the cycle with a reference (`&` or `?&`)
+            head Int
+            tail ?List
+            ^^^^^^^^^^
+        }
+```
+
+**Recursive struct through a reference has finite size**
+
+A `?&List` field is a pointer, so the cycle is broken and the type compiles.
+
+```metall
+{
+    struct List {
+        head Int
+        tail ?&List
+    }
+}
+```
+
+```error
+```
+
 ## Enums
 
 **Signed backing with negative discriminants**

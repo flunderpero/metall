@@ -128,6 +128,76 @@ func (e *Engine) forwardDeclareTypes(nodeIDs []ast.NodeID) { //nolint:funlen
 		decl.typeID, decl.status = e.updateCachedType(decl.node, decl.typeID, status)
 	}
 
+	// Both structs and unions are complete now, so a by-value cycle (e.g.
+	// `List -> ?List -> List`) is fully formed. Diagnosing it here fails the build
+	// before codegen, and isCopyable carries its own cycle guard, so the infinite
+	// type is reported instead of overflowing the stack. A field or variant has
+	// infinite size when it transitively contains the type itself by value; the
+	// walk stops at any reference, slice, or pointer, which breaks the cycle.
+	var reachesByValue func(typeID TypeID, visiting map[TypeID]bool) bool
+	reachesByValue = func(typeID TypeID, visiting map[TypeID]bool) bool {
+		switch kind := e.env.Type(typeID).Kind.(type) {
+		case StructType:
+			if visiting[typeID] {
+				return true
+			}
+			visiting[typeID] = true
+			for _, field := range kind.Fields {
+				if reachesByValue(field.Type, visiting) {
+					return true
+				}
+			}
+			delete(visiting, typeID)
+		case UnionType:
+			if visiting[typeID] {
+				return true
+			}
+			visiting[typeID] = true
+			for _, variant := range kind.Variants {
+				if reachesByValue(variant, visiting) {
+					return true
+				}
+			}
+			delete(visiting, typeID)
+		case ArrayType:
+			return reachesByValue(kind.Elem, visiting)
+		}
+		return false
+	}
+	for _, decl := range decls {
+		if decl.status.Failed() {
+			continue
+		}
+		switch node := decl.node.Kind.(type) {
+		case ast.Struct:
+			st, ok := decl.cachedType.Type.Kind.(StructType)
+			if !ok {
+				continue
+			}
+			for i, field := range st.Fields {
+				if reachesByValue(field.Type, map[TypeID]bool{decl.typeID: true}) {
+					e.diag(e.ast.Node(node.Fields[i]).Span,
+						"recursive type %s has infinite size; break the cycle with a reference (`&` or `?&`)",
+						node.Name.Name)
+					break
+				}
+			}
+		case ast.Union:
+			ut, ok := decl.cachedType.Type.Kind.(UnionType)
+			if !ok {
+				continue
+			}
+			for i, variant := range ut.Variants {
+				if reachesByValue(variant, map[TypeID]bool{decl.typeID: true}) {
+					e.diag(e.ast.Node(node.Variants[i]).Span,
+						"recursive type %s has infinite size; break the cycle with a reference (`&` or `?&`)",
+						node.Name.Name)
+					break
+				}
+			}
+		}
+	}
+
 	// Complete roots/standalone enums before subsets, since a subset reads its
 	// root's completed backing and schema.
 	e.completeEnums(decls, false)
