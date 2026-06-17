@@ -18,12 +18,12 @@ type ModuleResolution struct {
 }
 
 type moduleResolver struct {
-	diagnostics   base.Diagnostics
-	readFile      ReadFileFn
-	projectRoot   string
-	includePaths  []string
-	ast           *ast.AST
-	compTimeEnv   comptime.Env
+	diagnostics      base.Diagnostics
+	readFile         ReadFileFn
+	projectRoot      string
+	includePaths     []string
+	ast              *ast.AST
+	compTimeEnv      comptime.Env
 	resolution       ModuleResolution
 	modulesByPath    map[string]ast.NodeID // canonical file path -> module node (identity)
 	resolving        map[string]bool       // canonical file path -> being resolved (cycle detection)
@@ -163,21 +163,32 @@ func canonicalPath(p string) string {
 }
 
 // CanonicalModuleName derives a module's stable logical name from its file
-// path: the path relative to the deepest (most specific) root that contains it,
-// "::"-joined. Roots are the project root plus the include paths. Deepest-root
-// keeps `std::errors` stable even when lib is also reachable from a wider `-I`,
-// and yields the shortest name. It is independent of the import spelling, so a
-// file has one name however it is reached.
+// path: the path relative to the root that contains it, "::"-joined. It is
+// independent of the import spelling, so a file has one name however it is
+// reached.
+//
+// Include paths take priority over the project root and name non-local modules
+// (the deepest include wins, keeping `std::errors` stable even when lib is also
+// reachable from a wider `-I`, and yielding the shortest name). The project
+// root is the naming root only for true local modules that no include path
+// covers. This priority matters when the project root is itself nested below an
+// include path (e.g. running `lib/std/ffi_test.met` directly with `-I lib`):
+// `std::ffi` must keep its `std::` prefix, not collapse to `ffi`.
 func CanonicalModuleName(path, projectRoot string, includePaths []string) string {
 	cp := canonicalPath(path)
 	best := ""
-	for _, root := range append([]string{projectRoot}, includePaths...) {
-		if root == "" {
+	for _, inc := range includePaths {
+		if inc == "" {
 			continue
 		}
-		rc := canonicalPath(root)
-		prefix := rc + string(filepath.Separator)
-		if strings.HasPrefix(cp, prefix) && len(rc) > len(best) {
+		rc := canonicalPath(inc)
+		if strings.HasPrefix(cp, rc+string(filepath.Separator)) && len(rc) > len(best) {
+			best = rc
+		}
+	}
+	if best == "" && projectRoot != "" {
+		rc := canonicalPath(projectRoot)
+		if strings.HasPrefix(cp, rc+string(filepath.Separator)) {
 			best = rc
 		}
 	}

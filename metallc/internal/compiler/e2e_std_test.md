@@ -644,7 +644,7 @@ U16 FFFF
 U32 FFFFFFFF
 U64 FFFFFFFFFFFFFFFF
 bin 101 oct 100 hex ff
-pad 000042 neg -00042
+pad     42 neg    -42
 Float 3.14    -3.14
 F32   1.500      2.5
 Bool  yes no

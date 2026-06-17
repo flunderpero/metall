@@ -248,7 +248,9 @@ func TestResolveModulesErr(t *testing.T) {
 			},
 			projectRoot:  "/project",
 			includePaths: []string{"/inc"},
-			want:         []string{`ambiguous module name "util": /project/util.met and /inc/util.met resolve to it from different roots`},
+			want: []string{
+				`ambiguous module name "util": /project/util.met and /inc/util.met resolve to it from different roots`,
+			},
 		},
 	}
 

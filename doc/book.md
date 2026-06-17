@@ -613,7 +613,7 @@ fun main() void {
 
 ```output
 hex: FF
-padded: 007
+padded:   7
 pi: 3.14
 flag: yes
 ```
