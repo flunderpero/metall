@@ -12,6 +12,7 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/compiler"
 	"github.com/flunderpero/metall/metallc/internal/gen"
+	"github.com/flunderpero/metall/metallc/internal/modules"
 )
 
 type includeFlags []string
@@ -222,7 +223,7 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 		fmt.Fprintln(os.Stderr, "failed to read file:", err)
 		os.Exit(1)
 	}
-	moduleName := compiler.ModuleNameFromPath(fileName, includes)
+	moduleName := modules.CanonicalModuleName(fileName, opts.ProjectRoot, includes)
 	source := base.NewSource(fileName, moduleName, true, []rune(string(src)))
 	return opts, source, errorLimit
 }

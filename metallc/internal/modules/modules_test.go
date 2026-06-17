@@ -67,8 +67,8 @@ func TestResolveModules(t *testing.T) {
 			files:        map[string]string{"/project/util.met": `fun helper() void {}`},
 			projectRoot:  "/project",
 			includePaths: nil,
-			wantImports:  map[string]string{"util": "local::util"},
-			wantModules:  []string{"main", "local::util"},
+			wantImports:  map[string]string{"util": "util"},
+			wantModules:  []string{"main", "util"},
 		},
 		{
 			name:         "local import with alias",
@@ -76,8 +76,8 @@ func TestResolveModules(t *testing.T) {
 			files:        map[string]string{"/project/util.met": `fun helper() void {}`},
 			projectRoot:  "/project",
 			includePaths: nil,
-			wantImports:  map[string]string{"u": "local::util"},
-			wantModules:  []string{"main", "local::util"},
+			wantImports:  map[string]string{"u": "util"},
+			wantModules:  []string{"main", "util"},
 		},
 		{
 			name: "two modules import same dependency",
@@ -112,6 +112,31 @@ func TestResolveModules(t *testing.T) {
 			includePaths: []string{"lib"},
 			wantImports:  map[string]string{"a": "std::a"},
 			wantModules:  []string{"main", "std::a", "std::b"},
+		},
+		{
+			// The same file reached via two spellings is one module: both
+			// aliases bind to it and it appears once among the roots.
+			name:         "same file via two spellings dedupes",
+			src:          `use a = local.util use b = util`,
+			files:        map[string]string{"/project/util.met": `fun helper() void {}`},
+			projectRoot:  "/project",
+			includePaths: []string{"/project"},
+			wantImports:  map[string]string{"a": "util", "b": "util"},
+			wantModules:  []string{"main", "util"},
+		},
+		{
+			// Same filename in different folders stays distinct: the folder is
+			// part of the canonical name.
+			name: "same filename in different folders is distinct",
+			src:  `use x = local.a.foo use y = local.b.foo`,
+			files: map[string]string{
+				"/project/a/foo.met": `fun helper() void {}`,
+				"/project/b/foo.met": `fun helper() void {}`,
+			},
+			projectRoot:  "/project",
+			includePaths: nil,
+			wantImports:  map[string]string{"x": "a::foo", "y": "b::foo"},
+			wantModules:  []string{"main", "a::foo", "b::foo"},
 		},
 	}
 
@@ -211,6 +236,19 @@ func TestResolveModulesErr(t *testing.T) {
 			projectRoot:  "/project",
 			includePaths: []string{"lib"},
 			want:         []string{"circular import: std::a"},
+		},
+		{
+			// Two distinct files that would share a canonical name (same
+			// relative path under different roots) is rejected, not clobbered.
+			name: "ambiguous module name across roots",
+			src:  `use a = local.util use b = util`,
+			files: map[string]string{
+				"/project/util.met": `fun helper() void {}`,
+				"/inc/util.met":     `fun helper() void {}`,
+			},
+			projectRoot:  "/project",
+			includePaths: []string{"/inc"},
+			want:         []string{`ambiguous module name "util": /project/util.met and /inc/util.met resolve to it from different roots`},
 		},
 	}
 

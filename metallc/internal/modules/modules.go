@@ -18,15 +18,16 @@ type ModuleResolution struct {
 }
 
 type moduleResolver struct {
-	diagnostics  base.Diagnostics
-	readFile     ReadFileFn
-	projectRoot  string
-	includePaths []string
-	ast          *ast.AST
-	compTimeEnv  comptime.Env
-	resolution   ModuleResolution
-	modulesByFQN map[string]ast.NodeID
-	resolving    map[string]bool
+	diagnostics   base.Diagnostics
+	readFile      ReadFileFn
+	projectRoot   string
+	includePaths  []string
+	ast           *ast.AST
+	compTimeEnv   comptime.Env
+	resolution       ModuleResolution
+	modulesByPath    map[string]ast.NodeID // canonical file path -> module node (identity)
+	resolving        map[string]bool       // canonical file path -> being resolved (cycle detection)
+	namesByCanonical map[string]string     // canonical module name -> file path that claimed it
 }
 
 func ResolveModules(
@@ -44,13 +45,17 @@ func ResolveModules(
 			AST:     a,
 			Imports: make(map[ast.NodeID]map[string]ast.NodeID),
 		},
-		modulesByFQN: make(map[string]ast.NodeID),
-		resolving:    make(map[string]bool),
+		modulesByPath:    make(map[string]ast.NodeID),
+		resolving:        make(map[string]bool),
+		namesByCanonical: make(map[string]string),
 	}
+	// Seed the identity maps with the already-parsed roots (the entry, parsed
+	// by the caller before resolution). Without this, an import that resolves
+	// back to one of these files would re-parse it as a separate module.
 	for _, root := range a.Roots {
-		node := a.Node(root)
-		mod := base.Cast[ast.Module](node.Kind)
-		m.modulesByFQN[mod.Name] = root
+		mod := base.Cast[ast.Module](a.Node(root).Kind)
+		m.modulesByPath[canonicalPath(mod.FileName)] = root
+		m.namesByCanonical[mod.Name] = mod.FileName
 	}
 	for _, root := range a.Roots {
 		m.resolveImports(root)
@@ -74,8 +79,9 @@ func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
 		return
 	}
 	mod := base.Cast[ast.Module](m.ast.Node(moduleID).Kind)
-	m.resolving[mod.Name] = true
-	defer delete(m.resolving, mod.Name)
+	selfPath := canonicalPath(mod.FileName)
+	m.resolving[selfPath] = true
+	defer delete(m.resolving, selfPath)
 	importMap := make(map[string]ast.NodeID)
 	m.resolution.Imports[moduleID] = importMap
 	seen := make(map[string]bool)
@@ -96,10 +102,6 @@ func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
 			m.diag(importNode.Span, "import name `%s` already used", name)
 			continue
 		}
-		if m.resolving[fqn] {
-			m.diag(importNode.Span, "circular import: %s", fqn)
-			continue
-		}
 		moduleNodeID, ok := m.resolveModule(fqn, importNode.Span)
 		if !ok {
 			continue
@@ -110,19 +112,34 @@ func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
 }
 
 func (m *moduleResolver) resolveModule(fqn string, span base.Span) (ast.NodeID, bool) {
-	if id, ok := m.modulesByFQN[fqn]; ok {
-		return id, true
-	}
 	path, ok := m.findModuleFile(fqn, span)
 	if !ok {
 		return 0, false
+	}
+	// Identity is the canonical file path, so the same file reached via
+	// different import spellings (e.g. `local.a` and `pkg.b.a`) is one module.
+	cp := canonicalPath(path)
+	if m.resolving[cp] {
+		m.diag(span, "circular import: %s", fqn)
+		return 0, false
+	}
+	if id, ok := m.modulesByPath[cp]; ok {
+		return id, true
 	}
 	content, err := m.readFile(path)
 	if err != nil {
 		m.diag(span, "failed to read module %s: %s", fqn, err)
 		return 0, false
 	}
-	source := base.NewSource(path, fqn, false, []rune(string(content)))
+	name := CanonicalModuleName(path, m.projectRoot, m.includePaths)
+	// Two different files that produce the same canonical name (same relative
+	// path under different roots) would share symbol-table keys and mangled
+	// symbols, silently clobbering each other. Reject it.
+	if prev, ok := m.namesByCanonical[name]; ok && canonicalPath(prev) != cp {
+		m.diag(span, "ambiguous module name %q: %s and %s resolve to it from different roots", name, prev, path)
+		return 0, false
+	}
+	source := base.NewSource(path, name, false, []rune(string(content)))
 	tokens := token.Lex(source)
 	parser := ast.NewParser(tokens, m.ast)
 	moduleID, _ := parser.ParseModule()
@@ -130,8 +147,48 @@ func (m *moduleResolver) resolveModule(fqn string, span base.Span) (ast.NodeID, 
 		m.diagnostics = append(m.diagnostics, parser.Diagnostics...)
 		return 0, false
 	}
-	m.modulesByFQN[fqn] = moduleID
+	m.modulesByPath[cp] = moduleID
+	m.namesByCanonical[name] = path
 	return moduleID, true
+}
+
+// canonicalPath normalizes a path for identity comparison. It does not resolve
+// symlinks (so it works with injected/virtual file systems in tests), which is
+// enough to fold `lib/x`, `./lib/x`, and `a/../lib/x` onto one identity.
+func canonicalPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return filepath.Clean(abs)
+	}
+	return filepath.Clean(p)
+}
+
+// CanonicalModuleName derives a module's stable logical name from its file
+// path: the path relative to the deepest (most specific) root that contains it,
+// "::"-joined. Roots are the project root plus the include paths. Deepest-root
+// keeps `std::errors` stable even when lib is also reachable from a wider `-I`,
+// and yields the shortest name. It is independent of the import spelling, so a
+// file has one name however it is reached.
+func CanonicalModuleName(path, projectRoot string, includePaths []string) string {
+	cp := canonicalPath(path)
+	best := ""
+	for _, root := range append([]string{projectRoot}, includePaths...) {
+		if root == "" {
+			continue
+		}
+		rc := canonicalPath(root)
+		prefix := rc + string(filepath.Separator)
+		if strings.HasPrefix(cp, prefix) && len(rc) > len(best) {
+			best = rc
+		}
+	}
+	rel := filepath.Base(cp)
+	if best != "" {
+		if r, err := filepath.Rel(best, cp); err == nil {
+			rel = r
+		}
+	}
+	rel = strings.TrimSuffix(filepath.ToSlash(rel), ".met")
+	return strings.ReplaceAll(rel, "/", "::")
 }
 
 func (m *moduleResolver) findModuleFile(fqn string, span base.Span) (string, bool) {

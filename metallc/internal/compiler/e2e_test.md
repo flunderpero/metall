@@ -6660,8 +6660,8 @@ fun main() void {
 ```output
 greater
 lt
-local.enum_shapes.IOErr.broken_pipe
-local.enum_shapes.IOErr.broken_pipe
+enum_shapes.IOErr.broken_pipe
+enum_shapes.IOErr.broken_pipe
 ```
 
 **associated data and the Enum constraint**

@@ -171,7 +171,7 @@ Module: scope01
 ---
 scope01:
 scope02:
-  hello: local::hello
+  hello: hello
   main: fun01
 scope03:
 scope04:
