@@ -21,6 +21,18 @@ fun main() void {
         try test.eq(42, sut.get(1))
         try test.eq(42, slice[1])
     })
+    suite.test("pop", fun() !void {
+        let @local = Arena()
+        let sut = list.List.new<Int>(32, @local)
+
+        sut.push(1)
+        sut.push(2)
+        try test.eq(Option(2), sut.pop())
+        try test.eq(1, sut.len)
+        try test.eq(Option(1), sut.pop())
+        try test.eq(0, sut.len)
+        try test.eq(Option<Int>(None()), sut.pop())
+    })
     suite.test("from_slice", fun() !void {
         let @local = Arena()
         mut slice = [1, 2, 3][..]

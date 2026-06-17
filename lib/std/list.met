@@ -27,6 +27,14 @@ pub fun List.push(l &mut List, v T) void {
     l.len += 1
 }
 
+--- Pop the last element. ---
+pub fun List.pop(l &mut List) ?T {
+    if l.len == 0 {
+        return None()
+    }
+    l.len -= 1
+    l.data[l.len]
+}
 
 --- Add all elements to the list.
 
