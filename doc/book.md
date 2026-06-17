@@ -502,12 +502,15 @@ text to match your code. Two rules make that work:
   after the opening quote, and the whitespace and newline before the closing quote,
   are not part of the string. They are there only so each quote can sit on its own
   line. The string is exactly the lines in between, with no blank line above or below.
-- Those lines are then shifted left by the run of leading whitespace they all share,
-  so the indentation you added to match your code does not end up in the string. Any
-  indentation beyond that shared amount is kept, so the shape of the text survives.
+- The closing quote marks the left edge. The spaces up to its column are stripped
+  from every line, so you indent the block to match your code and that indentation
+  drops out, while anything indented past the edge is kept. Every line must reach the
+  edge with spaces: a tab there, or text that starts before the edge, is an error.
 
-Below, every line is indented eight spaces to sit under the code. That shared indent
-is removed, while the two extra spaces on the list items stay:
+Below, the same block appears twice, differing only in where the closing quote sits.
+The first closes at eight spaces, so eight come off every line and the list items (two
+further in) keep those two. The second closes at four, so only four come off and the
+whole block stays indented:
 
 ```metall
 use std.io
@@ -518,6 +521,11 @@ fun main() void {
           - apples
           - pears
         ")
+    io.println(m"
+        shopping list:
+          - apples
+          - pears
+    ")
 }
 ```
 
@@ -525,6 +533,9 @@ fun main() void {
 shopping list:
   - apples
   - pears
+    shopping list:
+      - apples
+      - pears
 ```
 
 ## Format Strings

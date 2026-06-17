@@ -1094,7 +1094,7 @@ m"
 String(value="")
 ```
 
-**Multi-line string ignores the closing quote indentation when it is shallower**
+**Multi-line string with the closing quote at column 0 strips nothing**
 
 ```metall
 m"
@@ -1104,10 +1104,10 @@ m"
 ```
 
 ```ast
-String(value="a\nb")
+String(value="    a\n    b")
 ```
 
-**Multi-line string ignores the closing quote indentation when it is deeper**
+**Multi-line string errors when a line is left of the closing quote**
 
 ```metall
 m"
@@ -1116,11 +1116,17 @@ m"
       "
 ```
 
-```ast
-String(value="a\nb")
+```error
+test.met:1:1: multi-line string: only spaces may appear to the left of the closing quote
+    m"
+    ^
+      a
+      b
+          "
+          ^
 ```
 
-**Multi-line string dedents by the least-indented line**
+**Multi-line string strips exactly the closing quote's indentation**
 
 ```metall
 m"
@@ -1172,7 +1178,7 @@ m"
 String(value="a\n\nb")
 ```
 
-**Multi-line string treats a whitespace-only line as blank**
+**Multi-line string strips the margin from a whitespace-only line**
 
 ```metall
 m"
@@ -1183,7 +1189,7 @@ m"
 ```
 
 ```ast
-String(value="a\n\nb")
+String(value="a\n  \nb")
 ```
 
 **Multi-line string keeps trailing whitespace on a line**
@@ -1210,7 +1216,7 @@ m"
 String(value="x")
 ```
 
-**Multi-line string with tab indentation**
+**Multi-line string errors on a tab in the indentation**
 
 ```metall
 m"
@@ -1219,8 +1225,14 @@ m"
 		"
 ```
 
-```ast
-String(value="a\nb")
+```error
+test.met:1:1: multi-line string: only spaces may appear to the left of the closing quote
+    m"
+    ^
+    		a
+    		b
+    		"
+      ^
 ```
 
 **Multi-line string with a line continuation**
@@ -1251,7 +1263,7 @@ test.met:1:1: multi-line string: the opening quote must be followed by a newline
         ^
 ```
 
-**Multi-line string closing quote must be on its own line**
+**Multi-line string errors on text before the closing quote**
 
 ```metall
 m"
@@ -1259,7 +1271,7 @@ m"
 ```
 
 ```error
-test.met:1:1: multi-line string: the closing quote must be on its own line
+test.met:1:1: multi-line string: only spaces may appear to the left of the closing quote
     m"
     ^
         text"

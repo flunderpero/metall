@@ -1835,12 +1835,11 @@ func (p *Parser) unescapeSegment(raw []rune, bytes, multiline bool, span base.Sp
 }
 
 // dedentMultiline applies the m"..." rules to the raw content: the opening quote
-// must be followed by a newline and the closing quote must sit on its own line
-// (only horizontal whitespace may precede each, and it is ignored). Both framing
-// newlines are dropped and every line is dedented by the longest run of leading
-// whitespace common to all non-blank lines. The closing quote's own indentation
-// does not set the dedent. raw still holds escapes verbatim, so only real
-// newlines split lines.
+// must be followed by a newline and the closing quote must sit on its own line.
+// Both framing newlines are dropped. The closing quote's own indentation, which
+// must be spaces, sets the left margin: that many leading spaces are removed from
+// every line, and any non-space character to the left of that column on any line
+// is an error. raw still holds escapes verbatim, so only real newlines split lines.
 func (p *Parser) dedentMultiline(raw []rune, span base.Span) ([]rune, bool) {
 	open := 0
 	for open < len(raw) && (raw[open] == ' ' || raw[open] == '\t') {
@@ -1850,15 +1849,21 @@ func (p *Parser) dedentMultiline(raw []rune, span base.Span) ([]rune, bool) {
 		p.diagnostic(span, "multi-line string: the opening quote must be followed by a newline")
 		return nil, false
 	}
+	// Everything after the last newline is the closing quote's own line. It sets the
+	// left margin and must be spaces only; any other character (content or a tab) is
+	// a non-space to the left of the closing quote.
 	end := len(raw)
-	for end > 0 && (raw[end-1] == ' ' || raw[end-1] == '\t') {
+	for raw[end-1] != '\n' {
 		end--
 	}
-	if end == 0 || raw[end-1] != '\n' {
-		p.diagnostic(span, "multi-line string: the closing quote must be on its own line")
-		return nil, false
+	margin := raw[end:]
+	for _, r := range margin {
+		if r != ' ' {
+			p.diagnostic(span, "multi-line string: only spaces may appear to the left of the closing quote")
+			return nil, false
+		}
 	}
-	if open >= end-1 {
+	if end-1 == open {
 		return []rune{}, true
 	}
 
@@ -1871,36 +1876,19 @@ func (p *Parser) dedentMultiline(raw []rune, span base.Span) ([]rune, bool) {
 		}
 	}
 
-	var indent []rune
-	haveIndent := false
-	for _, line := range lines {
-		ws := 0
-		for ws < len(line) && (line[ws] == ' ' || line[ws] == '\t') {
-			ws++
-		}
-		if ws == len(line) {
-			continue // a blank line does not constrain the dedent
-		}
-		if !haveIndent {
-			indent, haveIndent = line[:ws], true
-			continue
-		}
-		n := 0
-		for n < len(indent) && n < ws && indent[n] == line[n] {
-			n++
-		}
-		indent = indent[:n]
-	}
-
 	out := []rune{}
-	for i, line := range lines {
-		if i > 0 {
+	for li, line := range lines {
+		if li > 0 {
 			out = append(out, '\n')
 		}
-		if strings.TrimLeft(string(line), " \t") == "" {
-			continue // a blank line contributes only its newline
+		strip := min(len(margin), len(line))
+		for c := range strip {
+			if line[c] != ' ' {
+				p.diagnostic(span, "multi-line string: only spaces may appear to the left of the closing quote")
+				return nil, false
+			}
 		}
-		out = append(out, line[len(indent):]...)
+		out = append(out, line[strip:]...)
 	}
 	return out, true
 }
