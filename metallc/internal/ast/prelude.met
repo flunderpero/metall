@@ -1284,32 +1284,57 @@ pub fun F32.hash(a F32) U64 {
 }
 
 pub fun Str.fmt(s Str, sw &mut StrWriter) void { unsafe sw.write_utf8_unchecked(s.data) }
-pub fun Int.fmt(i Int, sw &mut StrWriter) void { 
+pub fun Int.fmt_ext(i Int, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
     -- An Int can be at most 64 bytes stringified.
-    let buf = unsafe sw.reserve(64)
-    let n = try i.fmt_into(buf) else { panic("Int.fmt() did not reserve enough bytes") }
+    let buf = unsafe sw.reserve(if width > 64 { width } else { 64 })
+    let n = try i.fmt_into(buf, base, upper, width) else { panic("did not reserve enough bytes") }
     sw.advance(n)
+}
+pub fun Int.fmt(i Int, sw &mut StrWriter) void { i.fmt_ext(sw) }
+pub fun I32.fmt_ext(i I32, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
+    i.to_int().fmt_ext(sw, base, upper, width)
 }
 pub fun I32.fmt(i I32, sw &mut StrWriter) void { sw.write(i.to_int()) }
+pub fun I16.fmt_ext(i I16, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
+    i.to_int().fmt_ext(sw, base, upper, width)
+}
 pub fun I16.fmt(i I16, sw &mut StrWriter) void { sw.write(i.to_int()) }
+pub fun I8.fmt_ext(i I8, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
+    i.to_int().fmt_ext(sw, base, upper, width)
+}
 pub fun I8.fmt(i I8, sw &mut StrWriter) void { sw.write(i.to_int()) }
-pub fun U64.fmt(u U64, sw &mut StrWriter) void { 
+pub fun U64.fmt_ext(u U64, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void { 
     -- An U64 can be at most 65 bytes stringified.
-    let buf = unsafe sw.reserve(65)
-    let n = try u.fmt_into(buf) else { panic("U64.fmt() did not reserve enough bytes") }
+    let buf = unsafe sw.reserve(if width > 65 { width } else { 65 })
+    let n = try u.fmt_into(buf, base, upper, width) else { panic("did not reserve enough bytes") }
     sw.advance(n)
 }
+pub fun U64.fmt(u U64, sw &mut StrWriter) void { u.fmt_ext(sw) }
 pub fun U32.fmt(u U32, sw &mut StrWriter) void { sw.write(u.to_u64()) }
-pub fun U16.fmt(u U16, sw &mut StrWriter) void { sw.write(u.to_u64()) }
-pub fun U8.fmt(u U8, sw &mut StrWriter) void { sw.write(u.to_u64()) }
-pub fun Bool.fmt(b Bool, sw &mut StrWriter) void {
-    sw.write(if b { "true" } else { "false" })
+pub fun U32.fmt_ext(u U32, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
+    u.to_u64().fmt_ext(sw, base, upper, width)
 }
-pub fun Float.fmt(f Float, sw &mut StrWriter) void {
-    -- An Float can be at most 48 bytes stringified.
-    let buf = unsafe sw.reserve(48)
-    let n = try f.fmt_into(buf) else { panic("Float.fmt() did not reserve enough bytes") }
+pub fun U16.fmt(u U16, sw &mut StrWriter) void { sw.write(u.to_u64()) }
+pub fun U16.fmt_ext(u U16, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
+    u.to_u64().fmt_ext(sw, base, upper, width)
+}
+pub fun U8.fmt(u U8, sw &mut StrWriter) void { sw.write(u.to_u64()) }
+pub fun U8.fmt_ext(u U8, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
+    u.to_u64().fmt_ext(sw, base, upper, width)
+}
+pub fun Bool.fmt_ext(b Bool, sw &mut StrWriter, true_str Str = "true", false_str Str = "false") void {
+    sw.write(if b { true_str } else { false_str })
+}
+pub fun Bool.fmt(b Bool, sw &mut StrWriter) void { b.fmt_ext(sw) }
+pub fun Float.fmt_ext(v Float, sw &mut StrWriter, precision Int = -1, width Int = 0) void {
+    -- A Float can be at most 48 bytes stringified.
+    let buf = unsafe sw.reserve(if width > 48 { width } else { 48 })
+    let n = try v.fmt_into(buf, precision, width) else { panic("did not reserve enough bytes") }
     sw.advance(n)
+}
+pub fun Float.fmt(f Float, sw &mut StrWriter) void { f.fmt_ext(sw) }
+pub fun F32.fmt_ext(v F32, sw &mut StrWriter, precision Int = -1, width Int = 0) void {
+    v.to_float().fmt_ext(sw, precision, width)
 }
 pub fun F32.fmt(f F32, sw &mut StrWriter) void { sw.write(f.to_float()) }
 
@@ -1523,12 +1548,12 @@ pub fun F32.from_ascii_str(str []U8) !F32 {
 --- Format the integer value as a string and write it into `dst`.
 
     Return `None()` if the stringified value wouldn't fit `dst`. ---
-pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
     if base != 2 and base != 8 and base != 10 and base != 16 {
         panic("invalid base")
     }
     if v == 0 {
-        let len = if min_width > 1 { min_width } else { 1 }
+        let len = if width > 1 { width } else { 1 }
         if dst.len < len {
             return None()
         }
@@ -1561,8 +1586,8 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min
         if v < 0 {
             len += 1
         }
-        if len < min_width {
-            min_width
+        if len < width {
+            width
         } else {
             len
         }
@@ -1596,12 +1621,12 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, min
 --- Format the integer value as a string and write it into `dst`.
 
     Return `None()` if the stringified value wouldn't fit `dst`. ---
-pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
+pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
     if base != 2 and base != 8 and base != 10 and base != 16 {
         panic("invalid base")
     }
     if v == 0 {
-        let len = if min_width > 1 { min_width } else { 1 }
+        let len = if width > 1 { width } else { 1 }
         if dst.len < len {
             return None()
         }
@@ -1621,8 +1646,8 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min
             len += 1
             x /= base
         }
-        if len < min_width {
-            min_width
+        if len < width {
+            width
         } else {
             len
         }
@@ -1651,26 +1676,26 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, min
     len
 }
 
-pub fun I8.fmt_into(v I8, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
-    v.to_int().fmt_into(dst, base, upper, min_width)
+pub fun I8.fmt_into(v I8, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
+    v.to_int().fmt_into(dst, base, upper, width)
 }
-pub fun I16.fmt_into(v I16, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
-    v.to_int().fmt_into(dst, base, upper, min_width)
+pub fun I16.fmt_into(v I16, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
+    v.to_int().fmt_into(dst, base, upper, width)
 }
-pub fun I32.fmt_into(v I32, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
-    v.to_int().fmt_into(dst, base, upper, min_width)
+pub fun I32.fmt_into(v I32, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
+    v.to_int().fmt_into(dst, base, upper, width)
 }
-pub fun U8.fmt_into(v U8, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
-    v.to_u64().fmt_into(dst, base, upper, min_width)
+pub fun U8.fmt_into(v U8, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
+    v.to_u64().fmt_into(dst, base, upper, width)
 }
-pub fun U16.fmt_into(v U16, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
-    v.to_u64().fmt_into(dst, base, upper, min_width)
+pub fun U16.fmt_into(v U16, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
+    v.to_u64().fmt_into(dst, base, upper, width)
 }
-pub fun U32.fmt_into(v U32, dst []mut U8, base Int = 10, upper Bool = false, min_width Int = 0) ?Int {
-    v.to_u64().fmt_into(dst, base, upper, min_width)
+pub fun U32.fmt_into(v U32, dst []mut U8, base Int = 10, upper Bool = false, width Int = 0) ?Int {
+    v.to_u64().fmt_into(dst, base, upper, width)
 }
 
-pub fun Float.fmt_into(v Float, dst []mut U8) ?Int {
+pub fun Float.fmt_into(v Float, dst []mut U8, precision Int = -1, width Int = 0) ?Int {
     mut scratch = [48 of U8(0)][..]
     let result = when {
     case v.is_nan():
@@ -1678,6 +1703,15 @@ pub fun Float.fmt_into(v Float, dst []mut U8) ?Int {
     case v.is_inf():
         let word = if v < 0.0 { "-inf" } else { "+inf" }
         scratch[0..scratch.set(word.as_bytes())]
+    case precision >= 0:
+        -- Fixed-point with exactly `precision` fractional digits. snprintf truncates
+        -- at the scratch capacity, so a full-buffer result is unreliable; report it
+        -- as not fitting rather than emit a truncated value.
+        let n = unsafe __snprintf_float(v, precision, 'f', scratch)
+        if n >= scratch.len {
+            return None()
+        }
+        scratch[0..n]
     else:
         -- Shortest: smallest significant-digit count whose %e reads back to v.
         mut sd = 1
@@ -1713,14 +1747,20 @@ pub fun Float.fmt_into(v Float, dst []mut U8) ?Int {
             scratch[0..flen]
         }
     }
-    if dst.len < result.len {
+    -- Right-justify into `width` with leading spaces.
+    let len = if result.len < width { width } else { result.len }
+    if dst.len < len {
         return None()
     }
-    Option(dst.set(result))
+    let pad = len - result.len
+    for i in 0..pad {
+        dst[i] = ' '
+    }
+    Option(pad + dst[pad..len].set(result))
 }
 
-pub fun F32.fmt_into(v F32, dst []mut U8) ?Int {
-    v.to_float().fmt_into(dst)
+pub fun F32.fmt_into(v F32, dst []mut U8, precision Int = -1, width Int = 0) ?Int {
+    v.to_float().fmt_into(dst, precision, width)
 }
 
 extern fun __strtod(buf []U8, consumed &mut Int) Float

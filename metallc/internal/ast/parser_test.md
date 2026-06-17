@@ -1911,6 +1911,133 @@ test.met:1:1: newline in single-line string; use a multi-line string
     b {x}".build(@a)
 ```
 
+**A format specifier dispatches to .fmt_ext with the parsed arguments**
+
+A `:` after an interpolation's expression introduces a format specifier. Its
+arguments are parsed like call arguments and handed to `.fmt_ext` with the StrWriter
+first, so a value with a specifier formats through `fmt_ext` instead of the default
+`fmt`.
+
+```metall
+f"age {age:width=20, base=16, upper=true}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=36)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="age ")
+  exprs[2]=Call(args[1].name="width",args[2].name="base",args[3].name="upper")
+    callee=FieldAccess(field=fmt_ext)
+      target=Ident(name="age")
+    args[0]=Ident(name="$fstr")
+    args[1]=Int(value=20)
+    args[2]=Int(value=16)
+    args[3]=Bool(value=true)
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**A format specifier may be positional**
+
+```metall
+f"{n:16}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=32)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=fmt_ext)
+      target=Ident(name="n")
+    args[0]=Ident(name="$fstr")
+    args[1]=Int(value=16)
+  exprs[2]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**A colon at interpolation depth zero is the specifier, even past a nested when**
+
+The only other `:` in the grammar is the when/match case delimiter, which is always
+nested inside its own braces, so the specifier colon is found at depth zero after the
+whole expression.
+
+```metall
+f"{when { case ok: 1 else: 0 }:width=4}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=32)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call(args[1].name="width")
+    callee=FieldAccess(field=fmt_ext)
+      target=When(cases=1)
+        case[0].cond=Ident(name="ok")
+        case[0].body=Block()
+          exprs=Int(value=1)
+        else=Block()
+          exprs=Int(value=0)
+    args[0]=Ident(name="$fstr")
+    args[1]=Int(value=4)
+  exprs[2]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**A colon in literal text is not a specifier**
+
+```metall
+f"t 12:30 {x}".build(@a)
+```
+
+```ast
+Block()
+  exprs[0]=Var(name="$fstr")
+    expr=Call()
+      callee=Ident(name="StrWriter.new")
+      args[0]=Int(value=40)
+      args[1]=Ident(name="@a")
+  exprs[1]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=String(value="t 12:30 ")
+  exprs[2]=Call()
+    callee=FieldAccess(field=write)
+      target=Ident(name="$fstr")
+    args=Ident(name="x")
+  exprs[3]=Call()
+    callee=FieldAccess(field=as_str)
+      target=Ident(name="$fstr")
+```
+
+**An empty format specifier is rejected**
+
+```metall
+f"{x:}".build(@a)
+```
+
+```error
+test.met:1:5: empty format specifier
+    f"{x:}".build(@a)
+        ^
+```
+
 ## If
 
 **If then else**

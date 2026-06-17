@@ -13,11 +13,16 @@ import (
 const fstrVar = "$fstr"
 
 // fstrSeg is one piece of an f-string: either raw literal text (not yet escape
-// decoded) or a parsed interpolation expression.
+// decoded) or a parsed interpolation expression. An interpolation may carry a `:`
+// format specifier; its arguments (fmtArgs, with parallel fmtNames) are then
+// dispatched to `.fmt_ext` instead of the default `.fmt`. A non-empty fmtArgs is
+// what marks a segment as having a specifier.
 type fstrSeg struct {
-	lit   []rune
-	expr  NodeID
-	isLit bool
+	lit      []rune
+	expr     NodeID
+	isLit    bool
+	fmtArgs  []NodeID
+	fmtNames []*Name
 }
 
 // fstrMode is how a format string is consumed.
@@ -78,7 +83,9 @@ func (p *Parser) collectFStringSegs(start *token.Token) ([]fstrSeg, bool) {
 		switch t.Kind { //nolint:exhaustive
 		case token.FStringText:
 			p.next()
-			segs = append(segs, fstrSeg{lit: []rune(t.Value), expr: ParseFailed, isLit: true})
+			segs = append(segs, fstrSeg{
+				lit: []rune(t.Value), expr: ParseFailed, isLit: true, fmtArgs: nil, fmtNames: nil,
+			})
 		case token.FExprStart:
 			p.next()
 			if end, ok := p.mayPeek(); ok && end.Kind == token.FExprEnd {
@@ -89,10 +96,26 @@ func (p *Parser) collectFStringSegs(start *token.Token) ([]fstrSeg, bool) {
 			if !ok {
 				return nil, false
 			}
-			if _, ok := p.expect(token.FExprEnd); !ok {
+			// A `:` after the expression begins a format specifier whose args are
+			// parsed like call args and dispatched to `.fmt_ext`. A top-level `:` is
+			// unambiguous: the grammar's only other `:` (when/match cases) is always
+			// nested inside its own braces.
+			var fmtArgs []NodeID
+			var fmtNames []*Name
+			if c, ok := p.mayPeek(); ok && c.Kind == token.Colon {
+				p.next()
+				if end, ok := p.mayPeek(); ok && end.Kind == token.FExprEnd {
+					p.diagnostic(c.Span, "empty format specifier")
+					return nil, false
+				}
+				fmtArgs, fmtNames, ok = p.parseArgEntries(token.FExprEnd)
+				if !ok {
+					return nil, false
+				}
+			} else if _, ok := p.expect(token.FExprEnd); !ok {
 				return nil, false
 			}
-			segs = append(segs, fstrSeg{lit: nil, expr: expr, isLit: false})
+			segs = append(segs, fstrSeg{lit: nil, expr: expr, isLit: false, fmtArgs: fmtArgs, fmtNames: fmtNames})
 		case token.FStringEnd:
 			p.next()
 			return segs, true
@@ -118,13 +141,13 @@ const fstrInterpSentinel = '\x00'
 // splitting the result back into literal/interpolation segments.
 func (p *Parser) dedentFStringSegs(segs []fstrSeg, span base.Span) ([]fstrSeg, bool) {
 	var template []rune
-	var interps []NodeID
+	var interps []fstrSeg
 	for _, s := range segs {
 		if s.isLit {
 			template = append(template, s.lit...)
 		} else {
 			template = append(template, fstrInterpSentinel)
-			interps = append(interps, s.expr)
+			interps = append(interps, s)
 		}
 	}
 	dedented, ok := p.dedentMultiline(template, span)
@@ -136,14 +159,16 @@ func (p *Parser) dedentFStringSegs(segs []fstrSeg, span base.Span) ([]fstrSeg, b
 	i := 0
 	flush := func() {
 		if len(lit) > 0 {
-			out = append(out, fstrSeg{lit: lit, expr: ParseFailed, isLit: true})
+			out = append(out, fstrSeg{
+				lit: lit, expr: ParseFailed, isLit: true, fmtArgs: nil, fmtNames: nil,
+			})
 			lit = nil
 		}
 	}
 	for _, r := range dedented {
 		if r == fstrInterpSentinel {
 			flush()
-			out = append(out, fstrSeg{lit: nil, expr: interps[i], isLit: false})
+			out = append(out, interps[i])
 			i++
 			continue
 		}
@@ -244,12 +269,25 @@ func (p *Parser) buildFString(
 }
 
 // emitWrites turns each segment into a `$fstr.write(...)`. write is generic over
-// HasFmt, so a literal Str and an interpolated value use the same call.
+// HasFmt, so a literal Str and an interpolated value use the same call. A segment
+// with a format specifier instead becomes `expr.fmt_ext($fstr, <args>)`: the
+// StrWriter leads the parsed spec args, so the type's fmt_ext signature decides
+// which names and positions are valid and ordinary type-checking validates them.
 func (p *Parser) emitWrites(segs []fstrSeg, bytes, multiline bool, span base.Span) ([]NodeID, bool) {
 	var writes []NodeID
 	for _, s := range segs {
 		if !s.isLit {
-			writes = append(writes, p.fstrCall("write", []NodeID{s.expr}, span))
+			if len(s.fmtArgs) == 0 {
+				writes = append(writes, p.fstrCall("write", []NodeID{s.expr}, span))
+				continue
+			}
+			callArgs := append([]NodeID{p.NewIdent(fstrVar, nil, span)}, s.fmtArgs...)
+			var callNames []*Name
+			if s.fmtNames != nil {
+				callNames = append([]*Name{nil}, s.fmtNames...)
+			}
+			callee := p.NewFieldAccess(s.expr, Name{"fmt_ext", span}, nil, span)
+			writes = append(writes, p.NewCall(callee, callArgs, callNames, false, span))
 			continue
 		}
 		value, ok := p.unescapeSegment(s.lit, bytes, multiline, span)

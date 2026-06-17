@@ -1124,61 +1124,7 @@ func (p *Parser) ParseCallArgs() ([]NodeID, []*Name, bool) {
 	if _, ok := p.expect(token.LParen); !ok {
 		return nil, nil, false
 	}
-	args := []NodeID{}
-	var names []*Name // lazily allocated on the first named argument
-	for {
-		t, ok := p.mayPeek()
-		if !ok {
-			return args, names, true
-		}
-		if t.Kind == token.RParen {
-			p.next()
-			return args, names, true
-		}
-		// A named argument is `ident = expr`. `==` is a comparison, so only a
-		// single `=` separates a name from its value.
-		var name *Name
-		if t.Kind == token.Ident {
-			if next, ok := p.mayPeek1(); ok && next.Kind == token.Eq {
-				p.next()
-				p.next()
-				name = &Name{t.Value, t.Span}
-			}
-		}
-		if name == nil && names != nil {
-			p.diagnostic(t.Span, "positional argument after named argument")
-			return args, names, false
-		}
-		if name != nil && names == nil {
-			names = make([]*Name, len(args))
-		}
-		var expr NodeID
-		if peek, ok := p.mayPeek(); ok && peek.Kind == token.AllocatorIdent {
-			p.next()
-			expr = p.NewIdent(peek.Value, nil, peek.Span)
-		} else {
-			expr, ok = p.ParseExpr(0)
-			if !ok {
-				return args, names, false
-			}
-		}
-		args = append(args, expr)
-		if names != nil {
-			names = append(names, name)
-		}
-		t, ok = p.next()
-		if !ok {
-			return args, names, true
-		}
-		switch t.Kind { //nolint:exhaustive
-		case token.Comma:
-		case token.RParen:
-			return args, names, true
-		default:
-			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
-			return args, names, false
-		}
-	}
+	return p.parseArgEntries(token.RParen)
 }
 
 func (p *Parser) ParseAllocatorVar(span base.Span) (NodeID, bool) {
@@ -1718,6 +1664,69 @@ func (p *Parser) ParseRange() (nodeID NodeID, isRange bool, ok bool) {
 		return range_, true, ok
 	}
 	return lo, false, true
+}
+
+// parseArgEntries parses a comma-separated list of positional/named (`name = expr`)
+// arguments, stopping at and consuming `end`. The opening delimiter is the caller's
+// to consume. Returns the value expressions and a parallel names slice (nil when no
+// argument is named; otherwise names[i] is non-nil for a named arg). f-string format
+// specifiers reuse this with `end` set to the interpolation closer.
+func (p *Parser) parseArgEntries(end token.TokenKind) ([]NodeID, []*Name, bool) {
+	args := []NodeID{}
+	var names []*Name // lazily allocated on the first named argument
+	for {
+		t, ok := p.mayPeek()
+		if !ok {
+			return args, names, true
+		}
+		if t.Kind == end {
+			p.next()
+			return args, names, true
+		}
+		// A named argument is `ident = expr`. `==` is a comparison, so only a
+		// single `=` separates a name from its value.
+		var name *Name
+		if t.Kind == token.Ident {
+			if next, ok := p.mayPeek1(); ok && next.Kind == token.Eq {
+				p.next()
+				p.next()
+				name = &Name{t.Value, t.Span}
+			}
+		}
+		if name == nil && names != nil {
+			p.diagnostic(t.Span, "positional argument after named argument")
+			return args, names, false
+		}
+		if name != nil && names == nil {
+			names = make([]*Name, len(args))
+		}
+		var expr NodeID
+		if peek, ok := p.mayPeek(); ok && peek.Kind == token.AllocatorIdent {
+			p.next()
+			expr = p.NewIdent(peek.Value, nil, peek.Span)
+		} else {
+			expr, ok = p.ParseExpr(0)
+			if !ok {
+				return args, names, false
+			}
+		}
+		args = append(args, expr)
+		if names != nil {
+			names = append(names, name)
+		}
+		t, ok = p.next()
+		if !ok {
+			return args, names, true
+		}
+		switch t.Kind { //nolint:exhaustive
+		case token.Comma:
+		case end:
+			return args, names, true
+		default:
+			p.diagnostic(t.Span, "unexpected token: %s", t.Kind)
+			return args, names, false
+		}
+	}
 }
 
 // parseStringLiteral turns a (non-f) String token into a String node. The lexer

@@ -30,6 +30,18 @@ fun main() void {
         -- its full f64 widening. It still round-trips back to the same F32.
         try test.ok(F32(0.1).eq(try F32.from_ascii_str(fmt_f32(0.1, @local).as_bytes())))
     })
+    fmt_suite.test("Float.fmt_ext", fun() !void {
+        let @local = Arena()
+        let sw = StrWriter.new(48, @local)
+        Float(3.14159).fmt_ext(sw, 2)
+        try test.eq("3.14", sw.as_str())
+        let sw2 = StrWriter.new(48, @local)
+        Float(3.14).fmt_ext(sw2, -1, 8)
+        try test.eq("    3.14", sw2.as_str())
+        let sw3 = StrWriter.new(48, @local)
+        F32(2.5).fmt_ext(sw3, 3, 7)
+        try test.eq("  2.500", sw3.as_str())
+    })
     _ = fmt_suite.run()
 
     let fmt_into_suite = test.Suite.new("fmt_into", @local)
@@ -44,6 +56,56 @@ fun main() void {
         try test.eq("-2.5", Str.from_utf8_lossy(buf[0..4], @local))
         try test.eq(Option(3), Float(0.0 / 0.0).fmt_into(buf))
         try test.eq("NaN", Str.from_utf8_lossy(buf[0..3], @local))
+    })
+    fmt_into_suite.test("Float.fmt_into precision", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(32, 0)
+        -- precision >= 0 forces fixed-point with exactly that many fractional digits.
+        try test.eq(Option(4), Float(3.14159).fmt_into(buf, 2))
+        try test.eq("3.14", Str.from_utf8_lossy(buf[0..4], @local))
+        try test.eq(Option(5), Float(2.0).fmt_into(buf, 3))
+        try test.eq("2.000", Str.from_utf8_lossy(buf[0..5], @local))
+        try test.eq(Option(4), Float(0.0).fmt_into(buf, 2))
+        try test.eq("0.00", Str.from_utf8_lossy(buf[0..4], @local))
+        -- Fixed-point stays positional past the magnitude where shortest goes scientific.
+        try test.eq(Option(7), Float(1234.5).fmt_into(buf, 2))
+        try test.eq("1234.50", Str.from_utf8_lossy(buf[0..7], @local))
+        -- precision 0 drops the fractional part (and the point), rounding to nearest.
+        try test.eq(Option(1), Float(3.0).fmt_into(buf, 0))
+        try test.eq("3", Str.from_utf8_lossy(buf[0..1], @local))
+        -- A precision whose output overflows the formatter's scratch reports no fit.
+        try test.ok(Float(1.5).fmt_into(buf, 60).is_none())
+    })
+    fmt_into_suite.test("Float.fmt_into width", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(32, 0)
+        -- width right-justifies with leading spaces; the sign stays next to the digits.
+        try test.eq(Option(8), Float(3.14).fmt_into(buf, -1, 8))
+        try test.eq("    3.14", Str.from_utf8_lossy(buf[0..8], @local))
+        try test.eq(Option(8), Float(-3.14).fmt_into(buf, -1, 8))
+        try test.eq("   -3.14", Str.from_utf8_lossy(buf[0..8], @local))
+        -- A width no wider than the value adds no padding.
+        try test.eq(Option(3), Float(1.5).fmt_into(buf, -1, 2))
+        try test.eq("1.5", Str.from_utf8_lossy(buf[0..3], @local))
+        -- precision and width compose.
+        try test.eq(Option(8), Float(3.14159).fmt_into(buf, 2, 8))
+        try test.eq("    3.14", Str.from_utf8_lossy(buf[0..8], @local))
+        -- width also pads the NaN/inf words; precision is ignored for them.
+        try test.eq(Option(6), Float(0.0 / 0.0).fmt_into(buf, 2, 6))
+        try test.eq("   NaN", Str.from_utf8_lossy(buf[0..6], @local))
+        try test.eq(Option(5), Float(1.0 / 0.0).fmt_into(buf, -1, 5))
+        try test.eq(" +inf", Str.from_utf8_lossy(buf[0..5], @local))
+        -- A width wider than `dst` reports no fit.
+        mut tiny = @local.slice<U8>(4, 0)
+        try test.ok(Float(3.14).fmt_into(tiny, -1, 8).is_none())
+    })
+    fmt_into_suite.test("F32.fmt_into precision and width", fun() !void {
+        let @local = Arena()
+        mut buf = @local.slice<U8>(32, 0)
+        try test.eq(Option(3), F32(2.5).fmt_into(buf, 1))
+        try test.eq("2.5", Str.from_utf8_lossy(buf[0..3], @local))
+        try test.eq(Option(7), F32(2.5).fmt_into(buf, 3, 7))
+        try test.eq("  2.500", Str.from_utf8_lossy(buf[0..7], @local))
     })
     _ = fmt_into_suite.run()
 

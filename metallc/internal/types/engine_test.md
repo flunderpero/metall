@@ -13419,3 +13419,94 @@ test.met:4:5: type test.Point does not satisfy shape HasFmt: missing method fmt
         ^^
     }
 ```
+
+**A format specifier dispatches to fmt_ext, resolving named arguments by name**
+
+```metall module fullprelude
+struct Hex { v Int }
+
+fun Hex.fmt_ext(h Hex, sw &mut StrWriter, base Int, upper Bool) void {
+    sw.write(h.v)
+}
+
+fun show(h Hex, @a Arena) Str {
+    f"x={h:upper=true, base=16}".build(@a)
+}
+```
+
+```types
+Module: test
+  Struct: struct01
+    StructField: ?
+      SimpleType: ?
+  Fun: fun01
+    FunParam: struct01
+      SimpleType: struct01
+    FunParam: &mut struct02
+      RefType: &mut struct02
+        SimpleType: struct02
+    FunParam: Int
+      SimpleType: Int
+    FunParam: Bool
+      SimpleType: Bool
+    SimpleType: void
+    Block: void
+      Call: void
+        FieldAccess: fun02
+          Ident: &mut struct02
+        FieldAccess: Int
+          Ident: struct01
+  Fun: fun03
+    FunParam: struct01
+      SimpleType: struct01
+    FunParam: Arena
+      SimpleType: Arena
+    SimpleType: Str
+    Block: Str
+      Block: Str
+        Var: void
+          Call: &mut struct02
+            Ident: fun04
+            Int: Int
+            Ident: Arena
+        Call: void
+          FieldAccess: fun05
+            Ident: &mut struct02
+          String: Str
+        Call: void
+          FieldAccess: fun01
+            Ident: struct01
+          Ident: &mut struct02
+          Bool: Bool
+          Int: Int
+        Call: Str
+          FieldAccess: fun06
+            Ident: &mut struct02
+---
+struct01 = Hex { v Int }
+struct02 = StrWriter { out []mut U8, len Int, @a Arena }
+fun01    = fun(struct01, &mut struct02, Int, Bool) void
+fun02    = fun(&mut struct02, Int) void
+fun03    = fun(struct01, Arena) Str
+fun04    = fun(Int, Arena) &mut struct02
+fun05    = fun(&mut struct02, Str) void
+fun06    = fun(&struct02) Str
+```
+
+**A format specifier on a type without fmt_ext is rejected**
+
+```metall module fullprelude
+struct Point { x Int  y Int }
+
+fun show(p Point, @a Arena) Str {
+    f"p={p:base=16}".build(@a)
+}
+```
+
+```error
+test.met:4:5: unknown field: test.Point.fmt_ext
+    fun show(p Point, @a Arena) Str {
+        f"p={p:base=16}".build(@a)
+        ^^
+    }
+```

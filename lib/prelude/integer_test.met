@@ -650,4 +650,49 @@ fun main() void {
     })
 
     _ = fmt_into_suite.run()
+
+    let fmt_ext_suite = test.Suite.new("fmt_ext", @local)
+    fmt_ext_suite.test("Int.fmt_ext", fun() !void {
+        let @local = Arena()
+        try test.eq("255", fmt_ext_int(255, 10, false, 0, @local))
+        try test.eq("ff", fmt_ext_int(255, 16, false, 0, @local))
+        try test.eq("FF", fmt_ext_int(255, 16, true, 0, @local))
+        try test.eq("101", fmt_ext_int(5, 2, false, 0, @local))
+        try test.eq("00042", fmt_ext_int(42, 10, false, 5, @local))
+        try test.eq("-0042", fmt_ext_int(-42, 10, false, 5, @local))
+        try test.eq("00FF", fmt_ext_int(255, 16, true, 4, @local))
+    })
+    fmt_ext_suite.test("U64.fmt_ext", fun() !void {
+        let @local = Arena()
+        try test.eq("FF", fmt_ext_u64(U64(255), 16, true, 0, @local))
+        try test.eq("00042", fmt_ext_u64(U64(42), 10, false, 5, @local))
+    })
+    fmt_ext_suite.test("narrow integer fmt_ext delegates base/upper/width", fun() !void {
+        let @local = Arena()
+        let sw = StrWriter.new(72, @local)
+        I32(-42).fmt_ext(sw, 10, false, 5)
+        try test.eq("-0042", sw.as_str())
+        let sw2 = StrWriter.new(72, @local)
+        U32(255).fmt_ext(sw2, 16, true)
+        try test.eq("FF", sw2.as_str())
+        let sw3 = StrWriter.new(72, @local)
+        I8(-5).fmt_ext(sw3, 2)
+        try test.eq("-101", sw3.as_str())
+        let sw4 = StrWriter.new(72, @local)
+        U8(255).fmt_ext(sw4, 16)
+        try test.eq("ff", sw4.as_str())
+    })
+    _ = fmt_ext_suite.run()
+}
+
+fun fmt_ext_int(v Int, base Int, upper Bool, width Int, @a Arena) Str {
+    let sw = StrWriter.new(72, @a)
+    v.fmt_ext(sw, base, upper, width)
+    sw.as_str()
+}
+
+fun fmt_ext_u64(v U64, base Int, upper Bool, width Int, @a Arena) Str {
+    let sw = StrWriter.new(72, @a)
+    v.fmt_ext(sw, base, upper, width)
+    sw.as_str()
 }

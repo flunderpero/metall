@@ -567,3 +567,85 @@ fb: café 42
 fb.len: 3
 fbm.len: 4
 ```
+
+**format specifier dispatches to fmt_ext**
+
+A `:` specifier routes an interpolation through the value's `fmt_ext` instead of
+`fmt`, passing the StrWriter first and the parsed spec arguments after it. Named
+arguments reach their parameter by name regardless of order, and a bare specifier
+passes positionally.
+
+```metall
+struct Labeled { n Int }
+
+-- A test-only stand-in: it echoes the spec arguments so the test can assert they
+-- arrive in the right slots whether written named or positional.
+fun Labeled.fmt_ext(l Labeled, sw &mut StrWriter, base Int, upper Bool) void {
+    sw.write(l.n)
+    sw.write("/")
+    sw.write(base)
+    sw.write("/")
+    sw.write(upper)
+}
+
+fun main() void {
+    let @a = Arena()
+    let lab = Labeled(7)
+    DebugIntern.print_str(f"named: {lab:upper=true, base=16}".build(@a))
+    DebugIntern.print_str(f"pos: {lab:8, false}".build(@a))
+}
+```
+
+```output
+named: 7/16/true
+pos: 7/8/false
+```
+
+**format specifiers on built-in types**
+
+Every integer type takes the same `base`/`upper`/`width` spec (the narrow types delegate
+to `Int`/`U64`), so each line below prints that type's max in upper-case hex and the column
+doubles as a range table. `Float`/`F32` take `precision` and a space-padded `width`; `Bool`
+takes the word printed for each case.
+
+```metall
+fun main() void {
+    let @a = Arena()
+
+    DebugIntern.print_str(f"I8  {I8(0x7F):base=16, upper=true}".build(@a))
+    DebugIntern.print_str(f"I16 {I16(0x7FFF):base=16, upper=true}".build(@a))
+    DebugIntern.print_str(f"I32 {I32(0x7FFF_FFFF):base=16, upper=true}".build(@a))
+    DebugIntern.print_str(f"Int {Int(0x7FFF_FFFF_FFFF_FFFF):base=16, upper=true}".build(@a))
+    DebugIntern.print_str(f"U8  {U8(0xFF):base=16, upper=true}".build(@a))
+    DebugIntern.print_str(f"U16 {U16(0xFFFF):base=16, upper=true}".build(@a))
+    DebugIntern.print_str(f"U32 {U32(0xFFFF_FFFF):base=16, upper=true}".build(@a))
+    DebugIntern.print_str(f"U64 {U64(0xFFFF_FFFF_FFFF_FFFF):base=16, upper=true}".build(@a))
+
+    -- base 2/8/16 (lower-case) and a zero-padded width, sign ahead of the padding.
+    DebugIntern.print_str(f"bin {5:base=2} oct {64:base=8} hex {255:base=16}".build(@a))
+    DebugIntern.print_str(f"pad {42:width=6} neg {-42:width=6}".build(@a))
+
+    -- Float / F32: fixed precision and a space-padded width.
+    DebugIntern.print_str(f"Float {3.14159:precision=2} {-3.14:width=8}".build(@a))
+    DebugIntern.print_str(f"F32   {1.5.to_f32():precision=3} {2.5.to_f32():width=8}".build(@a))
+
+    -- Bool: the word printed for each case.
+    DebugIntern.print_str(f"Bool  {true:true_str="yes"} {false:false_str="no"}".build(@a))
+}
+```
+
+```output
+I8  7F
+I16 7FFF
+I32 7FFFFFFF
+Int 7FFFFFFFFFFFFFFF
+U8  FF
+U16 FFFF
+U32 FFFFFFFF
+U64 FFFFFFFFFFFFFFFF
+bin 101 oct 100 hex ff
+pad 000042 neg -00042
+Float 3.14    -3.14
+F32   1.500      2.5
+Bool  yes no
+```
