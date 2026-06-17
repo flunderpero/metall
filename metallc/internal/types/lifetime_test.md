@@ -4994,3 +4994,97 @@ test.met:4:5: reference escaping its allocation scope (via block result)
         ^^^^^^^^^^^^
     }
 ```
+
+**closure stored through a `&mut` param escapes**
+
+A closure carries its captured borrow, so storing one through a `&mut` parameter
+leaks that borrow the same as storing a reference would.
+
+```metall
+{
+    struct Holder { f fun() Int }
+    fun store(slot &mut Holder, v Holder) void { slot.* = v }
+    fun build() Holder {
+        mut h = Holder(fun() Int { 0 })
+        let local = 42
+        store(&mut h, Holder(fun[&local]() Int { local.* }))
+        h
+    }
+}
+```
+
+```error
+test.met:7:15: reference escaping its allocation scope (via block result)
+            let local = 42
+            store(&mut h, Holder(fun[&local]() Int { local.* }))
+                  ^^^^^^
+            h
+```
+
+**closure unwrapped from a match value-binding escapes**
+
+Unwrapping a closure-bearing variant with a value binding keeps the matched
+value's borrow, so returning it escapes.
+
+```metall
+{
+    struct Cell { f fun() Int }
+    union Maybe = Cell | None
+    fun unwrap(m Maybe) Cell {
+        match m {
+            case Cell c: c
+            else: Cell(fun() Int { 0 })
+        }
+    }
+    fun build() Cell {
+        let local = 42
+        let m = Maybe(Cell(fun[&local]() Int { local.* }))
+        unwrap(m)
+    }
+}
+```
+
+```error
+test.met:13:9: reference escaping its allocation scope (via block result)
+            let m = Maybe(Cell(fun[&local]() Int { local.* }))
+            unwrap(m)
+            ^^^^^^^^^
+        }
+```
+
+**arena-boxed capturing closure escapes**
+
+A closure's capture frame is not copied into the arena, so boxing a capturing
+closure and returning it escapes the frame.
+
+```metall
+{
+    struct Holder { f fun(Int) Int }
+    fun make(n Int, @a Arena) &mut Holder {
+        @a.new(Holder(fun[n](x Int) Int { x + n }))
+    }
+}
+```
+
+```error
+test.met:4:9: reference escaping its allocation scope (via block result)
+        fun make(n Int, @a Arena) &mut Holder {
+            @a.new(Holder(fun[n](x Int) Int { x + n }))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        }
+```
+
+**a closure that is called but not stored does not escape**
+
+```metall
+{
+    fun apply(f fun(Int) Int, x Int) Int { f(x) }
+    fun use_it() Int {
+        let n = 10
+        apply(fun[n](k Int) Int { k + n }, 5)
+    }
+}
+```
+
+```error
+```

@@ -522,12 +522,8 @@ func (a *LifetimeCheck) analyzeDeref(nodeID ast.NodeID, deref ast.Deref) {
 }
 
 // nodeCanEscape reports whether the value at nodeID has a type that can carry a
-// reference out (ref/alloc/slice/ffi ptr), OR is a closure that may carry
-// captured borrows. The type gate that makes a scalar read (`sum + x.f`, `r.*`
-// of an Int) carry nothing. A FunType is added on top of typeCanEscape (which is
-// left alone, the noescape checks depend on its current behavior) so that
-// reading a closure out of a struct field or array element carries the
-// container's chain (the captures live there).
+// borrow out of scope (a ref/allocator, slice, ffi pointer, or closure), so a
+// scalar read (`sum + x.f`, `r.*` of an Int) carries nothing.
 //
 //	struct Holder { f fun() &Int }; let fn = h.f
 //	  --> h.f carries Holder's chain, which holds the captured borrow.
@@ -536,38 +532,7 @@ func (a *LifetimeCheck) nodeCanEscape(nodeID ast.NodeID) bool {
 	if resultType == nil {
 		return false
 	}
-	return a.typeCanEscape(resultType.ID) || a.typeReachesClosure(resultType.ID)
-}
-
-// typeReachesClosure reports whether typeID IS a function type or transitively
-// CONTAINS one (a closure stored in a struct field, union variant, array or
-// slice element). typeCanEscape is left alone (the noescape checks depend on its
-// behavior), so this is the extra gate that lets a struct/array READ which holds
-// a closure carry the container's chain, where the captures live.
-//
-//	struct Holder { f fun() &Int }; let fn = h.f
-//	  --> h.f reaches a closure, so it carries Holder's chain (the captured borrow).
-func (a *LifetimeCheck) typeReachesClosure(typeID TypeID) bool {
-	if typeID == InvalidTypeID {
-		return false
-	}
-	switch kind := a.env.Type(typeID).Kind.(type) {
-	case FunType:
-		return true
-	case StructType:
-		for _, field := range kind.Fields {
-			if a.typeReachesClosure(field.Type) {
-				return true
-			}
-		}
-	case UnionType:
-		return slices.ContainsFunc(kind.Variants, a.typeReachesClosure)
-	case ArrayType:
-		return a.typeReachesClosure(kind.Elem)
-	case SliceType:
-		return a.typeReachesClosure(kind.Elem)
-	}
-	return false
+	return a.typeContains(resultType.ID, borrowAny)
 }
 
 // typeContainsTypeParam reports whether typeID is, or transitively contains, a
@@ -724,7 +689,8 @@ func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) 
 	fa := base.Cast[ast.FieldAccess](a.ast.Node(call.Callee).Kind)
 	result := a.flow(fa.Target)
 	for _, argNodeID := range call.Args {
-		if a.typeContainsRefOrAlloc(a.env.TypeOfNode(argNodeID).ID) {
+		argTypeID := a.env.TypeOfNode(argNodeID).ID
+		if a.typeContains(argTypeID, borrowRefOrAllocator|borrowShape|borrowClosure) {
 			result = result.Merge(a.flow(argNodeID))
 		}
 	}
@@ -796,7 +762,7 @@ func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 // instanceEffects returns the effects of a generic call's CONCRETE instantiation.
 // The generic body analyzed with an abstract type parameter drops borrows the
 // parameter carries (e.g. `Option.or_err` returns its T, but for abstract T
-// typeContainsRefOrAlloc(T) is false so the borrow is lost). Re-analyzing the
+// typeContains(T, ...) is false so the borrow is lost). Re-analyzing the
 // instance with its concrete env (which binds T to e.g. &Int) restores them.
 // Returns nil for a non-generic call (use the generic path) or on a cycle.
 //
@@ -946,7 +912,7 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 	// store, a return). Flowing DOWN into child scopes or callees is fine. Only
 	// meaningful when the return can carry a reference; on a value return
 	// (`noescape Int`) nothing is reachable to dangle.
-	if calleeFun.NoescapeReturn && a.typeCanEscape(calleeFun.Return) {
+	if calleeFun.NoescapeReturn && a.typeContains(calleeFun.Return, borrowAny) {
 		result = result.Merge(Chain{TaintSet{a.scopeState(nodeID).ScopeTaint}})
 	}
 	// Carry whatever the callee contributes through its OWN chain (not via any
@@ -988,7 +954,7 @@ func (a *LifetimeCheck) closureCallContribution(callID, callee, declID ast.NodeI
 	if _, isMethod := a.env.MethodCallReceiver(callID); isMethod {
 		return nil
 	}
-	if a.typeCanEscape(calleeReturn) {
+	if a.typeContains(calleeReturn, borrowAny) {
 		return a.flow(callee)
 	}
 	return nil
@@ -1010,9 +976,9 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 	args := a.env.CallArgNodes(nodeID)
 	allArgs := a.mergeFlows(args)
 	funType := base.Cast[FunType](a.env.TypeOfNode(call.Callee).Kind)
-	if a.typeContainsRefOrAlloc(funType.Return) {
+	if a.typeContains(funType.Return, borrowRefOrAllocator|borrowShape) {
 		result := allArgs
-		if funType.NoescapeReturn && a.typeCanEscape(funType.Return) {
+		if funType.NoescapeReturn && a.typeContains(funType.Return, borrowAny) {
 			result = result.Merge(Chain{TaintSet{a.scopeState(nodeID).ScopeTaint}})
 		}
 		// Carry closure captures / fun-typed-param caller-taints through the
@@ -1069,7 +1035,12 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 			if !arm.Ref {
 				carries := false
 				for _, p := range arm.Patterns {
-					if pt := a.env.TypeOfNode(p); pt != nil && a.typeContainsRefAllocOrFfiPtr(pt.ID) {
+					// borrowSlice is intentionally excluded: slice taint through
+					// container methods is too coarse to keep on a value binding
+					// without false positives (it would flag returning a slice read
+					// out of a local iterator that borrows a longer-lived param).
+					if pt := a.env.TypeOfNode(p); pt != nil &&
+						a.typeContains(pt.ID, borrowRefOrAllocator|borrowFFIPtr|borrowClosure) {
 						carries = true
 						break
 					}
@@ -1149,7 +1120,9 @@ func (a *LifetimeCheck) elseBindingChain(match ast.Match, exprChain Chain) Chain
 			}
 		}
 	}
-	if slices.ContainsFunc(uncoveredVariants(covered, union), a.typeContainsRefAllocOrFfiPtr) {
+	if slices.ContainsFunc(uncoveredVariants(covered, union), func(t TypeID) bool {
+		return a.typeContains(t, borrowRefOrAllocator|borrowFFIPtr|borrowClosure)
+	}) {
 		return exprChain
 	}
 	return nil
@@ -1242,8 +1215,7 @@ func (a *LifetimeCheck) analyzeFunParam(nodeID ast.NodeID, param ast.FunParam) {
 	ss := a.scopeState(nodeID)
 	var callerChain Chain
 	paramTypeID := a.env.TypeOfNode(nodeID).ID
-	if a.typeCanEscape(paramTypeID) || a.typeContainsRefOrAlloc(paramTypeID) ||
-		a.funTypeReturnCanEscape(paramTypeID) {
+	if a.typeContains(paramTypeID, borrowAny|borrowShape) || a.funTypeReturnCanEscape(paramTypeID) {
 		callerChain = Chain{TaintSet{a.newTaintID()}}
 	}
 	ss.Vars[param.Name.Name] = &VarTaint{nodeID, ss.ScopeTaint, callerChain}
@@ -1258,119 +1230,84 @@ func (a *LifetimeCheck) funTypeReturnCanEscape(typeID TypeID) bool {
 		return false
 	}
 	funType, ok := a.env.Type(typeID).Kind.(FunType)
-	return ok && a.typeCanEscape(funType.Return)
+	return ok && a.typeContains(funType.Return, borrowAny)
 }
 
-// typeContainsRefOrAlloc returns true if the type is, or recursively contains,
-// a RefType or AllocatorType. Used to decide whether a param needs a caller taint.
-//   - `Int` --> false
-//   - `&Int` --> true
-//   - `struct Foo { ptr &Int }` --> true
-func (a *LifetimeCheck) typeContainsRefOrAlloc(typeID TypeID) bool {
+// borrowKind names a category of type that can carry a borrow out of its scope.
+// The lifetime walks share one recursive fold (typeContains) and differ only in
+// which kinds they look for, so a new type case lands in one place and no walk
+// can silently omit it (the bug class behind G09/G31/G32).
+type borrowKind uint8
+
+const (
+	borrowRefOrAllocator borrowKind = 1  // a `&`/`&mut` reference or an allocator
+	borrowFFIPtr         borrowKind = 2  // a raw ffi pointer (the empty builtin-ptr struct)
+	borrowSlice          borrowKind = 4  // a by-value slice (its data is borrowed)
+	borrowClosure        borrowKind = 8  // a closure (it may capture references)
+	borrowShape          borrowKind = 16 // a type param whose constraining shape carries refs
+	borrowAny = borrowRefOrAllocator | borrowFFIPtr | borrowSlice | borrowClosure
+)
+
+// typeContains reports whether typeID is, or transitively contains by value, a
+// value of any kind in `want`.
+func (a *LifetimeCheck) typeContains(typeID TypeID, want borrowKind) bool {
 	if typeID == InvalidTypeID {
 		return false
 	}
-	typ := a.env.Type(typeID)
-	switch kind := typ.Kind.(type) {
+	switch kind := a.env.Type(typeID).Kind.(type) {
 	case RefType, AllocatorType:
-		return true
+		return want&borrowRefOrAllocator != 0
+	case FunType:
+		return want&borrowClosure != 0
+	case SliceType:
+		// A bare slice is itself a carrier when wanted; otherwise look for a
+		// carrier in its element (e.g. `[]&Int` carries a ref).
+		return want&borrowSlice != 0 || a.typeContains(kind.Elem, want)
 	case StructType:
+		if want&borrowFFIPtr != 0 && IsBuiltinPtrStruct(kind) {
+			return true
+		}
 		for _, field := range kind.Fields {
-			if a.typeContainsRefOrAlloc(field.Type) {
+			if a.typeContains(field.Type, want) {
 				return true
 			}
 		}
 	case UnionType:
-		if slices.ContainsFunc(kind.Variants, a.typeContainsRefOrAlloc) {
-			return true
-		}
+		return slices.ContainsFunc(kind.Variants, func(v TypeID) bool {
+			return a.typeContains(v, want)
+		})
+	case ArrayType:
+		return a.typeContains(kind.Elem, want)
 	case TypeParamType:
-		if kind.Shape == nil {
-			return false
-		}
-		shape := base.Cast[ShapeType](a.env.Type(*kind.Shape).Kind)
-		for _, field := range shape.Fields {
-			if a.typeContainsRefOrAlloc(field.Type) {
-				return true
-			}
-		}
-		// A shape method that yields refs or takes refs makes T effectively
-		// ref-carrying: passing/storing a T means we may be moving refs around,
-		// so the param needs a caller taint for side-effect tracking.
-		shapeDeclID := a.env.DeclNode(*kind.Shape)
-		if shapeDeclID != 0 {
-			if shapeNode, ok := a.ast.Node(shapeDeclID).Kind.(ast.Shape); ok {
-				for _, funDeclNodeID := range shapeNode.Funs {
-					funDecl, ok := a.ast.Node(funDeclNodeID).Kind.(ast.FunDecl)
-					if !ok {
-						continue
-					}
-					if a.funDeclTypeContainsRefOrAlloc(funDecl) {
-						return true
-					}
-				}
-			}
-		}
-	case ArrayType:
-		return a.typeContainsRefOrAlloc(kind.Elem)
-	case SliceType:
-		return a.typeContainsRefOrAlloc(kind.Elem)
+		return want&borrowShape != 0 && kind.Shape != nil && a.shapeCarriesRefs(*kind.Shape)
 	}
 	return false
 }
 
-// typeContainsRefAllocOrFfiPtr extends typeContainsRefOrAlloc with raw ffi
-// pointers (`ffi.Ptr`/`ffi.PtrMut`, the empty builtin-ptr structs). An ffi
-// pointer derived from Metall memory carries that memory's lifetime, so a union
-// value holding one (e.g. in a struct field) must keep the borrow when unwrapped
-// via `try`/`match`. Bare slices are deliberately NOT added here: their taint
-// attribution through container methods is currently too coarse to propagate
-// through a value binding without false positives (it would flag returning a
-// slice read out of a local iterator that actually borrows a longer-lived param).
-func (a *LifetimeCheck) typeContainsRefAllocOrFfiPtr(typeID TypeID) bool {
-	if typeID == InvalidTypeID {
-		return false
-	}
-	switch kind := a.env.Type(typeID).Kind.(type) {
-	case RefType, AllocatorType:
-		return true
-	case StructType:
-		if IsBuiltinPtrStruct(kind) {
+// shapeCarriesRefs reports whether a shape's fields or method signatures carry a
+// ref or allocator, which makes a type param constrained by it effectively
+// ref-carrying: passing/storing such a T may move refs around, so the param
+// needs a caller taint for side-effect tracking.
+func (a *LifetimeCheck) shapeCarriesRefs(shapeTypeID TypeID) bool {
+	shape := base.Cast[ShapeType](a.env.Type(shapeTypeID).Kind)
+	for _, field := range shape.Fields {
+		if a.typeContains(field.Type, borrowRefOrAllocator|borrowShape) {
 			return true
 		}
-		return slices.ContainsFunc(kind.Fields, func(f StructField) bool {
-			return a.typeContainsRefAllocOrFfiPtr(f.Type)
-		})
-	case UnionType:
-		return slices.ContainsFunc(kind.Variants, a.typeContainsRefAllocOrFfiPtr)
-	case ArrayType:
-		return a.typeContainsRefAllocOrFfiPtr(kind.Elem)
-	case SliceType:
-		return a.typeContainsRefAllocOrFfiPtr(kind.Elem)
 	}
-	return false
-}
-
-// typeContainsSlice reports whether the type is, or recursively contains by
-// value, a SliceType (so `Str`, which wraps a `[]U8`, counts). A slice borrows
-// its backing storage, so storing one into a &mut param leaks that borrow.
-// Refs are already covered by typeContainsRefOrAlloc; this adds the by-value
-// slice case it omits (design-review F04).
-func (a *LifetimeCheck) typeContainsSlice(typeID TypeID) bool {
-	if typeID == InvalidTypeID {
+	shapeDeclID := a.env.DeclNode(shapeTypeID)
+	if shapeDeclID == 0 {
 		return false
 	}
-	switch kind := a.env.Type(typeID).Kind.(type) {
-	case SliceType:
-		return true
-	case StructType:
-		return slices.ContainsFunc(kind.Fields, func(f StructField) bool {
-			return a.typeContainsSlice(f.Type)
-		})
-	case UnionType:
-		return slices.ContainsFunc(kind.Variants, a.typeContainsSlice)
-	case ArrayType:
-		return a.typeContainsSlice(kind.Elem)
+	shapeNode, ok := a.ast.Node(shapeDeclID).Kind.(ast.Shape)
+	if !ok {
+		return false
+	}
+	for _, funDeclNodeID := range shapeNode.Funs {
+		if funDecl, ok := a.ast.Node(funDeclNodeID).Kind.(ast.FunDecl); ok &&
+			a.funDeclTypeContainsRefOrAlloc(funDecl) {
+			return true
+		}
 	}
 	return false
 }
@@ -1403,38 +1340,6 @@ func (a *LifetimeCheck) funDeclTypeContainsRefOrAlloc(funDecl ast.FunDecl) bool 
 		}
 	}
 	return check(funDecl.ReturnType)
-}
-
-// typeCanEscape is like typeContainsRefOrAlloc but also considers slices
-// and ffi::Ptr as pointer-carrying types. Used for noescape validation where
-// a param's slice or ffi pointer must not escape.
-func (a *LifetimeCheck) typeCanEscape(typeID TypeID) bool {
-	if typeID == InvalidTypeID {
-		return false
-	}
-	typ := a.env.Type(typeID)
-	switch kind := typ.Kind.(type) {
-	case RefType, AllocatorType, SliceType, FunType:
-		// A FunType (closure) can carry captured references, so a noescape return
-		// of one must be confined like any other reference-bearing value.
-		return true
-	case StructType:
-		if IsBuiltinPtrStruct(kind) {
-			return true
-		}
-		for _, field := range kind.Fields {
-			if a.typeCanEscape(field.Type) {
-				return true
-			}
-		}
-	case UnionType:
-		if slices.ContainsFunc(kind.Variants, a.typeCanEscape) {
-			return true
-		}
-	case ArrayType:
-		return a.typeCanEscape(kind.Elem)
-	}
-	return false
 }
 
 func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
@@ -1645,7 +1550,7 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		a.Check(paramNodeID)
 		name := base.Cast[ast.FunParam](a.ast.Node(paramNodeID).Kind).Name.Name
 		paramTypeID := a.env.TypeOfNode(paramNodeID).ID
-		isSrc := a.typeContainsRefOrAlloc(paramTypeID) || a.typeContainsSlice(paramTypeID)
+		isSrc := a.typeContains(paramTypeID, borrowRefOrAllocator|borrowShape|borrowSlice|borrowClosure)
 		if vt := a.lookupVar(paramNodeID, name); vt != nil {
 			for _, t := range vt.Chain.CarriedTaints() {
 				paramTaintToIdx[t] = i
@@ -1916,7 +1821,7 @@ func (a *LifetimeCheck) checkMeaninglessNoescape(fun ast.Fun, funType FunType) {
 		return
 	}
 	meaningless := func(typeID TypeID) bool {
-		return !a.typeContainsTypeParam(typeID) && !a.typeCanEscape(typeID)
+		return !a.typeContainsTypeParam(typeID) && !a.typeContains(typeID, borrowAny)
 	}
 	if funType.NoescapeReturn && fun.ReturnType != 0 && meaningless(funType.Return) {
 		a.diag(a.ast.Node(fun.ReturnType).Span,
@@ -1935,7 +1840,7 @@ func (a *LifetimeCheck) checkMeaninglessNoescape(fun ast.Fun, funType FunType) {
 func (a *LifetimeCheck) checkNoescapeEffects(
 	span base.Span, paramName string, paramIdx int, funType FunType, effects *FunEffects,
 ) {
-	if a.typeCanEscape(funType.Return) && slices.Contains(effects.ReturnTaints, paramIdx) {
+	if a.typeContains(funType.Return, borrowAny) && slices.Contains(effects.ReturnTaints, paramIdx) {
 		a.diag(span, "noescape parameter %q must not escape through the return value", paramName)
 	}
 	for targetIdx, srcIndices := range effects.SideEffects {
@@ -1946,7 +1851,7 @@ func (a *LifetimeCheck) checkNoescapeEffects(
 		if ref, ok := a.env.Type(targetTypeID).Kind.(RefType); ok {
 			targetTypeID = ref.Type
 		}
-		if !a.typeCanEscape(targetTypeID) {
+		if !a.typeContains(targetTypeID, borrowAny) {
 			continue
 		}
 		if slices.Contains(srcIndices, paramIdx) {
@@ -2048,7 +1953,7 @@ func (s *shapeContractsCheck) expectedEffects(declID ast.NodeID, funDecl ast.Fun
 	}
 	// All parameters may flow to the return value, but only if the return type
 	// can carry references. No parameters flow into each other (no side effects).
-	if s.typeContainsRefOrAlloc(calleeType.Return) {
+	if s.typeContains(calleeType.Return, borrowRefOrAllocator|borrowShape) {
 		for i := range funDecl.Params {
 			effects.ReturnTaints = append(effects.ReturnTaints, i)
 		}
