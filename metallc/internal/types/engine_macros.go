@@ -20,7 +20,7 @@ func (e *Engine) checkMacroModule(
 	for _, declNodeID := range module.Decls {
 		node := e.ast.Node(declNodeID)
 		fun, ok := node.Kind.(ast.Fun)
-		if !ok || len(fun.Params) < 2 {
+		if !ok || len(fun.Params) < 1 {
 			continue
 		}
 		if ok := e.checkMacroFun(node, fun); ok {
@@ -36,18 +36,16 @@ func (e *Engine) checkMacroModule(
 }
 
 func (e *Engine) checkMacroFun(node *ast.Node, fun ast.Fun) bool {
-	// A macro function is identified by its trailing parameters: `&mut StrWriter`
-	// then an allocator. The names are irrelevant; only the types matter.
-	lastTwo := fun.Params[len(fun.Params)-2:]
-	writerType, status := e.Query(lastTwo[0])
-	if status.Failed() {
+	// A macro function is a public function whose trailing parameter is
+	// `&mut StrWriter`. Private functions are ordinary helpers, not macros.
+	if !fun.Pub {
 		return false
 	}
-	allocType, status := e.Query(lastTwo[1])
-	if status.Failed() || !e.isStrWriterRef(writerType) || !e.holdsAllocator(allocType) {
+	writerType, status := e.Query(fun.Params[len(fun.Params)-1])
+	if status.Failed() || !e.isStrWriterRef(writerType) {
 		return false
 	}
-	visibleParams := fun.Params[:len(fun.Params)-2]
+	visibleParams := fun.Params[:len(fun.Params)-1]
 	retTypeID, status := e.Query(fun.ReturnType)
 	if status.Failed() {
 		return false

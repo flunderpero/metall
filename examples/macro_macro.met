@@ -1,4 +1,4 @@
-fun apply(s Str, sw &mut StrWriter, @a Arena) void {
+pub fun apply(s Str, sw &mut StrWriter) void {
     let @local = Arena()
     sw.write(fm#"
         fun hello_from_macro(s Str, @a Arena) Str {

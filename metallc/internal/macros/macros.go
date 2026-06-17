@@ -41,7 +41,7 @@ func GenerateWrapper(macroSource string, funName string, args []MacroArg) string
 	if len(args) > 0 {
 		sb.WriteString(", ")
 	}
-	sb.WriteString("sw, @a)\n")
+	sb.WriteString("sw)\n")
 	sb.WriteString("    DebugIntern.print_str(sw.as_str())\n")
 	sb.WriteString("}\n")
 	return sb.String()

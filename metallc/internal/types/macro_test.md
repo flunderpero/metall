@@ -6,17 +6,20 @@
 ```
 
 ```module.hello_macro
-fun apply(sw &mut StrWriter, @a Arena) void {
+pub fun apply(sw &mut StrWriter) void {
     sw.write("fun greet() void { DebugIntern.print_str(\"hi\") }")
 }
 ```
 
 ```module.no_macro_funs_macro
-fun helper(x Int) Int { x }
+-- A private writer function is a helper, not a macro.
+fun helper(sw &mut StrWriter) void {
+    sw.write("noop")
+}
 ```
 
 ```module.param_macro
-fun apply(n Int, sw &mut StrWriter, @a Arena) void {
+pub fun apply(n Int, sw &mut StrWriter) void {
     sw.write("fun value() Int { ")
     sw.write(n)
     sw.write(" }")
@@ -34,9 +37,13 @@ fun main() void {}
 ```
 
 ```error
-local/no_macro_funs_macro.met:1:1: macro modules must contain at least one macro function
-    fun helper(x Int) Int { x }
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+local/no_macro_funs_macro.met:2:1: macro modules must contain at least one macro function
+    -- A private writer function is a helper, not a macro.
+    fun helper(sw &mut StrWriter) void {
+    ^
+        sw.write("noop")
+    }
+    ^
 ```
 
 **non-macro call at top level**

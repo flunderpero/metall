@@ -28,7 +28,7 @@ hello std
 ```module.type_name_macro
 use std.comp
 
-fun type_name(name Str, info comp.Type, sw &mut StrWriter, @a Arena) void {
+pub fun type_name(name Str, info comp.Type, sw &mut StrWriter) void {
     sw.write("fun ")
     sw.write(name)
     sw.write("() Str { ")
@@ -48,7 +48,7 @@ fun type_name(name Str, info comp.Type, sw &mut StrWriter, @a Arena) void {
     sw.write("\n")
 }
 
-fun field_count(name Str, info comp.Type, sw &mut StrWriter, @a Arena) void {
+pub fun field_count(name Str, info comp.Type, sw &mut StrWriter) void {
     match info {
         case comp.StructType s: {
             sw.write("fun ")
@@ -70,7 +70,7 @@ fun quote(sw &mut StrWriter) void {
     sw.write('"')
 }
 
-fun gen_fmt(info comp.Type, sw &mut StrWriter, @a Arena) void {
+pub fun gen_fmt(info comp.Type, sw &mut StrWriter) void {
     match info {
         case comp.StructType s: {
             sw.write("fun ")
@@ -268,7 +268,7 @@ fun main() void {
 ```module.enum_reflect_macro
 use std.comp
 
-fun variant_names(name Str, info comp.Type, sw &mut StrWriter, @a Arena) void {
+pub fun variant_names(name Str, info comp.Type, sw &mut StrWriter) void {
     match info {
         case comp.EnumType e: {
             sw.write("fun ") sw.write(name) sw.write("() Str { ")

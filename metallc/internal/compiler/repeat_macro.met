@@ -1,4 +1,4 @@
-fun apply(n Int, sw &mut StrWriter, @a Arena) void {
+pub fun apply(n Int, sw &mut StrWriter) void {
     sw.write("fun repeat() void {\n")
     for i in 0..n {
         sw.write("    DebugIntern.print_str(\"hello\")\n")
