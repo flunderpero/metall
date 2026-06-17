@@ -1764,5 +1764,10 @@ pub fun F32.fmt_into(v F32, dst []mut U8, precision Int = -1, width Int = 0) ?In
     v.to_float().fmt_into(dst, precision, width)
 }
 
+pub fun Float.sqrt(f Float) Float { unsafe __llvm_sqrt_f64(f) }
+pub fun F32.sqrt(f F32) F32 { unsafe __llvm_sqrt_f32(f) }
+
 extern fun __strtod(buf []U8, consumed &mut Int) Float
 extern fun __snprintf_float(v Float, prec Int, mode U8, buf []mut U8) Int
+extern("llvm.sqrt.f32") fun __llvm_sqrt_f32(x F32) F32
+extern("llvm.sqrt.f64") fun __llvm_sqrt_f64(x Float) Float

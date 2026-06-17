@@ -260,6 +260,18 @@ fun main() void {
         }
     })
     _ = roundtrip_suite.run()
+
+    let math_suite = test.Suite.new("math", @local)
+    math_suite.test("Float.sqrt", fun() !void {
+        try test.eq(3.0, 9.0.sqrt())
+    })
+    math_suite.test("F32.sqrt", fun() !void {
+        try test.eq(F32(3.0), F32(9.0).sqrt())
+    })
+    math_suite.test("sqrt(-1) is NaN", fun() !void {
+        try test.eq(true, (-1.0).sqrt().is_nan())
+    })
+    _ = math_suite.run()
 }
 
 fun fmt_float(v Float, @a Arena) Str {
