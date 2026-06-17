@@ -71,7 +71,6 @@ pub fun Duration.fmt(d Duration, sw &mut StrWriter) void {
         sw.write("0s")
         return void
     }
-    let @local = Arena()
     mut nsec = d.nsec
     if d.nsec < 0 {
         sw.write('-')
@@ -80,28 +79,16 @@ pub fun Duration.fmt(d Duration, sw &mut StrWriter) void {
 
     let steps = [1, microsecond.nsec, millisecond.nsec, second.nsec, minute.nsec, hour.nsec, day.nsec]
     let units = ["ns", "µs", "ms", "s", "m", "h", "d"]
-    mut fraction_width = -3
     if nsec < second.nsec {
         -- For values below 1s we use the smaller units.
         for i in 0..steps.len {
             let t = steps[i]
             if nsec < t {
                 let div = steps[i - 1]
-                sw.write(nsec / div)
-                let rem = nsec % div
-                if rem != 0 {
-                    sw.write('.')
-                    -- todo: StrWriter should support rtrim
-                    mut buf = [48 of U8(0)][..]
-                    let n = try 
-                        rem.fmt_into(buf, 10, false, fraction_width) 
-                        else { panic("reserved too few bytes") }
-                    sw.write(Str.from_utf8_lossy(buf[0..n], @local).rtrim(['0'][..]))
-                }
+                sw.write(nsec.to_float() / div.to_float())
                 sw.write(units[i - 1])
                 return void
             }
-            fraction_width += 3
         }
     }
     mut step = steps.len - 1
@@ -121,17 +108,9 @@ pub fun Duration.fmt(d Duration, sw &mut StrWriter) void {
         sw.write(n)
         sw.write(units[step])
         step -= 1
-    } 
-    -- The remaining seconds fraction.
-    sw.write(nsec / second.nsec)
-    let rem = nsec % second.nsec
-    if rem > 0 {
-        sw.write('.')
-        -- todo: StrWriter should support rtrim
-        mut buf = [48 of U8(0)][..]
-        let n = try rem.fmt_into(buf, 10, false, 9) else { panic("reserved too few bytes")}
-        sw.write(Str.from_utf8_lossy(buf[0..n], @local).rtrim(['0'][..]))
     }
+    -- The remaining seconds and fraction.
+    sw.write(nsec.to_float() / second.nsec.to_float())
     sw.write('s')
 }
 
