@@ -453,6 +453,222 @@ fun main() void {
 [10, 20, 30]
 ```
 
+## Strings
+
+A string literal is a `Str`: UTF-8 text. A backslash starts an escape: `\n` is a
+newline, `\t` a tab, `\"` a quote, `\\` a backslash, `\xNN` the code point with that
+two-hex-digit value (so `\xe4` is `U+00E4`, 'ä'), and `\u{...}` any Unicode code
+point by its hex number.
+
+```metall
+use std.io
+
+fun main() void {
+    io.println("line one\nline two")
+    io.println("quote \" backslash \\ umlaut \xe4 (same as \u{E4})")
+}
+```
+
+```output
+line one
+line two
+quote " backslash \ umlaut ä (same as ä)
+```
+
+A byte string, written `b"..."`, is a `[]U8` of raw bytes rather than text. Reach
+for it when you are working with binary data. Here `\xNN` is a literal byte rather
+than a code point, so `\xe4` is the single byte `228` (in a `Str` it would be the
+two UTF-8 bytes of 'ä').
+
+```metall
+use std.io
+
+fun main() void {
+    let bytes = b"AB\xe4"
+    io.println(bytes.len)
+    io.println(bytes)
+}
+```
+
+```output
+3
+[65, 66, 228]
+```
+
+A multi-line string, written `m"..."`, spans several lines and lets you indent the
+text to match your code. Two rules make that work:
+
+- The opening `"` ends its line, and the closing `"` sits on its own line. The newline
+  after the opening quote, and the whitespace and newline before the closing quote,
+  are not part of the string. They are there only so each quote can sit on its own
+  line. The string is exactly the lines in between, with no blank line above or below.
+- Those lines are then shifted left by the run of leading whitespace they all share,
+  so the indentation you added to match your code does not end up in the string. Any
+  indentation beyond that shared amount is kept, so the shape of the text survives.
+
+Below, every line is indented eight spaces to sit under the code. That shared indent
+is removed, while the two extra spaces on the list items stay:
+
+```metall
+use std.io
+
+fun main() void {
+    io.println(m"
+        shopping list:
+          - apples
+          - pears
+        ")
+}
+```
+
+```output
+shopping list:
+  - apples
+  - pears
+```
+
+## Format Strings
+
+An f-string, written `f"..."`, fills its `{...}` placeholders with the values of the
+expressions inside them. Each value must be printable: it needs a `fmt` method (the
+`HasFmt` shape). Every built-in type has one, and you can add one to your own types.
+
+On its own, an f-string is not yet a string. You choose where its text goes.
+`.build(@a)` allocates a new `Str` in arena `@a`. `.write_to(sw)` appends to a
+`StrWriter` you already have and allocates nothing.
+
+```metall
+use std.io
+
+fun main() void {
+    let @a = Arena()
+    let name = "Ada"
+    let age = 36
+    io.println(f"{name} is {age}".build(@a))
+    io.println(f"next year: {age + 1}".build(@a))
+}
+```
+
+```output
+Ada is 36
+next year: 37
+```
+
+For text that contains braces, wrap the f-string in `#` marks, written `f#"..."#`.
+Inside, braces are ordinary characters, and you interpolate with `#{...}`.
+
+```metall
+use std.io
+
+fun main() void {
+    let @a = Arena()
+    let n = 3
+    io.println(f#"the set {1, 2, 3} has #{n} members"#.build(@a))
+}
+```
+
+```output
+the set {1, 2, 3} has 3 members
+```
+
+Just like plain strings, an f-string can be a byte string (`fb"..."`) or multi-line
+(`fm"..."`).
+
+```metall
+use std.io
+
+fun main() void {
+    let @a = Arena()
+    let n = 42
+    let bytes = fb"n={n}".build(@a)
+    io.println(bytes.len)
+    io.println(fm"
+        name: Ada
+        n:    {n}
+        ".build(@a))
+}
+```
+
+```output
+4
+name: Ada
+n:    42
+```
+
+Put a `:` after an expression to format it. Each type accepts its own settings:
+integers take a `base` with an optional `upper` and `width`, floats take a
+`precision` and a `width`, and bools take the word to print for each case.
+
+```metall
+use std.io
+
+fun main() void {
+    let @a = Arena()
+    io.println(f"hex: {255:base=16, upper=true}".build(@a))
+    io.println(f"padded: {7:width=3}".build(@a))
+    io.println(f"pi: {3.14159:precision=2}".build(@a))
+    io.println(f"flag: {true:true_str="yes", false_str="no"}".build(@a))
+}
+```
+
+```output
+hex: FF
+padded: 007
+pi: 3.14
+flag: yes
+```
+
+To make your own type accept those settings, give it a `fmt_ext` method whose extra
+parameters are the settings. A plain `fmt` is enough for `{x}`. The `{x:...}` form
+calls `fmt_ext` instead.
+
+```metall
+use std.io
+
+struct Temp { degrees Int }
+
+-- `fmt` makes Temp printable, so it works in any f-string.
+pub fun Temp.fmt(t Temp, sw &mut StrWriter) void {
+    sw.write(t.degrees)
+}
+
+-- `fmt_ext` adds a setting for the `:` form: which unit to append.
+pub fun Temp.fmt_ext(t Temp, sw &mut StrWriter, unit Str = "C") void {
+    sw.write(t.degrees)
+    sw.write(unit)
+}
+
+fun main() void {
+    let @a = Arena()
+    let t = Temp(20)
+    io.println(f"plain {t}".build(@a))
+    io.println(f"with unit {t:unit="F"}".build(@a))
+}
+```
+
+```output
+plain 20
+with unit 20F
+```
+
+`.write_to` assembles a string from several pieces without allocating for each one:
+
+```metall
+use std.io
+
+fun main() void {
+    let @a = Arena()
+    let sw = StrWriter.new(64, @a)
+    f"x = {1}".write_to(sw)
+    f", y = {2}".write_to(sw)
+    io.println(sw.as_str())
+}
+```
+
+```output
+x = 1, y = 2
+```
+
 ## Terminology
 
 ### Generic Type Terms
