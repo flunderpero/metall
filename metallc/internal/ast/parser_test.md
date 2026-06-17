@@ -1371,32 +1371,6 @@ Block()
       target=Ident(name="$fstr")
 ```
 
-**Literal braces are written doubled**
-
-```metall
-f"{{lit}} {x}".build(@a)
-```
-
-```ast
-Block()
-  exprs[0]=Var(name="$fstr")
-    expr=Call()
-      callee=Ident(name="StrWriter.new")
-      args[0]=Int(value=38)
-      args[1]=Ident(name="@a")
-  exprs[1]=Call()
-    callee=FieldAccess(field=write)
-      target=Ident(name="$fstr")
-    args=String(value="{lit} ")
-  exprs[2]=Call()
-    callee=FieldAccess(field=write)
-      target=Ident(name="$fstr")
-    args=Ident(name="x")
-  exprs[3]=Call()
-    callee=FieldAccess(field=as_str)
-      target=Ident(name="$fstr")
-```
-
 **An interpolation may hold any expression**
 
 ```metall
@@ -1717,7 +1691,7 @@ f"a}".build(@a)
 ```
 
 ```error
-test.met:1:4: unmatched '}' in format string; write '}}' for a literal brace
+test.met:1:4: unmatched '}' in format string (use f#"..."# for literal braces)
     f"a}".build(@a)
        ^
 ```

@@ -514,8 +514,8 @@ fun main() void {
     -- Each line is labeled with the modifier it exercises, so the output maps
     -- one-to-one to the input.
 
-    -- f: a string, an expression, a bool, a float, and {{ }} literal braces.
-    DebugIntern.print_str(f"f: {"s"} {1 + 2} {true} {3.5} {{lit}}".build(@a))
+    -- f: a string, an expression, a bool, and a float.
+    DebugIntern.print_str(f"f: {"s"} {1 + 2} {true} {3.5}".build(@a))
 
     -- f#: #{...} interpolates; bare braces stay literal.
     DebugIntern.print_str(f#"f#: {bare} #{x}"#.build(@a))
@@ -555,7 +555,7 @@ fun main() void {
 ```
 
 ```output
-f: s 3 true 3.5 {lit}
+f: s 3 true 3.5
 f#: {bare} 42
 f##: #{lone} 42
 if: pos

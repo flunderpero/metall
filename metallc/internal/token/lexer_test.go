@@ -319,11 +319,6 @@ func TestLexer(t *testing.T) {
 			{FStringText, `x\u{41}`, "1:3-1:9"},
 			{FStringEnd, `"`, "1:10"},
 		}},
-		{"f-string collapses literal braces", `f"a{{b}}c"`, []want{
-			{FStringStart, `f"`, "1:1-1:2"},
-			{FStringText, "a{b}c", "1:3-1:9"},
-			{FStringEnd, `"`, "1:10"},
-		}},
 		// An interpolation balances its own braces; the `}` that closes a nested
 		// block is an RCurly, only the outermost `}` ends the interpolation.
 		{"f-string balances braces in an interpolation", `f"{a{b}c}"`, []want{
@@ -348,7 +343,7 @@ func TestLexer(t *testing.T) {
 		{"f-string unmatched closing brace", `f"a}b"`, []want{
 			{FStringStart, `f"`, "1:1-1:2"},
 			{FStringText, "a", "1:3"},
-			{Error, "unmatched '}' in format string; write '}}' for a literal brace", "1:4"},
+			{Error, `unmatched '}' in format string (use f#"..."# for literal braces)`, "1:4"},
 			{FStringText, "b", "1:5"},
 			{FStringEnd, `"`, "1:6"},
 		}},

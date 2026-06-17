@@ -628,7 +628,7 @@ func lexFString(source *base.Source, start, modLen, sigils int) []Token { //noli
 		// Interpolation opener: `{` (plain) or `#`*N`{` (sigil).
 		openLen := 0
 		if sigils == 0 {
-			if c == '{' && (idx+1 >= len(content) || content[idx+1] != '{') {
+			if c == '{' {
 				openLen = 1
 			}
 		} else if matchSigils(content, idx, sigils) && idx+sigils < len(content) && content[idx+sigils] == '{' {
@@ -663,20 +663,15 @@ func lexFString(source *base.Source, start, modLen, sigils int) []Token { //noli
 			fragStart = idx
 			continue
 		}
-		// Literal text: `{{`/`}}` collapse to one brace, a lone `}` is an error, and
-		// an escape is copied raw so a `\u{...}` brace is not read as an opener.
+		// Literal text. In a plain f-string a `{` always opens an interpolation, so a
+		// bare `}` is unmatched and errors (literal braces need the f#"..."# form). An
+		// escape is copied raw so a `\u{...}` brace is not read as an opener.
 		switch {
-		case sigils == 0 && c == '{' && idx+1 < len(content) && content[idx+1] == '{':
-			frag = append(frag, '{')
-			idx += 2
-		case sigils == 0 && c == '}' && idx+1 < len(content) && content[idx+1] == '}':
-			frag = append(frag, '}')
-			idx += 2
 		case sigils == 0 && c == '}':
 			// Emit an error at the stray `}` but keep scanning, so the f-string still
 			// terminates and the lexer recovers cleanly after it.
 			flush(idx)
-			msg := "unmatched '}' in format string; write '}}' for a literal brace"
+			msg := `unmatched '}' in format string (use f#"..."# for literal braces)`
 			toks = append(toks, Token{Error, msg, base.NewSpan(source, idx, idx)})
 			idx++
 			fragStart = idx
