@@ -1557,9 +1557,9 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, wid
         if dst.len < len {
             return None()
         }
-        dst[0] = '0'
-        for i in 1..len {
-            dst[i] = '0'
+        dst[len - 1] = '0'
+        for i in 0..len - 1 {
+            dst[i] = ' '
         }
         return len
     }
@@ -1608,12 +1608,13 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, wid
         -- todo: This can be massively improved. We don't need to divide in each step.
         x /= base
     }
-    for i >= 0 {
-        dst[i] = '0'
+    if v < 0 {
+        dst[i] = '-'
         i -= 1
     }
-    if v < 0 {
-        dst[0] = '-'
+    for i >= 0 {
+        dst[i] = ' '
+        i -= 1
     }
     len
 }
@@ -1630,9 +1631,9 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, wid
         if dst.len < len {
             return None()
         }
-        dst[0] = '0'
-        for i in 1..len {
-            dst[i] = '0'
+        dst[len - 1] = '0'
+        for i in 0..len - 1 {
+            dst[i] = ' '
         }
         return len
     }
@@ -1670,7 +1671,7 @@ pub fun U64.fmt_into(v U64, dst []mut U8, base Int = 10, upper Bool = false, wid
         x /= base
     }
     for i >= 0 {
-        dst[i] = '0'
+        dst[i] = ' '
         i -= 1
     }
     len

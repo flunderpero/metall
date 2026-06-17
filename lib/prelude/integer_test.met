@@ -489,13 +489,13 @@ fun main() void {
         try test.eq("1234", Str.from_utf8_lossy(buf[0..4], @local))
 
         try test.eq(Option(8), 1234.fmt_into(buf, 10, false, 8))
-        try test.eq("00001234", Str.from_utf8_lossy(buf[0..8], @local))
+        try test.eq("    1234", Str.from_utf8_lossy(buf[0..8], @local))
 
         try test.eq(Option(8), -1234.fmt_into(buf, 10, false, 8))
-        try test.eq("-0001234", Str.from_utf8_lossy(buf[0..8], @local))
+        try test.eq("   -1234", Str.from_utf8_lossy(buf[0..8], @local))
 
         try test.eq(Option(4), 0.fmt_into(buf, 10, false, 4))
-        try test.eq("0000", Str.from_utf8_lossy(buf[0..4], @local))
+        try test.eq("   0", Str.from_utf8_lossy(buf[0..4], @local))
     })
     fmt_into_suite.test("Int.fmt_into (min and max, all bases)", fun() !void {
         let @local = Arena()
@@ -555,10 +555,10 @@ fun main() void {
         try test.eq("1234", Str.from_utf8_lossy(buf[0..4], @local))
 
         try test.eq(Option(8), U64(1234).fmt_into(buf, 10, false, 8))
-        try test.eq("00001234", Str.from_utf8_lossy(buf[0..8], @local))
+        try test.eq("    1234", Str.from_utf8_lossy(buf[0..8], @local))
 
         try test.eq(Option(4), U64(0).fmt_into(buf, 10, false, 4))
-        try test.eq("0000", Str.from_utf8_lossy(buf[0..4], @local))
+        try test.eq("   0", Str.from_utf8_lossy(buf[0..4], @local))
     })
     fmt_into_suite.test("U64.fmt_into (min and max, all bases)", fun() !void {
         let @local = Arena()
@@ -658,20 +658,20 @@ fun main() void {
         try test.eq("ff", fmt_ext_int(255, 16, false, 0, @local))
         try test.eq("FF", fmt_ext_int(255, 16, true, 0, @local))
         try test.eq("101", fmt_ext_int(5, 2, false, 0, @local))
-        try test.eq("00042", fmt_ext_int(42, 10, false, 5, @local))
-        try test.eq("-0042", fmt_ext_int(-42, 10, false, 5, @local))
-        try test.eq("00FF", fmt_ext_int(255, 16, true, 4, @local))
+        try test.eq("   42", fmt_ext_int(42, 10, false, 5, @local))
+        try test.eq("  -42", fmt_ext_int(-42, 10, false, 5, @local))
+        try test.eq("  FF", fmt_ext_int(255, 16, true, 4, @local))
     })
     fmt_ext_suite.test("U64.fmt_ext", fun() !void {
         let @local = Arena()
         try test.eq("FF", fmt_ext_u64(U64(255), 16, true, 0, @local))
-        try test.eq("00042", fmt_ext_u64(U64(42), 10, false, 5, @local))
+        try test.eq("   42", fmt_ext_u64(U64(42), 10, false, 5, @local))
     })
     fmt_ext_suite.test("narrow integer fmt_ext delegates base/upper/width", fun() !void {
         let @local = Arena()
         let sw = StrWriter.new(72, @local)
         I32(-42).fmt_ext(sw, 10, false, 5)
-        try test.eq("-0042", sw.as_str())
+        try test.eq("  -42", sw.as_str())
         let sw2 = StrWriter.new(72, @local)
         U32(255).fmt_ext(sw2, 16, true)
         try test.eq("FF", sw2.as_str())
