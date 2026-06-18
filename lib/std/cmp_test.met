@@ -1,0 +1,21 @@
+use std.test
+use std.cmp
+
+fun main() void {
+    let @local = Arena()
+    let suite = test.Suite.new("cmp", @local)
+
+    suite.test("min", fun() !void {
+        try test.eq(3, cmp.min(5, 3))
+        try test.eq(3, cmp.min(3, 5))
+        try test.eq(3.0, cmp.min(5.0, 3.0))
+        try test.eq("aaa", cmp.min("bbb", "aaa"))
+    })
+    suite.test("max", fun() !void {
+        try test.eq(5, cmp.max(5, 3))
+        try test.eq(5, cmp.max(3, 5))
+        try test.eq(5.0, cmp.max(5.0, 3.0))
+        try test.eq("bbb", cmp.max("bbb", "aaa"))
+    })
+    _ = suite.run()
+}

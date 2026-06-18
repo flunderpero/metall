@@ -246,5 +246,13 @@ fun main() void {
         try test.eq(Ordering.less, [1][..].cmp([2, 9][..]))
         try test.eq(Ordering.greater, [3, 0][..].cmp([2][..]))
     })
+    suite.test("min", fun() !void {
+        try test.eq(Option<Int>(None()), [1][0..0].min(), "empty slice")
+        try test.eq(Option(3), [5, 8, 3, 11][..].min())
+    })
+    suite.test("max", fun() !void {
+        try test.eq(Option<Int>(None()), [1][0..0].max(), "empty slice")
+        try test.eq(Option(11), [5, 3, 11, 8][..].max())
+    })
     _ = suite.run()
 }

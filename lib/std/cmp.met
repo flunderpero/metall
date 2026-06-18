@@ -1,0 +1,7 @@
+pub fun min<T HasCmp>(a T, b T) T {
+    if a.cmp(b) == Ordering.greater { b } else { a }
+}
+
+pub fun max<T HasCmp>(a T, b T) T {
+    if b.cmp(a) == Ordering.greater { b } else { a }
+}

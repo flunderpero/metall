@@ -928,6 +928,34 @@ pub fun Slice.eq<U HasEq>(s []U, other []U) Bool {
     return true
 }
 
+pub fun Slice.min<U HasCmp>(s []U) ?U {
+    if s.len == 0 {
+        return None()
+    }
+    mut min U = s[0]
+    for i in 1..s.len {
+        let v = s[i]
+        if v.cmp(min) == Ordering.less {
+            min = v
+        }
+    }
+    min
+}
+
+pub fun Slice.max<U HasCmp>(s []U) ?U {
+    if s.len == 0 {
+        return None()
+    }
+    mut max U = s[0]
+    for i in 1..s.len {
+        let v = s[i]
+        if v.cmp(max) == Ordering.greater {
+            max = v
+        }
+    }
+    max
+}
+
 pub fun Slice.sort_in_place(s []mut T, cmp fun(T, T) Ordering) void {
     fun partition(s []mut T, lo Int, hi Int, cmp fun(T, T) Ordering) Int {
         let pivot = s[hi]
