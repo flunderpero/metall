@@ -203,9 +203,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	case ast.Assign:
 		typeID, status = e.checkAssign(nodeKind)
 	case ast.Binary:
-		typeID, status = e.checkBinary(nodeKind)
+		typeID, status = e.checkBinary(nodeKind, typeHint)
 	case ast.Unary:
-		typeID, status = e.checkUnary(nodeKind)
+		typeID, status = e.checkUnary(nodeKind, typeHint)
 	case ast.Block:
 		typeID, status = e.checkBlock(nodeID, nodeKind, typeHint)
 	case ast.Call:
@@ -1731,20 +1731,34 @@ func (e *Engine) checkAssign(assign ast.Assign) (TypeID, TypeStatus) {
 	return e.voidTyp, TypeOK
 }
 
-func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:funlen
+func (e *Engine) checkBinary(binary ast.Binary, typeHint *TypeID) (TypeID, TypeStatus) { //nolint:funlen
+	// Arithmetic and bitwise ops yield their operand type, so a numeric hint
+	// flows into the operands: a literal expression like `1.0 + 2.0` narrows to
+	// the expected type (e.g. F32) just as a bare `1.5` does. Comparison and
+	// logical ops yield Bool, so their hint must not reach the numeric operands.
+	var operandHint *TypeID
+	if typeHint != nil && e.env.isNumericType(*typeHint) {
+		switch binary.Op { //nolint:exhaustive
+		case ast.BinaryOpAdd, ast.BinaryOpSub, ast.BinaryOpMul, ast.BinaryOpDiv,
+			ast.BinaryOpMod, ast.BinaryOpWrapAdd, ast.BinaryOpWrapSub, ast.BinaryOpWrapMul,
+			ast.BinaryOpBitAnd, ast.BinaryOpBitOr, ast.BinaryOpBitXor,
+			ast.BinaryOpShl, ast.BinaryOpShr:
+			operandHint = typeHint
+		}
+	}
 	// When the LHS is a literal but the RHS is not, resolve the RHS first so its
 	// concrete type can serve as a type hint for the literal (e.g. `10 == byte`).
 	lhsIsLiteral := e.isLiteral(binary.LHS) && !e.isLiteral(binary.RHS)
 	var lhsTypeID, rhsTypeID TypeID
 	var status TypeStatus
 	if lhsIsLiteral {
-		rhsTypeID, status = e.Query(binary.RHS)
+		rhsTypeID, status = e.queryWithHint(binary.RHS, operandHint)
 		if status.Failed() {
 			return InvalidTypeID, TypeDepFailed
 		}
 		lhsTypeID, status = e.queryWithHint(binary.LHS, &rhsTypeID)
 	} else {
-		lhsTypeID, status = e.Query(binary.LHS)
+		lhsTypeID, status = e.queryWithHint(binary.LHS, operandHint)
 	}
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
@@ -1807,8 +1821,17 @@ func (e *Engine) checkBinary(binary ast.Binary) (TypeID, TypeStatus) { //nolint:
 	}
 }
 
-func (e *Engine) checkUnary(unary ast.Unary) (TypeID, TypeStatus) {
-	exprTypeID, status := e.Query(unary.Expr)
+func (e *Engine) checkUnary(unary ast.Unary, typeHint *TypeID) (TypeID, TypeStatus) {
+	// Negation and bitwise-not yield their operand type, so a numeric hint flows
+	// into the operand (`-1.5` narrows to F32). Logical not yields Bool.
+	var operandHint *TypeID
+	if typeHint != nil && e.env.isNumericType(*typeHint) {
+		switch unary.Op { //nolint:exhaustive
+		case ast.UnaryOpNeg, ast.UnaryOpBitNot:
+			operandHint = typeHint
+		}
+	}
+	exprTypeID, status := e.queryWithHint(unary.Expr, operandHint)
 	if status.Failed() {
 		return InvalidTypeID, TypeDepFailed
 	}

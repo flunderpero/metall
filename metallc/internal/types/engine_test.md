@@ -5276,6 +5276,91 @@ Binary: F32
   Float: F32
 ```
 
+**Float literal arithmetic narrows to the F32 hint**
+
+```metall
+{
+    let x F32 = 1.0 + 2.0
+}
+```
+
+```types
+Block: void
+  Var: void
+    SimpleType: F32
+    Binary: F32
+      Float: F32
+      Float: F32
+```
+
+**Unary minus narrows to the F32 hint**
+
+```metall
+{
+    let x F32 = -1.5
+}
+```
+
+```types
+Block: void
+  Var: void
+    SimpleType: F32
+    Unary: F32
+      Float: F32
+```
+
+**Nested float literal arithmetic narrows to the F32 hint**
+
+```metall
+{
+    let x F32 = 1.0 + (2.0 + 3.0)
+}
+```
+
+```types
+Block: void
+  Var: void
+    SimpleType: F32
+    Binary: F32
+      Float: F32
+      Binary: F32
+        Float: F32
+        Float: F32
+```
+
+**Integer literal arithmetic narrows to the U8 hint**
+
+```metall
+{
+    let x U8 = 1 + 2
+}
+```
+
+```types
+Block: void
+  Var: void
+    SimpleType: U8
+    Binary: U8
+      Int: U8
+      Int: U8
+```
+
+**Integer literal arithmetic does not adopt a float hint**
+
+```metall
+{
+    let x F32 = 5 + 3
+}
+```
+
+```error
+test.met:2:17: type mismatch: expected F32, got Int
+    {
+        let x F32 = 5 + 3
+                    ^^^^^
+    }
+```
+
 ## Type constructors and materialization
 
 **Type constructor**
