@@ -427,6 +427,11 @@ func TestLexer(t *testing.T) {
 			"--- multi\n    line\n    comment ---",
 			[]want{{Comment, "--- multi\n    line\n    comment ---", "1:1-3:15"}},
 		},
+		// A run of four or more dashes is a single-line divider, not a block comment:
+		// it must not chop into `---` pieces (which would open a comment that swallows
+		// the rest of the file). Exactly three dashes stays a block comment, above.
+		{"four-dash divider is one line comment", "---- divider", []want{{Comment, "---- divider", "1:1-1:12"}}},
+		{"long dash divider is one line comment", "-------", []want{{Comment, "-------", "1:1-1:7"}}},
 	}
 
 	assert := base.NewAssert(t)

@@ -843,7 +843,11 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		value := "--"
 		end := "\n"
 		idx += 1
-		if peek(source, idx, '-') {
+		// Exactly three dashes open a block comment (closed by the next `---`). A run
+		// of four or more is a divider: keep it a line comment so it cannot chop into
+		// `---` pieces, the last of which would otherwise open a comment that swallows
+		// code down to the next `---`.
+		if peek(source, idx, '-') && !peek(source, idx+1, '-') {
 			idx += 1
 			value = "---"
 			end = "---"
