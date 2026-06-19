@@ -406,3 +406,36 @@ export_E2E_Export_Tests_Errors_5_duplicate_export_name.met:5:8: export name alre
     export dup = b
            ^^^
 ```
+
+**extern struct by value is rejected**
+
+A struct passed or returned by value across an `extern` boundary is rejected: pass it
+by pointer instead.
+
+```metall
+struct Point { pub x I32 pub y I32 }
+
+extern fun make_point() Point
+```
+
+```error
+export_E2E_Export_Tests_Errors_6_extern_struct_by_value_is_rejected.met:3:25: extern function return type 'export_E2E_Export_Tests_Errors_6_extern_struct_by_value_is_rejected.Point' cannot be passed by value across the C ABI: pass a struct or union by pointer (ffi.Ptr)
+    
+    extern fun make_point() Point
+                            ^^^^^
+```
+
+**extern union by value is rejected**
+
+```metall
+union Tag = Int | Bool
+
+extern fun classify(t Tag) void
+```
+
+```error
+export_E2E_Export_Tests_Errors_7_extern_union_by_value_is_rejected.met:3:21: extern function parameter type 'export_E2E_Export_Tests_Errors_7_extern_union_by_value_is_rejected.Tag' cannot be passed by value across the C ABI: pass a struct or union by pointer (ffi.Ptr)
+    
+    extern fun classify(t Tag) void
+                        ^
+```

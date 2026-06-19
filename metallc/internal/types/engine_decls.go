@@ -464,7 +464,19 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 		return InvalidTypeID, TypeFailed
 	}
 	if fun.Extern {
+		// Set the named ref regardless so call sites still resolve; a recorded
+		// diagnostic fails the build before codegen.
 		e.env.setNamedFunRef(node.ID, fun.ExternName)
+		cABIOK := e.checkExternCABIType(retTypeID, e.ast.Node(fun.ReturnType).Span, "return type")
+		for i, paramTypeID := range paramTypeIDs {
+			pspan := base.Cast[ast.FunParam](e.ast.Node(fun.Params[i]).Kind).Name.Span
+			if !e.checkExternCABIType(paramTypeID, pspan, "parameter type") {
+				cABIOK = false
+			}
+		}
+		if !cABIOK {
+			return InvalidTypeID, TypeFailed
+		}
 	} else {
 		e.env.setNamedFunRef(node.ID, e.declMangledName(node.ID, fun.Name.Name))
 	}

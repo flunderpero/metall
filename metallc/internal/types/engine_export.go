@@ -122,3 +122,22 @@ func isCCompatibleType(env *TypeEnv, typeID TypeID, asReturn bool) bool {
 	}
 	return false
 }
+
+// checkExternCABIType rejects an extern parameter or return passed by value as a
+// struct or union. Metall has no portable C ABI for aggregates by value, so they
+// must be passed by pointer (ffi.Ptr). Scalars and pointer structs pass through.
+func (e *Engine) checkExternCABIType(typeID TypeID, span base.Span, role string) bool {
+	byValueAggregate := false
+	switch kind := e.env.Type(typeID).Kind.(type) {
+	case StructType:
+		byValueAggregate = !IsBuiltinPtrStruct(kind)
+	case UnionType:
+		byValueAggregate = true
+	}
+	if byValueAggregate {
+		e.diag(span, "extern function %s '%s' cannot be passed by value across the C ABI: "+
+			"pass a struct or union by pointer (ffi.Ptr)", role, e.env.TypeDisplay(typeID))
+		return false
+	}
+	return true
+}
