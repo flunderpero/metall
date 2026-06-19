@@ -66,6 +66,15 @@ func tsWrapper(a *ast.AST, exp types.ExportWork, funType types.FunType, targetFu
 	call := fmt.Sprintf("e.%s(%s)", exp.CName, args)
 	if isBoolType(exp.Env, funType.Return) {
 		call = fmt.Sprintf("Boolean(%s)", call)
+	} else if it, ok := exp.Env.Type(funType.Return).Kind.(types.IntType); ok && !it.Signed {
+		// WASM returns ints sign-extended, so an unsigned value above the signed range
+		// comes back negative. Reinterpret it as unsigned: `>>> 0` up to 32 bits,
+		// BigInt.asUintN for 64.
+		if it.Bits >= 64 {
+			call = fmt.Sprintf("BigInt.asUintN(64, %s)", call)
+		} else {
+			call = fmt.Sprintf("%s >>> 0", call)
+		}
 	}
 	if _, isVoid := exp.Env.Type(funType.Return).Kind.(types.VoidType); isVoid {
 		return fmt.Sprintf("(%s) => { %s }", params, call)

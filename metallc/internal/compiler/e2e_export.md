@@ -272,6 +272,58 @@ console.log(api.metall_f32_id(2.5))
 2.5
 ```
 
+**unsigned returns round-trip**
+
+An unsigned return above the signed range must come back unsigned on both targets.
+WASM returns ints sign-extended, so the TS bindings reinterpret them as unsigned
+(`>>> 0` up to 32 bits, `BigInt.asUintN` for 64); the C header already types them
+`uint*`, so both agree.
+
+```metall
+fun u32_big() U32 {
+    U32(3000000000)
+}
+
+fun u32_max() U32 {
+    U32(4294967295)
+}
+
+fun u64_max() U64 {
+    U64(0) -% U64(1)
+}
+
+export u32_big = u32_big
+export u32_max = u32_max
+export u64_max = u64_max
+```
+
+```c
+#include <stdio.h>
+#include <inttypes.h>
+
+int main(void) {
+    printf("%" PRIu32 "\n", u32_big());
+    printf("%" PRIu32 "\n", u32_max());
+    printf("%" PRIu64 "\n", u64_max());
+    return 0;
+}
+```
+
+```ts
+import { loadMetall } from "./metall.ts"
+import * as fs from "node:fs"
+const api = await loadMetall(fs.readFileSync("./metall.wasm"))
+console.log(api.u32_big().toString())
+console.log(api.u32_max().toString())
+console.log(api.u64_max().toString())
+```
+
+```output
+3000000000
+4294967295
+18446744073709551615
+```
+
 ## Errors
 
 **not exportable: Str parameter**
