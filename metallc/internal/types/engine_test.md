@@ -5227,15 +5227,14 @@ Binary: Bool
   Float: Float
 ```
 
-**Unary minus on a float**
+**Negative float literal folds**
 
 ```metall
 -1.5
 ```
 
 ```types
-Unary: Float
-  Float: Float
+Float: Float
 ```
 
 **Float == yields Bool**
@@ -5293,7 +5292,7 @@ Block: void
       Float: F32
 ```
 
-**Unary minus narrows to the F32 hint**
+**Negative float literal narrows to the F32 hint**
 
 ```metall
 {
@@ -5305,8 +5304,27 @@ Block: void
 Block: void
   Var: void
     SimpleType: F32
+    Float: F32
+```
+
+**Unary minus on a float variable narrows to the F32 hint**
+
+```metall
+{
+    let x F32 = 1.5
+    let y F32 = -x
+}
+```
+
+```types
+Block: void
+  Var: void
+    SimpleType: F32
+    Float: F32
+  Var: void
+    SimpleType: F32
     Unary: F32
-      Float: F32
+      Ident: F32
 ```
 
 **Nested float literal arithmetic narrows to the F32 hint**

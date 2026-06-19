@@ -641,15 +641,14 @@ Float(value=3.14)
 Float(value=0.0015)
 ```
 
-**Unary minus on a float literal**
+**Negative float literal**
 
 ```metall
 -2.5
 ```
 
 ```ast
-Unary(op=-)
-  expr=Float(value=2.5)
+Float(value=-2.5)
 ```
 
 **Negative integer literal in expression**

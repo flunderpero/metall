@@ -627,10 +627,11 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	// Unary prefix operators `not`, `~`, `-` bind tighter than every binary operator
 	// (operand at precedence 9, above the highest binary at 8) and feed the binary
 	// loop below, so `~a | b` is `(~a) | b` and `not a == b` is `(not a) == b`
-	// (matching Rust/Zig). `-<number literal>` is folded as a primary instead, so
-	// postfix binds to it (`-5.abs()` is `(-5).abs()`), hence the Number guard.
+	// (matching Rust/Zig). `-<number/float literal>` is folded as a primary instead,
+	// so postfix binds to it (`-5.abs()` is `(-5).abs()`), hence the literal guard.
 	isMinus := t.Kind == token.Minus || t.Kind == token.MinusAfterNewline
-	unaryMinus := isMinus && (!hasNext || next.Kind != token.Number)
+	literalNext := hasNext && (next.Kind == token.Number || next.Kind == token.Float)
+	unaryMinus := isMinus && !literalNext
 	if t.Kind == token.Not || t.Kind == token.Tilde || unaryMinus {
 		p.next()
 		operand, opOk := p.ParseExpr(9)
@@ -993,21 +994,26 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			}
 			expr = array
 		}
-	case token.Minus, token.MinusAfterNewline, token.Number:
-		// A number literal, with an optional `-` folded in. Folding here (rather
-		// than at the unary-minus level) keeps `-5` a primary, so postfix binds to
-		// the negative literal: `-5.abs()` is `(-5).abs()`.
-		num, ok := p.ParseNumber()
-		if !ok {
+	case token.Minus, token.MinusAfterNewline, token.Number, token.Float:
+		// A number or float literal, with an optional `-` folded in. Folding here
+		// (rather than at the unary-minus level) keeps `-5`/`-1.5` a primary, so
+		// postfix binds to the negative literal: `-1.5.abs()` is `(-1.5).abs()`.
+		isFloat := t.Kind == token.Float
+		if t.Kind == token.Minus || t.Kind == token.MinusAfterNewline {
+			next, peekOk := p.mayPeek1()
+			isFloat = peekOk && next.Kind == token.Float
+		}
+		var lit NodeID
+		var litOk bool
+		if isFloat {
+			lit, litOk = p.ParseFloat()
+		} else {
+			lit, litOk = p.ParseNumber()
+		}
+		if !litOk {
 			return ParseFailed, false
 		}
-		expr = num
-	case token.Float:
-		f, ok := p.ParseFloat()
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = f
+		expr = lit
 	case token.True:
 		p.next()
 		expr = p.NewBool(true, t.Span)
@@ -1612,7 +1618,18 @@ func (p *Parser) ParseNumber() (NodeID, bool) {
 	return p.NewInt(n, start.Span.Combine(p.span())), true
 }
 
+// ParseFloat parses a float literal with an optional leading `-`, folding the sign
+// into one Float node so `-1.5` is a negative literal (like ParseNumber). That lets
+// postfix bind to it and lets `let x F32 = -1.5` narrow like the positive form.
 func (p *Parser) ParseFloat() (NodeID, bool) {
+	start, ok := p.mustPeek()
+	if !ok {
+		return ParseFailed, false
+	}
+	neg := start.Kind == token.Minus || start.Kind == token.MinusAfterNewline
+	if neg {
+		p.next()
+	}
 	t, ok := p.expect(token.Float)
 	if !ok {
 		return ParseFailed, false
@@ -1622,7 +1639,10 @@ func (p *Parser) ParseFloat() (NodeID, bool) {
 		p.diagnostic(t.Span, "invalid float literal: %s", t.Value)
 		return ParseFailed, false
 	}
-	return p.NewFloat(f, p.span()), true
+	if neg {
+		f = -f
+	}
+	return p.NewFloat(f, start.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {
