@@ -4755,14 +4755,32 @@ Match(arms=1,arm[0].pattern=n2:SimpleType,else.binding=y)
 
 **Defer block**
 
+defer is a statement, valid only as a block element, not in expression position.
+
+```metall
+{ defer { 1 } }
+```
+
+```ast
+Block()
+  exprs=Defer()
+    block=Block()
+      exprs=Int(value=1)
+```
+
+**Defer is rejected in expression position**
+
+A bare defer parsed where an expression is expected is rejected: defer is a statement
+(a block element), not an expression.
+
 ```metall
 defer { 1 }
 ```
 
-```ast
-Defer()
-  block=Block()
-    exprs=Int(value=1)
+```error
+test.met:1:1: defer may only be used as a statement, not inside an expression
+    defer { 1 }
+    ^^^^^
 ```
 
 ## Extern Functions

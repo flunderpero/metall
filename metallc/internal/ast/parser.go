@@ -595,9 +595,12 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 				return exprs, true
 			}
 			var expr NodeID
-			if t.Kind == token.HashIf {
+			switch t.Kind { //nolint:exhaustive
+			case token.HashIf:
 				expr, ok = p.parseCompIf(parseBody)
-			} else {
+			case token.Defer:
+				expr, ok = p.parseDefer()
+			default:
 				expr, ok = p.parseStmtExpr()
 			}
 			if !ok {
@@ -941,12 +944,8 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		p.diagnostic(t.Span, "continue may only be used as a statement, not inside an expression")
 		return ParseFailed, false
 	case token.Defer:
-		p.next()
-		block, ok := p.ParseBlock()
-		if !ok {
-			return ParseFailed, false
-		}
-		expr = p.NewDefer(block, t.Span.Combine(p.span()))
+		p.diagnostic(t.Span, "defer may only be used as a statement, not inside an expression")
+		return ParseFailed, false
 	case token.Return:
 		p.diagnostic(t.Span, "return may only be used as a statement, not inside an expression")
 		return ParseFailed, false
@@ -2256,6 +2255,22 @@ func (p *Parser) parseCaseBody() ([]NodeID, bool) {
 		}
 		exprs = append(exprs, expr)
 	}
+}
+
+// parseDefer parses a `defer { ... }` block statement. defer is a statement, valid
+// only as a block element: ParsePrimaryExpr rejects it in expression position, so it
+// is always a direct child of a block, which is where genBlock collects defers to run
+// at scope exit.
+func (p *Parser) parseDefer() (NodeID, bool) {
+	t, ok := p.expect(token.Defer)
+	if !ok {
+		return ParseFailed, false
+	}
+	block, ok := p.ParseBlock()
+	if !ok {
+		return ParseFailed, false
+	}
+	return p.NewDefer(block, t.Span.Combine(p.span())), true
 }
 
 // parseStmtExpr parses an expression in statement position: a block element or a
