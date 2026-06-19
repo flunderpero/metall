@@ -4266,7 +4266,9 @@ hi
 A `&mut`/`&` matched value binds references into the variant. Mutating through a
 `&mut` binding persists. Reading through a `&` binding reaches scalar and
 aggregate fields and enum associated data. A value match whose variant type is
-itself a reference still loads the stored reference (no projection).
+itself a reference still loads the stored reference (no projection). A value
+binding (no `&`) is an independent copy, so reassigning the scrutinee to another
+variant afterward leaves the binding unchanged.
 
 ```metall
 struct Inner { n Int }
@@ -4312,6 +4314,15 @@ fun main() void {
     case None: DebugIntern.print_int(0)
     else x: DebugIntern.print_int(x.*)
     }
+
+    mut w = U(A(7, Inner(8)))
+    match w {
+    case A p: {
+        w = U(B(99, Inner(0)))       -- evil: re-tag w while p is bound to the old A
+        DebugIntern.print_int(p.v)   -- p is a copy, still 7 (would read 99 if it aliased w)
+    }
+    case B q: DebugIntern.print_int(q.v)
+    }
 }
 ```
 
@@ -4320,6 +4331,7 @@ fun main() void {
 101
 10
 41
+7
 ```
 
 ## Union Auto-Wrap

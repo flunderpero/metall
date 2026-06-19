@@ -259,6 +259,18 @@ type LifetimeCheck struct {
 	// Source borrows a write deposited into each storage taint, per function.
 	// Keyed by storage taint so a write through any alias of a param reaches it.
 	sideEffectByParamTaint map[TaintID]TaintSet
+
+	// Union storages aliased by an enclosing by-reference match arm. A whole-union
+	// write to one of these would switch the active variant under a live
+	// binding, which checkBorrowedUnionReassign rejects.
+	borrowedUnions []unionBorrow
+}
+
+// unionBorrow records a union storage aliased by an enclosing by-reference match
+// arm, with the binding name for the diagnostic.
+type unionBorrow struct {
+	storage TaintSet
+	binding string
 }
 
 type escapeDiagKey struct {
@@ -290,13 +302,13 @@ func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []Fun
 		shapeContracts: nil,
 		emittedEscape:  map[escapeDiagKey]bool{},
 
-		funWorkByType:       funWorkByType,
-		instanceEffectCache: map[TypeID]*FunEffects{},
-		instanceInProgress:  map[TypeID]bool{},
-		analyzingFun:        nil,
-		analyzingInstance:   false,
-
+		funWorkByType:          funWorkByType,
+		instanceEffectCache:    map[TypeID]*FunEffects{},
+		instanceInProgress:     map[TypeID]bool{},
+		analyzingFun:           nil,
+		analyzingInstance:      false,
 		sideEffectByParamTaint: map[TaintID]TaintSet{},
+		borrowedUnions:         nil,
 	}
 	lc.shapeContracts = &shapeContractsCheck{LifetimeCheck: lc, funWorks: funWorks}
 	return lc
@@ -1062,7 +1074,7 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 		if arm.Guard != nil {
 			a.Check(*arm.Guard)
 		}
-		a.Check(arm.Body)
+		a.analyzeMatchArmBody(arm.Body, arm.Ref, arm.Binding, exprChain)
 	}
 	if match.Else != nil {
 		if match.Else.Binding != nil {
@@ -1075,7 +1087,7 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 			}
 			ss.Vars[match.Else.Binding.Name] = &VarTaint{match.Else.Body, ss.ScopeTaint, bindingChain}
 		}
-		a.Check(match.Else.Body)
+		a.analyzeMatchArmBody(match.Else.Body, match.Else.Ref, match.Else.Binding, exprChain)
 	}
 	// A diverging arm (`return`/`break`/`panic`) never yields a value through the
 	// match, so its borrows do not flow to the match result. Dropping it mirrors
@@ -1093,6 +1105,57 @@ func (a *LifetimeCheck) analyzeMatch(nodeID ast.NodeID, match ast.Match) {
 	}
 	a.chains[nodeID] = merged
 	a.debug(1, nodeID, "analyzeMatch: %s", merged)
+}
+
+// analyzeMatchArmBody analyzes a match-arm (or else) body. For a by-reference
+// binding it records the matched union's storage as borrowed for the body's
+// duration, so checkBorrowedUnionReassign can reject reassigning the union while
+// the binding still aliases it.
+func (a *LifetimeCheck) analyzeMatchArmBody(body ast.NodeID, ref bool, binding *ast.Name, exprChain Chain) {
+	if ref && binding != nil {
+		a.borrowedUnions = append(a.borrowedUnions, unionBorrow{exprChain.HeadTaintSet(), binding.Name})
+		defer func() { a.borrowedUnions = a.borrowedUnions[:len(a.borrowedUnions)-1] }()
+	}
+	a.Check(body)
+}
+
+// checkBorrowedUnionReassign rejects reassigning a union while a by-reference match
+// arm still aliases it:
+//
+//	mut u = U(A(1))
+//	match &mut u {
+//	case A &mut x: {
+//	    u = U(B(2))   -- rejected here
+//	    x.v           -- else would read B's bytes through A's type
+//	}
+//	...
+//	}
+//
+// `u = U(B(2))` overwrites the storage `x` aliases and switches the union to its B
+// variant, so a later read through `x` reinterprets B's bytes as an A: a type
+// confusion / out-of-bounds read reachable with no `unsafe`. A field write through
+// the binding (`x.v = 5`) has a non-union LHS type and is fine. Aliasing is caught
+// for free: storageScopes resolves any write target (`u = ...`, or `p.* = ...`
+// through a copied `&mut`) to the same storage taint the binding aliases.
+func (a *LifetimeCheck) checkBorrowedUnionReassign(assignNodeID, lhs ast.NodeID) {
+	if len(a.borrowedUnions) == 0 {
+		return
+	}
+	lhsType := a.env.TypeOfNode(lhs)
+	if lhsType == nil {
+		return
+	}
+	if _, isUnion := lhsType.Kind.(UnionType); !isUnion {
+		return
+	}
+	target := a.storageScopes(lhs)
+	for _, b := range a.borrowedUnions {
+		if target.ContainsAny(b.storage) {
+			a.diag(a.ast.Node(assignNodeID).Span,
+				"cannot reassign a union whose variant is borrowed by `%s` in a by-reference match arm", b.binding)
+			return
+		}
+	}
 }
 
 // bodyDiverges reports whether a branch body is `never`-typed, i.e. it returns,
@@ -1355,6 +1418,7 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 	rhs := a.flow(assign.RHS)
 	lhsNode := a.ast.Node(assign.LHS)
 	a.debug(1, nodeID, "analyzeAssign: lhs=%s rhs=%s", a.ast.Debug(assign.LHS, false, 0), rhs)
+	a.checkBorrowedUnionReassign(nodeID, assign.LHS)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
 		if lhsKind.Name == "_" {

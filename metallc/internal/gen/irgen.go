@@ -1969,7 +1969,7 @@ func (g *IRFunGen) genMatchArmBinding(match ast.Match, arm ast.MatchArm, payload
 			g.genMatchBinding(bindID, arm.Binding.Name, bindTypeID, unionPtr, arm.Ref)
 			return
 		}
-		g.setSymbol(bindID, arm.Binding.Name, unionPtr, "ptr")
+		g.genMatchBinding(bindID, arm.Binding.Name, bindTypeID, unionPtr, false)
 		return
 	}
 	g.genMatchBinding(bindID, arm.Binding.Name, bindTypeID, payloadPtr, arm.Ref)
@@ -1987,7 +1987,7 @@ func (g *IRFunGen) genMatchElseBinding(match ast.Match, payloadPtr string) {
 			g.genMatchBinding(bindID, match.Else.Binding.Name, bindTypeID, unionPtr, match.Else.Ref)
 			return
 		}
-		g.setSymbol(bindID, match.Else.Binding.Name, unionPtr, "ptr")
+		g.genMatchBinding(bindID, match.Else.Binding.Name, bindTypeID, unionPtr, false)
 		return
 	}
 	g.genMatchBinding(bindID, match.Else.Binding.Name, bindTypeID, payloadPtr, match.Else.Ref)
@@ -2022,8 +2022,18 @@ func (g *IRFunGen) genMatchBinding(
 	// An allocator binding must hold the arena pointer directly, never a stack
 	// slot: genIdent's allocator branch returns the symbol reg without a load.
 	_, isAlloc := g.env.Type(typeID).Kind.(types.AllocatorType)
-	if irTyp == "{}" || isAlloc || g.isAggregateType(typeID) {
+	if irTyp == "{}" || isAlloc {
 		g.setSymbol(bindID, name, valReg, "ptr")
+		return
+	}
+	if g.isAggregateType(typeID) {
+		// A value binding is an independent copy of the matched variant, not an
+		// alias into the union, so reassigning the scrutinee is not observable
+		// through it.
+		slot := g.reg()
+		g.writeAlloca(slot, irTyp)
+		g.storeValue(valReg, slot, typeID)
+		g.setSymbol(bindID, name, slot, "ptr")
 		return
 	}
 	allocReg := g.reg()

@@ -4999,6 +4999,40 @@ test.met:9:15: reference escaping its allocation scope (via mutation of outer va
 ```error
 ```
 
+**reassigning the scrutinee under a ref binding is rejected**
+
+A `case A &mut x` binding aliases the matched union's storage, so reassigning the
+matched reference to another variant while the binding is live would reinterpret the new
+variant's bytes through `x`'s type. A reassignment through any alias of the storage
+is caught too, since the write resolves to the same storage the binding aliases.
+
+```metall
+{
+    struct A { v Int }
+    struct B { v Int }
+    union U = A | B
+    fun confuse() Int {
+        mut u = U(A(1))
+        match &mut u {
+            case A &mut x: {
+                -- x aliases u's live A payload
+                u = U(B(2))   -- evil: re-tag u to a B while x still aliases it
+                x.v           -- x would now view B's payload as an A: type confusion
+            }
+            case B &mut y: y.v
+        }
+    }
+}
+```
+
+```error
+test.met:10:17: cannot reassign a union whose variant is borrowed by `x` in a by-reference match arm
+                    -- x aliases u's live A payload
+                    u = U(B(2))   -- evil: re-tag u to a B while x still aliases it
+                    ^^^^^^^^^^^
+                    x.v           -- x would now view B's payload as an A: type confusion
+```
+
 **reading enum associated data through a ref binding is valid**
 
 ```metall
