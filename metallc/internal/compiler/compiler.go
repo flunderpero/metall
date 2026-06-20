@@ -77,9 +77,16 @@ const LocalLLVMDir = ".llvm/" + LLVMVersion
 // LLVM optimization passes (https://llvm.org/docs/Passes.html):
 //   - mem2reg: Promote alloca'd scalars to SSA registers.
 //   - sroa: Scalar Replacement of Aggregates, decomposes struct/array allocas into individual scalars.
+//   - early-cse: Eliminate redundant loads. A slice header lives in memory, so repeated indexing
+//     reloads its ptr/len; this collapses them, giving instcombine cleaner input.
 //   - instcombine: Peephole optimizations: constant folding, strength reduction, dead code elimination.
 //   - simplifycfg: Simplify the control flow graph by merging blocks and removing unreachable code.
-const DefaultLLVMPasses = "mem2reg,sroa,instcombine,simplifycfg"
+//
+// no-verify-fixpoint matches what the standard -O1/-O2/-O3 pipelines do. instcombine
+// legitimately leaves trivially-dead code (e.g. allocas that only become dead once it
+// constant-folds their loads) for a later DCE pass; the fixpoint verifier, a debug aid
+// that bare `instcombine` enables but the -O pipelines do not, flags that as an error.
+const DefaultLLVMPasses = "mem2reg,sroa,early-cse,instcombine<no-verify-fixpoint>,simplifycfg"
 
 type CompileOpts struct {
 	ProjectRoot         string

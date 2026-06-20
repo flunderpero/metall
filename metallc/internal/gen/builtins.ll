@@ -35,7 +35,7 @@ define internal void @__main_print_failed(ptr %name) {
     ret void
 }
 
-define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn alwaysinline cold {
+define internal void @panic(ptr byval(%Str) %s, ptr byval(%Str) %loc) noreturn noinline cold {
     %loc_data_field = getelementptr %Str, ptr %loc, i32 0, i32 0, i32 0
     %loc_data = load ptr, ptr %loc_data_field
     %loc_len_field = getelementptr %Str, ptr %loc, i32 0, i32 0, i32 1

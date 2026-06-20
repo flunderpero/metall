@@ -4700,8 +4700,7 @@ hello
 
 Regression test: a union with a multi-field struct payload (> 8 bytes) returned from
 multiple `when` branches that perform inline computation can cause LLVM's SROA to
-decompose stores into byte-level operations, preventing instcombine from reaching
-a fixpoint.
+decompose stores into byte-level operations.
 
 ```metall
 struct Pos { a U32 b Int }

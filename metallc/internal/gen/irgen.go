@@ -988,7 +988,10 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 	}
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIRTyp := g.irType(fun.Return)
-	signatureIRTyp := retIRTyp
+	// The signature must say `void` (not the `{}` of irType) so call sites, which
+	// emit `void`, match the callee's type; a mismatch makes LLVM treat every call
+	// as signature-incompatible and refuse to inline it.
+	signatureIRTyp := g.irReturnType(fun.Return)
 	params := strings.Builder{}
 	if isClosure {
 		params.WriteString("ptr %__ctx")
@@ -1127,6 +1130,8 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		resReg := g.reg()
 		g.write("%s = load %s, ptr %s", resReg, retIRTyp, g.funRetReg)
 		g.write("store %s %s, ptr %%out_ptr", retIRTyp, resReg)
+		g.write("ret void")
+	case retIRTyp == "{}":
 		g.write("ret void")
 	default:
 		resReg := g.reg()
@@ -2835,7 +2840,7 @@ func (g *IRFunGen) genIndirectCall(id ast.NodeID, call ast.Call, fun types.FunTy
 	retIRTyp := g.irType(fun.Return)
 
 	var sb strings.Builder
-	callRetType := retIRTyp
+	callRetType := g.irReturnType(fun.Return)
 	if isRetAggregate {
 		callRetType = "void"
 	}
@@ -2846,6 +2851,8 @@ func (g *IRFunGen) genIndirectCall(id ast.NodeID, call ast.Call, fun types.FunTy
 		resReg = g.reg()
 		g.writeAlloca(resReg, retIRTyp)
 		g.setCode(id, resReg)
+	case callRetType == "void":
+		g.setCode(id, voidValue)
 	default:
 		resReg = g.reg()
 		sb.WriteString(resReg + " = ")
@@ -2981,7 +2988,7 @@ func (g *IRFunGen) genFunValWrapperIfNeeded(id ast.NodeID, name string) string {
 		hasFwd = true
 	}
 
-	callRetType := retIRTyp
+	callRetType := g.irReturnType(funType.Return)
 	if isRetAggregate {
 		callRetType = "void"
 	}
