@@ -254,5 +254,10 @@ fun main() void {
         try test.eq(Option<Int>(None()), [1][0..0].max(), "empty slice")
         try test.eq(Option(11), [5, 3, 11, 8][..].max())
     })
+    suite.test("swap", fun() !void {
+        mut sut = [3, 4, 5, 6][..]
+        sut.swap(1, 3)
+        try test.eq([3, 6, 5, 4][..], sut)
+    })
     _ = suite.run()
 }

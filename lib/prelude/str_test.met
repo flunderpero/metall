@@ -40,6 +40,34 @@ fun main() void {
         try test.eq("abc", " \n \r \t abc \r \n \t ".trim())
         try test.eq("\n abc \r", " \n abc \r".trim([' '][..]))
     })
+    suite.test("runes_len", fun() !void {
+        try test.eq(0, "".runes_len())
+        try test.eq(3, "abc".runes_len())
+        -- "Aä€𝄞": ä is 2 bytes, € is 3, 𝄞 is 4, so runes < bytes.
+        try test.eq(4, "Aä€𝄞".runes_len())
+        try test.eq(10, "Aä€𝄞".bytes_len())
+    })
+    suite.test("lpad", fun() !void {
+        let @local = Arena()
+        try test.eq("  abc", "abc".lpad(5, @local))
+        try test.eq("**abc", "abc".lpad(5, @local, '*'))
+        -- Already at least `width` runes: unchanged.
+        try test.eq("abc", "abc".lpad(3, @local))
+        try test.eq("abc", "abc".lpad(1, @local))
+        -- Width counts runes, not bytes (ä€ is 2 runes / 5 bytes).
+        try test.eq("  ä€", "ä€".lpad(4, @local))
+        -- A multi-byte pad rune is repeated whole.
+        try test.eq("€€x", "x".lpad(3, @local, '€'))
+    })
+    suite.test("rpad", fun() !void {
+        let @local = Arena()
+        try test.eq("abc  ", "abc".rpad(5, @local))
+        try test.eq("abc..", "abc".rpad(5, @local, '.'))
+        try test.eq("abc", "abc".rpad(3, @local))
+        try test.eq("abc", "abc".rpad(1, @local))
+        try test.eq("ä€  ", "ä€".rpad(4, @local))
+        try test.eq("x€€", "x".rpad(3, @local, '€'))
+    })
     suite.test("iter", fun() !void {
         -- This is a test string with 1, 2, 3, and 4 byte utf8 sequences.
         let s = "AÄ€😀"

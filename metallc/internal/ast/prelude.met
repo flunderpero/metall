@@ -284,6 +284,20 @@ pub fun Str.bytes_len(s Str) Int {
     s.data.len
 }
 
+--- The number of runes (unicode codepoints).
+
+    This has to scan the whole underlying byte array to correctly
+    identify and count multi-byte runes. ---
+pub fun Str.runes_len(s Str) Int {
+    mut n = 0
+    for b in s.data {
+        if (b & 0xC0) != 0x80 {
+            n += 1
+        }
+    }
+    n
+}
+
 pub fun Str.is_empty(s Str) Bool {
     s.data.len == 0
 }
@@ -400,6 +414,41 @@ pub fun Str.ltrim(s Str, runes []Rune = default_trim_runes) Str {
 
 pub fun Str.rtrim(s Str, runes [] Rune = default_trim_runes) Str {
     Str(s.data.rtrim_utf8(runes))
+}
+
+--- Left-pad `s` with `c` until it is `width` runes wide. 
+
+    Return `s` unchanged if it is already at least `width` runes. ---
+pub fun Str.lpad(s Str, width Int, @a Arena, c Rune = ' ') Str {
+    let pad = width - s.runes_len()
+    if pad <= 0 {
+        return s
+    }
+    let cbs = c.to_bytes().as_slice()
+    let data = unsafe @a.slice_uninit<U8>(pad * cbs.len + s.data.len)
+    mut i = 0
+    for _ in 0..pad {
+        i += data[i..].set(cbs)
+    }
+    _ = data[i..].set(s.data)
+    Str(data)
+}
+
+--- Right-pad `s` with `c` until it is `width` runes wide.
+
+    Return `s` unchanged if it is already at least `width` runes. ---
+pub fun Str.rpad(s Str, width Int, @a Arena, c Rune = ' ') Str {
+    let pad = width - s.runes_len()
+    if pad <= 0 {
+        return s
+    }
+    let cbs = c.to_bytes().as_slice()
+    let data = unsafe @a.slice_uninit<U8>(s.data.len + pad * cbs.len)
+    mut i = data.set(s.data)
+    for _ in 0..pad {
+        i += data[i..].set(cbs)
+    }
+    Str(data)
 }
 
 --- `Str` can be used as an `LPattern`. ---
@@ -648,6 +697,13 @@ pub fun Slice.copy(s []T, @a Arena) []mut T {
     let c = unsafe @a.slice_uninit<T>(s.len)
     _ = c.set(s)
     c
+}
+
+pub fun Slice.swap(s []mut T, i1 Int, i2 Int) void {
+    let v1 = s[i1]
+    let v2 = s[i2]
+    s[i1] = v2
+    s[i2] = v1
 }
 
 --- Copy the `src` elements to `dest` up to `dest.len`. 
