@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strconv"
@@ -1633,15 +1634,24 @@ func (p *Parser) ParseFloat() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	f, err := strconv.ParseFloat(strings.ReplaceAll(t.Value, "_", ""), 64)
+	text := strings.ReplaceAll(t.Value, "_", "")
+	if neg {
+		text = "-" + text
+	}
+	f64, err := strconv.ParseFloat(text, 64)
 	if err != nil {
 		p.diagnostic(t.Span, "invalid float literal: %s", t.Value)
 		return ParseFailed, false
 	}
-	if neg {
-		f = -f
+	// Round the source straight to F32 too; a nil pointer marks an F32 overflow, which
+	// the type checker rejects once it knows the literal is F32.
+	f32raw, _ := strconv.ParseFloat(text, 32)
+	var f32 *float32
+	if !math.IsInf(f32raw, 0) {
+		f32val := float32(f32raw)
+		f32 = &f32val
 	}
-	return p.NewFloat(f, start.Span.Combine(p.span())), true
+	return p.NewFloat(&f64, f32, start.Span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {

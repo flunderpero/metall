@@ -2,7 +2,6 @@ package types
 
 import (
 	"fmt"
-	"math"
 	"math/big"
 	"slices"
 	"strconv"
@@ -1573,8 +1572,8 @@ func (e *Engine) checkFloat(floatNode ast.Float, span base.Span, typeHint *TypeI
 		}
 	}
 	info := base.Cast[FloatType](e.env.Type(target).Kind)
-	if info.Bits == 32 && math.IsInf(float64(float32(floatNode.Value)), 0) {
-		e.diag(span, "value %s out of range for F32", strconv.FormatFloat(floatNode.Value, 'g', -1, 64))
+	if info.Bits == 32 && floatNode.F32Value == nil {
+		e.diag(span, "value %s out of range for F32", strconv.FormatFloat(*floatNode.F64Value, 'g', -1, 64))
 		return InvalidTypeID, TypeFailed
 	}
 	return target, TypeOK

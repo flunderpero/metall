@@ -3092,7 +3092,11 @@ func (g *IRFunGen) genInt(id ast.NodeID, int_ ast.Int) {
 
 func (g *IRFunGen) genFloat(id ast.NodeID, float_ ast.Float) {
 	bits := base.Cast[types.FloatType](g.typeOfNode(id).Kind).Bits
-	g.setCode(id, llvmFloatConst(float_.Value, bits))
+	if bits == 32 {
+		g.setCode(id, llvmFloatConst(float64(*float_.F32Value), bits))
+		return
+	}
+	g.setCode(id, llvmFloatConst(*float_.F64Value, bits))
 }
 
 // llvmFloatConst renders a float constant as the 16-hex-digit IEEE-754 double

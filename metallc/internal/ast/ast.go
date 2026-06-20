@@ -290,7 +290,12 @@ type Int struct {
 func (Int) isKind() {}
 
 type Float struct {
-	Value float64
+	// The literal's float type is unknown until type checking, so the parser rounds the
+	// source straight to both precisions and codegen reads the one matching the resolved
+	// type. Going via a single f64 would double-round F32 (source -> f64 -> f32) and land
+	// 1 ULP off the C compiler. F32Value is nil when the source overflows F32.
+	F64Value *float64
+	F32Value *float32
 }
 
 func (Float) isKind() {}
@@ -813,8 +818,8 @@ func (a *AST) NewInt(value *big.Int, span base.Span) NodeID {
 	return a.node(Int{Value: value}, span)
 }
 
-func (a *AST) NewFloat(value float64, span base.Span) NodeID {
-	return a.node(Float{Value: value}, span)
+func (a *AST) NewFloat(f64Value *float64, f32Value *float32, span base.Span) NodeID {
+	return a.node(Float{F64Value: f64Value, F32Value: f32Value}, span)
 }
 
 func (a *AST) NewRef(target NodeID, mut bool, span base.Span) NodeID {
@@ -1697,7 +1702,7 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 	case Int:
 		addAttr("value", kind.Value.String())
 	case Float:
-		addAttr("value", strconv.FormatFloat(kind.Value, 'g', -1, 64))
+		addAttr("value", strconv.FormatFloat(*kind.F64Value, 'g', -1, 64))
 	case Bool:
 		addAttr("value", fmt.Sprintf("%t", kind.Value))
 	case String:
