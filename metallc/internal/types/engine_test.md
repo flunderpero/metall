@@ -8969,6 +8969,28 @@ test.met:9:5: type mismatch: expected Seq<Int>, got Seq<Str>
 ```error
 ```
 
+**A type parameter may not appear in its own bound**
+
+The self-referential (F-bounded) constraint is rejected; a self-type shape expresses
+the same thing.
+
+```metall
+{
+    shape Comparable<T> {
+        fun Comparable.cmp(self Comparable, other T) Int
+    }
+    fun mymax<T Comparable<T>>(a T, b T) T { if a.cmp(b) > 0 { a } else { b } }
+}
+```
+
+```error
+test.met:5:15: type parameter "T" may not appear in its own bound; use a self-type shape (e.g. `<T Comparable>`)
+        }
+        fun mymax<T Comparable<T>>(a T, b T) T { if a.cmp(b) > 0 { a } else { b } }
+                  ^
+    }
+```
+
 ## Default Type Args
 
 **Default type arg on struct**

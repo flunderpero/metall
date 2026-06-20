@@ -3020,6 +3020,37 @@ func (g *Generics) prepareFunTypeParams(node *ast.Node, fun ast.FunDecl) TypeSta
 	return g.bindTypeParams(fun.TypeParams)
 }
 
+// typeRefMentions reports whether a type expression names `name` anywhere (a
+// SimpleType whose name matches, including nested type arguments). Used to reject a
+// type parameter that appears in its own bound (an F-bounded self-constraint).
+func typeRefMentions(a *ast.AST, nodeID ast.NodeID, name string) bool {
+	switch kind := a.Node(nodeID).Kind.(type) {
+	case ast.SimpleType:
+		if kind.Name.Name == name {
+			return true
+		}
+		for _, arg := range kind.TypeArgs {
+			if typeRefMentions(a, arg, name) {
+				return true
+			}
+		}
+	case ast.ArrayType:
+		return typeRefMentions(a, kind.Elem, name)
+	case ast.SliceType:
+		return typeRefMentions(a, kind.Elem, name)
+	case ast.RefType:
+		return typeRefMentions(a, kind.Type, name)
+	case ast.FunType:
+		for _, p := range kind.ParamTypes {
+			if typeRefMentions(a, p, name) {
+				return true
+			}
+		}
+		return typeRefMentions(a, kind.ReturnType, name)
+	}
+	return false
+}
+
 func (g *Generics) bindTypeParams(typeParamNodeIDs []ast.NodeID) TypeStatus {
 	seen := map[string]bool{}
 	for _, typeParamNodeID := range typeParamNodeIDs {
@@ -3032,6 +3063,25 @@ func (g *Generics) bindTypeParams(typeParamNodeIDs []ast.NodeID) TypeStatus {
 
 		typeParamID, ok := g.env.TypeParamForNode(typeParamNodeID)
 		if !ok {
+			// A type parameter may not appear in its own bound (F-bounded self-
+			// constraint): the self-type form expresses it instead, and the explicit
+			// self-reference is not in scope for its own bound.
+			if typeParamNode.Constraint != nil {
+				if c, isSimple := g.ast.Node(*typeParamNode.Constraint).Kind.(ast.SimpleType); isSimple {
+					for _, arg := range c.TypeArgs {
+						if typeRefMentions(g.ast, arg, typeParamNode.Name.Name) {
+							g.diag(
+								typeParamNode.Name.Span,
+								"type parameter %q may not appear in its own bound; use a self-type shape (e.g. `<%s %s>`)",
+								typeParamNode.Name.Name,
+								typeParamNode.Name.Name,
+								c.Name.Name,
+							)
+							return TypeFailed
+						}
+					}
+				}
+			}
 			shapeID, status := g.resolveTypeParamConstraint(typeParamNode.Constraint)
 			if status.Failed() {
 				return status
