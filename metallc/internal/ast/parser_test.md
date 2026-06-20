@@ -2723,6 +2723,18 @@ Index()
   index=Int(value=1)
 ```
 
+**Index read on a byte-string literal**
+
+```metall
+b"ab"[0]
+```
+
+```ast
+Index()
+  target=String(value="ab",bytes=true)
+  index=Int(value=0)
+```
+
 **Index write**
 
 ```metall

@@ -801,6 +801,22 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			}
 			expr = result
 			continue
+		case token.LBracket:
+			// A glued '[' after a byte-string literal is an index. The lexer marks it a
+			// plain LBracket (not LBracketImmediate) because it classifies by the preceding
+			// char, '"', which is identical for b"..." and "...". Only a byte string (a
+			// []U8) is indexable, so the parser admits that one case here.
+			node := p.Node(expr)
+			bs, isStr := node.Kind.(String)
+			if !isStr || !bs.Bytes || node.Span.End+1 != t.Span.Start {
+				break
+			}
+			result, ok := p.ParseIndexOrSubSlice(expr, span)
+			if !ok {
+				return ParseFailed, false
+			}
+			expr = result
+			continue
 		case token.Dot:
 			p.next()
 			next, ok := p.mustPeek()
@@ -1655,7 +1671,15 @@ func (p *Parser) ParseFloat() (NodeID, bool) {
 }
 
 func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {
-	if _, ok := p.expect(token.LBracketImmediate); !ok {
+	// The bracket is LBracketImmediate when the lexer saw it glued to an expression, or a
+	// plain LBracket glued to a byte-string literal (which the postfix loop admits because
+	// the lexer cannot tell b"..." from "..." by the preceding char).
+	t, ok := p.next()
+	if !ok {
+		return ParseFailed, false
+	}
+	if t.Kind != token.LBracketImmediate && t.Kind != token.LBracket {
+		p.diagnostic(t.Span, "unexpected token: expected [, got %s", t.Kind)
 		return ParseFailed, false
 	}
 	range_, isRange, ok := p.ParseRange()
