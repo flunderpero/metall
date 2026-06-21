@@ -151,6 +151,8 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 		opts.Target = t
 		return nil
 	})
+	flags.StringVar(&opts.TargetCPU, "cpu", "",
+		"target CPU for codegen (e.g. 'native', 'apple-m1'); default targets a portable baseline")
 	flags.Func("opt", "optimization mode: none, safe, fast", func(s string) error {
 		level, err := compiler.ParseOptLevel(s)
 		if err != nil {
@@ -201,6 +203,10 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 	if len(flags.Args()) != 1 {
 		fmt.Fprintf(os.Stderr, "%s requires a file\n\n", command)
 		flags.Usage()
+		os.Exit(1)
+	}
+	if opts.TargetCPU != "" && opts.Target.IsWasm() {
+		fmt.Fprintln(os.Stderr, "-cpu is only valid for the native target")
 		os.Exit(1)
 	}
 	if len(includes) == 0 {

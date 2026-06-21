@@ -89,16 +89,19 @@ const LocalLLVMDir = ".llvm/" + LLVMVersion
 const DefaultLLVMPasses = "mem2reg,sroa,early-cse,instcombine<no-verify-fixpoint>,simplifycfg"
 
 type CompileOpts struct {
-	ProjectRoot         string
-	IncludePaths        []string
-	Tags                []string
-	LinkFlags           []string
-	Listener            CompileListener
-	PrintTiming         bool
-	Output              string
-	KeepIR              bool
-	LLVMPasses          string
-	OptLevel            OptLevel
+	ProjectRoot  string
+	IncludePaths []string
+	Tags         []string
+	LinkFlags    []string
+	Listener     CompileListener
+	PrintTiming  bool
+	Output       string
+	KeepIR       bool
+	LLVMPasses   string
+	OptLevel     OptLevel
+	// TargetCPU, when set (e.g. "native", "apple-m1"), targets that CPU for codegen.
+	// Empty targets a portable baseline so the binary runs on any CPU of the arch.
+	TargetCPU           string
 	Sanitizers          []gen.Sanitizer
 	DebugArenaAllocator bool
 	ArenaStackBufSize   int
@@ -144,6 +147,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 	if opts.EmitTypeScript && !opts.Target.IsWasm() {
 		return base.Errorf("--emit-typescript is only valid for wasm targets")
+	}
+	if opts.TargetCPU != "" && opts.Target.IsWasm() {
+		return base.Errorf("--cpu is only valid for the native target")
 	}
 	llvmHome, err := findLLVMHome()
 	if err != nil {
@@ -275,6 +281,13 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	cmdline := []string{llvmHome + "/bin/opt", "-S"}
 	if opts.OptLevel != OptLevelNone {
 		cmdline = append(cmdline, "-O3")
+		if opts.TargetCPU != "" {
+			// Targeting a specific CPU lets the vectorizer's cost model match a
+			// native build; without it the generic model under-vectorizes (e.g.
+			// interleave factor 2 instead of 4). Off by default for portability.
+			// Compile() has already rejected a CPU with a wasm target.
+			cmdline = append(cmdline, "-mcpu="+opts.TargetCPU)
+		}
 	} else if opts.LLVMPasses != "" {
 		cmdline = append(cmdline, "-passes="+opts.LLVMPasses)
 	}
@@ -717,6 +730,10 @@ func runClang(
 	cmdline = append(cmdline, bc, "-o", output)
 	if opts.OptLevel != OptLevelNone {
 		cmdline = append(cmdline, "-O3")
+	}
+	if opts.TargetCPU != "" {
+		// Match the requested CPU for instruction selection and scheduling.
+		cmdline = append(cmdline, "-mcpu="+opts.TargetCPU)
 	}
 	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) && !opts.Target.IsWasm() {
 		cmdline = append(cmdline, "-fsanitize=address")

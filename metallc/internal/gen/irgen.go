@@ -986,6 +986,12 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 		g.errtraceShape = g.errTraceShape(fun.Return)
 		g.errtraceFuncName = work.Name
 	}
+	// arena_alloc's return is marked noalias (it is a bump allocator, so each result is
+	// fresh and aliases no prior pointer). This lets LLVM's alias analysis prove a List's
+	// backing store does not alias its header, unblocking register promotion and
+	// vectorization of hot loops. arena_realloc gets no such attribute: its in-place-extend
+	// path returns its own input pointer, so a noalias return would be a false promise.
+	isArenaAlloc := name == "runtime$arena.arena_alloc"
 	isRetAggregate := g.isAggregateType(fun.Return)
 	retIRTyp := g.irType(fun.Return)
 	// The signature must say `void` (not the `{}` of irType) so call sites, which
@@ -1010,6 +1016,9 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 			params.WriteString(", ")
 		}
 		fmt.Fprintf(&params, "ptr sret(%s) %%out_ptr", g.irType(fun.Return))
+	}
+	if isArenaAlloc {
+		signatureIRTyp = "noalias " + signatureIRTyp
 	}
 	g.funRetLabel = g.label("ret", id)
 	g.funRetReg = g.reg()
