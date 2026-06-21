@@ -1,0 +1,131 @@
+use std.test
+use std.heap
+
+struct Node {
+    cost Int
+    id Int
+}
+
+pub fun Node.eq(a Node, b Node) Bool { a.cost == b.cost and a.id == b.id }
+
+pub fun Node.fmt(n Node, sw &mut StrWriter) void { f"Node({n.cost}, {n.id})".write_to(sw) }
+
+pub fun Node.cmp(a Node, b Node) Ordering { Int.cmp(a.cost, b.cost) }
+
+fun main() void {
+    let @local = Arena()
+    let suite = test.Suite.new("Heap", @local)
+
+    suite.test("happy path", fun() !void {
+        let @local = Arena()
+        let sut = heap.Heap.new<Int>(32, @local)
+        sut.push(7)
+        try test.eq(1, sut.len())
+        try test.eq(Option(7), sut.peek())
+        try test.eq(1, sut.len())
+        try test.eq(Option(7), sut.pop())
+        try test.eq(0, sut.len())
+        try test.eq(Option<Int>(None()), sut.pop())
+    })
+
+    suite.test("empty", fun() !void {
+        let @local = Arena()
+        let sut = heap.Heap.new<Int>(32, @local)
+        try test.eq(0, sut.len())
+        try test.eq(Option<Int>(None()), sut.peek())
+        try test.eq(Option<Int>(None()), sut.pop())
+    })
+
+    suite.test("pops greatest", fun() !void {
+        let @local = Arena()
+        let sut = heap.Heap.new<Int>(32, @local)
+        for v in [3, 1, 4, 1, 5, 9, 2, 6] {
+            sut.push(v)
+        }
+        try test.eq(8, sut.len())
+        try test.eq(Option(9), sut.pop())
+        try test.eq(Option(6), sut.pop())
+        try test.eq(Option(5), sut.pop())
+        try test.eq(Option(4), sut.pop())
+        try test.eq(Option(3), sut.pop())
+        try test.eq(Option(2), sut.pop())
+        try test.eq(Option(1), sut.pop())
+        try test.eq(Option(1), sut.pop())
+        try test.eq(Option<Int>(None()), sut.pop())
+    })
+
+    suite.test("duplicates", fun() !void {
+        let @local = Arena()
+        let sut = heap.Heap.new<Int>(32, @local)
+        let vals = [5, 3, 5, 1, 3, 5][..]
+        for v in vals { sut.push(v) }
+        try test.eq(Option(5), sut.pop())
+        try test.eq(Option(5), sut.pop())
+        try test.eq(Option(5), sut.pop())
+        try test.eq(Option(3), sut.pop())
+        try test.eq(Option(3), sut.pop())
+        try test.eq(Option(1), sut.pop())
+        try test.eq(Option<Int>(None()), sut.pop())
+    })
+
+    suite.test("push and pop", fun() !void {
+        let @local = Arena()
+        let sut = heap.Heap.new<Int>(32, @local)
+        sut.push(5)
+        sut.push(3)
+        try test.eq(Option(5), sut.pop())
+        sut.push(8)
+        sut.push(1)
+        try test.eq(Option(8), sut.pop())
+        sut.push(4)
+        try test.eq(Option(4), sut.pop())
+        try test.eq(Option(3), sut.pop())
+        try test.eq(Option(1), sut.pop())
+        try test.eq(Option<Int>(None()), sut.pop())
+    })
+
+    suite.test("struct", fun() !void {
+        let @local = Arena()
+        let sut = heap.Heap.new<Node>(32, @local)
+        sut.push(Node(5, 50))
+        sut.push(Node(2, 20))
+        sut.push(Node(8, 80))
+        sut.push(Node(1, 10))
+        try test.eq(Option(Node(8, 80)), sut.peek())
+        try test.eq(Option(Node(8, 80)), sut.pop())
+        try test.eq(Option(Node(5, 50)), sut.pop())
+        try test.eq(Option(Node(2, 20)), sut.pop())
+        try test.eq(Option(Node(1, 10)), sut.pop())
+        try test.eq(Option<Node>(None()), sut.pop())
+    })
+
+    suite.test("stress", fun() !void {
+        let @local = Arena()
+        -- Start at capacity 0 to also cover the growth story.
+        let sut = heap.Heap.new<Int>(0, @local)
+        -- (i * 37) % 1000 is a permutation of 0..999 (gcd(37, 1000) == 1).
+        for i in 0..1000 {
+            sut.push((i * 37) % 1000)
+        }
+        try test.eq(1000, sut.len())
+        for i in 0..1000 {
+            try test.eq(Option(999 - i), sut.pop())
+        }
+        try test.eq(0, sut.len())
+    })
+
+    suite.test("fmt", fun() !void {
+        let @local = Arena()
+        let sut = heap.Heap.new<Int>(8, @local)
+
+        try test.eq("[]", f"{sut}".build(@local))
+        sut.push(5)
+        sut.push(3)
+        sut.push(8)
+        sut.push(1)
+        -- The internal max-heap array order after these pushes.
+        try test.eq("[8, 3, 5, 1]", f"{sut}".build(@local))
+    })
+
+    _ = suite.run()
+}

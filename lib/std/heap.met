@@ -1,0 +1,114 @@
+use std.cmp
+
+--- A max heap. ---
+pub struct Heap<T HasCmp> {
+    data []mut T
+    len_ Int
+    @a Arena
+}
+
+--- Create a new max heap. ---
+pub fun Heap.new(initial_capacity Int, @a Arena) &mut Heap {
+    let data = unsafe @a.slice_uninit<T>(initial_capacity)
+    @a.new(Heap(data, 0, @a))
+}
+
+pub fun Heap.push(h &mut Heap, v T) void {
+    -- Append to the end.
+    if h.len_ == h.data.len {
+        let grow = cmp.max(1, if h.len_ < 1024 { h.len_ * 2 } else { h.len_ * 3 / 2 })
+        h.data = unsafe h.@a.grow_uninit<T>(h.data, grow)
+    }
+    let data = h.data
+
+    data[h.len_] = v
+    h.len_ += 1
+
+    -- Bubble up until `v` is at the right place.
+    mut i = h.len_ - 1
+    for i > 0 {
+        let parent_index = (i - 1) / 2
+        if v.cmp(data[parent_index]) != Ordering.greater {
+            -- We bubbled all the way up to the right position.
+            break
+        }
+        data.swap(i, parent_index)
+        i = parent_index
+    }
+}
+
+pub fun Heap.pop(h &mut Heap) ?T {
+    if h.len_ == 0 {
+        return None()
+    }
+    let data = h.data
+
+    -- Take the first element and move the last element to the front.
+    let result = data[0]
+    h.len_ -= 1
+    if h.len_ == 0 {
+        -- The heap is empty now.
+        return result
+    }
+    let v = data[h.len_]
+
+    data[0] = v
+
+    -- This is Floyd's bounce.
+    -- First, let the popped element flow to the bottom.
+    mut i = 0
+    for (i * 2 + 1) < h.len_ {
+         
+        -- Select the largest child.
+        let c1_index = i * 2 + 1
+        let c1 = data[c1_index]
+        mut clargest_index = c1_index
+        mut clargest = c1
+
+        let c2_index = i * 2 + 2
+        if c2_index < h.len_ {
+            let c2 = data[c2_index]
+            if c2.cmp(c1) != Ordering.less {
+                clargest_index = c2_index
+                clargest = c2
+            }
+        }
+
+        data.swap(i, clargest_index)
+        i = clargest_index
+    }
+
+    -- Now, let the value bubble up again.
+    for i > 0 {
+        let parent_index = (i - 1) / 2
+        if v.cmp(data[parent_index]) != Ordering.greater {
+            -- We bubbled all the way up to the right position.
+            break
+        }
+        data.swap(i, parent_index)
+        i = parent_index
+    }
+
+    result
+}
+
+pub fun Heap.peek(h &Heap) ?T {
+    if h.len_ == 0 {
+        return None()
+    }
+    h.data[0]
+}
+
+pub fun Heap.len(h &Heap) Int {
+    h.len_ 
+}
+
+-- todo: We need to be able to compose shapes
+shape HasCmpFmt {
+    pub fun HasCmpFmt.cmp(c HasCmpFmt, other HasCmpFmt) Ordering
+    pub fun HasCmpFmt.fmt(f HasCmpFmt, sw &mut StrWriter) void
+}
+
+pub fun Heap.fmt<U HasCmpFmt>(h &Heap<U>, sw &mut StrWriter) void {
+    sw.write(h.data[0..h.len_])
+}
