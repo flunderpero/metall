@@ -10864,6 +10864,22 @@ test.met:3:5: cannot assign to element of immutable array or slice
     }
 ```
 
+**Cannot assign to a non-place expression**
+
+```metall
+{
+    1 = 2
+}
+```
+
+```error
+test.met:2:5: cannot assign to this expression, which is not a variable, field, or element
+    {
+        1 = 2
+        ^
+    }
+```
+
 **Cannot return allocator from fun**
 
 ```metall

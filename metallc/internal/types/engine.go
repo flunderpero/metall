@@ -2465,7 +2465,7 @@ func (e *Engine) typeOfPlace(nodeID ast.NodeID) (TypeID, TypeStatus) {
 	case ast.Index:
 		e.diag(node.Span, "cannot assign to element of immutable array or slice")
 	default:
-		e.diag(node.Span, "cannot assign to left-hand-side expression of type: %T", kind)
+		e.diag(node.Span, "cannot assign to this expression, which is not a variable, field, or element")
 	}
 	return InvalidTypeID, TypeFailed
 }
