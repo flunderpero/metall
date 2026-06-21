@@ -683,6 +683,38 @@ fun main() void {
         try test.eq("ff", sw4.as_str())
     })
     _ = fmt_ext_suite.run()
+
+    -- abs(MIN) is left untested here: it traps under the overflow check (opt <
+    -- fast). That panic is covered by an e2e test instead.
+    let abs_suite = test.Suite.new("abs", @local)
+    -- For each: zero, a small +/- pair, MAX (unchanged), and MIN+1 (the largest
+    -- magnitude abs can return). abs(MIN) overflows and is covered by an e2e test.
+    abs_suite.test("I8.abs", fun() !void {
+        try test.eq(I8(0), I8(0).abs())
+        try test.eq(I8(5), I8(5).abs())
+        try test.eq(I8(5), I8(-5).abs())
+        try test.eq(I8(0x7F), I8(0x7F).abs())
+        try test.eq(I8(0x7F), I8(-0x7F).abs())
+    })
+    abs_suite.test("I16.abs", fun() !void {
+        try test.eq(I16(0), I16(0).abs())
+        try test.eq(I16(9), I16(-9).abs())
+        try test.eq(I16(0x7FFF), I16(0x7FFF).abs())
+        try test.eq(I16(0x7FFF), I16(-0x7FFF).abs())
+    })
+    abs_suite.test("I32.abs", fun() !void {
+        try test.eq(I32(0), I32(0).abs())
+        try test.eq(I32(9), I32(-9).abs())
+        try test.eq(I32(0x7FFF_FFFF), I32(0x7FFF_FFFF).abs())
+        try test.eq(I32(0x7FFF_FFFF), I32(-0x7FFF_FFFF).abs())
+    })
+    abs_suite.test("Int.abs", fun() !void {
+        try test.eq(0, Int(0).abs())
+        try test.eq(42, Int(-42).abs())
+        try test.eq(0x7FFF_FFFF_FFFF_FFFF, Int(0x7FFF_FFFF_FFFF_FFFF).abs())
+        try test.eq(0x7FFF_FFFF_FFFF_FFFF, Int(-0x7FFF_FFFF_FFFF_FFFF).abs())
+    })
+    _ = abs_suite.run()
 }
 
 fun fmt_ext_int(v Int, base Int, upper Bool, width Int, @a Arena) Str {

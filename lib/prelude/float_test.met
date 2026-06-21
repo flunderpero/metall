@@ -271,6 +271,229 @@ fun main() void {
     math_suite.test("sqrt(-1) is NaN", fun() !void {
         try test.eq(true, (-1.0).sqrt().is_nan())
     })
+    math_suite.test("Float.sin", fun() !void {
+        try test.eq(0.8414709848078965, 1.0.sin())
+        try test.eq(0.0, 0.0.sin())
+        try test.eq(-0.8414709848078965, (-1.0).sin())
+    })
+    math_suite.test("F32.sin", fun() !void {
+        try test.eq(F32(0.8414709568023682), F32(1.0).sin())
+    })
+    math_suite.test("Float.cos", fun() !void {
+        try test.eq(0.5403023058681398, 1.0.cos())
+        try test.eq(1.0, 0.0.cos())
+        -- cos is even, so cos(-1) equals cos(1) to the bit.
+        try test.eq(0.5403023058681398, (-1.0).cos())
+    })
+    math_suite.test("F32.cos", fun() !void {
+        try test.eq(F32(0.5403022766113281), F32(1.0).cos())
+    })
+    math_suite.test("Float.tan", fun() !void {
+        try test.eq(0.0, 0.0.tan())
+        -- tan(1.0): platform libm and wasm runtime round the last bit differently.
+        #if not os.wasm
+        try test.eq(1.557407724654902, 1.0.tan())
+        #end
+        #if os.wasm
+        try test.eq(1.5574077246549023, 1.0.tan())
+        #end
+    })
+    math_suite.test("F32.tan", fun() !void {
+        try test.eq(F32(1.5574077367782593), F32(1.0).tan())
+    })
+    math_suite.test("Float.asin", fun() !void {
+        try test.eq(0.0, 0.0.asin())
+        -- Domain edges [-1, 1].
+        try test.eq(1.5707963267948966, 1.0.asin())
+        try test.eq(-1.5707963267948966, (-1.0).asin())
+        -- Outside the domain is NaN.
+        try test.eq(true, 2.0.asin().is_nan())
+        -- asin(0.5): native and wasm differ in the last bit.
+        #if not os.wasm
+        try test.eq(0.5235987755982988, 0.5.asin())
+        #end
+        #if os.wasm
+        try test.eq(0.5235987755982989, 0.5.asin())
+        #end
+    })
+    math_suite.test("F32.asin", fun() !void {
+        -- asinf at the domain edges: the wasm runtime is a full ulp from native.
+        #if not os.wasm
+        try test.eq(F32(1.570796251296997), F32(1.0).asin())
+        try test.eq(F32(-1.570796251296997), F32(-1.0).asin())
+        #end
+        #if os.wasm
+        try test.eq(F32(1.5707963705062866), F32(1.0).asin())
+        try test.eq(F32(-1.5707963705062866), F32(-1.0).asin())
+        #end
+    })
+    math_suite.test("Float.acos", fun() !void {
+        -- Domain edges [-1, 1] and the midpoint.
+        try test.eq(0.0, 1.0.acos())
+        try test.eq(3.141592653589793, (-1.0).acos())
+        try test.eq(1.5707963267948966, 0.0.acos())
+        -- Outside the domain is NaN.
+        try test.eq(true, 2.0.acos().is_nan())
+        -- acos(0.5): native and wasm differ in the last bit.
+        #if not os.wasm
+        try test.eq(1.0471975511965976, 0.5.acos())
+        #end
+        #if os.wasm
+        try test.eq(1.0471975511965979, 0.5.acos())
+        #end
+    })
+    math_suite.test("F32.acos", fun() !void {
+        try test.eq(F32(0.0), F32(1.0).acos())
+        -- acosf(-1.0): native and the wasm runtime round differently.
+        #if not os.wasm
+        try test.eq(F32(3.141592502593994), F32(-1.0).acos())
+        #end
+        #if os.wasm
+        try test.eq(F32(3.1415927410125732), F32(-1.0).acos())
+        #end
+    })
+    math_suite.test("Float.atan", fun() !void {
+        try test.eq(0.0, 0.0.atan())
+        try test.eq(0.7853981633974483, 1.0.atan())
+        -- atan is odd, so atan(-1) equals -atan(1) to the bit.
+        try test.eq(-0.7853981633974483, (-1.0).atan())
+    })
+    math_suite.test("F32.atan", fun() !void {
+        try test.eq(F32(0.7853981852531433), F32(1.0).atan())
+    })
+    math_suite.test("Float.abs", fun() !void {
+        try test.eq(3.5, (-3.5).abs())
+        try test.eq(3.5, 3.5.abs())
+        try test.eq(0.0, 0.0.abs())
+        -- abs clears the sign bit: -0.0 becomes +0.0, -inf becomes +inf, NaN stays.
+        try test.eq(U64(0), (-0.0).abs().to_bits())
+        try test.eq(true, (-1.0 / 0.0).abs().is_inf())
+        try test.eq(true, (1.0 / 0.0).abs().is_inf())
+        try test.eq(true, (0.0 / 0.0).abs().is_nan())
+    })
+    math_suite.test("F32.abs", fun() !void {
+        try test.eq(F32(3.5), F32(-3.5).abs())
+        try test.eq(F32(3.5), F32(3.5).abs())
+        try test.eq(U32(0), (-0.0).to_f32().abs().to_bits())
+    })
+    -- exp/log/pow/cbrt/atan2 happen to agree bit-for-bit between native libm and
+    -- the wasm runtime at these inputs, so no `#if os.wasm` split is needed (unlike
+    -- the sin/cos/asin family above). floor/ceil/round/trunc are exact operations.
+    math_suite.test("Float.exp", fun() !void {
+        try test.eq(1.0, 0.0.exp())
+        try test.eq(2.718281828459045, 1.0.exp())
+        try test.eq(7.38905609893065, 2.0.exp())
+        -- Overflow saturates to +inf.
+        try test.eq(true, 710.0.exp().is_inf())
+    })
+    math_suite.test("F32.exp", fun() !void {
+        try test.eq(F32(1.0), F32(0.0).exp())
+        try test.eq(F32(2.7182817459106445), F32(1.0).exp())
+    })
+    math_suite.test("Float.log", fun() !void {
+        try test.eq(0.0, 1.0.log())
+        try test.eq(0.6931471805599453, 2.0.log())
+        -- log(0) is -inf, log of a negative is NaN.
+        try test.eq(true, 0.0.log().is_inf())
+        try test.eq(true, (-1.0).log().is_nan())
+    })
+    math_suite.test("F32.log", fun() !void {
+        try test.eq(F32(0.0), F32(1.0).log())
+        try test.eq(F32(0.6931471824645996), F32(2.0).log())
+    })
+    math_suite.test("Float.log2", fun() !void {
+        try test.eq(0.0, 1.0.log2())
+        try test.eq(3.0, 8.0.log2())
+        try test.eq(3.321928094887362, 10.0.log2())
+    })
+    math_suite.test("F32.log2", fun() !void {
+        try test.eq(F32(3.0), F32(8.0).log2())
+    })
+    math_suite.test("Float.log10", fun() !void {
+        try test.eq(0.0, 1.0.log10())
+        try test.eq(3.0, 1000.0.log10())
+        try test.eq(0.3010299956639812, 2.0.log10())
+    })
+    math_suite.test("F32.log10", fun() !void {
+        try test.eq(F32(3.0), F32(1000.0).log10())
+    })
+    math_suite.test("Float.pow", fun() !void {
+        try test.eq(1024.0, 2.0.pow(10.0))
+        try test.eq(1.4142135623730951, 2.0.pow(0.5))
+        try test.eq(1.0, 2.0.pow(0.0))
+        -- pow(0, 0) is 1 by convention.
+        try test.eq(1.0, 0.0.pow(0.0))
+        -- A negative base with a fractional exponent is NaN; pow(0, -1) is +inf.
+        try test.eq(true, (-2.0).pow(0.5).is_nan())
+        try test.eq(true, 0.0.pow(-1.0).is_inf())
+    })
+    math_suite.test("F32.pow", fun() !void {
+        try test.eq(F32(1024.0), F32(2.0).pow(F32(10.0)))
+        try test.eq(F32(1.4142135381698608), F32(2.0).pow(F32(0.5)))
+    })
+    math_suite.test("Float.cbrt", fun() !void {
+        try test.eq(3.0, 27.0.cbrt())
+        try test.eq(0.0, 0.0.cbrt())
+        -- Defined for negatives, unlike pow(x, 1.0/3.0).
+        try test.eq(-2.0, (-8.0).cbrt())
+        try test.eq(1.2599210498948732, 2.0.cbrt())
+    })
+    math_suite.test("F32.cbrt", fun() !void {
+        try test.eq(F32(3.0), F32(27.0).cbrt())
+        try test.eq(F32(-2.0), F32(-8.0).cbrt())
+        try test.eq(F32(1.2599210739135742), F32(2.0).cbrt())
+    })
+    math_suite.test("Float.floor", fun() !void {
+        try test.eq(2.0, 2.7.floor())
+        try test.eq(-3.0, (-2.7).floor())
+        try test.eq(2.0, 2.0.floor())
+    })
+    math_suite.test("F32.floor", fun() !void {
+        try test.eq(F32(2.0), F32(2.7).floor())
+        try test.eq(F32(-3.0), F32(-2.7).floor())
+    })
+    math_suite.test("Float.ceil", fun() !void {
+        try test.eq(3.0, 2.1.ceil())
+        try test.eq(-2.0, (-2.1).ceil())
+        try test.eq(2.0, 2.0.ceil())
+    })
+    math_suite.test("F32.ceil", fun() !void {
+        try test.eq(F32(3.0), F32(2.1).ceil())
+        try test.eq(F32(-2.0), F32(-2.1).ceil())
+    })
+    math_suite.test("Float.round", fun() !void {
+        -- Ties round away from zero, not to even.
+        try test.eq(3.0, 2.5.round())
+        try test.eq(-3.0, (-2.5).round())
+        try test.eq(1.0, 0.5.round())
+        try test.eq(-1.0, (-0.5).round())
+        try test.eq(2.0, 2.4.round())
+    })
+    math_suite.test("F32.round", fun() !void {
+        try test.eq(F32(3.0), F32(2.5).round())
+        try test.eq(F32(-3.0), F32(-2.5).round())
+    })
+    math_suite.test("Float.trunc", fun() !void {
+        try test.eq(2.0, 2.7.trunc())
+        try test.eq(-2.0, (-2.7).trunc())
+        try test.eq(2.0, 2.0.trunc())
+    })
+    math_suite.test("F32.trunc", fun() !void {
+        try test.eq(F32(2.0), F32(2.7).trunc())
+        try test.eq(F32(-2.0), F32(-2.7).trunc())
+    })
+    math_suite.test("Float.atan2", fun() !void {
+        -- atan2 uses the signs of both arguments to pick the quadrant.
+        try test.eq(0.7853981633974483, 1.0.atan2(1.0))
+        try test.eq(0.0, 0.0.atan2(1.0))
+        try test.eq(1.5707963267948966, 1.0.atan2(0.0))
+        try test.eq(3.141592653589793, 0.0.atan2(-1.0))
+        try test.eq(-2.356194490192345, (-1.0).atan2(-1.0))
+        try test.eq(0.0, 0.0.atan2(0.0))
+    })
+    math_suite.test("F32.atan2", fun() !void {
+        try test.eq(F32(0.46364760398864746), F32(1.0).atan2(F32(2.0)))
+    })
     _ = math_suite.run()
 }
 

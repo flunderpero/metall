@@ -649,3 +649,26 @@ Float 3.14    -3.14
 F32   1.500      2.5
 Bool  yes no
 ```
+
+## Arithmetic Overflow
+
+`abs` is a full-prelude function, so its overflow test lives here rather than
+with the minimal-prelude overflow tests in `e2e_test.md`. It is `!fast` because
+`fast` disables the overflow check.
+
+**abs of the most negative Int panics**
+
+`Int.abs` negates via a checked subtract, so `abs(MIN)` overflows because MIN has
+no positive counterpart. The trap fires inside the prelude, at the negation, so
+the exact line:col is redacted.
+
+```metall !fast
+fun main() void {
+    let min = -9223372036854775808
+    DebugIntern.print_int(min.abs())
+}
+```
+
+```panic
+prelude.met:<ignored in test>: integer overflow
+```

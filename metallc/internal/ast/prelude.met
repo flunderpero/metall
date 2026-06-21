@@ -1850,8 +1850,102 @@ pub fun F32.fmt_into(v F32, dst []mut U8, precision Int = -1, width Int = 0) ?In
 
 pub fun Float.sqrt(f Float) Float { unsafe __llvm_sqrt_f64(f) }
 pub fun F32.sqrt(f F32) F32 { unsafe __llvm_sqrt_f32(f) }
+pub fun Float.sin(f Float) Float { unsafe __llvm_sin_f64(f) }
+pub fun F32.sin(f F32) F32 { unsafe __llvm_sin_f32(f) }
+pub fun Float.cos(f Float) Float { unsafe __llvm_cos_f64(f) }
+pub fun F32.cos(f F32) F32 { unsafe __llvm_cos_f32(f) }
+pub fun Float.tan(f Float) Float { unsafe __llvm_tan_f64(f) }
+pub fun F32.tan(f F32) F32 { unsafe __llvm_tan_f32(f) }
+pub fun Float.asin(f Float) Float { unsafe __llvm_asin_f64(f) }
+pub fun F32.asin(f F32) F32 { unsafe __llvm_asin_f32(f) }
+pub fun Float.acos(f Float) Float { unsafe __llvm_acos_f64(f) }
+pub fun F32.acos(f F32) F32 { unsafe __llvm_acos_f32(f) }
+pub fun Float.atan(f Float) Float { unsafe __llvm_atan_f64(f) }
+pub fun F32.atan(f F32) F32 { unsafe __llvm_atan_f32(f) }
+
+--- Absolute value.
+
+    For a signed integer, `abs` of the minimum value (e.g. -128 for I8) panics
+    when arithmetic overflow checks are on. ---
+pub fun I8.abs(i I8) I8 { if i < 0 { -i } else { i } }
+pub fun I16.abs(i I16) I16 { if i < 0 { -i } else { i } }
+pub fun I32.abs(i I32) I32 { if i < 0 { -i } else { i } }
+pub fun Int.abs(i Int) Int { if i < 0 { -i } else { i } }
+pub fun Float.abs(f Float) Float { unsafe __llvm_fabs_f64(f) }
+pub fun F32.abs(f F32) F32 { unsafe __llvm_fabs_f32(f) }
+
+pub fun Float.exp(f Float) Float { unsafe __llvm_exp_f64(f) }
+pub fun F32.exp(f F32) F32 { unsafe __llvm_exp_f32(f) }
+pub fun Float.log(f Float) Float { unsafe __llvm_log_f64(f) }
+pub fun F32.log(f F32) F32 { unsafe __llvm_log_f32(f) }
+pub fun Float.log2(f Float) Float { unsafe __llvm_log2_f64(f) }
+pub fun F32.log2(f F32) F32 { unsafe __llvm_log2_f32(f) }
+pub fun Float.log10(f Float) Float { unsafe __llvm_log10_f64(f) }
+pub fun F32.log10(f F32) F32 { unsafe __llvm_log10_f32(f) }
+
+--- `f` raised to the power `exp`. ---
+pub fun Float.pow(f Float, exp Float) Float { unsafe __llvm_pow_f64(f, exp) }
+pub fun F32.pow(f F32, exp F32) F32 { unsafe __llvm_pow_f32(f, exp) }
+
+pub fun Float.cbrt(f Float) Float { unsafe __cbrt_f64(f) }
+pub fun F32.cbrt(f F32) F32 { unsafe __cbrt_f32(f) }
+
+pub fun Float.floor(f Float) Float { unsafe __llvm_floor_f64(f) }
+pub fun F32.floor(f F32) F32 { unsafe __llvm_floor_f32(f) }
+pub fun Float.ceil(f Float) Float { unsafe __llvm_ceil_f64(f) }
+pub fun F32.ceil(f F32) F32 { unsafe __llvm_ceil_f32(f) }
+--- Round to the nearest integer.
+
+    A halfway value rounds away from zero, so 2.5 becomes 3 and -2.5 becomes -3. ---
+pub fun Float.round(f Float) Float { unsafe __llvm_round_f64(f) }
+pub fun F32.round(f F32) F32 { unsafe __llvm_round_f32(f) }
+pub fun Float.trunc(f Float) Float { unsafe __llvm_trunc_f64(f) }
+pub fun F32.trunc(f F32) F32 { unsafe __llvm_trunc_f32(f) }
+
+--- The angle in radians from the positive x-axis to the point `(x, y)`.
+
+    It uses the signs of x and y to return the angle in the full range (-pi, pi],
+    unlike `(y / x).atan()` which only spans (-pi/2, pi/2). ---
+pub fun Float.atan2(y Float, x Float) Float { unsafe __llvm_atan2_f64(y, x) }
+pub fun F32.atan2(y F32, x F32) F32 { unsafe __llvm_atan2_f32(y, x) }
 
 extern fun __strtod(buf []U8, consumed &mut Int) Float
 extern fun __snprintf_float(v Float, prec Int, mode U8, buf []mut U8) Int
 extern("llvm.sqrt.f32") fun __llvm_sqrt_f32(x F32) F32
 extern("llvm.sqrt.f64") fun __llvm_sqrt_f64(x Float) Float
+extern("llvm.sin.f32") fun __llvm_sin_f32(x F32) F32
+extern("llvm.sin.f64") fun __llvm_sin_f64(x Float) Float
+extern("llvm.cos.f32") fun __llvm_cos_f32(x F32) F32
+extern("llvm.cos.f64") fun __llvm_cos_f64(x Float) Float
+extern("llvm.tan.f32") fun __llvm_tan_f32(x F32) F32
+extern("llvm.tan.f64") fun __llvm_tan_f64(x Float) Float
+extern("llvm.asin.f32") fun __llvm_asin_f32(x F32) F32
+extern("llvm.asin.f64") fun __llvm_asin_f64(x Float) Float
+extern("llvm.acos.f32") fun __llvm_acos_f32(x F32) F32
+extern("llvm.acos.f64") fun __llvm_acos_f64(x Float) Float
+extern("llvm.atan.f32") fun __llvm_atan_f32(x F32) F32
+extern("llvm.atan.f64") fun __llvm_atan_f64(x Float) Float
+extern("llvm.fabs.f32") fun __llvm_fabs_f32(x F32) F32
+extern("llvm.fabs.f64") fun __llvm_fabs_f64(x Float) Float
+extern("llvm.exp.f32") fun __llvm_exp_f32(x F32) F32
+extern("llvm.exp.f64") fun __llvm_exp_f64(x Float) Float
+extern("llvm.log.f32") fun __llvm_log_f32(x F32) F32
+extern("llvm.log.f64") fun __llvm_log_f64(x Float) Float
+extern("llvm.log2.f32") fun __llvm_log2_f32(x F32) F32
+extern("llvm.log2.f64") fun __llvm_log2_f64(x Float) Float
+extern("llvm.log10.f32") fun __llvm_log10_f32(x F32) F32
+extern("llvm.log10.f64") fun __llvm_log10_f64(x Float) Float
+extern("llvm.pow.f32") fun __llvm_pow_f32(x F32, y F32) F32
+extern("llvm.pow.f64") fun __llvm_pow_f64(x Float, y Float) Float
+extern("llvm.floor.f32") fun __llvm_floor_f32(x F32) F32
+extern("llvm.floor.f64") fun __llvm_floor_f64(x Float) Float
+extern("llvm.ceil.f32") fun __llvm_ceil_f32(x F32) F32
+extern("llvm.ceil.f64") fun __llvm_ceil_f64(x Float) Float
+extern("llvm.round.f32") fun __llvm_round_f32(x F32) F32
+extern("llvm.round.f64") fun __llvm_round_f64(x Float) Float
+extern("llvm.trunc.f32") fun __llvm_trunc_f32(x F32) F32
+extern("llvm.trunc.f64") fun __llvm_trunc_f64(x Float) Float
+extern("llvm.atan2.f32") fun __llvm_atan2_f32(x F32, y F32) F32
+extern("llvm.atan2.f64") fun __llvm_atan2_f64(x Float, y Float) Float
+extern("cbrt") fun __cbrt_f64(x Float) Float
+extern("cbrtf") fun __cbrt_f32(x F32) F32

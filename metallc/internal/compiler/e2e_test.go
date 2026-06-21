@@ -176,7 +176,7 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 	if _, ok := tc.Want["error"]; ok {
 		_, _, err := CompileAndRun(t.Context(), source, opts, true)
 		if err != nil {
-			results["error"] = err.Error()
+			results["error"] = redactPreludeLoc(err.Error())
 		}
 		return results
 	}
@@ -191,8 +191,16 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 
 	if _, ok := tc.Want["panic"]; ok {
 		assert.NotEqual(0, exitCode, "expected non-zero exit code (trap)")
-		results["panic"] = output
+		results["panic"] = redactPreludeLoc(output)
 	}
 
 	return results
+}
+
+// A prelude.met line:col in panic/error output is brittle: it shifts whenever
+// the prelude does. Redact it so a test can assert the message, not the line.
+var preludeLocRe = regexp.MustCompile(`prelude\.met:\d+:\d+`)
+
+func redactPreludeLoc(s string) string {
+	return preludeLocRe.ReplaceAllString(s, "prelude.met:<ignored in test>")
 }

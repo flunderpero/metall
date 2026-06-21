@@ -203,8 +203,37 @@ function defaultImports(
             return v
         },
         // The wasm build is -nostdlib, so libc externs like `abs` become `env`
-        // imports instead of resolving to libc. The extern-C e2e tests call it.
+        // imports instead of resolving to libc.
         abs: (n: number) => Math.abs(n),
+        sin: (n: number) => Math.sin(n), 
+        sinf: (n: number) => Math.sin(n), 
+        cos: (n: number) => Math.cos(n), 
+        cosf: (n: number) => Math.cos(n), 
+        tan: (n: number) => Math.tan(n), 
+        tanf: (n: number) => Math.tan(n), 
+        asin: (n: number) => Math.asin(n), 
+        asinf: (n: number) => Math.asin(n), 
+        acos: (n: number) => Math.acos(n), 
+        acosf: (n: number) => Math.acos(n), 
+        atan: (n: number) => Math.atan(n), 
+        atanf: (n: number) => Math.atan(n),
+        exp: (n: number) => Math.exp(n),
+        expf: (n: number) => Math.exp(n),
+        log: (n: number) => Math.log(n),
+        logf: (n: number) => Math.log(n),
+        log2: (n: number) => Math.log2(n),
+        log2f: (n: number) => Math.log2(n),
+        log10: (n: number) => Math.log10(n),
+        log10f: (n: number) => Math.log10(n),
+        pow: (a: number, b: number) => Math.pow(a, b),
+        powf: (a: number, b: number) => Math.pow(a, b),
+        cbrt: (n: number) => Math.cbrt(n),
+        cbrtf: (n: number) => Math.cbrt(n),
+        atan2: (y: number, x: number) => Math.atan2(y, x),
+        atan2f: (y: number, x: number) => Math.atan2(y, x),
+        // f64.nearest is round-to-even (llvm.roundeven); llvm.round is half-away.
+        round: (n: number) => Math.sign(n) * Math.round(Math.abs(n)),
+        roundf: (n: number) => Math.sign(n) * Math.round(Math.abs(n)),
     }
     return {imports: {env}}
 }
