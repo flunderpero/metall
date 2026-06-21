@@ -439,3 +439,37 @@ export_E2E_Export_Tests_Errors_7_extern_union_by_value_is_rejected.met:3:21: ext
     extern fun classify(t Tag) void
                         ^
 ```
+
+**reserved export name memory**
+
+`memory` and `main` collide with the exports the wasm linker always emits, so the wasm
+module would have a duplicate export name. Reserved on every target to keep exports
+portable.
+
+```metall
+fun f() Int { 42 }
+
+export memory = f
+```
+
+```error
+export_E2E_Export_Tests_Errors_8_reserved_export_name_memory.met:3:8: export name "memory" is reserved because it collides with the wasm module's built-in exports
+    
+    export memory = f
+           ^^^^^^
+```
+
+**reserved export name main**
+
+```metall
+fun f() Int { 42 }
+
+export main = f
+```
+
+```error
+export_E2E_Export_Tests_Errors_9_reserved_export_name_main.met:3:8: export name "main" is reserved because it collides with the wasm module's built-in exports
+    
+    export main = f
+           ^^^^
+```

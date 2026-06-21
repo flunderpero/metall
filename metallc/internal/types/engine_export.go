@@ -27,6 +27,16 @@ func (e *Engine) checkExport(nodeID ast.NodeID, exportNode ast.Export, span base
 		e.diag(span, "export is only allowed in the main module")
 		return InvalidTypeID, TypeFailed
 	}
+	// The wasm linker always emits its own `main` and `memory` exports, so a user export of
+	// either name produces a duplicate-export wasm module that cannot instantiate. Reserved
+	// on every target so an export stays portable.
+	switch exportNode.Name.Name {
+	case "main", "memory":
+		e.diag(exportNode.Name.Span,
+			"export name %q is reserved because it collides with the wasm module's built-in exports",
+			exportNode.Name.Name)
+		return InvalidTypeID, TypeFailed
+	}
 	for i, prev := range e.exports {
 		if prev.CName == exportNode.Name.Name {
 			if !prev.duplicateReported {
