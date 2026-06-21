@@ -2879,6 +2879,41 @@ fun main() void {
 10
 ```
 
+**inclusive range to Int max panics**
+
+The hidden `+1` of an inclusive range `lo ..= hi` is a checked add, so an upper bound at
+Int max traps at the range itself instead of silently wrapping the end to Int min.
+
+```metall !fast
+fun main() void {
+    let hi = 9223372036854775807
+    mut count = 0
+    for i in hi - 2 ..= hi {
+        count += 1
+    }
+    DebugIntern.print_int(count)
+}
+```
+
+```panic
+test.met:4:14: integer overflow
+```
+
+**inclusive subslice to Int max panics**
+
+```metall !fast
+fun main() void {
+    let hi = 9223372036854775807
+    let xs = [10, 20, 30, 40]
+    let sub = xs[..][1..=hi]
+    DebugIntern.print_int(sub.len)
+}
+```
+
+```panic
+test.met:4:15: integer overflow
+```
+
 **bool operators**
 
 ```metall

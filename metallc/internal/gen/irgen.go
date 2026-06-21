@@ -413,10 +413,11 @@ func (g *IRFunGen) genSubSlice(id ast.NodeID, sub ast.SubSlice) { //nolint:funle
 	default:
 		panic(base.Errorf("genSubSlice: unsupported target type %T", targetType.Kind))
 	}
-	// Inclusive: hi = hi + 1.
+	// Inclusive: hi = hi + 1, checked so an upper bound at Int max traps instead of
+	// silently wrapping the end to Int min.
 	if range_.Inclusive {
 		incReg := g.reg()
-		g.write("%s = add i64 %s, 1", incReg, hiReg)
+		g.emitCheckedArithmeticOp(id, incReg, "i64", "add", hiReg, "1", true)
 		hiReg = incReg
 	}
 	g.boundsCheckSubSlice(id, loReg, hiReg, targetReg, targetType)
@@ -1294,8 +1295,10 @@ func (g *IRFunGen) genRange(id ast.NodeID, range_ ast.Range) {
 	loReg := g.lookupCode(*range_.Lo)
 	hiReg := g.lookupCode(*range_.Hi)
 	if range_.Inclusive {
+		// Inclusive: hi = hi + 1, checked so an upper bound at Int max traps instead of
+		// silently wrapping the end to Int min.
 		incReg := g.reg()
-		g.write("%s = add i64 %s, 1", incReg, hiReg)
+		g.emitCheckedArithmeticOp(id, incReg, "i64", "add", hiReg, "1", true)
 		hiReg = incReg
 	}
 	rangeTyp := g.typeOfNode(id)
