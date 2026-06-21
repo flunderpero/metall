@@ -192,8 +192,12 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 	}
 	typeHint := e.typeHint
 	e.typeHint = nil
-	nodeDebug := e.ast.Debug(nodeID, false, 0)
-	debugDedent := e.debug.Print(1, "query start %s", nodeDebug).Indent()
+	nodeDebug := ""
+	debugDedent := func() {}
+	if e.debug.Enabled() {
+		nodeDebug = e.ast.Debug(nodeID, false, 0)
+		debugDedent = e.debug.Print(1, "query start %s", nodeDebug).Indent()
+	}
 	defer debugDedent()
 	node := e.ast.Node(nodeID)
 	var typeID TypeID
@@ -302,7 +306,9 @@ func (e *Engine) Query(nodeID ast.NodeID) (TypeID, TypeStatus) { //nolint:funlen
 		typeID = e.tryUnionAutoWrap(nodeID, typeID, *typeHint)
 	}
 	debugDedent()
-	e.debug.Print(0, "query end   %s -> %s", nodeDebug, e.env.TypeDisplay(typeID))
+	if e.debug.Enabled() {
+		e.debug.Print(0, "query end   %s -> %s", nodeDebug, e.env.TypeDisplay(typeID))
+	}
 	return typeID, status
 }
 
@@ -1028,7 +1034,10 @@ func (e *Engine) checkInferredFunLit( //nolint:funlen
 }
 
 func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID TypeID, funType FunType) {
-	debugDedent := e.debug.Print(0, "checkFunBody %s (type=%s)", funNode.Name.Name, funTypeID).Indent()
+	debugDedent := func() {}
+	if e.debug.Enabled() {
+		debugDedent = e.debug.Print(0, "checkFunBody %s (type=%s)", funNode.Name.Name, funTypeID).Indent()
+	}
 	defer debugDedent()
 	defer e.enterFun(funTypeID)()
 	for _, capNodeID := range funNode.Captures {
@@ -1159,8 +1168,10 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
 	}
-	e.debug.Print(1, "checkIdent %q -> lookup=%q binding.Decl=%s binding.TypeID=%s type=%s",
-		ident.Name, lookupName, binding.Decl, binding.TypeID, e.env.TypeDisplay(binding.TypeID))
+	if e.debug.Enabled() {
+		e.debug.Print(1, "checkIdent %q -> lookup=%q binding.Decl=%s binding.TypeID=%s type=%s",
+			ident.Name, lookupName, binding.Decl, binding.TypeID, e.env.TypeDisplay(binding.TypeID))
+	}
 	if binding.Decl != 0 && e.unreachableBindingInOuterScope(nodeID, binding) {
 		e.diag(span, "cannot reference %q from outer scope", ident.Name)
 		return InvalidTypeID, TypeFailed

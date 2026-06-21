@@ -254,13 +254,15 @@ func (e *Engine) forwardDeclareFuns(nodeIDs []ast.NodeID) {
 		funKind, isFun := decl.node.Kind.(ast.Fun)
 		if isFun && !funKind.Builtin && !funKind.Extern {
 			funType := base.Cast[FunType](decl.cachedType.Type.Kind)
-			e.debug.Print(
-				0,
-				"forwardDeclare checkFunBody: %s (node=%s, type=%s)",
-				funKind.Name.Name,
-				decl.node.ID,
-				decl.cachedType.Type.ID,
-			)
+			if e.debug.Enabled() {
+				e.debug.Print(
+					0,
+					"forwardDeclare checkFunBody: %s (node=%s, type=%s)",
+					funKind.Name.Name,
+					decl.node.ID,
+					decl.cachedType.Type.ID,
+				)
+			}
 			prev := e.skipRegisterWork
 			if e.env.containsTypeParam(decl.cachedType.Type.ID) {
 				e.skipRegisterWork = true

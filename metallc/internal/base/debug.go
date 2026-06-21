@@ -11,6 +11,9 @@ type Debug interface {
 	// That function is idempotent.
 	Indent() func()
 	SetLevels(levels ...int)
+	// Enabled reports whether output is actually emitted, so callers can skip
+	// building expensive debug strings when debugging is off.
+	Enabled() bool
 }
 
 type StdoutDebug struct {
@@ -54,6 +57,8 @@ func (d *StdoutDebug) Indent() func() {
 	}
 }
 
+func (d *StdoutDebug) Enabled() bool { return true }
+
 func (d *StdoutDebug) SetLevels(levels ...int) {
 	if len(levels) == 0 {
 		d.levels = nil
@@ -74,6 +79,8 @@ func (d NilDebug) Print(_ int, _ string, _ ...any) Debug {
 func (d NilDebug) Indent() func() {
 	return func() {}
 }
+
+func (d NilDebug) Enabled() bool { return false }
 
 func (d NilDebug) SetLevels(_ ...int) {}
 

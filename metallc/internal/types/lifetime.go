@@ -331,7 +331,9 @@ func (a *LifetimeCheck) Check(nodeID ast.NodeID) {
 	a.status[nodeID] = statusInProgress
 	defer func() { a.status[nodeID] = statusDone }()
 
-	a.debug(2, nodeID, "analyze: %s", a.ast.Debug(nodeID, false, 0))
+	if a.Debug.Enabled() {
+		a.debug(2, nodeID, "analyze: %s", a.ast.Debug(nodeID, false, 0))
+	}
 	defer a.Debug.Indent()()
 	node := a.ast.Node(nodeID)
 	switch kind := node.Kind.(type) {
@@ -774,7 +776,9 @@ func (a *LifetimeCheck) analyzeSubSlice(nodeID ast.NodeID, sub ast.SubSlice) {
 		}
 	}
 	a.chains[nodeID] = chain
-	a.debug(1, nodeID, "analyzeSubSlice: %s target=%s", chain, a.ast.Debug(sub.Target, false, 0))
+	if a.Debug.Enabled() {
+		a.debug(1, nodeID, "analyzeSubSlice: %s target=%s", chain, a.ast.Debug(sub.Target, false, 0))
+	}
 }
 
 // instanceEffects returns the effects of a generic call's CONCRETE instantiation.
@@ -1417,7 +1421,9 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 	a.ast.Walk(nodeID, a.Check)
 	rhs := a.flow(assign.RHS)
 	lhsNode := a.ast.Node(assign.LHS)
-	a.debug(1, nodeID, "analyzeAssign: lhs=%s rhs=%s", a.ast.Debug(assign.LHS, false, 0), rhs)
+	if a.Debug.Enabled() {
+		a.debug(1, nodeID, "analyzeAssign: lhs=%s rhs=%s", a.ast.Debug(assign.LHS, false, 0), rhs)
+	}
 	a.checkBorrowedUnionReassign(nodeID, assign.LHS)
 	switch lhsKind := lhsNode.Kind.(type) {
 	case ast.Ident:
@@ -1849,6 +1855,9 @@ func (a *LifetimeCheck) newTaintID() TaintID {
 }
 
 func (a *LifetimeCheck) debug(level int, nodeID ast.NodeID, msg string, args ...any) {
+	if !a.Debug.Enabled() {
+		return
+	}
 	d := a.Debug.Print(level, "%s", fmt.Sprintf(msg, args...))
 	indent := d.Indent()
 	d.Print(2, "at %s", a.ast.Node(nodeID).Span.DebugLine())

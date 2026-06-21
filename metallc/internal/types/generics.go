@@ -2112,8 +2112,10 @@ func (g *Generics) satisfiesShape( //nolint:funlen
 		return g.satisfiesEnumConstraint(concreteTypeID, span)
 	}
 	concreteTyp := g.env.Type(concreteTypeID)
-	g.debug.Print(0, "satisfiesShape concrete=%s shape=%s",
-		g.env.TypeDisplay(concreteTypeID), g.env.TypeDisplay(shapeTypeID))
+	if g.debug.Enabled() {
+		g.debug.Print(0, "satisfiesShape concrete=%s shape=%s",
+			g.env.TypeDisplay(concreteTypeID), g.env.TypeDisplay(shapeTypeID))
+	}
 	// Methods live on the underlying type, not its ref form.
 	lookupTypeID := concreteTypeID
 	lookupTyp := concreteTyp
@@ -2210,8 +2212,10 @@ func (g *Generics) satisfiesShape( //nolint:funlen
 		if status.Failed() {
 			return false
 		}
-		g.debug.Print(0, "satisfiesShape method=%s expected=%s concrete=%s",
-			methodName, g.funTypeDisplay(expectedFunType), g.funTypeDisplay(concreteFunType))
+		if g.debug.Enabled() {
+			g.debug.Print(0, "satisfiesShape method=%s expected=%s concrete=%s",
+				methodName, g.funTypeDisplay(expectedFunType), g.funTypeDisplay(concreteFunType))
+		}
 		concretePub := g.declIsPub(binding.Decl)
 		if funDecl.Pub && !concretePub {
 			g.diag(span, "type %s does not satisfy shape %s: method %s must be public",
