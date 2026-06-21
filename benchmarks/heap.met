@@ -1,0 +1,78 @@
+use std.heap
+use std.io
+use std.os
+
+pub fun hash(x U64) U64 {
+    mut h = x ^ (x >> U64(30))
+    h *%= U64(0xbf58476d1ce4e5b9)
+    h ^= (h >> U64(27))
+    h *%= U64(0x94d049bb133111eb)
+    h ^= (h >> U64(31))
+    h
+}
+
+--- The element count, read opaquely so the optimizer cannot prove it constant and
+    precompute the whole heap. We never actually pass it on the command line. ---
+fun count(default Int) Int {
+    let args = os.args()
+    if args.len > 10 {
+        try Int.from_ascii_str(args[9].as_bytes()) else e { panic("unexpected") }
+    } else {
+        default
+    }
+}
+
+fun main() void {
+    let @local = Arena()
+    let args = os.args()
+    let mode = if args.len > 1 { args[1] } else { "sort" }
+    let k = 1024
+
+    io.print(mode)
+    io.print(": ")
+    when {
+    case mode.eq("sort"):
+        let m = count(10000000)
+        let h = heap.Heap.new<U64>(m, @local)
+        for i in 0..m { h.push(hash(i.to_u64_wrapping())) }
+        mut acc = U64(0)
+        for h.len() > 0 {
+            let v = try h.pop() else { panic("empty heap") }
+            acc = (acc *% 1000003) +% v
+        }
+        io.println(acc)
+    case mode.eq("churn"):
+        let m = count(10000000) * 3
+        let h = heap.Heap.new<U64>(k + 1, @local)
+        mut acc = U64(0)
+        for i in 0..m {
+            h.push(hash(i.to_u64_wrapping()))
+            if h.len() > k {
+                let v = try h.pop() else { panic("empty heap") }
+                acc = (acc *% 1000003) +% v
+            }
+        }
+        for h.len() > 0 {
+            let v = try h.pop() else { panic("empty heap") }
+            acc = (acc *% 1000003) +% v
+        }
+        io.println(acc)
+    case mode.eq("pushpop"):
+        let m = count(10000000) * 3
+        let h = heap.Heap.new<U64>(k, @local)
+        for i in 0..k { h.push(hash(i.to_u64_wrapping())) }
+        mut acc = U64(0)
+        for i in 0..m {
+            let top = try h.pop() else { panic("empty heap") }
+            acc = (acc *% 1000003) +% top
+            h.push(hash((k + i).to_u64_wrapping()))
+        }
+        for h.len() > 0 {
+            let v = try h.pop() else { panic("empty heap") }
+            acc = (acc *% 1000003) +% v
+        }
+        io.println(acc)
+    else:
+        panic("unknown mode")
+    }
+}

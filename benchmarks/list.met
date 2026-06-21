@@ -1,0 +1,113 @@
+use std.list
+use std.io
+use std.os
+
+pub fun hash(x U64) U64 {
+    mut h = x ^ (x >> U64(30))
+    h *%= U64(0xbf58476d1ce4e5b9)
+    h ^= (h >> U64(27))
+    h *%= U64(0x94d049bb133111eb)
+    h ^= (h >> U64(31))
+    h
+}
+
+--- The element count, read opaquely so the optimizer cannot prove it constant and
+    precompute the whole run. We never actually pass it on the command line. ---
+fun count(default Int) Int {
+    let args = os.args()
+    if args.len > 10 {
+        try Int.from_ascii_str(args[9].as_bytes()) else e { panic("unexpected") }
+    } else {
+        default
+    }
+}
+
+--- Build a list of `n` elements where element `i` is `hash(i)`. Allocates the full
+    capacity up front so the fill itself does not reallocate. ---
+fun build(n Int, @a Arena) &mut list.List<U64> {
+    let l = list.List.new<U64>(n, @a)
+    for i in 0..n {
+        l.push(hash(i.to_u64_wrapping()))
+    }
+    l
+}
+
+fun main() void {
+    let @local = Arena()
+    let args = os.args()
+    let mode = if args.len > 1 { args[1] } else { "grow" }
+    let n = count(10000000)
+    let nu = n.to_u64_wrapping()
+
+    io.print(mode)
+    io.print(": ")
+    when {
+    case mode.eq("grow"):
+        -- Build the list from a tiny capacity `rounds` times, exercising the regrowth
+        -- path repeatedly. A fresh arena per round frees the previous list.
+        let rounds = 100
+        mut acc = U64(0)
+        for _ in 0..rounds {
+            let @a = Arena()
+            let l = list.List.new<U64>(16, @a)
+            for i in 0..n {
+                let v = hash(i.to_u64_wrapping())
+                l.push(v)
+                acc +%= v
+            }
+        }
+        io.println(acc)
+    case mode.eq("seq"):
+        -- Sequential read: sum the whole list `passes` times (cache-friendly).
+        let passes = 1000
+        let l = build(n, @local)
+        mut acc = U64(0)
+        for _ in 0..passes {
+            for x in l.as_slice() {
+                acc +%= x
+            }
+        }
+        io.println(acc)
+    case mode.eq("random"):
+        -- Random read: index by a hash so the access pattern defeats prefetch.
+        let ops = n * 24
+        let l = build(n, @local)
+        mut acc = U64(0)
+        for i in 0..ops {
+            let idx = (hash(i.to_u64_wrapping()) % nu).to_int_wrapping()
+            acc +%= l.get(idx)
+        }
+        io.println(acc)
+    case mode.eq("scatter"):
+        -- Random read-modify-write, then a final sum to checksum the result.
+        let ops = n * 23
+        let l = build(n, @local)
+        for i in 0..ops {
+            let iu = i.to_u64_wrapping()
+            let idx = (hash(iu) % nu).to_int_wrapping()
+            l.set(idx, l.get(idx) +% hash(iu))
+        }
+        mut acc = U64(0)
+        for x in l.as_slice() {
+            acc +%= x
+        }
+        io.println(acc)
+    case mode.eq("drain"):
+        -- LIFO teardown: build then pop everything, `rounds` times.
+        let rounds = 200
+        let l = list.List.new<U64>(n, @local)
+        mut acc = U64(0)
+        for _ in 0..rounds {
+            for i in 0..n {
+                l.push(hash(i.to_u64_wrapping()))
+            }
+            for l.len > 0 {
+                let v = try l.pop() else { panic("empty list") }
+                acc +%= v
+            }
+        }
+        io.println(acc)
+    else:
+        panic("unknown mode")
+    }
+}

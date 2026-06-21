@@ -2,31 +2,69 @@
 use std.time
 use std.os
 use std.io
-use std.test
+use std.cmp
 
+--- Benchmark and the expected results.
+
+    The ratios here are what we typically see.
+
+    We fail if the real ratio is less than 90% of these expectations. ---
 let benchmarks = [
-    Benchmark("iter", "fold", 100, 100, 320),
-    Benchmark("iter", "count", 100, 100, 130),
-    Benchmark("iter", "all", 250, 220, 280),
-    Benchmark("iter", "any", 100, 50, 300),
-    Benchmark("iter", "find", 100, 60, 350),
-    Benchmark("iter", "take", 230, 85, 230),
-    Benchmark("iter", "take_while", 80, 100, 100),
-    Benchmark("iter", "collect", 95, 100, 150),
-    Benchmark("split", "byte", 90, 55, 90),
-    Benchmark("split", "predicate", 85, 65, 120),
+    --- Sum every surviving element: a full traversal into an accumulator. ---
+    Benchmark("iter", "fold", 1.00, 1.00, 3.50),
+    --- Count the survivors with no per-element work: a full traversal. ---
+    Benchmark("iter", "count", 1.10, 1.10, 1.35),
+    --- Run all() with a predicate that never fails, forcing a
+        full branch-heavy traversal. ---
+    Benchmark("iter", "all", 2.80, 2.70, 2.90),
+    --- Run any() for a value near the end, short-circuiting late. ---
+    Benchmark("iter", "any", 0.55, 0.90, 3.20),
+    --- find() the matching element near the end, short-circuiting late. ---
+    Benchmark("iter", "find", 0.60, 1.00, 3.90),
+    --- Take the first 100M survivors then fold: a bounded-length traversal. ---
+    Benchmark("iter", "take", 0.90, 2.40, 2.40),
+    --- take_while a late threshold then fold: an early-exit traversal. ---
+    Benchmark("iter", "take_while", 1.00, 1.00, 1.00),
+    --- Collect the pipeline into a List: an allocating, growing sink. ---
+    Benchmark("iter", "collect", 0.95, 1.00, 1.40),
+
+    --- Split on a fixed byte delimiter: a literal byte match. ---
+    Benchmark("split", "byte", 0.50, 1.00, 0.85),
+    --- Split on a predicate closure invoked per byte (whitespace). ---
+    Benchmark("split", "predicate", 0.70, 1.00, 1.60),
+
+    --- Push N then pop all (heapsort): a large heap with deep, cache-cold sifts. ---
+    Benchmark("heap", "sort", 0.75, 0.75, 2.00),
+    --- Stream 3N values through a size-capped K=1024 heap: steady-state push and pop. ---
+    Benchmark("heap", "churn", 0.95, 0.95, 2.50),
+    --- Repeatedly pop the root then push on a full K heap: the replace workload. ---
+    Benchmark("heap", "pushpop", 0.90, 1.00, 2.70),
+
+    --- Build the list from a tiny capacity many times, stressing the append
+        and realloc regrowth path. ---
+    Benchmark("list", "grow", 1.00, 1.90, 1.90),
+    --- Sum the whole list over many passes: sequential reads, cache-friendly bandwidth. ---
+    Benchmark("list", "seq", 1.00, 1.00, 2.80),
+    --- Read at hash-scattered indices: random access, cache-miss and
+        memory-latency bound. ---
+    Benchmark("list", "random", 1.00, 1.00, 1.80),
+    --- Read-modify-write at hash-scattered indices: random writes with
+        scattered dirty-line traffic. ---
+    Benchmark("list", "scatter", 0.85, 0.85, 1.50),
+    --- Build the list then pop every element, many rounds: a LIFO teardown
+        of push then pop. ---
+    Benchmark("list", "drain", 0.65, 1.55, 1.20),
 ]
 
 struct Benchmark {
     group Str
     name Str
-    -- todo: We don't have floating point numbers yet :-)
-    percentage_rust Int
-    percentage_c Int
-    percentage_go Int
+    ratio_c Float
+    ratio_rust Float
+    ratio_go Float
 }
 
-fun Benchmark.run(b Benchmark, recompile Bool, @a Arena) !Bool {
+fun Benchmark.run(b Benchmark, loops Int, recompile Bool, @a Arena) !Bool {
     let @local = Arena()
     let rust_bin = ".build/".concat(b.group, @a).concat("_rs", @a)
     let c_bin = ".build/".concat(b.group, @a).concat("_c", @a)
@@ -34,14 +72,15 @@ fun Benchmark.run(b Benchmark, recompile Bool, @a Arena) !Bool {
     let met_bin = ".build/".concat(b.group, @a).concat("_met", @a)
     if recompile {
         _ = try run(
-            ["rustc", "-C", "opt-level=3", "-C", "target-cpu=native", "-o", rust_bin, b.group.concat(".rs", @a)][..], @a)
+            ["rustc", "-C", "opt-level=3", "-C", "target-cpu=native", "-C", "lto=fat", "-C", "codegen-units=1",
+                "-o", rust_bin, b.group.concat(".rs", @a)][..], @a)
         _ = try run(
             ["clang", "-O3", "-march=native", "-o", c_bin, b.group.concat(".c", @a)][..], @a)
         _ = try run(
             ["go", "build", "-o", go_bin, b.group.concat(".go", @a)][..], @a)
         _ = try run([
             "go", "run", "../metallc/...", "build", "-I", "../lib",
-            "-opt", "fast", "-o", met_bin, b.group.concat(".met", @a)][..], @a)
+            "-opt", "fast", "-cpu", "native", "-o", met_bin, b.group.concat(".met", @a)][..], @a)
     }
 
     io.print("[")
@@ -51,47 +90,60 @@ fun Benchmark.run(b Benchmark, recompile Bool, @a Arena) !Bool {
         io.print(b.name)
     }
     io.print("]\n")
-    io.print("\tMetall: ")
-    let t0 = time.Instant.new()
-    let met_out = try run([met_bin, b.name][..], @a)
-    let met_duration = t0.elapsed()
+    io.print("    Metall    ")
+    mut met_out = ""
+    mut met_duration_ns = time.hour.to(time.nanosecond)
+    for i in 0..loops { 
+        let t0 = time.Instant.new()
+        met_out = try run([met_bin, b.name][..], @a)
+        let duration_ns = t0.elapsed().to(time.nanosecond)
+        if duration_ns < met_duration_ns {
+            met_duration_ns = duration_ns
+        }
+    }
+    let met_duration = time.Duration.new(met_duration_ns, time.nanosecond)
     io.println(met_duration)
 
-    let run_lang = fun[met_out, met_duration, b, @a](lang Str, cmd Str, expected_pct Int) !Bool {
-        io.print("\t")
-        io.print(lang)
-        io.print(":\t")
-        let t0 = time.Instant.new()
-        let out = try run([cmd, b.name][..], @a)
-        if not out.eq(met_out) {
-            io.println("\toutput differs:")
-            io.print("\texpected:\t")
-            io.println(met_out)
-            io.print("\tgot:\t")
-            io.println(out)
-            io.println("\t\x1b[31mFAILED\x1b[0m")
-            return false
+    let run_lang = fun[met_out, met_duration, b, loops, @a](lang Str, cmd Str, expected_ratio Float) !Bool {
+        io.print("    ")
+        io.print(lang.rpad(6, @a))
+        io.print("    ")
+        mut duration_ns = time.hour.to(time.nanosecond)
+        for i in 0..loops {
+            let t0 = time.Instant.new()
+            let out = try run([cmd, b.name][..], @a)
+            if not out.eq(met_out) {
+                io.println("    output differs:")
+                io.print("    expected: ")
+                io.println(met_out)
+                io.print("    got: ")
+                io.println(out)
+                io.println("    \x1b[31mFAILED\x1b[0m")
+                return false
+            }
+            let d = t0.elapsed().to(time.nanosecond)
+            if d < duration_ns {
+                duration_ns = d
+            }
         }
-        let duration = t0.elapsed()
-        let pct = duration.to(time.nanosecond) * 100 / met_duration.to(time.nanosecond)
-        io.print(duration)
-        io.print("\t")
-        io.print(pct)
-        io.print("%")
+        let duration = time.Duration.new(duration_ns, time.nanosecond)
+        let ratio = duration.to(time.nanosecond).to_float() / met_duration.to(time.nanosecond).to_float()
+        let duration_str = f"{duration}".build(@a).rpad(16, @a)
+        io.print(f"{duration_str} {ratio:precision=2, width=5} / {expected_ratio:precision=2}".build(@a))
         -- We expect at least 90% of the specified performance to account for fluctuations.
-        if pct < expected_pct - 10 {
-            io.println("\t\x1b[31mFAILED\x1b[0m")
+        if ratio < expected_ratio - 0.10 {
+            io.println("    \x1b[31mFAILED\x1b[0m")
             return false
         } else {
-            io.println("\t\x1b[32mPASSED\x1b[0m")
+            io.println("    \x1b[32mPASSED\x1b[0m")
         }
         true
     }
 
-    let c = try run_lang("C", c_bin, b.percentage_c)
-    let rust = try run_lang("Rust", rust_bin, b.percentage_rust)
-    let go = try run_lang("Go", go_bin, b.percentage_go)
-    c or rust or go
+    let c = try run_lang("C", c_bin, b.ratio_c)
+    let rust = try run_lang("Rust", rust_bin, b.ratio_rust)
+    let go = try run_lang("Go", go_bin, b.ratio_go)
+    c and rust and go
 }
 
 fun run(cmd []Str, @a Arena) !Str {
@@ -106,17 +158,29 @@ fun run(cmd []Str, @a Arena) !Str {
 
 fun main() !void {
     let @local = Arena()
-    let filter = {
-        let args = os.args()
-        if args.len > 1 {
-            args[1]
-        } else {
-            ""
+    mut filter = ""
+    mut loops = 1
+    let args = os.args()[1..]
+    mut i = 0
+    for i < args.len {
+        let arg = args[i]
+        when {
+        case arg.eq("--loops"):
+            i += 1
+            loops = try Int.from_ascii_str(args[i].as_bytes()) else e {
+                io.println("invalid argument to --loop")
+                return e
+            }
+        case arg.eq("--filter"):
+            i += 1
+            filter = args[i]
         }
+        i += 1
     }
     _ = try run(["mkdir", "-p", ".build"][..], @local)
     mut last_group = ""
     mut failed = 0
+    io.println(f"Running {loops} loops".build(@local))
     for b in benchmarks {
         let name = if b.name.eq("") { b.group } else { b.group.concat("/", @local).concat(b.name, @local) }
         if not name.starts_with(filter) {
@@ -126,10 +190,10 @@ fun main() !void {
                 io.print("/")
                 io.print(b.name)
             }
-            io.println("]\tSKIP")
+            io.println("]    SKIP")
             continue
         }
-        let ok = try b.run(not b.group.eq(last_group), @local)
+        let ok = try b.run(loops, not b.group.eq(last_group), @local)
         if not ok {
             failed += 1
         }

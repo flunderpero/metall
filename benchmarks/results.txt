@@ -1,0 +1,92 @@
+Running 5 loops
+[iter/fold]
+    Metall    451.849459ms
+    C         461.294416ms      1.02 / 1.00    PASSED
+    Rust      455.701916ms      1.01 / 1.00    PASSED
+    Go        1.65067125s       3.65 / 3.50    PASSED
+[iter/count]
+    Metall    277.248875ms
+    C         333.318916ms      1.20 / 1.10    PASSED
+    Rust      325.206334ms      1.17 / 1.10    PASSED
+    Go        410.913916ms      1.48 / 1.35    PASSED
+[iter/all]
+    Metall    545.568959ms
+    C         1.591015916s      2.92 / 2.80    PASSED
+    Rust      1.604059s         2.94 / 2.70    PASSED
+    Go        1.640239583s      3.01 / 2.90    PASSED
+[iter/any]
+    Metall    516.074583ms
+    C         271.181166ms      0.53 / 0.55    PASSED
+    Rust      481.879708ms      0.93 / 0.90    PASSED
+    Go        1.703910625s      3.30 / 3.20    PASSED
+[iter/find]
+    Metall    421.014ms
+    C         271.9385ms        0.65 / 0.60    PASSED
+    Rust      421.34925ms       1.00 / 1.00    PASSED
+    Go        1.715337292s      4.07 / 3.90    PASSED
+[iter/take]
+    Metall    220.576125ms
+    C         202.500291ms      0.92 / 0.90    PASSED
+    Rust      516.93975ms       2.34 / 2.40    PASSED
+    Go        543.874667ms      2.47 / 2.40    PASSED
+[iter/take_while]
+    Metall    1.651708125s
+    C         1.68068025s       1.02 / 1.00    PASSED
+    Rust      1.680698125s      1.02 / 1.00    PASSED
+    Go        1.737817042s      1.05 / 1.00    PASSED
+[iter/collect]
+    Metall    1.933780458s
+    C         1.855767209s      0.96 / 0.95    PASSED
+    Rust      1.876894917s      0.97 / 1.00    PASSED
+    Go        2.789454541s      1.44 / 1.40    PASSED
+[split/byte]
+    Metall    403.110541ms
+    C         220.607083ms      0.55 / 0.50    PASSED
+    Rust      406.755292ms      1.01 / 1.00    PASSED
+    Go        348.424458ms      0.86 / 0.85    PASSED
+[split/predicate]
+    Metall    477.418541ms
+    C         377.82075ms       0.79 / 0.70    PASSED
+    Rust      504.057834ms      1.06 / 1.00    PASSED
+    Go        777.816583ms      1.63 / 1.60    PASSED
+[heap/sort]
+    Metall    1.385391916s
+    C         1.271043708s      0.92 / 0.75    PASSED
+    Rust      1.229958083s      0.89 / 0.75    PASSED
+    Go        2.840337291s      2.05 / 2.00    PASSED
+[heap/churn]
+    Metall    934.107541ms
+    C         928.299333ms      0.99 / 0.95    PASSED
+    Rust      906.733375ms      0.97 / 0.95    PASSED
+    Go        2.4068595s        2.58 / 2.50    PASSED
+[heap/pushpop]
+    Metall    855.628709ms
+    C         773.976958ms      0.90 / 0.90    PASSED
+    Rust      876.323167ms      1.02 / 1.00    PASSED
+    Go        2.373194375s      2.77 / 2.70    PASSED
+[list/grow]
+    Metall    1.086647542s
+    C         1.091840791s      1.00 / 1.00    PASSED
+    Rust      2.396690292s      2.21 / 1.90    PASSED
+    Go        2.417948375s      2.23 / 1.90    PASSED
+[list/seq]
+    Metall    970.135417ms
+    C         949.486083ms      0.98 / 1.00    PASSED
+    Rust      967.478917ms      1.00 / 1.00    PASSED
+    Go        2.8032905s        2.89 / 2.80    PASSED
+[list/random]
+    Metall    993.45325ms
+    C         1.021521625s      1.03 / 1.00    PASSED
+    Rust      988.208541ms      0.99 / 1.00    PASSED
+    Go        1.863623042s      1.88 / 1.80    PASSED
+[list/scatter]
+    Metall    1.267154084s
+    C         1.724839042s      1.36 / 0.85    PASSED
+    Rust      1.073647583s      0.85 / 0.85    PASSED
+    Go        1.951532125s      1.54 / 1.50    PASSED
+[list/drain]
+    Metall    1.499815625s
+    C         993.053334ms      0.66 / 0.65    PASSED
+    Rust      2.443461917s      1.63 / 1.55    PASSED
+    Go        1.938376875s      1.29 / 1.20    PASSED
+All benchmarks passed

@@ -1,7 +1,13 @@
-all *args:
+run *args:
+    set -euo pipefail
     mkdir -p .build
     go run ../metallc/... build -I ../lib --opt fast -o .build/run run.met
     ./.build/run {{args}}
+
+# Run the full benchmark suite over 5 loops and record the (de-colored) output to results.txt.
+record:
+    #!/usr/bin/env bash
+    just run --loops 5 | tee >(perl -pe 's/\x1b\[[0-9;]*[A-Za-z]//g' > results.txt)
 
 compile-check:
     #!/usr/bin/env bash
