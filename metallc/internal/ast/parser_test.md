@@ -2175,6 +2175,21 @@ Fun(name="foo")
   block=Block()
 ```
 
+**Unsafe is not valid in a function type**
+
+```metall
+fun foo(f unsafe fun() void) void {}
+```
+
+```error
+test.met:1:11: unexpected token: expected <type identifier> or &, got <unsafe>
+    fun foo(f unsafe fun() void) void {}
+              ^^^^^^
+test.met:1:9: expected type, got <identifier>
+    fun foo(f unsafe fun() void) void {}
+            ^
+```
+
 **Pub fun**
 
 ```metall module
