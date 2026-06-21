@@ -3,7 +3,7 @@ metallc := "go run ../../metallc"
 # Static libSDL3.a needs these macOS frameworks handed to the final link.
 link := "-Lvendor/sdl3/lib -lSDL3 -framework Cocoa -framework Carbon -framework IOKit -framework CoreVideo -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework CoreMedia -framework CoreHaptics -framework GameController -framework ForceFeedback -framework CoreFoundation -framework CoreGraphics -framework Metal -framework QuartzCore -framework UniformTypeIdentifiers -liconv"
 
-flags := "-I src -I ../../lib --asan --link '" + link + "'"
+flags := "-I src -I ../../lib --opt fast --link '" + link + "'"
 
 default: run
 

@@ -1,0 +1,201 @@
+use local.math
+use std.list
+use std.heap
+use std.io
+
+--- These first and last `hidden_tiles_per_side` rows and columns
+    are outside the viewport. ---
+pub let hidden_tiles_per_side = 2
+
+--- How close (in tiles) a tower may sit to a line of sight before it blocks it.
+
+    Smaller lets enemies cut more diagonals; larger keeps clearance for wide
+    units. Used by `has_towers_on_segment`. ---
+pub let los_clearance F32 = 1.0
+
+pub enum TileKind U8 = tower | exit | free
+
+pub nocopy struct Grid {
+    pub size math.IPoint
+    pub tiles []mut TileKind
+    --- The next waypoint on the shortest path to an exit. ---
+    pub flow_field []mut Int
+}
+
+pub fun Grid.new(size math.IPoint, @a Arena) &mut Grid {
+    let tiles = @a.slice(size.x * size.y, TileKind.free)
+    let flow_field = @a.slice(size.x * size.y, 0)
+    @a.new(Grid(size, tiles, flow_field))
+}
+
+pub fun Grid.pos(g &Grid, index Int) math.IPoint {
+    math.IPoint(index % g.size.x, index / g.size.x)
+}
+
+pub fun Grid.index(g &Grid, pos math.IPoint) Int {
+    pos.y * g.size.x + pos.x
+}
+
+pub fun Grid.has_towers_in_rect(g &Grid, tl math.IPoint, br math.IPoint) Bool {
+    mut y1 = tl.y
+    mut y2 = br.y
+    if y1 > y2 {
+        let t = y2
+        y2 = y1
+        y1 = t
+    }
+    mut x1 = tl.x
+    mut x2 = br.x
+    if x1 > x2 {
+        let t = x2
+        x2 = x1
+        x1 = t
+    }
+    for y in y1..=y2 {
+        for x in x1..=x2 {
+            if g.tiles[y * g.size.x + x] == TileKind.tower {
+                return true
+            }
+        }
+    }
+    false
+}
+
+--- A drop-in replacement for `has_towers_in_rect` that tests the straight
+    segment between the tile centers `a` and `b` instead of their whole bounding
+    box: a boxed tower only blocks when its perpendicular distance to the line
+    is under `los_clearance`, so towers off in the corners no longer veto a
+    clear diagonal. ---
+pub fun Grid.has_towers_on_segment(g &Grid, a math.IPoint, b math.IPoint) Bool {
+    mut y1 = a.y
+    mut y2 = b.y
+    if y1 > y2 {
+        let t = y2
+        y2 = y1
+        y1 = t
+    }
+    mut x1 = a.x
+    mut x2 = b.x
+    if x1 > x2 {
+        let t = x2
+        x2 = x1
+        x1 = t
+    }
+    let dx = b.x - a.x
+    let dy = b.y - a.y
+    let max_cross_sq = los_clearance * los_clearance * (dx * dx + dy * dy).to_f32()
+    for y in y1..=y2 {
+        for x in x1..=x2 {
+            if g.tiles[y * g.size.x + x] != TileKind.tower { continue }
+            -- `cross` is twice the signed area of triangle (a, b, tower), which
+            -- equals |segment| times the tower's perpendicular distance to it.
+            let cross = dx * (y - a.y) - dy * (x - a.x)
+            if (cross * cross).to_f32() < max_cross_sq { return true }
+        }
+    }
+    false
+}
+
+struct PqNode {
+    cost F32
+    index Int
+}
+
+--- Reversed so the max-heap surfaces the smallest cost first. ---
+pub fun PqNode.cmp(a PqNode, b PqNode) Ordering {
+    b.cost.cmp(a.cost)
+}
+
+--- Recompute every tile's next waypoint toward the nearest exit with Theta*, so
+    a waypoint is the farthest tile still reachable in a straight line and enemies
+    cut diagonally instead of stepping along the grid. ---
+pub fun Grid.update_pathing(g &mut Grid) void {
+    let @local = Arena()
+    let tile_count = g.size.x * g.size.y
+    let inf F32 = 1000000.0
+    -- Shortest known straight-line distance from each tile to the nearest exit.
+    let dist_to_exit = @local.slice(tile_count, inf)
+    -- Tiles still to expand, cheapest distance first.
+    let frontier = heap.Heap.new<PqNode>(tile_count, @local)
+
+    -- Seed every exit as a source. Towers and walled-off tiles keep pointing at
+    -- themselves, which leaves any enemy standing on them stopped.
+    for kind, index in g.tiles {
+        g.flow_field[index] = index
+        if kind == TileKind.exit {
+            dist_to_exit[index] = 0.0
+            frontier.push(PqNode(0.0, index))
+        }
+    }
+
+    for {
+        let entry = try frontier.pop() else { return void }
+        let current = entry.index
+        -- A tile gets re-queued whenever we find a cheaper route to it, so the
+        -- same tile can sit in the frontier several times. Only the cheapest copy
+        -- counts; skip the stale leftovers.
+        if entry.cost > dist_to_exit[current] { continue }
+        let current_pos = g.pos(current)
+        -- The waypoint `current` heads for next on its way to the exit.
+        let current_waypoint = g.flow_field[current]
+        let current_waypoint_pos = g.pos(current_waypoint)
+        for neighbor in g.neighbors(current) {
+            if neighbor < 0 { continue }
+            if g.tiles[neighbor] == TileKind.tower { continue }
+            let neighbor_pos = g.pos(neighbor)
+            -- If the neighbor can see `current`'s waypoint in a clear straight
+            -- line, run the segment from that waypoint and drop `current` from the
+            -- path; otherwise the segment is just the step from `current`.
+            mut anchor = current
+            mut anchor_dist = dist_to_exit[current]
+            mut anchor_pos = current_pos
+            if not g.has_towers_on_segment(current_waypoint_pos, neighbor_pos) {
+                anchor = current_waypoint
+                anchor_dist = dist_to_exit[current_waypoint]
+                anchor_pos = current_waypoint_pos
+            }
+            -- Measure the hop by the segment's true straight-line length, not a
+            -- grid-step count, so diagonal shortcuts come out correctly cheaper.
+            let segment_len = math.Vec2(
+                (anchor_pos.x - neighbor_pos.x).to_f32(),
+                (anchor_pos.y - neighbor_pos.y).to_f32()).length()
+            -- cand_dist is neighbor's straight-line distance to the exit if it
+            -- routes through this anchor: a candidate weighed against the best
+            -- distance found for neighbor so far.
+            let cand_dist = anchor_dist + segment_len
+            if cand_dist < dist_to_exit[neighbor] {
+                -- The candidate wins: record it as neighbor's distance, aim
+                -- neighbor straight at this anchor, and re-queue it so the
+                -- shorter route spreads on to neighbor's own neighbors.
+                dist_to_exit[neighbor] = cand_dist
+                g.flow_field[neighbor] = anchor
+                frontier.push(PqNode(cand_dist, neighbor))
+            }
+        }
+    }
+}
+
+--- Return the index of all neighbors (top, right, bottom, left). 
+
+    An index of `-1` means there is no neighbor at that direction. ---
+fun Grid.neighbors(g &Grid, index Int) [4]Int {
+    mut res = [4 of -1]
+    mut nb = 0
+    if index >= g.size.x {
+        res[nb] =index - g.size.x 
+        nb += 1
+    }
+    if index % g.size.x < g.size.x - 1 {
+        res[nb] = index + 1
+        nb += 1
+    }
+    if index < (g.size.y - 1) * g.size.x  {
+        res[nb] = index + g.size.x 
+        nb += 1
+    }
+    if index % g.size.x > 0 {
+        res[nb] = index - 1
+        nb += 1
+    }
+    res
+}

@@ -1,58 +1,800 @@
 use std.ffi
+use std.io
+use std.fs
+use std.enums
 
--- SDL3/SDL_init.h
+pub enum SDLErr Err = 
+    | init_failed 
+    | create_window_failed 
+    | raise_window_failed
+    | set_window_fullscreen_failed
+    | create_renderer_failed
+    | set_render_vsync_failed
+    | load_bmp_failed
+    | create_texture_failed
+    | render_read_pixels_failed
+    | save_bmp_failed
+    | load_wav_failed
+    | open_audio_device_stream_failed
 
---- Subsystems for `init`. Each discriminant is SDL's `SDL_INIT_*` flag bit,
-    so a variant's `.tag` is exactly the value SDL expects. ---
 pub enum InitFlags U32 =
     | audio = 0x00000010
     | video = 0x00000020
     | events = 0x00004000
 
---- Bring SDL and the given subsystem up. Returns true on success. ---
-pub extern("SDL_Init") fun init(flags U32) Bool
+
+--- Bring SDL and the given subsystems up. ---
+pub fun init(flags U32) !void {
+    if not unsafe init_(flags) {
+        return SDLErr.init_failed
+    }
+}
 
 --- Shut SDL down, releasing everything `init` brought up. ---
-pub extern("SDL_Quit") fun quit() void
+pub fun quit() void {
+    unsafe quit_()
+}
 
--- SDL3/SDL_video.h
+--- Milliseconds since SDL was initialized. ---
+pub fun ticks() Int {
+    unsafe get_ticks_()
+}
 
---- Create a centered window of the given size. `flags` is a bitmask of SDL's
-    `SDL_WINDOW_*` constants (0 for a plain window). Null on failure. ---
-pub extern("SDL_CreateWindow") fun create_window(title ffi.Ptr<U8>, w I32, h I32, flags U64) ffi.Ptr<void>
+--- A high-resolution counter value, in ticks. Divide a difference of two
+    readings by `performance_frequency()` to get elapsed seconds. ---
+pub fun performance_counter() Int {
+    unsafe get_performance_counter_()
+}
 
---- Destroy a window created by `create_window`. ---
-pub extern("SDL_DestroyWindow") fun destroy_window(window ffi.Ptr<void>) void
+--- Ticks per second of `performance_counter()`. ---
+pub fun performance_frequency() Int {
+    unsafe get_performance_frequency_()
+}
 
---- Raise the window above the others and give it input focus. On macOS this
-    also activates the app, bringing a terminal-launched window to the front. ---
-pub extern("SDL_RaiseWindow") fun raise_window(window ffi.Ptr<void>) Bool
+pub fun error(@a Arena) Str {
+    let cstr = unsafe get_error_()
+    let bytes = unsafe ffi.from_cstr(cstr)
+    Str.from_utf8_lossy(bytes, @a)
+}
+
+fun sdl_panic_message(@a Arena) Str {
+    f"SDLError: {error(@a)}".build(@a)
+}
+
+pub struct Window {
+    handle ffi.Ptr<void>
+}
+
+--- Create a centered window of the given size. 
+
+    `flags` is a bitmask of SDL's `SDL_WINDOW_*` constants (0 for a plain window). ---
+pub fun Window.create(title Str, w I32, h I32, flags U64 = 0) !Window {
+    let @local = Arena()
+    let title = ffi.cstr(title.as_bytes(), @local)
+    let handle = unsafe create_window_(title, w, h, flags)
+    if handle.is_null() {
+        return SDLErr.create_window_failed
+    }
+    Window(handle)
+}
+
+--- Destroy a window. ---
+pub fun Window.destroy(w Window) void {
+    unsafe destroy_window_(w.handle)
+}
+
+pub fun Window.raise(w Window) !void {
+    if not unsafe raise_window_(w.handle) {
+        return SDLErr.raise_window_failed
+    }
+}
+
+--- Switch the window between borderless fullscreen-desktop and windowed. ---
+pub fun Window.set_fullscreen(w Window, fullscreen Bool) !void {
+    if not unsafe set_window_fullscreen_(w.handle, fullscreen) {
+        return SDLErr.set_window_fullscreen_failed
+    }
+}
+
+--- A handle to a raw SDL_Event buffer. ---
+pub struct SDLEvent {
+    handle ffi.PtrMut<void>
+}
+
+enum EventType U32 = 
+    | key_down = 0x300 
+    | key_up = 0x301 
+    | mouse_motion = 0x400
+    | mouse_button_down = 0x401
+    | mouse_button_up = 0x402
+
+pub struct KeyEvent {
+    pub scancode U32
+    pub key U32
+    pub mod U16
+    pub down Bool
+    pub repeat Bool
+}
+
+pub fun KeyEvent.fmt(e KeyEvent, sw &mut StrWriter) void {
+    f"KeyEvent(\
+        scancode={e.scancode}, key={e.key}, key_rune={Rune.from_u32_lossy(e.key)}, \
+        mod={e.mod}, down={e.down}, repeat={e.repeat})".write_to(sw)
+}
+
+pub enum MouseButton U8 = left = 1 | middle = 2 | right = 3 | x1 = 4 | x2 = 5
+
+pub struct MouseMotionEvent {
+    pub state U32
+    pub x F32
+    pub y F32
+    pub xrel F32
+    pub yrel F32
+}
+
+pub fun MouseMotionEvent.fmt(e MouseMotionEvent, sw &mut StrWriter) void {
+    f"MouseMotionEvent(state={e.state}, x={e.x}, y={e.y}, xrel={e.xrel}, yrel={e.yrel})".write_to(sw)
+}
+
+pub struct MouseButtonEvent {
+    pub button MouseButton
+    pub down Bool
+    pub clicks U8
+    pub x F32
+    pub y F32
+}
+
+pub fun MouseButtonEvent.fmt(e MouseButtonEvent, sw &mut StrWriter) void {
+    f"SDLMouseButtonEvent(button={e.button.debug_name}, down={e.down}, clicks={e.clicks}, x={e.x}, y={e.y})".write_to(sw)
+}
+
+pub union Event = KeyEvent | MouseMotionEvent | MouseButtonEvent
+
+pub fun Event.fmt(e Event, sw &mut StrWriter) void {
+    match e {
+    case KeyEvent e: e.fmt(sw)
+    case MouseMotionEvent e: e.fmt(sw)
+    case MouseButtonEvent e: e.fmt(sw)
+    }
+}
+
+pub fun pump_events() void {
+    unsafe pump_events_()
+}
+
+--- Poll events and convert them to "Metall" events.
+
+    We cannot convert SDL_Event directly because it is a C union and there
+    is no uniform way to convert a C union to a Metall union.
+
+    If `renderer` is given, its `.convert_event_coords()` is called first. ---
+pub fun poll_event(renderer ?Renderer, @a Arena) ?Event {
+    -- Mirror the SDL_Event member structs so we can cast the raw buffer. Field
+    -- order must match SDL's C ABI. reserved/raw/padding are layout filler.
+    struct SDLKeyboardEvent {
+        type U32
+        reserved U32
+        timestamp U64
+        window_id U32
+        which U32
+        scancode U32
+        key U32
+        mod U16
+        raw U16
+        down Bool
+        repeat Bool
+    }
+
+    struct SDLMouseMotionEvent {
+        type U32
+        reserved U32
+        timestamp U64
+        window_id U32
+        which U32
+        state U32
+        x F32
+        y F32
+        xrel F32
+        yrel F32
+    }
+
+    struct SDLMouseButtonEvent {
+        type U32
+        reserved U32
+        timestamp U64
+        window_id U32
+        which U32
+        button U8
+        down Bool
+        clicks U8
+        padding U8
+        x F32
+        y F32
+    }
+
+    mut buf = (unsafe [16 uninit U64])[..]
+    let ptr = unsafe ffi.slice_ptr_mut(buf).cast_ptr<void>()
+    if not unsafe poll_event_(ptr) {
+        return None()
+    }
+    match renderer {
+        case None:
+        else r: r.convert_event_coords(SDLEvent(ptr))
+    }
+    let type = unsafe (unsafe ptr.cast_ptr<U32>()).read()
+    when {
+    case type == EventType.key_up.tag or type == EventType.key_down.tag:
+        let e = unsafe (unsafe ptr.cast_ptr<SDLKeyboardEvent>()).read()
+        return Event(KeyEvent(
+            scancode=e.scancode,
+            key=e.key,
+            mod=e.mod,
+            down=e.down,
+            repeat=e.repeat
+        ))
+    case type == EventType.mouse_motion.tag:
+        let e = unsafe (unsafe ptr.cast_ptr<SDLMouseMotionEvent>()).read()
+        return Event(MouseMotionEvent(
+            state=e.state,
+            x=e.x,
+            y=e.y,
+            xrel=e.xrel,
+            yrel=e.yrel
+        ))
+    case type == EventType.mouse_button_down.tag or type == EventType.mouse_button_up.tag:
+        let e = unsafe (unsafe ptr.cast_ptr<SDLMouseButtonEvent>()).read()
+        match enums.from_tag<MouseButton>(e.button) {
+        case None:
+        else button:
+            return Event(MouseButtonEvent(
+                button=button,
+                down=e.down,
+                clicks=e.clicks,
+                x=e.x,
+                y=e.y
+            ))
+        }
+    else:
+    }
+    None()
+}
+
+pub struct Color {
+    pub r U8
+    pub g U8
+    pub b U8
+    pub a U8
+}
+
+pub struct FColor {
+    pub r F32
+    pub g F32
+    pub b F32
+    pub a F32
+}
+
+pub struct FPoint {
+    pub x F32
+    pub y F32
+}
+
+pub struct FRect {
+    pub x F32
+    pub y F32
+    pub w F32
+    pub h F32
+}
+
+pub enum BlendMode U32 =
+    | none = 0x00000000
+    | blend = 0x00000001
+    | blend_premultiplied = 0x00000010
+    | add = 0x00000002
+    | add_premultiplied = 0x00000020
+    | mod = 0x00000004
+    | mul = 0x00000008
+
+pub enum ScaleMode I32 =
+    | nearest = 0
+    | linear = 1
+    | pixelart = 2
+
+pub struct Vertex {
+    pub pos FPoint
+    pub color FColor
+    pub tex_coord FPoint
+}
+
+pub fun Vertex.translate(v Vertex, x F32, y F32) Vertex {
+    Vertex(FPoint(v.pos.x + x, v.pos.y + y), v.color, v.tex_coord)
+}
+
+pub struct Renderer {
+    handle ffi.Ptr<void>
+}
+
+--- Create a 2D renderer for the window. 
+
+    `name` picks a driver or - if absent - lets SDL choose. ---
+pub fun Window.create_renderer(w Window, name ?Str = None()) !Renderer {
+    let @local = Arena()
+    let name = match name {
+        case None: ffi.Ptr.null<U8>()
+        else s: ffi.cstr(s.as_bytes(), @local)
+    }
+    let handle = unsafe create_renderer_(w.handle, name)
+    if handle.is_null() {
+        return SDLErr.create_renderer_failed
+    }
+    Renderer(handle)
+}
+
+pub fun Renderer.destroy(r Renderer) void {
+    unsafe destroy_renderer_(r.handle)
+}
+
+pub fun Renderer.set_draw_color(r Renderer, c Color) void {
+    if not unsafe set_render_draw_color_(r.handle, c.r, c.g, c.b, c.a) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.clear(r Renderer) void {
+    if not unsafe render_clear_(r.handle) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.present(r Renderer) void {
+    if not unsafe render_present_(r.handle) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub enum RendererVsync I32 = 
+    | disabled = 0
+    | full = 1
+    | half = 2
+    | adaptive = -1
+
+pub fun Renderer.set_vsync(r Renderer, vsync RendererVsync) !void {
+    if not unsafe set_render_vsync_(r.handle, vsync.tag) {
+        return SDLErr.set_render_vsync_failed
+    }
+}
+
+pub fun Renderer.point(r Renderer, x F32, y F32) void {
+    if not unsafe render_point_(r.handle, x, y) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.points(r Renderer, points []FPoint) void {
+    if not unsafe render_points_(r.handle, ffi.slice_ptr(points), points.len.to_i32_clamped()) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.line(r Renderer, x1 F32, y1 F32, x2 F32, y2 F32) void {
+    if not unsafe render_line_(r.handle, x1, y1, x2, y2) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.lines(r Renderer, points []FPoint) void {
+    if not unsafe render_lines_(r.handle, ffi.slice_ptr(points), points.len.to_i32_clamped()) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.rect(r Renderer, rect FRect) void {
+    if not unsafe render_rect_(r.handle, ffi.ref_ptr(&rect)) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.rects(r Renderer, rects []FRect) void {
+    if not unsafe render_rects_(r.handle, ffi.slice_ptr(rects), rects.len.to_i32_clamped()) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.fill_rect(r Renderer, rect FRect) void {
+    if not unsafe render_fill_rect_(r.handle, ffi.ref_ptr(&rect)) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.fill_rects(r Renderer, rects []FRect) void {
+    if not unsafe render_fill_rects_(r.handle, ffi.slice_ptr(rects), rects.len.to_i32_clamped()) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.geometry(r Renderer, vertices []Vertex) void {
+    if not unsafe render_geometry_(r.handle, ffi.Ptr.null<void>(), ffi.slice_ptr(vertices), vertices.len.to_i32_clamped(), ffi.Ptr.null<I32>(), I32(0)) {
+        -- Can only fail on an invalid renderer/args (ruled out by our types) or OOM.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+--- Draw textured triangles sampling `t`. Vertices' tex_coords are in 0..1. ---
+pub fun Renderer.geometry_textured(r Renderer, t Texture, vertices []Vertex) void {
+    if not unsafe render_geometry_(r.handle, t.handle, ffi.slice_ptr(vertices), vertices.len.to_i32_clamped(), ffi.Ptr.null<I32>(), I32(0)) {
+        -- Can only fail on an invalid renderer/texture/args, ruled out by our types.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.set_blend_mode(r Renderer, mode BlendMode) void {
+    if not unsafe set_render_draw_blend_mode_(r.handle, mode.tag) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Renderer.set_draw_color_float(r Renderer, c FColor) void {
+    if not unsafe set_render_draw_color_float_(r.handle, c.r, c.g, c.b, c.a) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub enum LogicalPresentation I32 =
+    | disabled = 0
+    | stretch = 1
+    | letterbox = 2
+    | overscan = 3
+    | integer_scale = 4
+
+--- Set a virtual resolution to render in. SDL scales and letterboxes it onto the real window. ---
+pub fun Renderer.set_logical_presentation(r Renderer, w I32, h I32, mode LogicalPresentation) void {
+    if not unsafe set_render_logical_presentation_(r.handle, w, h, mode.tag) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+--- Rewrite an event's mouse and touch coordinates from window pixels into logical coordinates, in place. ---
+pub fun Renderer.convert_event_coords(r Renderer, event SDLEvent) void {
+    if not unsafe convert_event_to_render_coordinates_(r.handle, event.handle) {
+        -- Can only fail on an invalid renderer or event, both ruled out here.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub struct Texture {
+    handle ffi.Ptr<void>
+}
+
+--- Load a BMP file into a texture for the given renderer. ---
+pub fun Texture.load_bmp(path fs.Path, r Renderer) !Texture {
+    let @local = Arena()
+    let surface = unsafe load_bmp_(ffi.cstr(path.as_bytes(), @local))
+    if surface.is_null() {
+        return SDLErr.load_bmp_failed
+    }
+    let handle = unsafe create_texture_from_surface_(r.handle, surface)
+    unsafe destroy_surface_(surface)
+    if handle.is_null() {
+        return SDLErr.load_bmp_failed
+    }
+    Texture(handle)
+}
+
+pub fun Texture.destroy(t Texture) void {
+    unsafe destroy_texture_(t.handle)
+}
+
+--- Draw the whole texture into `dst`. ---
+pub fun Renderer.texture(r Renderer, t Texture, dst FRect) void {
+    if not unsafe render_texture_(r.handle, t.handle, ffi.Ptr.null<FRect>(), ffi.ref_ptr(&dst)) {
+        -- Can only fail on an invalid renderer/texture, ruled out by our types.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+--- Create an empty texture to render into (a render target). ---
+pub fun Texture.create_target(r Renderer, w I32, h I32) !Texture {
+    -- SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET
+    let handle = unsafe create_texture_(r.handle, 0x16462004, 2, w, h)
+    if handle.is_null() {
+        return SDLErr.create_texture_failed
+    }
+    Texture(handle)
+}
+
+pub fun Texture.set_blend_mode(t Texture, mode BlendMode) void {
+    if not unsafe set_texture_blend_mode_(t.handle, mode.tag) {
+        -- Can only fail on an invalid texture, ruled out by our typed Texture.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Texture.set_scale_mode(t Texture, mode ScaleMode) void {
+    if not unsafe set_texture_scale_mode_(t.handle, mode.tag) {
+        -- Can only fail on an invalid texture, ruled out by our typed Texture.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Texture.set_color_mod(t Texture, r U8, g U8, b U8) void {
+    if not unsafe set_texture_color_mod_(t.handle, r, g, b) {
+        -- Can only fail on an invalid texture, ruled out by our typed Texture.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun Texture.set_alpha_mod(t Texture, a U8) void {
+    if not unsafe set_texture_alpha_mod_(t.handle, a) {
+        -- Can only fail on an invalid texture, ruled out by our typed Texture.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+--- Send subsequent drawing into `target` instead of the window. ---
+pub fun Renderer.set_target(r Renderer, target Texture) void {
+    if not unsafe set_render_target_(r.handle, target.handle) {
+        -- Fails only if `target` was not created with `create_target`.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+--- Restore drawing to the window. ---
+pub fun Renderer.reset_target(r Renderer) void {
+    if not unsafe set_render_target_(r.handle, ffi.Ptr.null<void>()) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+--- Save the current render target to a BMP file. For debugging. ---
+pub fun Renderer.save_target(r Renderer, path fs.Path) !void {
+    let @local = Arena()
+    let surf = unsafe render_read_pixels_(r.handle, ffi.Ptr.null<void>())
+    if surf.is_null() {
+        return SDLErr.render_read_pixels_failed
+    }
+    if not unsafe save_bmp_(surf, ffi.cstr(path.as_bytes(), @local)) {
+        unsafe destroy_surface_(surf)
+        return SDLErr.save_bmp_failed
+    }
+    unsafe destroy_surface_(surf)
+}
+
+-- Width and height in pixels of one `Renderer.debug_text` character at scale 1.
+pub let debug_text_char_size F32 = 8.0
+
+--- Draw `text` at (x, y) in the current draw color using SDL's built-in 8x8
+    debug font. Enlarge it with `Renderer.set_scale`. ---
+pub fun Renderer.debug_text(r Renderer, x F32, y F32, text Str) void {
+    let @local = Arena()
+    let cstr = ffi.cstr(text.as_bytes(), @local)
+    if not unsafe render_debug_text_(r.handle, x, y, cstr) {
+        -- Can only fail on an invalid renderer or font-atlas allocation.
+        panic(sdl_panic_message(@local))
+    }
+}
+
+--- Scale all subsequent drawing by (sx, sy). Handy for enlarging `debug_text`. ---
+pub fun Renderer.set_scale(r Renderer, sx F32, sy F32) void {
+    if not unsafe set_render_scale_(r.handle, sx, sy) {
+        -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+-- SDL3/SDL_audio.h
+
+pub enum AudioFormat I32 =
+    | unknown = 0x0000
+    | u8 = 0x0008
+    | s8 = 0x8008
+    | s16le = 0x8010
+    | s16be = 0x9010
+    | s32le = 0x8020
+    | s32be = 0x9020
+    | f32le = 0x8120
+    | f32be = 0x9120
+
+pub struct AudioSpec {
+    pub format AudioFormat
+    pub channels I32
+    pub freq I32
+}
+
+pub nocopy struct AudioBuf {
+    pub spec AudioSpec
+    audio_buf ffi.Ptr<void>
+    audio_len I32
+}
+
+pub fun AudioBuf.load_wav(path fs.Path, @a Arena) !&AudioBuf {
+    let buf = @a.new(AudioBuf(
+        spec=AudioSpec(AudioFormat.unknown, I32(0), I32(0)),
+        audio_buf=ffi.Ptr.null<void>(),
+        audio_len=0
+    ))
+    let @local = Arena()
+    if not unsafe load_wav_(
+        path=ffi.cstr(path.as_bytes(), @local),
+        spec=ffi.ref_ptr_mut(&mut buf.spec),
+        audio_buf=ffi.ref_ptr_mut(&mut buf.audio_buf),
+        audio_len=unsafe ffi.ref_ptr_mut(&mut buf.audio_len).cast_ptr<U32>()) {
+        return SDLErr.load_wav_failed
+    }
+    buf
+}
+
+--- Convert the fiven audio to the given spec.
+
+    Note: The source audio is not destroyed. ---
+pub fun AudioBuf.convert(a &AudioBuf, spec AudioSpec, @a Arena) !&AudioBuf {
+    let new = @a.new(AudioBuf(spec=spec, audio_buf=ffi.Ptr.null<void>(), audio_len=0))
+    if not unsafe convert_audio_samples_(
+        src_spec=ffi.ref_ptr(&a.spec),
+        src_data=a.audio_buf,
+        src_len=a.audio_len,
+        dst_spec=ffi.ref_ptr(&spec),
+        dst_data=ffi.ref_ptr_mut(&mut new.audio_buf),
+        dst_len=ffi.ref_ptr_mut(&mut new.audio_len)) {
+        -- Can only fail on an invalid spec (ruled out by our types) or OOM.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+    new
+}
+
+pub fun AudioBuf.destroy(a &AudioBuf) void {
+    unsafe free_(unsafe a.audio_buf.cast_ptr<void>())
+}
+
+pub struct AudioDeviceStream {
+    handle ffi.Ptr<void>
+}
+
+pub fun AudioDeviceStream.open(spec AudioSpec) !AudioDeviceStream {
+    -- 0xFFFFFFFF is SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK
+    let handle = unsafe open_audio_device_stream_(
+        devid=0xFFFFFFFF, 
+        spec=ffi.ref_ptr(&spec),
+        callback=ffi.Ptr.null<void>(),
+        userdata=ffi.Ptr.null<void>())
+    if handle.is_null() {
+        return SDLErr.open_audio_device_stream_failed
+    }
+    if not unsafe resume_audio_stream_device_(handle) {
+        -- The stream was just opened, so resume can only fail on OOM.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+    AudioDeviceStream(handle)
+}
+
+pub fun AudioDeviceStream.play(s AudioDeviceStream, buf &AudioBuf) void {
+    if not unsafe put_audio_stream_data_(s.handle, buf.audio_buf, buf.audio_len) {
+        -- Can only fail on an invalid stream/buffer (ruled out by our types) or OOM.
+        let @local = Arena()
+        panic(sdl_panic_message(@local))
+    }
+}
+
+pub fun AudioDeviceStream.get_queued(s AudioDeviceStream) I32 {
+    let res = unsafe get_audio_stream_queued_(s.handle)
+    if res == -1 {
+        panic("get_audio_stream_queued returned -1")
+    }
+    return res
+}
+
+pub fun AudioDeviceStream.destroy(s AudioDeviceStream) void {
+    unsafe destroy_audio_stream_(s.handle)
+}
+
+-- SDL3/SDL_init.h
+extern("SDL_Init") fun init_(flags U32) Bool
+extern("SDL_Quit") fun quit_() void
 
 -- SDL3/SDL_timer.h
+extern("SDL_GetTicks") fun get_ticks_() Int
+extern("SDL_GetPerformanceCounter") fun get_performance_counter_() Int
+extern("SDL_GetPerformanceFrequency") fun get_performance_frequency_() Int
 
---- Block the calling thread for the given number of milliseconds. ---
-pub extern("SDL_Delay") fun delay(ms U32) void
+-- SDL3/SDL_error.h
+extern("SDL_GetError") fun get_error_() ffi.Ptr<U8>
+
+-- SDL3/SDL_video.h
+extern("SDL_CreateWindow") fun create_window_(title ffi.Ptr<U8>, w I32, h I32, flags U64) ffi.Ptr<void>
+extern("SDL_DestroyWindow") fun destroy_window_(window ffi.Ptr<void>) void
+extern("SDL_RaiseWindow") fun raise_window_(window ffi.Ptr<void>) Bool
+extern("SDL_SetWindowFullscreen") fun set_window_fullscreen_(window ffi.Ptr<void>, fullscreen Bool) Bool
 
 -- SDL3/SDL_events.h
-
---- Pump the OS event queue. Without this the window manager never gets to
-    show or redraw the window, so a freshly created window stays invisible. ---
-pub extern("SDL_PumpEvents") fun pump_events() void
+extern("SDL_PollEvent") fun poll_event_(event ffi.PtrMut<void>) Bool
+extern("SDL_PumpEvents") fun pump_events_() void
 
 -- SDL3/SDL_render.h
+extern("SDL_CreateRenderer") fun create_renderer_(window ffi.Ptr<void>, name ffi.Ptr<U8>) ffi.Ptr<void>
+extern("SDL_DestroyRenderer") fun destroy_renderer_(renderer ffi.Ptr<void>) void
+extern("SDL_SetRenderDrawColor") fun set_render_draw_color_(renderer ffi.Ptr<void>, r U8, g U8, b U8, a U8) Bool
+extern("SDL_RenderClear") fun render_clear_(renderer ffi.Ptr<void>) Bool
+extern("SDL_RenderPresent") fun render_present_(renderer ffi.Ptr<void>) Bool
+extern("SDL_SetRenderVSync") fun set_render_vsync_(renderer ffi.Ptr<void>, vsync I32) Bool
+extern("SDL_RenderPoint") fun render_point_(renderer ffi.Ptr<void>, x F32, y F32) Bool
+extern("SDL_RenderPoints") fun render_points_(renderer ffi.Ptr<void>, points ffi.Ptr<FPoint>, count I32) Bool
+extern("SDL_RenderLine") fun render_line_(renderer ffi.Ptr<void>, x1 F32, y1 F32, x2 F32, y2 F32) Bool
+extern("SDL_RenderLines") fun render_lines_(renderer ffi.Ptr<void>, points ffi.Ptr<FPoint>, count I32) Bool
+extern("SDL_RenderRect") fun render_rect_(renderer ffi.Ptr<void>, rect ffi.Ptr<FRect>) Bool
+extern("SDL_RenderRects") fun render_rects_(renderer ffi.Ptr<void>, rects ffi.Ptr<FRect>, count I32) Bool
+extern("SDL_RenderFillRect") fun render_fill_rect_(renderer ffi.Ptr<void>, rect ffi.Ptr<FRect>) Bool
+extern("SDL_RenderFillRects") fun render_fill_rects_(renderer ffi.Ptr<void>, rects ffi.Ptr<FRect>, count I32) Bool
+extern("SDL_RenderGeometry") fun render_geometry_(renderer ffi.Ptr<void>, texture ffi.Ptr<void>, vertices ffi.Ptr<Vertex>, num_vertices I32, indices ffi.Ptr<I32>, num_indices I32) Bool
+extern("SDL_SetRenderDrawBlendMode") fun set_render_draw_blend_mode_(renderer ffi.Ptr<void>, blend_mode U32) Bool
+extern("SDL_SetRenderDrawColorFloat") fun set_render_draw_color_float_(renderer ffi.Ptr<void>, r F32, g F32, b F32, a F32) Bool
+extern("SDL_SetRenderLogicalPresentation") fun set_render_logical_presentation_(renderer ffi.Ptr<void>, w I32, h I32, mode I32) Bool
+extern("SDL_ConvertEventToRenderCoordinates") fun convert_event_to_render_coordinates_(renderer ffi.Ptr<void>, event ffi.PtrMut<void>) Bool
+extern("SDL_CreateTextureFromSurface") fun create_texture_from_surface_(renderer ffi.Ptr<void>, surface ffi.Ptr<void>) ffi.Ptr<void>
+extern("SDL_RenderTexture") fun render_texture_(renderer ffi.Ptr<void>, texture ffi.Ptr<void>, srcrect ffi.Ptr<FRect>, dstrect ffi.Ptr<FRect>) Bool
+extern("SDL_DestroyTexture") fun destroy_texture_(texture ffi.Ptr<void>) void
+extern("SDL_CreateTexture") fun create_texture_(renderer ffi.Ptr<void>, format I32, access I32, w I32, h I32) ffi.Ptr<void>
+extern("SDL_SetRenderTarget") fun set_render_target_(renderer ffi.Ptr<void>, texture ffi.Ptr<void>) Bool
+extern("SDL_SetTextureBlendMode") fun set_texture_blend_mode_(texture ffi.Ptr<void>, blend_mode U32) Bool
+extern("SDL_SetTextureScaleMode") fun set_texture_scale_mode_(texture ffi.Ptr<void>, scale_mode I32) Bool
+extern("SDL_SetTextureColorMod") fun set_texture_color_mod_(texture ffi.Ptr<void>, r U8, g U8, b U8) Bool
+extern("SDL_SetTextureAlphaMod") fun set_texture_alpha_mod_(texture ffi.Ptr<void>, a U8) Bool
+extern("SDL_RenderReadPixels") fun render_read_pixels_(renderer ffi.Ptr<void>, rect ffi.Ptr<void>) ffi.Ptr<void>
+extern("SDL_RenderDebugText") fun render_debug_text_(renderer ffi.Ptr<void>, x F32, y F32, str ffi.Ptr<U8>) Bool
+extern("SDL_SetRenderScale") fun set_render_scale_(renderer ffi.Ptr<void>, scale_x F32, scale_y F32) Bool
 
---- Create a 2D renderer for the window. `name` picks a driver; pass a null
-    pointer to let SDL choose. Null on failure. ---
-pub extern("SDL_CreateRenderer") fun create_renderer(window ffi.Ptr<void>, name ffi.Ptr<U8>) ffi.Ptr<void>
+-- SDL3/SDL_surface.h
+extern("SDL_LoadBMP") fun load_bmp_(path ffi.Ptr<U8>) ffi.Ptr<void>
+extern("SDL_DestroySurface") fun destroy_surface_(surface ffi.Ptr<void>) void
+extern("SDL_SaveBMP") fun save_bmp_(surface ffi.Ptr<void>, path ffi.Ptr<U8>) Bool
 
---- Set the color (0-255 per channel) used by `render_clear` and draw calls. ---
-pub extern("SDL_SetRenderDrawColor") fun set_render_draw_color(renderer ffi.Ptr<void>, r U8, g U8, b U8, a U8) Bool
+-- SDL3/SDL_audio.h
+extern("SDL_LoadWAV") fun load_wav_(path ffi.Ptr<U8>, spec ffi.PtrMut<AudioSpec>, audio_buf ffi.PtrMut<ffi.Ptr<void>>, audio_len ffi.PtrMut<U32>) Bool
+extern("SDL_ConvertAudioSamples") fun convert_audio_samples_(src_spec ffi.Ptr<AudioSpec>, src_data ffi.Ptr<void>, src_len I32, dst_spec ffi.Ptr<AudioSpec>, dst_data ffi.PtrMut<ffi.Ptr<void>>, dst_len ffi.PtrMut<I32>) Bool
+extern("SDL_OpenAudioDeviceStream") fun open_audio_device_stream_(devid U32, spec ffi.Ptr<AudioSpec>, callback ffi.Ptr<void>, userdata ffi.Ptr<void>) ffi.Ptr<void>
+extern("SDL_ResumeAudioStreamDevice") fun resume_audio_stream_device_(stream ffi.Ptr<void>) Bool
+extern("SDL_PutAudioStreamData") fun put_audio_stream_data_(stream ffi.Ptr<void>, buf ffi.Ptr<void>, len I32) Bool
+extern("SDL_DestroyAudioStream") fun destroy_audio_stream_(stream ffi.Ptr<void>) void
+extern("SDL_GetAudioStreamQueued") fun get_audio_stream_queued_(stream ffi.Ptr<void>) I32
 
---- Clear the whole render target with the current draw color. ---
-pub extern("SDL_RenderClear") fun render_clear(renderer ffi.Ptr<void>) Bool
-
---- Present the rendered frame to the window. ---
-pub extern("SDL_RenderPresent") fun render_present(renderer ffi.Ptr<void>) Bool
-
---- Destroy a renderer created by `create_renderer`. ---
-pub extern("SDL_DestroyRenderer") fun destroy_renderer(renderer ffi.Ptr<void>) void
+-- SDL3/SDL_stdinc.h
+extern("SDL_free") fun free_(mem ffi.Ptr<void>) void

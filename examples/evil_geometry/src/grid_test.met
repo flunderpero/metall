@@ -1,0 +1,253 @@
+use std.test
+use std.iter
+use local.grid
+use local.math
+
+fun main() void {
+    let @local = Arena()
+    let grid_suite = test.Suite.new("Grid", @local)
+    grid_suite.test("clear diagonal across open space", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . . . . .
+            . . . . . .
+            . . . . . .
+            . . . . . *
+            ", pathing(m"
+            e . . . . .
+            . . . . . .
+            . . . . . .
+            . . . . . E
+            ", @local))
+    })
+
+    grid_suite.test("step over a tower, then cut to the exit", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * * .
+            x . .
+            . . *
+            ", pathing(m"
+            e . .
+            x . .
+            . . E
+            ", @local))
+    })
+
+    grid_suite.test("clear a two-wide wall, then cut diagonally", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . * . .
+            x x . . .
+            x x . . .
+            x x . . *
+            ", pathing(m"
+            e . . . .
+            x x . . .
+            x x . . .
+            x x . . E
+            ", @local))
+    })
+
+    grid_suite.test("funnel through a one-tile gap", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . * . .
+            x x . x x
+            . . * . *
+            ", pathing(m"
+            e . . . .
+            x x . x x
+            . . . . E
+            ", @local))
+    })
+
+    grid_suite.test("route around a tower, never crossing it", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . . . .
+            . . . * .
+            . . x . .
+            . . . . .
+            . . . . *
+            ", pathing(m"
+            e . . . .
+            . . . . .
+            . . x . .
+            . . . . .
+            . . . . E
+            ", @local))
+    })
+
+    grid_suite.test("no path to a walled-off exit", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . x . E
+            . . x . .
+            . . x . .
+            ", pathing(m"
+            e . x . E
+            . . x . .
+            . . x . .
+            ", @local))
+    })
+
+    grid_suite.test("pick the nearest of two exits", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . . . . . .
+            . . . . . . .
+            . . * . . . E
+            ", pathing(m"
+            E . . . . . .
+            . . . . . . .
+            . . e . . . E
+            ", @local))
+    })
+
+    grid_suite.test("detour around a diagonal tower run", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . . .
+            . x . .
+            * . x .
+            . * . *
+            ", pathing(m"
+            e . . .
+            . x . .
+            . . x .
+            . . . E
+            ", @local))
+    })
+
+    grid_suite.test("graze a tower at exactly the clearance limit", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . *
+            . x .
+            ", pathing(m"
+            e . E
+            . x .
+            ", @local))
+    })
+
+    grid_suite.test("skirt the end of a long wall", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            * . . . . . .
+            . . . . . * .
+            x x x x x . .
+            . . . . . . .
+            . . . . . . *
+            ", pathing(m"
+            e . . . . . .
+            . . . . . . .
+            x x x x x . .
+            . . . . . . .
+            . . . . . . E
+            ", @local))
+    })
+
+    grid_suite.test("level 1", fun() !void {
+        let @local = Arena()
+        try test.eq(m"
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+            . . x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x . .
+            x x x . . . . . . . . . . . . . . . . . . . . . . . . * . * . . . x . .
+            . . . . . . . * . . . . . . . . . . . . . . . . . . . . x . . x . x . .
+            * . . . . . . . x . x . x . x . . . . . . . . . . . . x * * x . . x . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . x . * x . . . x . .
+            x x x x x x x x x x x x x x x x x x x x x x x x x x . . . . . . . x . .
+            . . x . . . . . . . . . x . . . . . . . . . . . . . * . . . . . . x . .
+            . . x . . . . . . . . . x . . . . . . . . . . . . . . . . . . . . x . .
+            . . x . . . . . . . . . x * . . . . . . . . . . . . . . . . . . . x . .
+            . . x . . . . . . . . . x . x x x x x x x x x x x x x x x x x x x x . .
+            . . x . . . . . . . . . x . x . * . * . . x . . . . . . . . . . . x . .
+            . . x . . . . . * . . . . * x . . x . . . x . . . . . . . . . . . x . .
+            . . x . . . . . . x x x x x x . . x . . . x . . . . . . . . . . . x . .
+            . . x . . . . . * . . . . . x . . x . . . x . . . . * . * . . . . x . .
+            . . x . . . . . . . . . . . x . . x . . . x . . . . . x . . . . . x . .
+            . . x . . . . . . . . . . * . * . x . . . x . . . . . x . . . . . x . .
+            . . x . . . . . . . . . . . . . . x . . * . * . . . . x . . . . . x . .
+            . . x x x x x x x x x x x x x x x x x x x x x x x x x x . . . x x x . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . x . . * . . x . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . x . . . * . x . .
+            ", pathing(m"
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+            . . x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x . .
+            x x x . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . x . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . . x . . x . x . .
+            e . . . . . . . x . x . x . x . . . . . . . . . . . . x . . x . . x . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . x . . x . . . x . .
+            x x x x x x x x x x x x x x x x x x x x x x x x x x . . . . . . . x . .
+            . . x . . . . . . . . . x . . . . . . . . . . . . . . . . . . . . x . .
+            . . x . . . . . . . . . x . . . . . . . . . . . . . . . . . . . . x . .
+            . . x . . . . . . . . . x . . . . . . . . . . . . . . . . . . . . x . .
+            . . x . . . . . . . . . x . x x x x x x x x x x x x x x x x x x x x . .
+            . . x . . . . . . . . . x . x . . . . . . x . . . . . . . . . . . x . .
+            . . x . . . . . . . . . . . x . . x . . . x . . . . . . . . . . . x . .
+            . . x . . . . . . x x x x x x . . x . . . x . . . . . . . . . . . x . .
+            . . x . . . . . . . . . . . x . . x . . . x . . . . . . . . . . . x . .
+            . . x . . . . . . . . . . . x . . x . . . x . . . . . x . . . . . x . .
+            . . x . . . . . . . . . . . . . . x . . . x . . . . . x . . . . . x . .
+            . . x . . . . . . . . . . . . . . x . . . . . . . . . x . . . . . x . .
+            . . x x x x x x x x x x x x x x x x x x x x x x x x x x . . . x x x . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . x . . . . . x . .
+            . . . . . . . . . . . . . . . . . . . . . . . . . . . x . . . E . x . .
+            ", @local))
+    })
+
+    _ = grid_suite.run()
+}
+
+fun pathing(source Str, @a Arena) Str {
+    let @local = Arena()
+    let lines = iter.pipe(source.lsplit("\n")).collect(32, @local)
+    let width = lines[0].bytes_len() / 2 + 1
+    let height = lines.len
+
+    let g = grid.Grid.new(math.IPoint(width, height), @local)
+    mut entrance = 0
+    mut row = 0
+    for line in lines {
+        mut col = 0
+        for cell in line.lsplit(" ") {
+            let idx = row * width + col
+            when {
+                case cell.eq("x"): g.tiles[idx] = grid.TileKind.tower
+                case cell.eq("E"): g.tiles[idx] = grid.TileKind.exit
+                case cell.eq("e"): entrance = idx
+            }
+            col += 1
+        }
+        if col > 0 { row += 1 }
+    }
+
+    g.update_pathing()
+
+    let n = width * height
+    let walked = @local.slice(n, false)
+    mut cur = entrance
+    for not walked[cur] {
+        walked[cur] = true
+        cur = g.flow_field[cur]
+    }
+
+    let sw = StrWriter.new(32, @a)
+    for y in 0..height {
+        if y > 0 { sw.write("\n") }
+        for x in 0..width {
+            if x > 0 { sw.write(" ") }
+            let idx = y * width + x
+            when {
+                case walked[idx]: sw.write("*")
+                case g.tiles[idx] == grid.TileKind.tower: sw.write("x")
+                case g.tiles[idx] == grid.TileKind.exit: sw.write("E")
+                else: sw.write(".")
+            }
+        }
+    }
+    sw.as_str()
+}

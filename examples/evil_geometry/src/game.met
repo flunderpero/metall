@@ -1,0 +1,90 @@
+--- Run a level. ---
+
+use local.audio
+use local.assets
+use local.sim
+use local.level
+use local.painter
+use local.math
+use local.sdl
+use std.io
+use std.cmp
+
+pub enum GameResult U8 = user_quit
+
+pub nocopy struct Game<L level.Level> {
+    level &mut L
+    sim &mut sim.Sim
+    audio &mut audio.Audio
+    assets &assets.Assets
+    renderer sdl.Renderer
+    painter &mut painter.Painter
+}
+
+pub fun Game.run(
+    screen_size math.IPoint,
+    level_ &mut L,
+    audio_ &mut audio.Audio,
+    assets_ &assets.Assets,
+    renderer sdl.Renderer) !GameResult
+{
+    let @local = Arena()
+    let sim_ = level_.sim()
+    let painter = try painter.Painter.new(screen_size, sim_.grid.size, sim_, assets_, renderer, @local)
+    mut g = Game(level_, sim_, audio_, assets_, renderer, painter)
+
+    -- Setup simulation <=> FPS synchronization.
+    let freq = sdl.performance_frequency()
+    let step = freq / sim.freq
+    let max_frame = step * 5
+    mut prev = sdl.performance_counter()
+    mut acc = 0
+
+    for {
+        let now = sdl.performance_counter()
+        -- Cap the number of sim updates to prevent the "spiral of death"
+        -- that may occurr if the loop has not been run for a while (like a window drag). 
+        let frame = cmp.min(now - prev, max_frame)
+        prev = now
+        acc += frame
+
+        -- Handle events.
+        let @loop = Arena()
+        let result = try g.handle_events(@loop) 
+        if not result {
+            return GameResult.user_quit
+        }
+
+        -- Update the simulation.
+        for acc >= step { 
+            level_.update()
+            sim_.update()
+            acc -= step
+        }
+
+        -- Update audio and render.
+        audio_.update()
+        g.painter.paint()
+        g.renderer.present()
+    }
+    panic("unreachable")
+}
+
+fun Game.handle_events(g &mut Game, @loop Arena) !Bool {
+    for {
+        let ev = try sdl.poll_event(g.renderer, @loop) else { return true }
+        match ev {
+        case sdl.KeyEvent ev:
+            when {
+            case ev.key == 27:
+                return false
+            case ev.key == 32 and ev.down:
+                try g.audio.play(g.assets.laser)
+            }
+            io.println(ev)
+        else:
+            io.println(ev)
+        }
+    }
+    panic("unreachable")
+}

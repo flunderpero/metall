@@ -1,0 +1,87 @@
+pub struct Point {
+    pub x F32
+    pub y F32
+}
+
+pub fun Point.fmt(p Point, sw &mut StrWriter) void {
+    f"Point({p.x:precision=3}, {p.y:precision=3})".write_to(sw)
+}
+
+pub fun Point.scale(p Point, scale F32) Point {
+    Point(p.x * scale, p.y * scale)
+}
+
+pub struct IPoint {
+    pub x Int
+    pub y Int
+}
+
+pub fun IPoint.eq(p IPoint, other IPoint) Bool {
+    p.x == other.x and p.y == other.y
+}
+
+pub fun IPoint.to_index(p IPoint, width Int) Int {
+    p.y * width + p.x
+}
+
+pub fun IPoint.to_point(p IPoint, scale F32 = 1.0) Point {
+    Point(p.x.to_f32() * scale, p.y.to_f32() * scale)
+}
+
+pub fun IPoint.fmt(p IPoint, sw &mut StrWriter) void {
+    f"IPoint({p.x}, {p.y})".write_to(sw)
+}
+
+pub fun IPoint.straight_distance(p IPoint, other IPoint) ?Int {
+    if p.x != other.x and p.y != other.y {
+        return None()
+    }
+    mut straight = if p.x == other.x { p.y - other.y } else { p.x - other.x }
+    if straight < 0 { 
+        straight * -1
+    } else {
+        straight
+    }
+}
+
+pub struct Vec2 {
+    pub x F32
+    pub y F32
+}
+
+pub fun Vec2.fmt(p Vec2, sw &mut StrWriter) void {
+    f"Vec2({p.x:precision=3}, {p.y:precision=3})".write_to(sw)
+}
+
+pub fun Vec2.add(f Vec2, o Vec2) Vec2 {
+    Vec2(f.x + o.x, f.y + o.y)
+}
+
+pub fun Vec2.sub(f Vec2, o Vec2) Vec2 {
+    Vec2(f.x - o.x, f.y - o.y)
+}
+
+pub fun Vec2.scale(f Vec2, s F32) Vec2 {
+    Vec2(f.x * s, f.y * s)
+}
+
+pub fun Vec2.dot(f Vec2, o Vec2) F32 {
+    f.x * o.x + f.y * o.y
+}
+
+pub fun Vec2.len_sq(f Vec2) F32 {
+    f.x * f.x + f.y * f.y
+}
+
+pub fun Vec2.length(f Vec2) F32 {
+    f.len_sq().sqrt()
+}
+
+pub fun Vec2.normalize(f Vec2) Vec2 {
+    let lsq = f.len_sq()
+    if lsq == F32(0.0) {
+        return Vec2(F32(0.0), F32(0.0))
+    }
+    let len = lsq.sqrt()
+    Vec2(f.x / len, f.y / len)
+}

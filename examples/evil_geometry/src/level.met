@@ -1,0 +1,141 @@
+use local.grid
+use local.sim
+use local.math
+
+pub shape Level {
+    pub fun Level.update(l &mut Level) void
+    pub fun Level.sim(l &Level) &mut sim.Sim
+}
+
+struct Wave {
+    kind sim.EnemyKind
+    speed F32
+    health Int
+    num Int
+    spawn_at math.IPoint
+    spawn_rate Int
+}
+
+pub struct Level1 {
+    step Int
+    sim_ &mut sim.Sim
+    waves []Wave
+    current_wave Int
+    current_num Int
+}
+
+pub fun Level1.new(@a Arena) &mut Level1 {
+    let walls = [
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w w . .",
+        b"w w w . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . w . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . w . . w . w . .",
+        b". . . . . . . . c . f . l . m . . . . . . . . . . . . w . . w . . w . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . w . . w . . . w . .",
+        b"w w w w w w w w w w w w w w w w w w w w w w w w w w . . . . . . . w . .",
+        b". . w . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . w . .",
+        b". . w . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . w . .",
+        b". . w . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . w . .",
+        b". . w . . . . . . . . . w . w w w w w w w w w w w w w w w w w w w w . .",
+        b". . w . . . . . . . . . w . w . . . . . . w . . . . . . . . . . . w . .",
+        b". . w . . . . . . . . . . . w . . w . . . w . . . . . . . . . . . w . .",
+        b". . w . . . . . . w w w w w w . . w . . . w . . . . . . . . . . . w . .",
+        b". . w . . . . . . . . . . . w . . w . . . w . . . . . . . . . . . w . .",
+        b". . w . . . . . . . . . . . w . . w . . . w . . . . . w . . . . . w . .",
+        b". . w . . . . . . . . . . . . . . w . . . w . . . . . w . . . . . w . .",
+        b". . w . . . . . . . . . . . . . . w . . . . . . . . . w . . . . . w . .",
+        b". . w w w w w w w w w w w w w w w w w w w w w w w w w w . . . w w w . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . w . . . . . w . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . w . . . E . w . .",
+    ][..]
+    let walls1 = [
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . w . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        b". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . E . . . .",
+    ][..]
+    let grid_ = grid.Grid.new(math.IPoint(36, 22), @a)
+    let sim_ = sim.Sim.new(grid_, @a)
+    try fill_grid(sim_, walls) else e {
+        panic(f"grid setup failed: {e.debug_name}".build(@a))
+    }
+    grid_.update_pathing()
+    let e1 = math.IPoint(0, 5)
+    let e2 = math.IPoint(0, 6)
+    let e3 = math.IPoint(0, 7)
+    let waves = [
+        Wave(sim.Sun(), speed=1.0, health=100, num=20, spawn_at=e1, spawn_rate=20),
+        Wave(sim.Star(), speed=0.8, health=100, num=20, spawn_at=e1, spawn_rate=30),
+        Wave(sim.Triangle(), speed=0.6, health=100, num=20, spawn_at=e1, spawn_rate=40),
+        Wave(sim.Rectangle(), speed=0.4, health=100, num=20, spawn_at=e1, spawn_rate=50),
+    ]
+    let waves_slice = unsafe @a.slice_uninit<Wave>(waves.len)
+    _ = waves_slice.set(waves[..])
+    @a.new(Level1(
+        step=0, 
+        sim_=sim_, 
+        waves=waves_slice,
+        current_wave=0,
+        current_num=0,
+    ))
+}
+
+pub fun Level1.sim(l &Level1) &mut sim.Sim {
+    l.sim_
+}
+
+pub fun Level1.update(l &mut Level1) void {
+    if l.current_wave >= l.waves.len {
+        -- We are done.
+        return void
+    }
+    let wave = &l.waves[l.current_wave]
+    if l.step % wave.spawn_rate == 0 {
+        _ = l.sim_.add_enemy(wave.kind, wave.speed, wave.health, wave.spawn_at)
+        l.current_num += 1
+        if l.current_num >= wave.num {
+            l.current_wave += 1
+            l.current_num = 0
+        }
+    }
+    l.step += 1
+}
+
+fun fill_grid(s &mut sim.Sim, grid [][]U8) !void {
+    for row, y in grid {
+        for col, x in row {
+            let pos = math.IPoint(x/2, y)
+            when {
+            case col == '.' or col == ' ': continue
+            case col == 'w': _ = try s.add_tower(sim.Wall(), pos)
+            case col == 'c': _ = try s.add_tower(sim.Cannon(), pos)
+            case col == 'f': _ = try s.add_tower(sim.FastGunner(), pos)
+            case col == 'l': _ = try s.add_tower(sim.Laser(), pos)
+            case col == 'm': _ = try s.add_tower(sim.Missile(), pos)
+            case col == 'E': try s.add_exit(pos)
+            else: 
+                let @local = Arena()
+                panic(f"unknown tile: {col} at {x}/{y}".build(@local))
+            }
+        }
+    }
+}

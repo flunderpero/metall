@@ -1,0 +1,29 @@
+use std.fs
+use local.sdl
+
+pub nocopy struct Assets {
+    pub laser &sdl.AudioBuf
+    pub crt_band sdl.Texture
+    pub crt_overlay sdl.Texture
+}
+
+pub fun Assets.load_all(r sdl.Renderer, audio_spec sdl.AudioSpec, @a Arena) !&Assets {
+    let load_audio = fun[@a, audio_spec](p fs.Path) !&sdl.AudioBuf {
+        let @local = Arena()
+        let src = try sdl.AudioBuf.load_wav(p, @local)
+        let converted = try src.convert(audio_spec, @a)
+        src.destroy()
+        converted
+    }
+    @a.new(Assets(
+        laser=try load_audio(fs.Path.new(b"assets/audio/laser.wav")),
+        crt_overlay=try sdl.Texture.load_bmp(fs.Path.new(b"assets/image/crt_overlay.bmp"), r),
+        crt_band=try sdl.Texture.load_bmp(fs.Path.new(b"assets/image/crt_band.bmp"), r)
+    ))
+}
+
+pub fun Assets.destroy(a &Assets) void {
+    a.laser.destroy()
+    a.crt_band.destroy()
+    a.crt_overlay.destroy()
+}

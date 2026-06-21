@@ -1,0 +1,136 @@
+--- The logical game simulation. ---
+
+use std.mem
+use std.list
+use std.cmp
+use std.io
+use local.math
+use local.grid
+
+pub enum SimErr Err = |
+    grid_occupied
+
+pub let freq = 240
+pub let max_speed F32 = 0.08
+
+pub struct Triangle {}
+pub struct Rectangle {}
+pub struct Star {}
+pub struct Sun {}
+
+pub union EnemyKind = Triangle | Rectangle | Star | Sun
+
+pub struct Enemy {
+    pub kind EnemyKind
+    pub speed F32
+    pub health Int
+    pub pos math.Point
+    --- Unit direction toward `next_waypoint`. ---
+    pub dir math.Vec2
+    --- Tile-distance still to travel before reaching `next_waypoint`. ---
+    pub remaining F32
+    --- Grid index of the waypoint being approached. ---
+    pub next_waypoint Int
+}
+
+pub fun Enemy.fmt(e &Enemy, sw &mut StrWriter) void {
+    match e.kind {
+        case Triangle: sw.write("Triangle")
+        case Rectangle: sw.write("Rectangle")
+        case Star: sw.write("Star")
+        case Sun: sw.write("Sun")
+    }
+    f"(pos={e.pos}, dir={e.dir})".write_to(sw)
+}
+
+pub struct Wall {}
+pub struct Cannon {}
+pub struct FastGunner {}
+pub struct Laser {}
+pub struct Missile {}
+
+pub union TowerKind = Wall | Cannon | FastGunner | Laser | Missile
+
+pub struct Tower {
+    pub kind TowerKind
+    pub pos math.Point
+}
+
+pub struct Sim {
+    pub enemies &mut mem.Pool<Enemy>
+    pub towers &mut mem.Pool<Tower>
+    pub grid &mut grid.Grid
+}
+
+pub fun Sim.new(grid_ &mut grid.Grid, @a Arena) &mut Sim {
+    @a.new(Sim(
+        enemies=mem.Pool.new<Enemy>(1024, @a),
+        towers=mem.Pool.new<Tower>(1024, @a),
+        grid=grid_,
+    ))
+} 
+
+pub fun Sim.add_tower(s &mut Sim, kind TowerKind, pos math.IPoint) !mem.PoolHandle<Tower> {
+    let grid_index = s.grid.index(pos)
+    if s.grid.tiles[grid_index] != grid.TileKind.free { return SimErr.grid_occupied }
+    let tower = Tower(kind, pos.to_point())
+    let h = try s.towers.alloc(tower) else { panic("Sim.towers is full") }
+    s.grid.tiles[grid_index] = grid.TileKind.tower
+    h
+}
+
+pub fun Sim.add_exit(s &mut Sim, pos math.IPoint) !void {
+    let grid_index = s.grid.index(pos)
+    if s.grid.tiles[grid_index] != grid.TileKind.free { return SimErr.grid_occupied }
+    s.grid.tiles[grid_index] = grid.TileKind.exit
+}
+
+--- Add an enemy.
+
+    `speed` is at a scale from 0 to 1 where 1 is the fastest speed possible. ---
+pub fun Sim.add_enemy(s &mut Sim, kind EnemyKind, speed F32, health Int, pos math.IPoint) mem.PoolHandle<Enemy> {
+    let speed = speed * max_speed
+    let spawn = s.grid.index(pos)
+    mut enemy = Enemy(kind, speed, health, pos.to_point(), math.Vec2(0.0, 0.0), 0.0, spawn)
+    s.acquire_waypoint(&mut enemy, spawn)
+    try s.enemies.alloc(enemy) else { panic("Sim.enemies is full") }
+}
+
+--- Aim the enemy at the waypoint that follows tile `from`, recording the unit
+    direction and the tile-distance to it. A tile whose waypoint is itself (an
+    exit or a walled-off tile) leaves the enemy stopped. ---
+fun Sim.acquire_waypoint(s &Sim, e &mut Enemy, from Int) void {
+    let wp = s.grid.flow_field[from]
+    e.next_waypoint = wp
+    if wp == from {
+        e.dir = math.Vec2(0.0, 0.0)
+        e.remaining = 0.0
+        return void
+    }
+    let target = s.grid.pos(wp).to_point()
+    let v = math.Vec2(target.x - e.pos.x, target.y - e.pos.y)
+    let len = v.length()
+    e.dir = v.scale(1.0 / len)
+    e.remaining = len
+}
+
+pub fun Sim.update(s &mut Sim) void {
+    for handle in s.enemies.iter() {
+        let e = handle.get()
+        mut budget = e.speed
+        -- Spend this step's distance toward the next waypoint, snapping exactly on
+        -- arrival and carrying any overshoot into the following segment.
+        for {
+            if e.remaining <= 0.0 { break }
+            if e.remaining > budget {
+                e.pos.x += e.dir.x * budget
+                e.pos.y += e.dir.y * budget
+                e.remaining -= budget
+                break
+            }
+            e.pos = s.grid.pos(e.next_waypoint).to_point()
+            budget -= e.remaining
+            s.acquire_waypoint(e, e.next_waypoint)
+        }
+    }
+}

@@ -1,0 +1,305 @@
+use local.sdl
+use local.math
+
+pub struct Sprite {
+    pixels [][]U8
+}
+
+pub fun Sprite.width(s Sprite) Int {
+    s.pixels[0].len
+}
+
+pub fun Sprite.height(s Sprite) Int {
+    s.pixels.len
+}
+
+pub fun Sprite.draw(s Sprite, r sdl.Renderer, pos math.Point, pixel_size F32) void {
+    mut x = pos.x
+    mut y = pos.y
+    for row in s.pixels {
+        x = pos.x
+        for col in row {
+            if col != '.' and col != ' ' {
+                mut palette_index = 0
+                for p, i in palette_indexes {
+                    if p == col {
+                        palette_index = i
+                        break
+                    }
+                }
+                r.set_draw_color_float(palette[palette_index])
+                r.fill_rect(sdl.FRect(x, y, pixel_size, pixel_size))
+            }
+            if col != ' ' {
+                x += pixel_size
+            }
+        }
+        y += pixel_size
+    }
+}
+
+-- Poppy palette, one per basic hue. Preview: assets/colors.svg
+pub let palette = [
+    sdl.FColor(1.000, 0.322, 0.322, 1.000),  -- 0 red     #FF5252
+    sdl.FColor(1.000, 0.541, 0.239, 1.000),  -- 1 orange  #FF8A3D
+    sdl.FColor(1.000, 0.824, 0.239, 1.000),  -- 2 yellow  #FFD23D
+    sdl.FColor(0.659, 0.890, 0.239, 1.000),  -- 3 lime    #A8E33D
+    sdl.FColor(0.239, 0.851, 0.420, 1.000),  -- 4 green   #3DD96B
+    sdl.FColor(0.180, 0.851, 0.765, 1.000),  -- 5 teal    #2ED9C3
+    sdl.FColor(0.239, 0.765, 1.000, 1.000),  -- 6 sky     #3DC3FF
+    sdl.FColor(0.302, 0.471, 1.000, 1.000),  -- 7 blue    #4D78FF
+    sdl.FColor(0.639, 0.349, 1.000, 1.000),  -- 8 purple  #A359FF
+    sdl.FColor(1.000, 0.361, 0.753, 1.000),  -- 9 pink    #FF5CC0
+
+    -- darker
+    sdl.FColor(0.575, 0.034, 0.095, 1.000),  -- 10 red     #930918
+    sdl.FColor(0.547, 0.257, 0.027, 1.000),  -- 11 orange  #8C4107
+    sdl.FColor(0.531, 0.427, 0.045, 1.000),  -- 12 yellow  #886D0B
+    sdl.FColor(0.331, 0.468, 0.041, 1.000),  -- 13 lime    #54770A
+    sdl.FColor(0.041, 0.448, 0.188, 1.000),  -- 14 green   #0B7230
+    sdl.FColor(0.044, 0.445, 0.396, 1.000),  -- 15 teal    #0B7165
+    sdl.FColor(0.038, 0.398, 0.540, 1.000),  -- 16 sky     #0A658A
+    sdl.FColor(0.082, 0.048, 0.771, 1.000),  -- 17 blue    #150CC5
+    sdl.FColor(0.354, 0.034, 0.620, 1.000),  -- 18 purple  #5A099E
+    sdl.FColor(0.578, 0.037, 0.409, 1.000),  -- 19 pink    #993773
+][..]
+
+pub let palette_indexes = [
+    U8('R'), 'O', 'Y', 'L', 'G', 'T', 'S', 'B', 'P', 'I', 'r', 'o', 'y', 'l', 'g', 't', 's', 'b', 'p', 'i'
+]
+
+pub let triangle = Sprite([
+    b". . . . . . . r . . . . . . .",
+    b". . . . . . . r . . . . . . .",
+    b". . . . . . r R r . . . . . .",
+    b". . . . . r R R R r . . . . .",
+    b". . . . . r R R R r . . . . .",
+    b". . . . . r R R R r . . . . .",
+    b". . . . r R R R R R r . . . .",
+    b". . . r R R R R R R R r . . .",
+    b". . . r R R R R R R R r . . .",
+    b". . . r R R R R R R R r . . .",
+    b". . r R R R R R R R R R r . .",
+    b". r R R R R R R R R R R R r .",
+    b". r R R R R R R R R R R R r .",
+    b". r R R R R R R R R R R R r .",
+    b"r r r r r r r r r r r r r r r",
+][..])
+
+pub let rectangle = Sprite([
+    b". . . . . . . . . . . . . . .",
+    b". s s s s s s s s s s s s s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s S S S S S S S S S S S s .",
+    b". s s s s s s s s s s s s s .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let star = Sprite([
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . y . . . . . . .",
+    b". . . . . . . y . . . . . . .",
+    b". . . . . . y Y y . . . . . .",
+    b". . . . . . y Y y . . . . . .",
+    b". y y y y y Y Y Y y y y y y .",
+    b". . y y Y Y Y Y Y Y Y y y . .",
+    b". . . . y Y Y Y Y Y y . . . .",
+    b". . . . . y Y Y Y y . . . . .",
+    b". . . . y Y Y y Y Y y . . . .",
+    b". . . . y Y y . y Y y . . . .",
+    b". . . . y y . . . y y . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let sun = Sprite([
+    b". . . . . . . O . . . . . . .",
+    b". . . . O . . O . . O . . . .",
+    b". . . . O . . O . . O . . . .",
+    b". . . . . O . O . O . . . . .",
+    b". O O . . O y y y O . . O O .",
+    b". . . O O y Y Y Y y O O . . .",
+    b". . . . y Y Y Y Y Y y . . . .",
+    b"O O O O y Y Y Y Y Y y O O O O",
+    b". . . . y Y Y Y Y Y y . . . .",
+    b". . . O O y Y Y Y y O O . . .",
+    b". O O . . O y y y O . . O O .",
+    b". . . . . O . O . O . . . . .",
+    b". . . . O . . O . . O . . . .",
+    b". . . . O . . O . . O . . . .",
+    b". . . . . . . O . . . . . . .",
+][..])
+
+pub let wall = Sprite([
+    b"T T T T T T T T T T T T T T T",
+    b"T t t t t t t t t t t t t t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t . . . . . . . . . . . t T",
+    b"T t t t t t t t t t t t t t T",
+    b"T T T T T T T T T T T T T T T",
+][..])
+
+pub let cannon_base = Sprite([
+    b". . . . . . . . . . . . . . .",
+    b". . . . O O O O O O O . . . .",
+    b". . . O o o o o o o o O . . .",
+    b". . O o o o o o o o o o O . .",
+    b". O o o o o o o o o o o o O .",
+    b". O o o o o o o o o o o o O .",
+    b". O o o o o o o o o o o o O .",
+    b". O o o o o o o o o o o o O .",
+    b". O o o o o o o o o o o o O .",
+    b". O o o o o o o o o o o o O .",
+    b". O o o o o o o o o o o o O .",
+    b". . O o o o o o o o o o O . .",
+    b". . . O o o o o o o o O . . .",
+    b". . . . O O O O O O O . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let cannon_turret = Sprite([
+    b". . . . . . o o o . . . . . .",
+    b". . . . . . o O o . . . . . .",
+    b". . . . . . o O o . . . . . .",
+    b". . . . . . o O o . . . . . .",
+    b". . . . . . o O o . . . . . .",
+    b". . . . . . o O o . . . . . .",
+    b". . . . . o O O O o . . . . .",
+    b". . . . . o O O O o . . . . .",
+    b". . . . . o O O O o . . . . .",
+    b". . . . . . o o o . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let fast_gunner_base = Sprite([
+    b". . . . . . . . . . . . . . .",
+    b". . . . G G G G G G G . . . .",
+    b". . . G g g g g g g g G . . .",
+    b". . G g g g g g g g g g G . .",
+    b". G g g g g g g g g g g g G .",
+    b". G g g g g g g g g g g g G .",
+    b". G g g g g g g g g g g g G .",
+    b". G g g g g g g g g g g g G .",
+    b". G g g g g g g g g g g g G .",
+    b". G g g g g g g g g g g g G .",
+    b". G g g g g g g g g g g g G .",
+    b". . G g g g g g g g g g G . .",
+    b". . . G g g g g g g g G . . .",
+    b". . . . G G G G G G G . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let fast_gunner_turret = Sprite([
+    b". . . . . . . . . . . . . . .",
+    b". . . . . g g . g g . . . . .",
+    b". . . . . g g . g g . . . . .",
+    b". . . . . g g . g g . . . . .",
+    b". . . . . g g . g g . . . . .",
+    b". . . . . g G g G g . . . . .",
+    b". . . . . g G G G g . . . . .",
+    b". . . . . g G G G g . . . . .",
+    b". . . . . g G G G g . . . . .",
+    b". . . . . . g g g . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let laser_base = Sprite([
+    b". . . . . . . . . . . . . . .",
+    b". . . . I I I I I I I . . . .",
+    b". . . I i i i i i i i I . . .",
+    b". . I i i i i i i i i i I . .",
+    b". I i i i i i i i i i i i I .",
+    b". I i i i i i i i i i i i I .",
+    b". I i i i i i i i i i i i I .",
+    b". I i i i i i i i i i i i I .",
+    b". I i i i i i i i i i i i I .",
+    b". I i i i i i i i i i i i I .",
+    b". I i i i i i i i i i i i I .",
+    b". . I i i i i i i i i i I . .",
+    b". . . I i i i i i i i I . . .",
+    b". . . . I I I I I I I . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let laser_turret = Sprite([
+    b". . . . . . . i . . . . . . .",
+    b". . . . . . i I i . . . . . .",
+    b". . . . . . . i . . . . . . .",
+    b". . . . . . i I i . . . . . .",
+    b". . . . . . i I i . . . . . .",
+    b". . . . . . i I i . . . . . .",
+    b". . . . . i I I I i . . . . .",
+    b". . . . . i I I I i . . . . .",
+    b". . . . . i I I I i . . . . .",
+    b". . . . . . i i i . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let missile_base = Sprite([
+    b". . . . . . . . . . . . . . .",
+    b". . . . P P P P P P P . . . .",
+    b". . . P p p p p p p p P . . .",
+    b". . P p p p p p p p p p P . .",
+    b". P p p p p p p p p p p p P .",
+    b". P p p p p p p p p p p p P .",
+    b". P p p p p p p p p p p p P .",
+    b". P p p p p p p p p p p p P .",
+    b". P p p p p p p p p p p p P .",
+    b". P p p p p p p p p p p p P .",
+    b". P p p p p p p p p p p p P .",
+    b". . P p p p p p p p p p P . .",
+    b". . . P p p p p p p p P . . .",
+    b". . . . P P P P P P P . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+pub let missile_turret = Sprite([
+    b". . . . . . . p . . . . . . .",
+    b". . . . . . p P p . . . . . .",
+    b". . . . . . p P p . . . . . .",
+    b". . . . . . p P p . . . . . .",
+    b". . . . . . p P p . . . . . .",
+    b". . . . . . p P p . . . . . .",
+    b". . . . . p P P P p . . . . .",
+    b". . . . . p P P P p . . . . .",
+    b". . . . . p P P P p . . . . .",
+    b". . . . . . p p p . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+    b". . . . . . . . . . . . . . .",
+][..])
+
+

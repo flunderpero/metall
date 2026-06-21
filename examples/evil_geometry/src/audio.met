@@ -1,0 +1,46 @@
+use local.sdl
+use local.assets
+
+pub enum AudioErr Err = all_streams_busy
+
+pub struct AudioStream {
+    stream sdl.AudioDeviceStream
+    busy Bool
+}
+
+pub nocopy struct Audio {
+    streams []mut AudioStream
+}
+
+pub fun Audio.new(spec sdl.AudioSpec, num_streams Int, @a Arena) !&mut Audio {
+    let streams = unsafe @a.slice_uninit<AudioStream>(num_streams)
+    for i in 0..streams.len {
+        streams[i] = AudioStream(try sdl.AudioDeviceStream.open(spec), false)
+    }
+    @a.new(Audio(streams))
+}
+
+pub fun Audio.play(a &mut Audio, buf &sdl.AudioBuf) !void {
+    for &mut s in a.streams {
+        if not s.busy {
+            s.busy = true
+            s.stream.play(buf)
+            return void
+        }
+    }
+    return AudioErr.all_streams_busy
+}
+
+pub fun Audio.destroy(a &Audio) void {
+    for s in a.streams {
+        s.stream.destroy()
+    }
+}
+
+pub fun Audio.update(a &mut Audio) void {
+    for &mut s in a.streams {
+        if s.stream.get_queued() == 0 {
+            s.busy = false
+        }
+    }
+}

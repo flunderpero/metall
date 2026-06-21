@@ -1,0 +1,296 @@
+use local.sdl
+use local.grid
+use local.sim
+use local.math
+use local.assets
+use local.sprite
+use std.fs
+use std.cmp
+use std.io
+
+let red = sdl.FColor(0.8, 0.0, 0.0, 1.0)
+let no_text = sdl.FPoint(0.0, 0.0)
+let stroke F32 = 6.0
+
+-- Individually toggle the CRT screen effects.
+let enable_bloom = true
+let enable_scanlines = true
+let enable_sweep = true
+let enable_warp = true
+let enable_border = true
+
+-- Gap around each tile.
+let tile_gap F32 = 2.0
+
+-- Border around the grid.
+let border_horiz F32 = 0.04
+let border_vert F32 = 0.06
+
+-- Scene background and window-clear colors.
+let scene_bg = sdl.FColor(0.01, 0.0, 0.05, 1.0)
+let black = sdl.FColor(0.0, 0.0, 0.0, 1.0)
+
+-- Bloom: base brightness, an added spark, and the offset (px) of each copy.
+let bloom_base = 20
+let bloom_spark = 50
+let bloom_offset F32 = 2.0
+
+-- Rolling sweep: timings in ms, then band height (fraction of screen) and brightness.
+let sweep_duration_ms = 2000
+let sweep_period_ms = 3200
+let sweep_gate_period_ms = 4300
+let sweep_gate_window_ms = 2150
+let sweep_band_height F32 = 0.30
+let sweep_band_brightness U8 = 80
+
+-- Barrel warp: mesh resolution, bulge strength, and band tracking-jitter radius/amount.
+let warp_mesh_n = 5
+let warp_factor F32 = 0.02
+let warp_jitter_radius F32 = 0.10
+let warp_jitter_amount F32 = 0.005
+
+pub struct Painter {
+    sim &sim.Sim
+    grid_scale F32
+    --- The play area on screen: where the grid is drawn and where the CRT
+        effects live. The border around it stays untouched. ---
+    viewport sdl.FRect
+    renderer sdl.Renderer
+    crt sdl.Texture
+    screen sdl.Texture
+    overlay sdl.Texture
+    band sdl.Texture
+    last_ticks Int
+    avg_dt F32
+}
+
+pub fun Painter.new(
+    screen_size math.IPoint,
+    grid_size math.IPoint,
+    sim_ &sim.Sim,
+    assets_ &assets.Assets,
+    renderer sdl.Renderer,
+    @a Arena) !&mut Painter {
+    let screen_w = screen_size.x.to_f32()
+    let screen_h = screen_size.y.to_f32()
+    let bx = if enable_border { screen_w * border_horiz } else { F32(0.0) }
+    let by = if enable_border { screen_h * border_vert  } else { F32(0.0) }
+
+    -- The viewport is the play area (the grid minus the hidden ring) with square
+    -- tiles, centered, leaving at least the requested border on each side.
+    let h = grid.hidden_tiles_per_side * 2
+    let play_x = (grid_size.x - h).to_f32()
+    let play_y = (grid_size.y - h).to_f32()
+    let grid_scale = cmp.min((screen_w - 2.0 * bx) / play_x, (screen_h - 2.0 * by) / play_y)
+    let vp_w = play_x * grid_scale
+    let vp_h = play_y * grid_scale
+    let viewport = sdl.FRect((screen_w - vp_w) * 0.5, (screen_h - vp_h) * 0.5, vp_w, vp_h)
+
+    -- The offscreen targets are play-area sized: the hidden ring renders past their
+    -- edges and clips, and the CRT effects never reach the border.
+    let crt = try sdl.Texture.create_target(renderer, vp_w.to_int().to_i32_clamped(), vp_h.to_int().to_i32_clamped())
+    let screen = try sdl.Texture.create_target(renderer, vp_w.to_int().to_i32_clamped(), vp_h.to_int().to_i32_clamped())
+
+    @a.new(
+        Painter(
+            sim_,
+            grid_scale,
+            viewport,
+            renderer,
+            crt,
+            screen,
+            assets_.crt_overlay,
+            assets_.crt_band,
+            sdl.ticks(),
+            16.6)
+    )
+}
+
+pub fun Painter.paint(p &mut Painter) void {
+    let r = p.renderer
+    let crt = p.crt
+    let now = sdl.ticks()
+
+    -- Render the scene into `crt`.
+    r.set_target(crt)
+    r.set_draw_color_float(scene_bg)
+    r.clear()
+    for x in p.sim.towers.iter() {
+        p.draw_tower(x.get())
+    }
+    for x in p.sim.enemies.iter() {
+        p.draw_enemy(x.get())
+    }
+
+    -- Composite into `screen`, all in a texture so nothing accumulates frame to frame.
+    r.set_target(p.screen)
+    r.set_draw_color_float(black)
+    r.clear()
+
+    -- Add CRT effects. sw/sh are the play-area texture size, not the screen.
+    let sw = p.viewport.w
+    let sh = p.viewport.h
+
+    -- Base scene at full brightness. The overlay below carries the CRT darkening.
+    crt.set_blend_mode(sdl.BlendMode.none)
+    crt.set_alpha_mod(255)
+    crt.set_color_mod(255, 255, 255)
+    r.texture(crt, sdl.FRect(0.0, 0.0, sw, sh))
+
+    if enable_bloom { p.draw_bloom(sw, sh) }
+    if enable_scanlines { p.draw_scanlines(sw, sh) }
+    let band_v = if enable_sweep { p.draw_sweep(sw, sh) } else { -1.0.to_f32() }
+
+    -- Present `screen` into the viewport, leaving a clean black border, optionally warped.
+    r.reset_target()
+    r.set_draw_color_float(black)
+    r.clear()
+    if enable_warp {
+        p.draw_warp(band_v)
+    } else {
+        p.screen.set_blend_mode(sdl.BlendMode.none)
+        r.texture(p.screen, p.viewport)
+    }
+    let dt = (now - p.last_ticks).to_f32()
+    p.avg_dt = p.avg_dt * 0.9 + dt * 0.1 -- Smooth out average duration.
+    p.draw_debug()
+    p.last_ticks = now
+}
+
+-- Bloom: additive copies offset eight ways so bright edges blow out.
+fun Painter.draw_bloom(p &Painter, sw F32, sh F32) void {
+    let r = p.renderer
+    let crt = p.crt
+    let bmod = (bloom_base + bloom_spark).to_u8_wrapping()
+    crt.set_blend_mode(sdl.BlendMode.add)
+    crt.set_color_mod(bmod, bmod, bmod)
+    r.texture(crt, sdl.FRect(bloom_offset, 0.0, sw, sh))
+    r.texture(crt, sdl.FRect(0.0 - bloom_offset, 0.0, sw, sh))
+    r.texture(crt, sdl.FRect(0.0, bloom_offset, sw, sh))
+    r.texture(crt, sdl.FRect(0.0, 0.0 - bloom_offset, sw, sh))
+    r.texture(crt, sdl.FRect(bloom_offset, bloom_offset, sw, sh))
+    r.texture(crt, sdl.FRect(0.0 - bloom_offset, bloom_offset, sw, sh))
+    r.texture(crt, sdl.FRect(bloom_offset, 0.0 - bloom_offset, sw, sh))
+    r.texture(crt, sdl.FRect(0.0 - bloom_offset, 0.0 - bloom_offset, sw, sh))
+}
+
+-- Scanlines + phosphor mask + vignette, multiplied over the frame.
+fun Painter.draw_scanlines(p &Painter, sw F32, sh F32) void {
+    let r = p.renderer
+    p.overlay.set_blend_mode(sdl.BlendMode.mod)
+    r.texture(p.overlay, sdl.FRect(0.0, 0.0, sw, sh))
+}
+
+-- Rolling scanline sweep at irregular intervals.
+fun Painter.draw_sweep(p &Painter, sw F32, sh F32) F32 {
+    let r = p.renderer
+    let now = sdl.ticks()
+    let phase = now % sweep_period_ms
+    let start = now - phase
+    let band_on = phase < sweep_duration_ms and start % sweep_gate_period_ms < sweep_gate_window_ms
+    let band_v = if band_on { phase.to_f32() / sweep_duration_ms.to_f32() } else { -1.0.to_f32() }
+    if band_on {
+        let band_h = sh * sweep_band_height
+        let top = band_v * (sh + band_h) - band_h
+        p.band.set_blend_mode(sdl.BlendMode.add)
+        p.band.set_color_mod(sweep_band_brightness, sweep_band_brightness, sweep_band_brightness)
+        r.texture(p.band, sdl.FRect(0.0, top, sw, band_h))
+    }
+    band_v
+}
+
+-- Warp the finished frame onto a barrel mesh for the CRT bulge. The black
+-- window clear shows through around the curved edges.
+fun Painter.draw_warp(p &Painter, band_v F32) void {
+    let r = p.renderer
+    let @local = Arena()
+    let n = warp_mesh_n
+    mut mesh = unsafe @local.slice_uninit<sdl.Vertex>(n * n * 6)
+    mut idx = 0
+    for j in 0..n {
+        for i in 0..n {
+            let a = warp_vertex(i, j, n, p.viewport, band_v)
+            let b = warp_vertex(i + 1, j, n, p.viewport, band_v)
+            let c = warp_vertex(i + 1, j + 1, n, p.viewport, band_v)
+            let d = warp_vertex(i, j + 1, n, p.viewport, band_v)
+            mesh[idx] = a
+            mesh[idx + 1] = b
+            mesh[idx + 2] = c
+            mesh[idx + 3] = a
+            mesh[idx + 4] = c
+            mesh[idx + 5] = d
+            idx = idx + 6
+        }
+    }
+    p.screen.set_blend_mode(sdl.BlendMode.none)
+    r.geometry_textured(p.screen, mesh)
+}
+
+pub fun Painter.draw_enemy(p &Painter, t &sim.Enemy) void {
+    match t.kind {
+    case sim.Triangle: p.draw_sprite(t.pos, sprite.triangle)
+    case sim.Rectangle: p.draw_sprite(t.pos, sprite.rectangle)
+    case sim.Star: p.draw_sprite(t.pos, sprite.star)
+    case sim.Sun: p.draw_sprite(t.pos, sprite.sun)
+    }
+}
+
+pub fun Painter.draw_tower(p &Painter, t &sim.Tower) void {
+    match t.kind {
+    case sim.Wall: p.draw_sprite(t.pos, sprite.wall)
+    case sim.Cannon: 
+        p.draw_sprite(t.pos, sprite.cannon_base)
+        p.draw_sprite(t.pos, sprite.cannon_turret)
+    case sim.FastGunner: 
+        p.draw_sprite(t.pos, sprite.fast_gunner_base)
+        p.draw_sprite(t.pos, sprite.fast_gunner_turret)
+    case sim.Laser: 
+        p.draw_sprite(t.pos, sprite.laser_base)
+        p.draw_sprite(t.pos, sprite.laser_turret)
+    case sim.Missile: 
+        p.draw_sprite(t.pos, sprite.missile_base)
+        p.draw_sprite(t.pos, sprite.missile_turret)
+    }
+}
+
+fun warp_vertex(gi Int, gj Int, n Int, vp sdl.FRect, band_v F32) sdl.Vertex {
+    let u = gi.to_f32() / n.to_f32()
+    let v = gj.to_f32() / n.to_f32()
+    let cx = u * 2.0 - 1.0
+    let cy = v * 2.0 - 1.0
+    let f = 1.0 - warp_factor * (cx * cx + cy * cy)
+    let px = vp.x + (cx * f + 1.0) * 0.5 * vp.w
+    let py = vp.y + (cy * f + 1.0) * 0.5 * vp.h
+    -- Near the rolling band, slide the sampled column sideways for a tracking jitter.
+    let d = v - band_v
+    let ad = if d < 0.0 { 0.0 - d } else { d }
+    let bump = if ad < warp_jitter_radius { 1.0 - ad / warp_jitter_radius } else { 0.0.to_f32() }
+    let uu = u + warp_jitter_amount * bump
+    sdl.Vertex(sdl.FPoint(px, py), sdl.FColor(1.0, 1.0, 1.0, 1.0), sdl.FPoint(uu, v))
+}
+
+pub fun Painter.draw_sprite(p &Painter, grid_pos math.Point, sprite_ sprite.Sprite) void {
+    let ps = p.grid_scale / (sprite_.height().to_f32() + tile_gap)
+    let pos = math.Point(
+        (grid_pos.x - grid.hidden_tiles_per_side.to_f32()) * p.grid_scale + ps,
+        (grid_pos.y - grid.hidden_tiles_per_side.to_f32()) * p.grid_scale + ps)
+    sprite_.draw(p.renderer, pos, ps)
+}
+
+pub fun Painter.draw_debug(p &Painter) void {
+    let @local = Arena()
+    let r = p.renderer
+    let fps = 1000.0 / p.avg_dt
+    if fps < 58.0 {
+        io.println(f"FPS dropped to {fps:precision=2}".build(@local))
+    }
+    -- r.set_draw_color_float(sdl.FColor(0.0, 0.0, 0.0, 1.0))
+    -- r.fill_rect(sdl.FRect(0.0, 0.0, 300.0, 50.0))
+    r.set_scale(3.0, 3.0)
+    r.set_draw_color_float(sdl.FColor(0.0, 0.0, 0.0, 1.0))
+    let s = f"{fps:precision=2}".build(@local)
+    r.debug_text(10.0, 2.0, s) 
+    r.set_draw_color_float(sdl.FColor(0.0, 1.0, 0.0, 1.0))
+    r.debug_text(9.0, 1.0, s)
+    r.set_scale(1.0, 1.0)
+}

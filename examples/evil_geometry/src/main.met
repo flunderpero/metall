@@ -1,36 +1,47 @@
-use sdl
+use local.sdl
+use local.assets
+use local.audio
+use local.level
+use local.game
+use local.math
+use local.sim
 use std.ffi
 use std.io
+use std.os
+use std.time
 
-fun main() void {
-    if unsafe sdl.init(sdl.InitFlags.video.tag) {
-        let @a = Arena()
-        let title = ffi.cstr("Evil Geometry".as_bytes(), @a)
-        let window = unsafe sdl.create_window(title, I32(800), I32(600), U64(0))
-        if window.is_null() {
-            io.println("window creation failed")
-        } else {
-            let renderer = unsafe sdl.create_renderer(window, ffi.Ptr.null<U8>())
-            if renderer.is_null() {
-                io.println("renderer creation failed")
-            } else {
-                io.println("window created")
-                _ = unsafe sdl.raise_window(window)
-                _ = unsafe sdl.set_render_draw_color(renderer, U8(40), U8(70), U8(140), U8(255))
-                mut frames = 0
-                for frames < 300 {
-                    unsafe sdl.pump_events()
-                    _ = unsafe sdl.render_clear(renderer)
-                    _ = unsafe sdl.render_present(renderer)
-                    unsafe sdl.delay(U32(16))
-                    frames = frames + 1
-                }
-                unsafe sdl.destroy_renderer(renderer)
-            }
-            unsafe sdl.destroy_window(window)
-        }
-        unsafe sdl.quit()
-    } else {
-        io.println("SDL_Init failed")
+fun main() !void {
+    let @static = Arena()
+
+    try sdl.init(sdl.InitFlags.video.tag | sdl.InitFlags.audio.tag)
+    defer { sdl.quit() }
+
+    let screen_size = math.IPoint(1920, 1080)
+
+    let window = try sdl.Window.create("Evil Geometry", 1600, 900)
+    defer { window.destroy() }
+    try window.raise()
+    -- try window.set_fullscreen(true)
+
+    let renderer = try window.create_renderer()
+    defer { renderer.destroy() }
+    try renderer.set_vsync(sdl.RendererVsync.full)
+    renderer.set_logical_presentation(
+        screen_size.x.to_i32_clamped(),
+        screen_size.y.to_i32_clamped(),
+        sdl.LogicalPresentation.letterbox)
+
+    let audio_spec = sdl.AudioSpec(sdl.AudioFormat.f32le, 2, 48000)
+    let audio_ = try audio.Audio.new(audio_spec, 8, @static)
+    defer { audio_.destroy() }
+
+    let assets_ = try assets.Assets.load_all(renderer, audio_spec, @static)
+    defer { assets_.destroy() }
+
+    {
+        let @level = Arena()
+        let level_ = level.Level1.new(@level)
+
+        _ = game.Game.run(screen_size, level_, audio_, assets_, renderer)
     }
 }
