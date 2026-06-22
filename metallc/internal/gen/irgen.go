@@ -707,7 +707,9 @@ func (g *IRFunGen) genStructConstructionFields(
 	if order, ok := g.env.ArgOrder(constructionID); ok {
 		args = order
 	}
-	for _, arg := range args {
+	// Evaluate fields in source order so their side effects run left to right as
+	// written.
+	for _, arg := range lit.Args {
 		g.Gen(arg)
 	}
 	targetTyp := g.typeOfNode(lit.Target)
@@ -2760,10 +2762,23 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 		_, autoRefReceiver = g.env.MethodReceiverAutoRef(id)
 	}
 	receiverAddr := ""
-	for i, nodeID := range argNodes {
+	_, isMethod := g.env.MethodCallReceiver(id)
+	// Evaluate arguments in source order so their visible side effects run left to
+	// right as written.
+	evalOrder := make([]ast.NodeID, 0, len(argNodes))
+	if isMethod {
+		evalOrder = append(evalOrder, argNodes[0])
+	}
+	evalOrder = append(evalOrder, call.Args...)
+	for _, nodeID := range argNodes {
+		if defaults[nodeID] {
+			evalOrder = append(evalOrder, nodeID)
+		}
+	}
+	for i, nodeID := range evalOrder {
 		// An auto-borrowed receiver passes the place's address (a `ptr`), not its
-		// loaded value. Computed first to preserve left-to-right argument order.
-		if i == 0 && autoRefReceiver {
+		// loaded value.
+		if i == 0 && isMethod && autoRefReceiver {
 			receiverAddr = g.genPlaceAddr(nodeID)
 			continue
 		}

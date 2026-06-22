@@ -5142,6 +5142,55 @@ fun main() void {
 8
 ```
 
+**named arguments evaluate in source order**
+
+Arguments must be evaluated in the order written so that side effects are also
+ordered, while the binding follows parameter order.
+
+```metall
+fun tick(label Int) Int {
+    DebugIntern.print_int(label)
+    label
+}
+
+fun add(a Int, b Int) Int { a * 10 + b }
+
+fun main() void {
+    DebugIntern.print_int(add(b = tick(1), a = tick(2)))
+}
+```
+
+```output
+1
+2
+21
+```
+
+**named arguments in struct construction evaluate in source order**
+
+Arguments must be evaluated in the order written so that side effects are also
+ordered, while the binding follows field order.
+
+```metall
+fun tick(label Int) Int {
+    DebugIntern.print_int(label)
+    label
+}
+
+struct Pair { a Int b Int }
+
+fun main() void {
+    let p = Pair(b = tick(1), a = tick(2))
+    DebugIntern.print_int(p.a * 10 + p.b)
+}
+```
+
+```output
+1
+2
+21
+```
+
 ## Defer
 
 **defer basic**
