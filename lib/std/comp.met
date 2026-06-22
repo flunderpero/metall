@@ -9,6 +9,11 @@ pub struct IntType {
     pub bits Int
 }
 
+pub struct FloatType {
+    pub name Str
+    pub bits Int
+}
+
 pub struct Field {
     pub name Str
     pub typ &Type
@@ -35,7 +40,7 @@ pub struct EnumType {
     pub variants []EnumVariant
 }
 
-pub union Type = BoolType | StrType | VoidType | NeverType | IntType | StructType | UnionType | EnumType
+pub union Type = BoolType | StrType | VoidType | NeverType | IntType | FloatType | StructType | UnionType | EnumType
 
 pub fun type_of<T>() Type {
     panic("comp.type_of must only be used as a macro argument")

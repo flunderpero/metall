@@ -307,6 +307,8 @@ func (r *compTypeRenderer) render(typeID TypeID, span base.Span) (string, bool) 
 	switch kind := typ.Kind.(type) {
 	case IntType:
 		return fmt.Sprintf("comp.IntType(%q, %t, %d)", kind.Name, kind.Signed, kind.Bits), true
+	case FloatType:
+		return fmt.Sprintf("comp.FloatType(%q, %d)", kind.Name, kind.Bits), true
 	case StructType:
 		return r.renderStruct(kind, span)
 	case UnionType:

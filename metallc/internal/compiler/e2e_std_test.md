@@ -39,6 +39,7 @@ pub fun type_name(name Str, info comp.Type, sw &mut StrWriter) void {
         case comp.VoidType v: { sw.write("void") }
         case comp.NeverType v: { sw.write("never") }
         case comp.IntType i: { sw.write(i.name) }
+        case comp.FloatType f: { sw.write(f.name) }
         case comp.StructType s: { sw.write("struct ") sw.write(s.name) }
         case comp.UnionType u: { sw.write("union ") sw.write(u.name) }
         case comp.EnumType e: { sw.write("enum ") sw.write(e.name) }
@@ -122,6 +123,7 @@ pub fun gen_fmt(info comp.Type, sw &mut StrWriter) void {
         case comp.VoidType v: { }
         case comp.NeverType v: { }
         case comp.IntType i: { }
+        case comp.FloatType f: { }
         case comp.UnionType u: { }
         case comp.EnumType e: { }
     }
@@ -152,11 +154,18 @@ type_name_macro.type_name("i8_name", comp.type_of<I8>())
 type_name_macro.type_name("i16_name", comp.type_of<I16>())
 type_name_macro.type_name("i32_name", comp.type_of<I32>())
 type_name_macro.type_name("rune_name", comp.type_of<Rune>())
+type_name_macro.type_name("float_name", comp.type_of<Float>())
+type_name_macro.type_name("f32_name", comp.type_of<F32>())
 
 struct Point { x Int y Int }
 
 type_name_macro.type_name("point_name", comp.type_of<Point>())
 type_name_macro.field_count("point_fields", comp.type_of<Point>())
+
+struct Vec2 { x Float y F32 }
+
+type_name_macro.type_name("vec2_name", comp.type_of<Vec2>())
+type_name_macro.field_count("vec2_fields", comp.type_of<Vec2>())
 
 union Shape = Point | Bool
 
@@ -174,8 +183,12 @@ fun main() void {
     io.println(i16_name())
     io.println(i32_name())
     io.println(rune_name())
+    io.println(float_name())
+    io.println(f32_name())
     io.println(point_name())
     DebugIntern.print_int(point_fields())
+    io.println(vec2_name())
+    DebugIntern.print_int(vec2_fields())
     io.println(shape_name())
 }
 ```
@@ -192,7 +205,11 @@ I8
 I16
 I32
 Rune
+Float
+F32
 struct Point
+2
+struct Vec2
 2
 union Shape
 ```
@@ -242,6 +259,33 @@ fun main() void {
 
 ```output
 Pair{a=hello, b=42}
+```
+
+**fmtstr macro over float fields**
+
+A derive-style `fmt` over a struct with `Float`/`F32` fields, the Vec2 shape Metall
+targets for SDL/game loops, which the reflection layer could not see at all before
+the `FloatType` case.
+
+```metall
+use std.comp
+use std.io
+use local.fmtstr_macro
+
+struct Vec2 { x Float y F32 }
+
+fmtstr_macro.gen_fmt(comp.type_of<Vec2>())
+
+fun main() void {
+    let @a = Arena()
+    let sw = StrWriter.new(256, @a)
+    Vec2(1.5, 2.5).fmt(sw)
+    io.println(sw.as_str())
+}
+```
+
+```output
+Vec2{x=1.5, y=2.5}
 ```
 
 **enum reflection macro**
