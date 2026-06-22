@@ -111,7 +111,11 @@ pub fun U64.to_u32_wrapping(self U64) U32 {}
 pub fun U64.to_int_wrapping(self U64) Int {}
 pub fun U64.to_i32_wrapping(self U64) I32 {}
 
---- A placeholder type for the builtin `Float` type. ---
+--- A placeholder type for the builtin `Float` type.
+
+    Has no `hash`, so it is not a valid `map.Key`: IEEE `eq` makes a NaN key
+    unequal to itself, which a hash table cannot store or retrieve. Key on
+    `f.to_bits()` instead. ---
 pub struct Float {}
 
 pub fun Float.to_f32(self Float) F32 {}
@@ -121,7 +125,11 @@ pub fun Float.is_inf(self Float) Bool {}
 pub fun Float.to_bits(self Float) U64 {}
 pub fun Float.from_bits(bits U64) Float {}
 
---- A placeholder type for the builtin `F32` type. ---
+--- A placeholder type for the builtin `F32` type.
+
+    Has no `hash`, so it is not a valid `map.Key`: IEEE `eq` makes a NaN key
+    unequal to itself, which a hash table cannot store or retrieve. Key on
+    `f.to_bits()` instead. ---
 pub struct F32 {}
 
 pub fun F32.to_float(self F32) Float {}

@@ -174,18 +174,6 @@ fun main() void {
     })
     _ = eq_suite.run()
 
-    let hash_suite = test.Suite.new("hash", @local)
-    hash_suite.test("Float.hash", fun() !void {
-        try test.eq(Float(1.5).hash(), Float(1.5).hash())
-        try test.neq(Float(1.5).hash(), Float(2.0).hash())
-        try test.eq(0.0.hash(), (-0.0).hash())
-    })
-    hash_suite.test("F32.hash", fun() !void {
-        try test.eq(F32(1.5).hash(), F32(1.5).hash())
-        try test.neq(F32(1.5).hash(), F32(2.0).hash())
-    })
-    _ = hash_suite.run()
-
     let pred_suite = test.Suite.new("predicates", @local)
     pred_suite.test("is_nan, is_inf, is_finite", fun() !void {
         let nan = 0.0 / 0.0

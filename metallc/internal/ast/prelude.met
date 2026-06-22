@@ -1352,21 +1352,6 @@ pub fun U64.hash(u U64) U64 { u *% 0x517CC1B727220A95 }
 pub fun Rune.hash(r Rune) U64 { r.to_u32().to_u64() *% 0x517CC1B727220A95 }
 pub fun Bool.hash(b Bool) U64 { if b { 1 } else { 0 } }
 
---- Hash the raw bits. 
-
-    -0.0 is folded to +0.0 so values that compare equal hash equal. ---
-pub fun Float.hash(a Float) U64 {
-    let bits = if a == 0.0 { U64(0) } else { a.to_bits() }
-    bits *% 0x517CC1B727220A95
-}
---- Hash the raw bits.
-
-    -0.0 is folded to +0.0 so values that compare equal hash equal. ---
-pub fun F32.hash(a F32) U64 {
-    let bits = if a == 0.0 { U64(0) } else { a.to_bits().to_u64() }
-    bits *% 0x517CC1B727220A95
-}
-
 pub fun Str.fmt(s Str, sw &mut StrWriter) void { unsafe sw.write_utf8_unchecked(s.data) }
 pub fun Int.fmt_ext(i Int, sw &mut StrWriter, base Int = 10, upper Bool = false, width Int = 0) void {
     -- An Int can be at most 64 bytes stringified.
