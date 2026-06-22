@@ -72,7 +72,7 @@ fun main() void {
     DebugIntern.print_f32(c)
     DebugIntern.print_f32(c + c)
     DebugIntern.print_float(c.to_float())
-    DebugIntern.print_int(a.to_int())
+    DebugIntern.print_int(a.to_int_clamped())
     DebugIntern.print_float(7.to_float())
     DebugIntern.print_f32(3.to_f32())
     DebugIntern.print_bool(a == 3.14)
@@ -85,8 +85,8 @@ fun main() void {
     let n = 0.0 / 0.0
     DebugIntern.print_bool(n != n)
     DebugIntern.print_bool(n == n)
-    DebugIntern.print_int(1e30.to_int())
-    DebugIntern.print_int(n.to_int())
+    DebugIntern.print_int(1e30.to_int_clamped())
+    DebugIntern.print_int(n.to_int_clamped())
     let inf = 1.0 / 0.0
     DebugIntern.print_bool(n.is_nan())
     DebugIntern.print_bool(inf.is_inf())

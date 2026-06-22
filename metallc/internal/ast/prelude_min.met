@@ -115,7 +115,7 @@ pub fun U64.to_i32_wrapping(self U64) I32 {}
 pub struct Float {}
 
 pub fun Float.to_f32(self Float) F32 {}
-pub fun Float.to_int(self Float) Int {}
+pub fun Float.to_int_clamped(self Float) Int {}
 pub fun Float.is_nan(self Float) Bool {}
 pub fun Float.is_inf(self Float) Bool {}
 pub fun Float.to_bits(self Float) U64 {}
@@ -125,7 +125,7 @@ pub fun Float.from_bits(bits U64) Float {}
 pub struct F32 {}
 
 pub fun F32.to_float(self F32) Float {}
-pub fun F32.to_int(self F32) Int {}
+pub fun F32.to_int_clamped(self F32) Int {}
 pub fun F32.is_nan(self F32) Bool {}
 pub fun F32.is_inf(self F32) Bool {}
 pub fun F32.to_bits(self F32) U32 {}

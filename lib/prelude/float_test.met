@@ -211,6 +211,24 @@ fun main() void {
     })
     _ = bits_suite.run()
 
+    let conv_suite = test.Suite.new("to_int_clamped", @local)
+    conv_suite.test("Float.to_int_clamped", fun() !void {
+        try test.eq(1, Float(1.99).to_int_clamped())
+        try test.eq(-1, Float(-1.99).to_int_clamped())
+        try test.eq(0, Float(0.0).to_int_clamped())
+        -- NaN maps to 0, overflow saturates to Int min/max.
+        try test.eq(0, (0.0 / 0.0).to_int_clamped())
+        try test.eq(0x7FFF_FFFF_FFFF_FFFF, Float(1e300).to_int_clamped())
+        try test.eq(-0x8000_0000_0000_0000, Float(-1e300).to_int_clamped())
+    })
+    conv_suite.test("F32.to_int_clamped", fun() !void {
+        try test.eq(2, F32(2.5).to_int_clamped())
+        try test.eq(-3, F32(-3.0).to_int_clamped())
+        try test.eq(0, (F32(0.0) / 0.0).to_int_clamped())
+        try test.eq(0x7FFF_FFFF_FFFF_FFFF, F32(3.0e38).to_int_clamped())
+    })
+    _ = conv_suite.run()
+
     -- Drive the bit-pattern tables (defined below) through the formatter. The
     -- platform formatter (libc / the wasm harness) is shortest and round-trips,
     -- but is not always the minimal-length string in the rare adjacent-bracket

@@ -1624,7 +1624,10 @@ pub fun Float.from_ascii_str(str []U8) !Float {
     v
 }
 
---- Like `Float.from_ascii_str`, rounded to the nearest F32. ---
+--- Like `Float.from_ascii_str`, then narrowed to F32.
+
+    The two-step rounding (decimal to Float, then Float to F32) can land 
+    1 ULP from a single-step parse. ---
 pub fun F32.from_ascii_str(str []U8) !F32 {
     (try Float.from_ascii_str(str)).to_f32()
 }

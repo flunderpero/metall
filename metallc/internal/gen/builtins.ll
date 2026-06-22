@@ -449,7 +449,7 @@ define internal float @"Float.to_f32"(double %v) alwaysinline {
     %r = fptrunc double %v to float
     ret float %r
 }
-define internal i64 @"Float.to_int"(double %v) alwaysinline {
+define internal i64 @"Float.to_int_clamped"(double %v) alwaysinline {
     %r = call i64 @llvm.fptosi.sat.i64.f64(double %v)
     ret i64 %r
 }
@@ -457,7 +457,7 @@ define internal double @"F32.to_float"(float %v) alwaysinline {
     %r = fpext float %v to double
     ret double %r
 }
-define internal i64 @"F32.to_int"(float %v) alwaysinline {
+define internal i64 @"F32.to_int_clamped"(float %v) alwaysinline {
     %r = call i64 @llvm.fptosi.sat.i64.f32(float %v)
     ret i64 %r
 }

@@ -88,8 +88,8 @@ pub fun Painter.new(
 
     -- The offscreen targets are play-area sized: the hidden ring renders past their
     -- edges and clips, and the CRT effects never reach the border.
-    let crt = try sdl.Texture.create_target(renderer, vp_w.to_int().to_i32_clamped(), vp_h.to_int().to_i32_clamped())
-    let screen = try sdl.Texture.create_target(renderer, vp_w.to_int().to_i32_clamped(), vp_h.to_int().to_i32_clamped())
+    let crt = try sdl.Texture.create_target(renderer, vp_w.to_int_clamped().to_i32_clamped(), vp_h.to_int_clamped().to_i32_clamped())
+    let screen = try sdl.Texture.create_target(renderer, vp_w.to_int_clamped().to_i32_clamped(), vp_h.to_int_clamped().to_i32_clamped())
 
     @a.new(
         Painter(
