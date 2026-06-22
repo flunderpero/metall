@@ -1,11 +1,12 @@
-use std.map
+use std.map.Map
+use std.map.Key
 
-pub struct Set<T map.Key> {
-    m &mut map.Map<T, Bool>
+pub struct Set<T Key> {
+    m &mut Map<T, Bool>
 }
 
 pub fun Set.new(capacity Int, @a Arena) &mut Set {
-    let m = map.Map.new<T, Bool>(capacity, @a)
+    let m = Map.new<T, Bool>(capacity, @a)
     @a.new(Set<T>(m))
 }
 

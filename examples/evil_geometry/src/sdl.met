@@ -1,4 +1,6 @@
 use std.ffi
+use std.ffi.Ptr
+use std.ffi.PtrMut
 use std.io
 use std.fs
 use std.enums
@@ -62,7 +64,7 @@ fun sdl_panic_message(@a Arena) Str {
 }
 
 pub struct Window {
-    handle ffi.Ptr<void>
+    handle Ptr<void>
 }
 
 --- Create a centered window of the given size. 
@@ -98,7 +100,7 @@ pub fun Window.set_fullscreen(w Window, fullscreen Bool) !void {
 
 --- A handle to a raw SDL_Event buffer. ---
 pub struct SDLEvent {
-    handle ffi.PtrMut<void>
+    handle PtrMut<void>
 }
 
 enum EventType U32 = 
@@ -310,7 +312,7 @@ pub fun Vertex.translate(v Vertex, x F32, y F32) Vertex {
 }
 
 pub struct Renderer {
-    handle ffi.Ptr<void>
+    handle Ptr<void>
 }
 
 --- Create a 2D renderer for the window. 
@@ -319,7 +321,7 @@ pub struct Renderer {
 pub fun Window.create_renderer(w Window, name ?Str = None()) !Renderer {
     let @local = Arena()
     let name = match name {
-        case None: ffi.Ptr.null<U8>()
+        case None: Ptr.null<U8>()
         else s: ffi.cstr(s.as_bytes(), @local)
     }
     let handle = unsafe create_renderer_(w.handle, name)
@@ -434,7 +436,7 @@ pub fun Renderer.fill_rects(r Renderer, rects []FRect) void {
 }
 
 pub fun Renderer.geometry(r Renderer, vertices []Vertex) void {
-    if not unsafe render_geometry_(r.handle, ffi.Ptr.null<void>(), ffi.slice_ptr(vertices), vertices.len.to_i32_clamped(), ffi.Ptr.null<I32>(), I32(0)) {
+    if not unsafe render_geometry_(r.handle, Ptr.null<void>(), ffi.slice_ptr(vertices), vertices.len.to_i32_clamped(), Ptr.null<I32>(), I32(0)) {
         -- Can only fail on an invalid renderer/args (ruled out by our types) or OOM.
         let @local = Arena()
         panic(sdl_panic_message(@local))
@@ -443,7 +445,7 @@ pub fun Renderer.geometry(r Renderer, vertices []Vertex) void {
 
 --- Draw textured triangles sampling `t`. Vertices' tex_coords are in 0..1. ---
 pub fun Renderer.geometry_textured(r Renderer, t Texture, vertices []Vertex) void {
-    if not unsafe render_geometry_(r.handle, t.handle, ffi.slice_ptr(vertices), vertices.len.to_i32_clamped(), ffi.Ptr.null<I32>(), I32(0)) {
+    if not unsafe render_geometry_(r.handle, t.handle, ffi.slice_ptr(vertices), vertices.len.to_i32_clamped(), Ptr.null<I32>(), I32(0)) {
         -- Can only fail on an invalid renderer/texture/args, ruled out by our types.
         let @local = Arena()
         panic(sdl_panic_message(@local))
@@ -492,7 +494,7 @@ pub fun Renderer.convert_event_coords(r Renderer, event SDLEvent) void {
 }
 
 pub struct Texture {
-    handle ffi.Ptr<void>
+    handle Ptr<void>
 }
 
 --- Load a BMP file into a texture for the given renderer. ---
@@ -516,7 +518,7 @@ pub fun Texture.destroy(t Texture) void {
 
 --- Draw the whole texture into `dst`. ---
 pub fun Renderer.texture(r Renderer, t Texture, dst FRect) void {
-    if not unsafe render_texture_(r.handle, t.handle, ffi.Ptr.null<FRect>(), ffi.ref_ptr(&dst)) {
+    if not unsafe render_texture_(r.handle, t.handle, Ptr.null<FRect>(), ffi.ref_ptr(&dst)) {
         -- Can only fail on an invalid renderer/texture, ruled out by our types.
         let @local = Arena()
         panic(sdl_panic_message(@local))
@@ -576,7 +578,7 @@ pub fun Renderer.set_target(r Renderer, target Texture) void {
 
 --- Restore drawing to the window. ---
 pub fun Renderer.reset_target(r Renderer) void {
-    if not unsafe set_render_target_(r.handle, ffi.Ptr.null<void>()) {
+    if not unsafe set_render_target_(r.handle, Ptr.null<void>()) {
         -- Can only fail on an invalid renderer, ruled out by our typed Renderer.
         let @local = Arena()
         panic(sdl_panic_message(@local))
@@ -586,7 +588,7 @@ pub fun Renderer.reset_target(r Renderer) void {
 --- Save the current render target to a BMP file. For debugging. ---
 pub fun Renderer.save_target(r Renderer, path fs.Path) !void {
     let @local = Arena()
-    let surf = unsafe render_read_pixels_(r.handle, ffi.Ptr.null<void>())
+    let surf = unsafe render_read_pixels_(r.handle, Ptr.null<void>())
     if surf.is_null() {
         return SDLErr.render_read_pixels_failed
     }
@@ -641,14 +643,14 @@ pub struct AudioSpec {
 
 pub nocopy struct AudioBuf {
     pub spec AudioSpec
-    audio_buf ffi.Ptr<void>
+    audio_buf Ptr<void>
     audio_len I32
 }
 
 pub fun AudioBuf.load_wav(path fs.Path, @a Arena) !&AudioBuf {
     let buf = @a.new(AudioBuf(
         spec=AudioSpec(AudioFormat.unknown, I32(0), I32(0)),
-        audio_buf=ffi.Ptr.null<void>(),
+        audio_buf=Ptr.null<void>(),
         audio_len=0
     ))
     let @local = Arena()
@@ -666,7 +668,7 @@ pub fun AudioBuf.load_wav(path fs.Path, @a Arena) !&AudioBuf {
 
     Note: The source audio is not destroyed. ---
 pub fun AudioBuf.convert(a &AudioBuf, spec AudioSpec, @a Arena) !&AudioBuf {
-    let new = @a.new(AudioBuf(spec=spec, audio_buf=ffi.Ptr.null<void>(), audio_len=0))
+    let new = @a.new(AudioBuf(spec=spec, audio_buf=Ptr.null<void>(), audio_len=0))
     if not unsafe convert_audio_samples_(
         src_spec=ffi.ref_ptr(&a.spec),
         src_data=a.audio_buf,
@@ -686,7 +688,7 @@ pub fun AudioBuf.destroy(a &AudioBuf) void {
 }
 
 pub struct AudioDeviceStream {
-    handle ffi.Ptr<void>
+    handle Ptr<void>
 }
 
 pub fun AudioDeviceStream.open(spec AudioSpec) !AudioDeviceStream {
@@ -694,8 +696,8 @@ pub fun AudioDeviceStream.open(spec AudioSpec) !AudioDeviceStream {
     let handle = unsafe open_audio_device_stream_(
         devid=0xFFFFFFFF, 
         spec=ffi.ref_ptr(&spec),
-        callback=ffi.Ptr.null<void>(),
-        userdata=ffi.Ptr.null<void>())
+        callback=Ptr.null<void>(),
+        userdata=Ptr.null<void>())
     if handle.is_null() {
         return SDLErr.open_audio_device_stream_failed
     }
@@ -737,64 +739,64 @@ extern("SDL_GetPerformanceCounter") fun get_performance_counter_() Int
 extern("SDL_GetPerformanceFrequency") fun get_performance_frequency_() Int
 
 -- SDL3/SDL_error.h
-extern("SDL_GetError") fun get_error_() ffi.Ptr<U8>
+extern("SDL_GetError") fun get_error_() Ptr<U8>
 
 -- SDL3/SDL_video.h
-extern("SDL_CreateWindow") fun create_window_(title ffi.Ptr<U8>, w I32, h I32, flags U64) ffi.Ptr<void>
-extern("SDL_DestroyWindow") fun destroy_window_(window ffi.Ptr<void>) void
-extern("SDL_RaiseWindow") fun raise_window_(window ffi.Ptr<void>) Bool
-extern("SDL_SetWindowFullscreen") fun set_window_fullscreen_(window ffi.Ptr<void>, fullscreen Bool) Bool
+extern("SDL_CreateWindow") fun create_window_(title Ptr<U8>, w I32, h I32, flags U64) Ptr<void>
+extern("SDL_DestroyWindow") fun destroy_window_(window Ptr<void>) void
+extern("SDL_RaiseWindow") fun raise_window_(window Ptr<void>) Bool
+extern("SDL_SetWindowFullscreen") fun set_window_fullscreen_(window Ptr<void>, fullscreen Bool) Bool
 
 -- SDL3/SDL_events.h
-extern("SDL_PollEvent") fun poll_event_(event ffi.PtrMut<void>) Bool
+extern("SDL_PollEvent") fun poll_event_(event PtrMut<void>) Bool
 extern("SDL_PumpEvents") fun pump_events_() void
 
 -- SDL3/SDL_render.h
-extern("SDL_CreateRenderer") fun create_renderer_(window ffi.Ptr<void>, name ffi.Ptr<U8>) ffi.Ptr<void>
-extern("SDL_DestroyRenderer") fun destroy_renderer_(renderer ffi.Ptr<void>) void
-extern("SDL_SetRenderDrawColor") fun set_render_draw_color_(renderer ffi.Ptr<void>, r U8, g U8, b U8, a U8) Bool
-extern("SDL_RenderClear") fun render_clear_(renderer ffi.Ptr<void>) Bool
-extern("SDL_RenderPresent") fun render_present_(renderer ffi.Ptr<void>) Bool
-extern("SDL_SetRenderVSync") fun set_render_vsync_(renderer ffi.Ptr<void>, vsync I32) Bool
-extern("SDL_RenderPoint") fun render_point_(renderer ffi.Ptr<void>, x F32, y F32) Bool
-extern("SDL_RenderPoints") fun render_points_(renderer ffi.Ptr<void>, points ffi.Ptr<FPoint>, count I32) Bool
-extern("SDL_RenderLine") fun render_line_(renderer ffi.Ptr<void>, x1 F32, y1 F32, x2 F32, y2 F32) Bool
-extern("SDL_RenderLines") fun render_lines_(renderer ffi.Ptr<void>, points ffi.Ptr<FPoint>, count I32) Bool
-extern("SDL_RenderRect") fun render_rect_(renderer ffi.Ptr<void>, rect ffi.Ptr<FRect>) Bool
-extern("SDL_RenderRects") fun render_rects_(renderer ffi.Ptr<void>, rects ffi.Ptr<FRect>, count I32) Bool
-extern("SDL_RenderFillRect") fun render_fill_rect_(renderer ffi.Ptr<void>, rect ffi.Ptr<FRect>) Bool
-extern("SDL_RenderFillRects") fun render_fill_rects_(renderer ffi.Ptr<void>, rects ffi.Ptr<FRect>, count I32) Bool
-extern("SDL_RenderGeometry") fun render_geometry_(renderer ffi.Ptr<void>, texture ffi.Ptr<void>, vertices ffi.Ptr<Vertex>, num_vertices I32, indices ffi.Ptr<I32>, num_indices I32) Bool
-extern("SDL_SetRenderDrawBlendMode") fun set_render_draw_blend_mode_(renderer ffi.Ptr<void>, blend_mode U32) Bool
-extern("SDL_SetRenderDrawColorFloat") fun set_render_draw_color_float_(renderer ffi.Ptr<void>, r F32, g F32, b F32, a F32) Bool
-extern("SDL_SetRenderLogicalPresentation") fun set_render_logical_presentation_(renderer ffi.Ptr<void>, w I32, h I32, mode I32) Bool
-extern("SDL_ConvertEventToRenderCoordinates") fun convert_event_to_render_coordinates_(renderer ffi.Ptr<void>, event ffi.PtrMut<void>) Bool
-extern("SDL_CreateTextureFromSurface") fun create_texture_from_surface_(renderer ffi.Ptr<void>, surface ffi.Ptr<void>) ffi.Ptr<void>
-extern("SDL_RenderTexture") fun render_texture_(renderer ffi.Ptr<void>, texture ffi.Ptr<void>, srcrect ffi.Ptr<FRect>, dstrect ffi.Ptr<FRect>) Bool
-extern("SDL_DestroyTexture") fun destroy_texture_(texture ffi.Ptr<void>) void
-extern("SDL_CreateTexture") fun create_texture_(renderer ffi.Ptr<void>, format I32, access I32, w I32, h I32) ffi.Ptr<void>
-extern("SDL_SetRenderTarget") fun set_render_target_(renderer ffi.Ptr<void>, texture ffi.Ptr<void>) Bool
-extern("SDL_SetTextureBlendMode") fun set_texture_blend_mode_(texture ffi.Ptr<void>, blend_mode U32) Bool
-extern("SDL_SetTextureScaleMode") fun set_texture_scale_mode_(texture ffi.Ptr<void>, scale_mode I32) Bool
-extern("SDL_SetTextureColorMod") fun set_texture_color_mod_(texture ffi.Ptr<void>, r U8, g U8, b U8) Bool
-extern("SDL_SetTextureAlphaMod") fun set_texture_alpha_mod_(texture ffi.Ptr<void>, a U8) Bool
-extern("SDL_RenderReadPixels") fun render_read_pixels_(renderer ffi.Ptr<void>, rect ffi.Ptr<void>) ffi.Ptr<void>
-extern("SDL_RenderDebugText") fun render_debug_text_(renderer ffi.Ptr<void>, x F32, y F32, str ffi.Ptr<U8>) Bool
-extern("SDL_SetRenderScale") fun set_render_scale_(renderer ffi.Ptr<void>, scale_x F32, scale_y F32) Bool
+extern("SDL_CreateRenderer") fun create_renderer_(window Ptr<void>, name Ptr<U8>) Ptr<void>
+extern("SDL_DestroyRenderer") fun destroy_renderer_(renderer Ptr<void>) void
+extern("SDL_SetRenderDrawColor") fun set_render_draw_color_(renderer Ptr<void>, r U8, g U8, b U8, a U8) Bool
+extern("SDL_RenderClear") fun render_clear_(renderer Ptr<void>) Bool
+extern("SDL_RenderPresent") fun render_present_(renderer Ptr<void>) Bool
+extern("SDL_SetRenderVSync") fun set_render_vsync_(renderer Ptr<void>, vsync I32) Bool
+extern("SDL_RenderPoint") fun render_point_(renderer Ptr<void>, x F32, y F32) Bool
+extern("SDL_RenderPoints") fun render_points_(renderer Ptr<void>, points Ptr<FPoint>, count I32) Bool
+extern("SDL_RenderLine") fun render_line_(renderer Ptr<void>, x1 F32, y1 F32, x2 F32, y2 F32) Bool
+extern("SDL_RenderLines") fun render_lines_(renderer Ptr<void>, points Ptr<FPoint>, count I32) Bool
+extern("SDL_RenderRect") fun render_rect_(renderer Ptr<void>, rect Ptr<FRect>) Bool
+extern("SDL_RenderRects") fun render_rects_(renderer Ptr<void>, rects Ptr<FRect>, count I32) Bool
+extern("SDL_RenderFillRect") fun render_fill_rect_(renderer Ptr<void>, rect Ptr<FRect>) Bool
+extern("SDL_RenderFillRects") fun render_fill_rects_(renderer Ptr<void>, rects Ptr<FRect>, count I32) Bool
+extern("SDL_RenderGeometry") fun render_geometry_(renderer Ptr<void>, texture Ptr<void>, vertices Ptr<Vertex>, num_vertices I32, indices Ptr<I32>, num_indices I32) Bool
+extern("SDL_SetRenderDrawBlendMode") fun set_render_draw_blend_mode_(renderer Ptr<void>, blend_mode U32) Bool
+extern("SDL_SetRenderDrawColorFloat") fun set_render_draw_color_float_(renderer Ptr<void>, r F32, g F32, b F32, a F32) Bool
+extern("SDL_SetRenderLogicalPresentation") fun set_render_logical_presentation_(renderer Ptr<void>, w I32, h I32, mode I32) Bool
+extern("SDL_ConvertEventToRenderCoordinates") fun convert_event_to_render_coordinates_(renderer Ptr<void>, event PtrMut<void>) Bool
+extern("SDL_CreateTextureFromSurface") fun create_texture_from_surface_(renderer Ptr<void>, surface Ptr<void>) Ptr<void>
+extern("SDL_RenderTexture") fun render_texture_(renderer Ptr<void>, texture Ptr<void>, srcrect Ptr<FRect>, dstrect Ptr<FRect>) Bool
+extern("SDL_DestroyTexture") fun destroy_texture_(texture Ptr<void>) void
+extern("SDL_CreateTexture") fun create_texture_(renderer Ptr<void>, format I32, access I32, w I32, h I32) Ptr<void>
+extern("SDL_SetRenderTarget") fun set_render_target_(renderer Ptr<void>, texture Ptr<void>) Bool
+extern("SDL_SetTextureBlendMode") fun set_texture_blend_mode_(texture Ptr<void>, blend_mode U32) Bool
+extern("SDL_SetTextureScaleMode") fun set_texture_scale_mode_(texture Ptr<void>, scale_mode I32) Bool
+extern("SDL_SetTextureColorMod") fun set_texture_color_mod_(texture Ptr<void>, r U8, g U8, b U8) Bool
+extern("SDL_SetTextureAlphaMod") fun set_texture_alpha_mod_(texture Ptr<void>, a U8) Bool
+extern("SDL_RenderReadPixels") fun render_read_pixels_(renderer Ptr<void>, rect Ptr<void>) Ptr<void>
+extern("SDL_RenderDebugText") fun render_debug_text_(renderer Ptr<void>, x F32, y F32, str Ptr<U8>) Bool
+extern("SDL_SetRenderScale") fun set_render_scale_(renderer Ptr<void>, scale_x F32, scale_y F32) Bool
 
 -- SDL3/SDL_surface.h
-extern("SDL_LoadBMP") fun load_bmp_(path ffi.Ptr<U8>) ffi.Ptr<void>
-extern("SDL_DestroySurface") fun destroy_surface_(surface ffi.Ptr<void>) void
-extern("SDL_SaveBMP") fun save_bmp_(surface ffi.Ptr<void>, path ffi.Ptr<U8>) Bool
+extern("SDL_LoadBMP") fun load_bmp_(path Ptr<U8>) Ptr<void>
+extern("SDL_DestroySurface") fun destroy_surface_(surface Ptr<void>) void
+extern("SDL_SaveBMP") fun save_bmp_(surface Ptr<void>, path Ptr<U8>) Bool
 
 -- SDL3/SDL_audio.h
-extern("SDL_LoadWAV") fun load_wav_(path ffi.Ptr<U8>, spec ffi.PtrMut<AudioSpec>, audio_buf ffi.PtrMut<ffi.Ptr<void>>, audio_len ffi.PtrMut<U32>) Bool
-extern("SDL_ConvertAudioSamples") fun convert_audio_samples_(src_spec ffi.Ptr<AudioSpec>, src_data ffi.Ptr<void>, src_len I32, dst_spec ffi.Ptr<AudioSpec>, dst_data ffi.PtrMut<ffi.Ptr<void>>, dst_len ffi.PtrMut<I32>) Bool
-extern("SDL_OpenAudioDeviceStream") fun open_audio_device_stream_(devid U32, spec ffi.Ptr<AudioSpec>, callback ffi.Ptr<void>, userdata ffi.Ptr<void>) ffi.Ptr<void>
-extern("SDL_ResumeAudioStreamDevice") fun resume_audio_stream_device_(stream ffi.Ptr<void>) Bool
-extern("SDL_PutAudioStreamData") fun put_audio_stream_data_(stream ffi.Ptr<void>, buf ffi.Ptr<void>, len I32) Bool
-extern("SDL_DestroyAudioStream") fun destroy_audio_stream_(stream ffi.Ptr<void>) void
-extern("SDL_GetAudioStreamQueued") fun get_audio_stream_queued_(stream ffi.Ptr<void>) I32
+extern("SDL_LoadWAV") fun load_wav_(path Ptr<U8>, spec PtrMut<AudioSpec>, audio_buf PtrMut<Ptr<void>>, audio_len PtrMut<U32>) Bool
+extern("SDL_ConvertAudioSamples") fun convert_audio_samples_(src_spec Ptr<AudioSpec>, src_data Ptr<void>, src_len I32, dst_spec Ptr<AudioSpec>, dst_data PtrMut<Ptr<void>>, dst_len PtrMut<I32>) Bool
+extern("SDL_OpenAudioDeviceStream") fun open_audio_device_stream_(devid U32, spec Ptr<AudioSpec>, callback Ptr<void>, userdata Ptr<void>) Ptr<void>
+extern("SDL_ResumeAudioStreamDevice") fun resume_audio_stream_device_(stream Ptr<void>) Bool
+extern("SDL_PutAudioStreamData") fun put_audio_stream_data_(stream Ptr<void>, buf Ptr<void>, len I32) Bool
+extern("SDL_DestroyAudioStream") fun destroy_audio_stream_(stream Ptr<void>) void
+extern("SDL_GetAudioStreamQueued") fun get_audio_stream_queued_(stream Ptr<void>) I32
 
 -- SDL3/SDL_stdinc.h
-extern("SDL_free") fun free_(mem ffi.Ptr<void>) void
+extern("SDL_free") fun free_(mem Ptr<void>) void

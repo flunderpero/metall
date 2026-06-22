@@ -1,4 +1,6 @@
 use std.ffi
+use std.ffi.Ptr
+use std.ffi.PtrMut
 use std.posix
 use std.fs
 use std.io
@@ -10,10 +12,10 @@ pub struct RunResult {
 
 let popen_mode = [U8('r'), 0][..]
 
-extern fun popen(filename ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.Ptr<void>
-extern fun fread(buf ffi.PtrMut<U8>, sizeof Int, len Int, file ffi.Ptr<void>) Int
-extern fun pclose(file ffi.Ptr<void>) I32
-extern("chdir") fun c_chdir(dir ffi.Ptr<U8>) I32
+extern fun popen(filename Ptr<U8>, mode Ptr<U8>) Ptr<void>
+extern fun fread(buf PtrMut<U8>, sizeof Int, len Int, file Ptr<void>) Int
+extern fun pclose(file Ptr<void>) I32
+extern("chdir") fun c_chdir(dir Ptr<U8>) I32
 
 --- Run a program in the system's shell to completion and capture its stdout/stderr.
 

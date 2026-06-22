@@ -1,5 +1,7 @@
 -- todo: Actually, we want a Zig-like API.
 use std.ffi
+use std.ffi.Ptr
+use std.ffi.PtrMut
 use std.posix
 use std.io
 
@@ -107,7 +109,7 @@ pub fun Path.fmt(p Path, sw &mut StrWriter) void {
 }
 
 pub nocopy unsync struct File {
-    file_ptr ffi.PtrMut<void>
+    file_ptr PtrMut<void>
     closed Bool
 }
 
@@ -234,7 +236,7 @@ pub fun DirEntry.cmp(d DirEntry, other DirEntry) Ordering {
 }
 
 pub struct ReadDirIter {
-    dir ffi.Ptr<void>
+    dir Ptr<void>
     closed &mut Bool
     @a Arena
 }
@@ -301,14 +303,14 @@ pub let dt_link U8 = 10
 pub let dt_socket U8 = 12
 pub let dt_wht U8 = 14
 
-extern fun opendir(name ffi.Ptr<U8>) ffi.Ptr<void>
-extern fun readdir(dirp ffi.Ptr<void>) ffi.Ptr<Dirent>
-extern fun closedir(dirp ffi.Ptr<void>) I32
+extern fun opendir(name Ptr<U8>) Ptr<void>
+extern fun readdir(dirp Ptr<void>) Ptr<Dirent>
+extern fun closedir(dirp Ptr<void>) I32
 
-extern fun fopen(filename ffi.Ptr<U8>, mode ffi.Ptr<U8>) ffi.PtrMut<void>
-extern fun fclose(file ffi.PtrMut<void>) I32
-extern fun fread(buf ffi.PtrMut<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
-extern fun fwrite(buf ffi.Ptr<U8>, sizeof Int, len Int, file ffi.PtrMut<void>) Int
+extern fun fopen(filename Ptr<U8>, mode Ptr<U8>) PtrMut<void>
+extern fun fclose(file PtrMut<void>) I32
+extern fun fread(buf PtrMut<U8>, sizeof Int, len Int, file PtrMut<void>) Int
+extern fun fwrite(buf Ptr<U8>, sizeof Int, len Int, file PtrMut<void>) Int
 
 #if os.darwin
 struct Dirent {
@@ -328,5 +330,5 @@ struct Dirent {
     type U8
     name [256]U8
 }
-extern fun strlen(s ffi.Ptr<U8>) Int
+extern fun strlen(s Ptr<U8>) Int
 #end

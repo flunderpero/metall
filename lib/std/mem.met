@@ -1,5 +1,3 @@
-use std.list
-
 pub enum PoolErr Err = exhausted
 
 --- A fixed sized memory pool. 

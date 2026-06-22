@@ -4,11 +4,6 @@ use local.audio
 use local.level
 use local.game
 use local.math
-use local.sim
-use std.ffi
-use std.io
-use std.os
-use std.time
 
 fun main() !void {
     let @static = Arena()

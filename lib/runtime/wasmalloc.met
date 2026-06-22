@@ -7,18 +7,20 @@
     todo: POC; no reclaim, no alignment beyond 8 bytes.
 ---
 use std.ffi
+use std.ffi.Ptr
+use std.ffi.PtrMut
 
-extern fun __wasmalloc_bump_get() ffi.PtrMut<U8>
-extern fun __wasmalloc_bump_set(p ffi.PtrMut<U8>) void
+extern fun __wasmalloc_bump_get() PtrMut<U8>
+extern fun __wasmalloc_bump_set(p PtrMut<U8>) void
 extern fun __wasm_memory_size_pages() Int
 extern fun __wasm_memory_grow_pages(delta Int) Int
-extern("llvm.memcpy.inline.p0.p0.i64") fun memcpy(dst ffi.PtrMut<U8>, src ffi.Ptr<U8>, n Int, volatile Bool) void
+extern("llvm.memcpy.inline.p0.p0.i64") fun memcpy(dst PtrMut<U8>, src Ptr<U8>, n Int, volatile Bool) void
 
-fun init(start ffi.PtrMut<U8>) void {
+fun init(start PtrMut<U8>) void {
     unsafe __wasmalloc_bump_set(start)
 }
 
-fun malloc(size Int) ffi.PtrMut<U8> {
+fun malloc(size Int) PtrMut<U8> {
     let aligned = (size + 7) & (~7)
     let result = unsafe __wasmalloc_bump_get()
     let new_bump = result.offset(aligned)
@@ -33,11 +35,11 @@ fun malloc(size Int) ffi.PtrMut<U8> {
     result
 }
 
-fun realloc(p ffi.PtrMut<U8>, size Int) ffi.PtrMut<U8> {
+fun realloc(p PtrMut<U8>, size Int) PtrMut<U8> {
     let result = malloc(size)
     unsafe memcpy(result, p.as_ptr(), size, false)
     result
 }
 
-fun free(p ffi.PtrMut<U8>) void {
+fun free(p PtrMut<U8>) void {
 }

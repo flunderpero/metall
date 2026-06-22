@@ -1,4 +1,4 @@
-use std.list
+use std.list.List
 use std.io
 use std.os
 
@@ -24,8 +24,8 @@ fun count(default Int) Int {
 
 --- Build a list of `n` elements where element `i` is `hash(i)`. Allocates the full
     capacity up front so the fill itself does not reallocate. ---
-fun build(n Int, @a Arena) &mut list.List<U64> {
-    let l = list.List.new<U64>(n, @a)
+fun build(n Int, @a Arena) &mut List<U64> {
+    let l = List.new<U64>(n, @a)
     for i in 0..n {
         l.push(hash(i.to_u64_wrapping()))
     }
@@ -49,7 +49,7 @@ fun main() void {
         mut acc = U64(0)
         for _ in 0..rounds {
             let @a = Arena()
-            let l = list.List.new<U64>(16, @a)
+            let l = List.new<U64>(16, @a)
             for i in 0..n {
                 let v = hash(i.to_u64_wrapping())
                 l.push(v)
@@ -95,7 +95,7 @@ fun main() void {
     case mode.eq("drain"):
         -- LIFO teardown: build then pop everything, `rounds` times.
         let rounds = 200
-        let l = list.List.new<U64>(n, @local)
+        let l = List.new<U64>(n, @local)
         mut acc = U64(0)
         for _ in 0..rounds {
             for i in 0..n {

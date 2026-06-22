@@ -1,6 +1,5 @@
 use std.test
 use std.iter
-use std.list
 
 fun main() void {
     let @local = Arena()

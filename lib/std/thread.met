@@ -1,21 +1,23 @@
 use std.ffi
+use std.ffi.Ptr
+use std.ffi.PtrMut
 use std.posix
 use std.io
 use std.enums
-use std.list
+use std.list.List
 #if flags.errtrace
 use std.errors
 
-extern fun __errtrace_buf() ffi.PtrMut<U8>
+extern fun __errtrace_buf() PtrMut<U8>
 
 --- Copy the current error trace buffer into `dst` (sized for an `errors.ETrace`). ---
-fun snapshot_errtrace(dst ffi.PtrMut<U8>) void {
+fun snapshot_errtrace(dst PtrMut<U8>) void {
     let src = unsafe __errtrace_buf()
     unsafe ffi.memcopy<U8>(dst, src.as_ptr(), ffi.sizeof<errors.ETrace>())
 }
 
 --- Overwrite the current error trace buffer with the contents of `src`. ---
-fun restore_errtrace(src ffi.Ptr<U8>) void {
+fun restore_errtrace(src Ptr<U8>) void {
     let dst = unsafe __errtrace_buf()
     unsafe ffi.memcopy<U8>(dst, src, ffi.sizeof<errors.ETrace>())
 }
@@ -23,18 +25,18 @@ fun restore_errtrace(src ffi.Ptr<U8>) void {
 
 pub unsync struct Thread<T> {
     thread U64
-    result ffi.Ptr<T>
+    result Ptr<T>
     --- A copy of the spawned thread's error return trace, snapshotted before the
         thread exits and restored into the joiner at `join`.
 
         Null when error tracing is disabled. ---
-    error_trace ffi.PtrMut<U8>
+    error_trace PtrMut<U8>
 }
 
 pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
     let res_bytes = unsafe @a.slice_uninit<U8>(ffi.sizeof<T>())
     let res_ptr = unsafe ffi.slice_ptr_mut<U8>(res_bytes).cast_ptr<T>()
-    mut error_trace = ffi.PtrMut.null<U8>()
+    mut error_trace = PtrMut.null<U8>()
     #if flags.errtrace
     let error_trace_bytes = unsafe @a.slice_uninit<U8>(ffi.sizeof<errors.ETrace>())
     error_trace = ffi.slice_ptr_mut<U8>(error_trace_bytes)
@@ -51,7 +53,7 @@ pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
     let fun_ptr = ffi.fun_ptr_alloc(@a, spawn_fun)
     mut thread U64 = 0
     let status = unsafe pthread_create(
-        ffi.ref_ptr_mut<U64>(&mut thread), ffi.Ptr.null<void>(), fun_ptr.fun_ptr, fun_ptr.data_ptr)
+        ffi.ref_ptr_mut<U64>(&mut thread), Ptr.null<void>(), fun_ptr.fun_ptr, fun_ptr.data_ptr)
     if status != 0 {
         return io.IOErr.from_errno(posix.Errno(status))
     }
@@ -59,7 +61,7 @@ pub fun spawn<T>(@a Arena, f sync fun() T) !Thread<T> {
 }
 
 pub fun Thread.join(t Thread) !T {
-    let status = unsafe pthread_join(t.thread, ffi.PtrMut.null<ffi.Ptr<void>>())
+    let status = unsafe pthread_join(t.thread, PtrMut.null<Ptr<void>>())
     if status != 0 {
         return io.IOErr.from_errno(posix.Errno(status))
     }
@@ -72,11 +74,11 @@ pub fun Thread.join(t Thread) !T {
 
 pub unsync struct ThreadGroup<T> {
     @a Arena
-    threads &mut list.List<Thread<T>>
+    threads &mut List<Thread<T>>
 }
 
 pub fun ThreadGroup.new(@a Arena) &mut ThreadGroup {
-    let l = list.List.new<Thread<T>>(16, @a)
+    let l = List.new<Thread<T>>(16, @a)
     @a.new(ThreadGroup<T>(@a, l))
 }
 
@@ -99,7 +101,7 @@ pub fun ThreadGroup.join(tg &mut ThreadGroup, @a Arena) []!T {
 
     `lock_and_copy_value()` will acquire the lock and return a copy. ---
 pub unsafe sync struct Mutex<sync T> {
-    lock_ptr ffi.PtrMut<void>
+    lock_ptr PtrMut<void>
     value &mut T
 }
 
@@ -107,7 +109,7 @@ pub fun Mutex.new(value T, @a Arena) Mutex {
     -- todo: The size of pthread_mutex_t is platform dependent.
     let lock = unsafe @a.slice_uninit<U8>(64)
     let lock_ptr = unsafe ffi.slice_ptr_mut<U8>(lock).cast_ptr<void>()
-    let res = unsafe pthread_mutex_init(lock_ptr, ffi.Ptr.null<void>())
+    let res = unsafe pthread_mutex_init(lock_ptr, Ptr.null<void>())
     if res != 0 {
         -- pthread_mutex_init always succeeds:
         -- https://man7.org/linux/man-pages/man3/pthread_mutex_lock.3.html 
@@ -151,12 +153,12 @@ pub fun Mutex.lock_and_copy_value(m Mutex) !T {
     m.with_lock(fun(v &mut T) T { v.* })
 }
 
-extern fun pthread_mutex_init(mutex ffi.PtrMut<void>, attr ffi.Ptr<void>) I32
-extern fun pthread_mutex_lock(mutex ffi.PtrMut<void>) I32
-extern fun pthread_mutex_trylock(mutex ffi.PtrMut<void>) I32
-extern fun pthread_mutex_unlock(mutex ffi.PtrMut<void>) I32
-extern fun pthread_mutex_destroy(mutex ffi.PtrMut<void>) I32
+extern fun pthread_mutex_init(mutex PtrMut<void>, attr Ptr<void>) I32
+extern fun pthread_mutex_lock(mutex PtrMut<void>) I32
+extern fun pthread_mutex_trylock(mutex PtrMut<void>) I32
+extern fun pthread_mutex_unlock(mutex PtrMut<void>) I32
+extern fun pthread_mutex_destroy(mutex PtrMut<void>) I32
 extern fun pthread_create(
-    thread ffi.PtrMut<U64>, attr ffi.Ptr<void>, start ffi.Ptr<void>, arg ffi.Ptr<void>) I32
-extern fun pthread_join(thread U64, retval ffi.PtrMut<ffi.Ptr<void>>) I32
-extern fun pthread_exit(retval ffi.PtrMut<void>) void
+    thread PtrMut<U64>, attr Ptr<void>, start Ptr<void>, arg Ptr<void>) I32
+extern fun pthread_join(thread U64, retval PtrMut<Ptr<void>>) I32
+extern fun pthread_exit(retval PtrMut<void>) void

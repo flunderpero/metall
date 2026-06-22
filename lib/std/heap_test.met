@@ -1,5 +1,5 @@
 use std.test
-use std.heap
+use std.heap.Heap
 
 struct Node {
     cost Int
@@ -18,7 +18,7 @@ fun main() void {
 
     suite.test("happy path", fun() !void {
         let @local = Arena()
-        let sut = heap.Heap.new<Int>(32, @local)
+        let sut = Heap.new<Int>(32, @local)
         sut.push(7)
         try test.eq(1, sut.len())
         try test.eq(Option(7), sut.peek())
@@ -30,7 +30,7 @@ fun main() void {
 
     suite.test("empty", fun() !void {
         let @local = Arena()
-        let sut = heap.Heap.new<Int>(32, @local)
+        let sut = Heap.new<Int>(32, @local)
         try test.eq(0, sut.len())
         try test.eq(Option<Int>(None()), sut.peek())
         try test.eq(Option<Int>(None()), sut.pop())
@@ -38,7 +38,7 @@ fun main() void {
 
     suite.test("pops greatest", fun() !void {
         let @local = Arena()
-        let sut = heap.Heap.new<Int>(32, @local)
+        let sut = Heap.new<Int>(32, @local)
         for v in [3, 1, 4, 1, 5, 9, 2, 6] {
             sut.push(v)
         }
@@ -56,7 +56,7 @@ fun main() void {
 
     suite.test("duplicates", fun() !void {
         let @local = Arena()
-        let sut = heap.Heap.new<Int>(32, @local)
+        let sut = Heap.new<Int>(32, @local)
         let vals = [5, 3, 5, 1, 3, 5][..]
         for v in vals { sut.push(v) }
         try test.eq(Option(5), sut.pop())
@@ -70,7 +70,7 @@ fun main() void {
 
     suite.test("push and pop", fun() !void {
         let @local = Arena()
-        let sut = heap.Heap.new<Int>(32, @local)
+        let sut = Heap.new<Int>(32, @local)
         sut.push(5)
         sut.push(3)
         try test.eq(Option(5), sut.pop())
@@ -86,7 +86,7 @@ fun main() void {
 
     suite.test("struct", fun() !void {
         let @local = Arena()
-        let sut = heap.Heap.new<Node>(32, @local)
+        let sut = Heap.new<Node>(32, @local)
         sut.push(Node(5, 50))
         sut.push(Node(2, 20))
         sut.push(Node(8, 80))
@@ -102,7 +102,7 @@ fun main() void {
     suite.test("stress", fun() !void {
         let @local = Arena()
         -- Start at capacity 0 to also cover the growth story.
-        let sut = heap.Heap.new<Int>(0, @local)
+        let sut = Heap.new<Int>(0, @local)
         -- (i * 37) % 1000 is a permutation of 0..999 (gcd(37, 1000) == 1).
         for i in 0..1000 {
             sut.push((i * 37) % 1000)
@@ -116,7 +116,7 @@ fun main() void {
 
     suite.test("fmt", fun() !void {
         let @local = Arena()
-        let sut = heap.Heap.new<Int>(8, @local)
+        let sut = Heap.new<Int>(8, @local)
 
         try test.eq("[]", f"{sut}".build(@local))
         sut.push(5)

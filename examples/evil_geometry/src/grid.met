@@ -1,6 +1,5 @@
 use local.math
-use std.list
-use std.heap
+use std.heap.Heap
 use std.io
 
 --- These first and last `hidden_tiles_per_side` rows and columns
@@ -116,7 +115,7 @@ pub fun Grid.update_pathing(g &mut Grid) void {
     -- Shortest known straight-line distance from each tile to the nearest exit.
     let dist_to_exit = @local.slice(tile_count, inf)
     -- Tiles still to expand, cheapest distance first.
-    let frontier = heap.Heap.new<PqNode>(tile_count, @local)
+    let frontier = Heap.new<PqNode>(tile_count, @local)
 
     -- Seed every exit as a source. Towers and walled-off tiles keep pointing at
     -- themselves, which leaves any enemy standing on them stopped.

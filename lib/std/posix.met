@@ -1,15 +1,16 @@
-use std.ffi
+use std.ffi.Ptr
+use std.ffi.PtrMut
 
 #if os.darwin
-extern("__error") fun __errno() ffi.PtrMut<I32>
+extern("__error") fun __errno() PtrMut<I32>
 #end
 #if os.linux
-extern("__errno_location") fun __errno() ffi.PtrMut<I32>
+extern("__errno_location") fun __errno() PtrMut<I32>
 #end
 
 #if not os.wasm
-extern("strerror") fun strerror_(e I32) ffi.Ptr<U8>
-extern fun strlen(s ffi.Ptr<U8>) Int
+extern("strerror") fun strerror_(e I32) Ptr<U8>
+extern fun strlen(s Ptr<U8>) Int
 #end
 
 --- Posix `errno` representation. 

@@ -1,12 +1,12 @@
 use std.test
-use std.list
+use std.list.List
 
 fun main() void {
     let @local = Arena()
     let suite = test.Suite.new("List", @local)
     suite.test("happy path", fun() !void {
         let @local = Arena()
-        let sut = list.List.new<Int>(32, @local)
+        let sut = List.new<Int>(32, @local)
         sut.push(1)
         sut.push(2)
         sut.push(3)
@@ -23,7 +23,7 @@ fun main() void {
     })
     suite.test("pop", fun() !void {
         let @local = Arena()
-        let sut = list.List.new<Int>(32, @local)
+        let sut = List.new<Int>(32, @local)
 
         sut.push(1)
         sut.push(2)
@@ -36,7 +36,7 @@ fun main() void {
     suite.test("from_slice", fun() !void {
         let @local = Arena()
         mut slice = [1, 2, 3][..]
-        let sut = list.List.from_slice<Int>(slice, @local)
+        let sut = List.from_slice<Int>(slice, @local)
         -- Make sure the slice is copied.
         slice[0] = 137
         try test.eq(3, sut.len)
@@ -44,20 +44,20 @@ fun main() void {
     })
     suite.test("push_all", fun() !void {
         let @local = Arena()
-        let sut = list.List.new<Int>(2, @local)
+        let sut = List.new<Int>(2, @local)
         sut.push_all([1, 2, 3][..])
         try test.eq([1, 2, 3][..], sut.as_slice())
     })
     suite.test("swap", fun() !void {
         let @local = Arena()
-        let sut = list.List.new<Int>(2, @local)
+        let sut = List.new<Int>(2, @local)
         sut.push_all([1, 2, 3, 4][..])
         sut.swap(1, 3)
         try test.eq([1, 4, 3, 2][..], sut.as_slice())
     })
     suite.test("references get stale after push", fun() !void {
         let @local = Arena()
-        let sut = list.List.new<Int>(32, @local)
+        let sut = List.new<Int>(32, @local)
         sut.push(1)
         let slice = sut.as_slice()
         let ref = &slice[0]
@@ -80,7 +80,7 @@ fun main() void {
     })
     suite.test("iter", fun() !void {
         let @local = Arena()
-        let l = list.List.new<Int>(32, @local)
+        let l = List.new<Int>(32, @local)
         l.push(1)
         l.push(2)
         l.push(3)
@@ -100,7 +100,7 @@ fun main() void {
     })
     suite.test("sort_in_place", fun() !void {
         let @local = Arena()
-        let sut = list.List.new<Int>(32, @local)
+        let sut = List.new<Int>(32, @local)
         sut.push(3)
         sut.push(2)
         sut.push(4)
@@ -113,8 +113,8 @@ fun main() void {
     })
     suite.test("eq", fun() !void {
         let @local = Arena()
-        let sut1 = list.List.new<Int>(32, @local)
-        let sut2 = list.List.new<Int>(32, @local)
+        let sut1 = List.new<Int>(32, @local)
+        let sut2 = List.new<Int>(32, @local)
 
         try test.eq(sut1, sut2)
 
@@ -134,7 +134,7 @@ fun main() void {
     })
     suite.test("fmt", fun() !void {
         let @local = Arena()
-        let sut = list.List.new<Str>(32, @local)
+        let sut = List.new<Str>(32, @local)
         sut.push("hello")
         sut.push("there")
         sut.push("again")

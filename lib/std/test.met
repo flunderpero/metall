@@ -1,5 +1,5 @@
 --- A testing framework. ---
-use std.list
+use std.list.List
 use std.io
 
 struct Test {
@@ -10,11 +10,11 @@ struct Test {
 pub struct Suite {
     name Str
     bail Bool
-    tests &mut list.List<Test>
+    tests &mut List<Test>
 }
 
 pub fun Suite.new(name Str, @a Arena) &mut Suite {
-    @a.new<Suite>(Suite(name, false, list.List.new<Test>(32, @a)))
+    @a.new<Suite>(Suite(name, false, List.new<Test>(32, @a)))
 }
 
 pub struct SuiteResult {

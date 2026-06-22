@@ -1,12 +1,12 @@
 use std.test
-use std.set
+use std.set.Set
 
 fun main() void {
     let @local = Arena()
     let suite = test.Suite.new("Set", @local)
     suite.test("happy path", fun() !void {
         let @local = Arena()
-        let sut = set.Set.new<Int>(4, @local)
+        let sut = Set.new<Int>(4, @local)
         try test.eq(0, sut.len())
 
         sut.add(1)

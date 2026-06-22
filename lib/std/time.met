@@ -1,4 +1,6 @@
 use std.ffi
+use std.ffi.PtrMut
+use std.ffi.Ptr
 #if os.linux or os.darwin
 use std.posix
 #end
@@ -122,7 +124,7 @@ pub fun sleep(d Duration) void {
     mut remaining = d.nsec
     for {
         let ts = TimeSpec(remaining / second.nsec, remaining % second.nsec)
-        let res = unsafe nanosleep(ffi.ref_ptr<TimeSpec>(&ts), ffi.PtrMut.null<TimeSpec>())
+        let res = unsafe nanosleep(ffi.ref_ptr<TimeSpec>(&ts), PtrMut.null<TimeSpec>())
         if res != 0 {
             #if os.wasm
             panic("failed to sleep")
@@ -143,8 +145,8 @@ struct TimeSpec {
     nsec Int
 }
 
-extern fun clock_gettime(clock_id I32, ts ffi.PtrMut<TimeSpec>) I32
-extern fun nanosleep(req ffi.Ptr<TimeSpec>, remainder ffi.PtrMut<TimeSpec>) I32
+extern fun clock_gettime(clock_id I32, ts PtrMut<TimeSpec>) I32
+extern fun nanosleep(req Ptr<TimeSpec>, remainder PtrMut<TimeSpec>) I32
 
 let clock_id_realtime = I32(0)
 let clock_id_monotonic_raw = I32(4)

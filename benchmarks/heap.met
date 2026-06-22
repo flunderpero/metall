@@ -1,4 +1,4 @@
-use std.heap
+use std.heap.Heap
 use std.io
 use std.os
 
@@ -33,7 +33,7 @@ fun main() void {
     when {
     case mode.eq("sort"):
         let m = count(10000000)
-        let h = heap.Heap.new<U64>(m, @local)
+        let h = Heap.new<U64>(m, @local)
         for i in 0..m { h.push(hash(i.to_u64_wrapping())) }
         mut acc = U64(0)
         for h.len() > 0 {
@@ -43,7 +43,7 @@ fun main() void {
         io.println(acc)
     case mode.eq("churn"):
         let m = count(10000000) * 3
-        let h = heap.Heap.new<U64>(k + 1, @local)
+        let h = Heap.new<U64>(k + 1, @local)
         mut acc = U64(0)
         for i in 0..m {
             h.push(hash(i.to_u64_wrapping()))
@@ -59,7 +59,7 @@ fun main() void {
         io.println(acc)
     case mode.eq("pushpop"):
         let m = count(10000000) * 3
-        let h = heap.Heap.new<U64>(k, @local)
+        let h = Heap.new<U64>(k, @local)
         for i in 0..k { h.push(hash(i.to_u64_wrapping())) }
         mut acc = U64(0)
         for i in 0..m {

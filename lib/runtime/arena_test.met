@@ -1,5 +1,6 @@
 use std.test
 use std.ffi
+use std.ffi.PtrMut
 use runtime.arena
 
 let debug = false
@@ -10,7 +11,7 @@ fun main() void {
 
     suite.test("arena_create sets up first page correctly", fun() !void {
         mut first_page_buf = [32 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
@@ -31,7 +32,7 @@ fun main() void {
 
     suite.test("arena_alloc bumps pointer only if size fits in page", fun() !void {
         mut first_page_buf = [32 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
@@ -43,7 +44,7 @@ fun main() void {
 
     suite.test("arena_alloc allocates zero-size", fun() !void {
         mut first_page_buf = [32 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
@@ -54,7 +55,7 @@ fun main() void {
 
     suite.test("arena_alloc alignment", fun() !void {
         mut first_page_buf = [32 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
@@ -66,7 +67,7 @@ fun main() void {
 
     suite.test("arena_alloc allocates new pages", fun() !void {
         mut first_page_buf = [32 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 16384, debug)
 
@@ -109,7 +110,7 @@ fun main() void {
 
     suite.test("arena_destroy frees overflow pages but not first page", fun() !void {
         mut first_page_buf = [32 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
@@ -125,7 +126,7 @@ fun main() void {
 
     suite.test("arena_realloc bumps if ptr is last and page has room", fun() !void {
         mut first_page_buf = [32 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
@@ -143,7 +144,7 @@ fun main() void {
         -- We use the smallest first page possible so that we know that our first allocation will
         -- create a page on the heap (malloc) and we can build our test expectations on that.
         mut first_page_buf = [8 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 4096, 8192, debug)
 
@@ -164,7 +165,7 @@ fun main() void {
         -- We use the smallest first page possible so that we know that our first allocation will
         -- create a page on the heap (malloc) and we can build our test expectations on that.
         mut first_page_buf = [8 of U8(0)][..]
-        let null = ffi.PtrMut.null<U8>()
+        let null = PtrMut.null<U8>()
         mut a = arena.ArenaAllocator(null, null, null, null, 0, 0, false)
         arena.arena_create(&mut a, ffi.slice_ptr_mut<U8>(first_page_buf), first_page_buf.len, 32, 32, debug)
 
@@ -183,7 +184,7 @@ fun main() void {
     _ = suite.run()
 }
 
-fun write(p ffi.PtrMut<U8>, n Int) void {
+fun write(p PtrMut<U8>, n Int) void {
     mut p = p
     for i in 0..n {
         unsafe p.write(i.to_u8_wrapping())
@@ -191,7 +192,7 @@ fun write(p ffi.PtrMut<U8>, n Int) void {
     }
 }
 
-fun verify(p ffi.PtrMut<U8>, n Int) !void {
+fun verify(p PtrMut<U8>, n Int) !void {
     mut p = p
     for i in 0..n {
         let read = unsafe p.read()

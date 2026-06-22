@@ -12,7 +12,7 @@
     This module is compiled implicitly whenever error tracing is enabled, so it
     must comply with the minimal prelude.
 ---
-use std.ffi
+use std.ffi.PtrMut
 
 let trace_depth = 32
 
@@ -28,7 +28,7 @@ pub struct ETrace {
 }
 
 --- Per-thread, zero-initialized buffer storage, reserved in builtins.ll. ---
-extern fun __errtrace_buf() ffi.PtrMut<U8>
+extern fun __errtrace_buf() PtrMut<U8>
 
 --- The trace buffer, overlaid on the reserved storage. ---
 fun trace_buffer() &mut ETrace {

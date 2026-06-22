@@ -1,7 +1,6 @@
 use std.test
-use std.map
+use std.map.Map
 use std.io
-use std.list
 use std.iter
 
 -- A hash key type with a constant hash function.
@@ -17,7 +16,7 @@ fun main() void {
     let suite = test.Suite.new("Map", @local)
     suite.test("happy path", fun() !void {
         let @local = Arena()
-        let sut = map.Map.new<Int, Str>(4, @local)
+        let sut = Map.new<Int, Str>(4, @local)
         try test.eq(0, sut.len)
         try test.eq(4, sut.data.len)
         try test.eq(false, sut.has(1))
@@ -44,7 +43,7 @@ fun main() void {
     })
     suite.test("linear probing", fun() !void {
         let @local = Arena()
-        let sut = map.Map.new<ConstantHash, Str>(3, @local)
+        let sut = Map.new<ConstantHash, Str>(3, @local)
 
         sut.set(ConstantHash(1), "foo1")
         try test.eq(1, sut.len)
@@ -107,7 +106,7 @@ fun main() void {
     })
     suite.test("large map", fun() !void {
         let @local = Arena()
-        let sut = map.Map.new<Int, Int>(16, @local)
+        let sut = Map.new<Int, Int>(16, @local)
         let entries = 1000000
         for i in 0..entries {
             sut.set(i, i)
@@ -125,7 +124,7 @@ fun main() void {
     })
     suite.test("iter", fun() !void {
         let @local = Arena()
-        let m = map.Map.new<Int, Str>(16, @local)
+        let m = Map.new<Int, Str>(16, @local)
         m.set(1, "a")
         m.set(3, "c")
         m.set(2, "b")
@@ -149,7 +148,7 @@ fun main() void {
         -- Insert, delete, and refill so the table is dense with live entries and
         -- tombstones. Before growth counted tombstones, this saturated and every
         -- probe (get/has/del) spun forever on a missing key.
-        let m = map.Map.new<Int, Int>(4, @local)
+        let m = Map.new<Int, Int>(4, @local)
         m.set(1, 10)
         m.set(2, 20)
         m.set(3, 30)
@@ -167,7 +166,7 @@ fun main() void {
         -- Each iteration inserts then deletes, leaving a tombstone. Without
         -- tombstone-aware growth a small table fills with tombstones and `set`
         -- itself wedges; here it must stay live and correct.
-        let m = map.Map.new<Int, Int>(4, @local)
+        let m = Map.new<Int, Int>(4, @local)
         mut i = 0
         for {
             if i >= 1000 { break }

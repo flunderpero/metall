@@ -1,5 +1,6 @@
+use std.ffi.Ptr
 use std.ffi
-use std.list
+use std.list.List
 use std.posix
 
 pub enum IOErr Err =
@@ -58,12 +59,12 @@ pub shape ReaderCloser<T> {
 }
 
 pub struct Buffer<T> {
-    data &mut list.List<T>
+    data &mut List<T>
     read_pos Int
 }
 
 pub fun Buffer.new(initial_capacity Int, @a Arena) &mut Buffer {
-    let data = list.List.new<T>(initial_capacity, @a)
+    let data = List.new<T>(initial_capacity, @a)
     @a.new(Buffer(data, 0))
 }
 
@@ -111,7 +112,7 @@ pub fun read_all<T, RC ReaderCloser<T>>(r &mut RC, cap_ Int, @a Arena) ![] mut T
     res.copy(@a)
 }
 
-extern fun write(fd I32, buf ffi.Ptr<U8>, len Int) Int
+extern fun write(fd I32, buf Ptr<U8>, len Int) Int
 
 pub fun print<T HasFmt>(obj T) void {
     -- todo: We should be able to have a shortcut if is is Str.

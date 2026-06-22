@@ -1,7 +1,6 @@
 --- The logical game simulation. ---
 
 use std.mem
-use std.list
 use std.cmp
 use std.io
 use local.math
