@@ -454,7 +454,12 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 	funTypeID := e.env.buildFunType(funTyp, node.ID, node.Span)
 	bindName := fun.Name.Name
 	if structName, methodName, ok := strings.Cut(fun.Name.Name, "."); ok {
-		resolved, ok := e.resolveMethodBindName(node.ID, structName, methodName, fun.Name.Span)
+		// A method belongs to its type's own module, not to a `use` import of it.
+		if e.isSymbolImport(node.ID, structName) {
+			e.diag(fun.Name.Span, "cannot declare a method on imported symbol `%s`", structName)
+			return InvalidTypeID, TypeFailed
+		}
+		resolved, _, ok := e.resolveMethodBindName(node.ID, structName, methodName, fun.Name.Span)
 		if !ok {
 			return InvalidTypeID, TypeFailed
 		}

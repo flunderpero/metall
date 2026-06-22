@@ -461,6 +461,19 @@ func (c *TypeContext) isVisible(declNodeID ast.NodeID, pub bool, from ast.NodeID
 	return false
 }
 
+// isMemberVisible reports whether member `name` of module `modNode` is reachable
+// from `from`. Module-member visibility is distinct from decl visibility: a
+// `use`-imported symbol's binding decl lives in a foreign module (so the real
+// symbol resolves for construction, methods, generics), hence isVisible can't
+// judge it. A symbol import is visible outside its module only when `pub use`
+// re-exports it; any other member uses its own decl's pub.
+func (c *TypeContext) isMemberVisible(modNode ast.NodeID, name string, b *Binding, from ast.NodeID) bool {
+	if imp, ok := c.moduleResolution.ImportFor(modNode, name); ok && !imp.IsModule() {
+		return imp.Pub
+	}
+	return c.isVisible(b.Decl, c.declIsPub(b.Decl), from)
+}
+
 func (c *TypeContext) funLitNeedsInference(fun ast.Fun) bool {
 	if fun.ReturnType == ast.InferredType {
 		return true

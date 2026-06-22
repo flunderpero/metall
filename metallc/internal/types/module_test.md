@@ -13,9 +13,35 @@ pub fun make_mixed() Mixed { Mixed(1, 2) }
 pub struct Mixed { pub visible Int internal Int }
 pub fun get_lib() Int { 42 }
 pub fun Point.sum(p Point) Int { p.x + p.y }
+pub fun Point.origin() Point { Point(0, 0) }
+fun Point.secret(p Point) Int { p.x }
 fun internal_helper() Int { 99 }
 pub let public_const = 42
 let private_const = 99
+pub enum IOErr U8 = not_found | denied
+pub union Either = Int | Str
+```
+
+`reexport` re-exports `lib` symbols: a `pub use` crosses the module boundary, a
+bare `use` stays module-private. It also re-exports a generic.
+
+```module.reexport
+pub use lib.Point
+pub use lib.get_lib
+use lib.Secret
+pub use generic.identity
+```
+
+`priv_test` is the `_test` companion of `priv`; a companion may *use* its
+subject's private symbols but must not `pub use` (re-export) them.
+
+```module.priv
+fun secret() Int { 7 }
+pub fun ok() Int { 1 }
+```
+
+```module.priv_test
+pub use priv.secret
 ```
 
 ```module.lib_test
@@ -574,4 +600,351 @@ test.met:5:7: field lib.Mixed.internal is not public
         m.internal = 99
           ^^^^^^^^
     }
+```
+
+## Symbol Imports
+
+`use a.b.Name` brings a single symbol into scope; `pub use a.b.Name` re-exports
+it. Modules cannot be re-exported.
+
+**import a struct**
+
+```metall
+use lib.Point
+fun main() void {
+    let p = Point(1, 2)
+    _ = p.x
+}
+```
+
+**import and rename**
+
+Construction and method resolution both work through the chosen name.
+
+```metall
+use Pt = lib.Point
+fun main() void {
+    let p Pt = Pt(1, 2)
+    _ = p.sum()
+    _ = Pt.sum(p)
+}
+```
+
+**import a function**
+
+```metall
+use lib.get_lib
+fun main() void {
+    _ = get_lib()
+}
+```
+
+**import a const**
+
+```metall
+use lib.public_const
+fun main() void {
+    let x = public_const
+}
+```
+
+**import an enum**
+
+```metall
+use lib.IOErr
+fun main() void {
+    let e IOErr = IOErr.not_found
+    _ = IOErr.denied.tag
+}
+```
+
+**import a union**
+
+```metall
+use lib.Either
+fun main() void {
+    let u Either = 5
+}
+```
+
+**static and factory calls through an imported type**
+
+```metall
+use lib.Point
+fun main() void {
+    let p = Point(1, 2)
+    _ = p.sum()
+    _ = Point.sum(p)
+    let o Point = Point.origin()
+}
+```
+
+**re-exported pub symbols are usable**
+
+```metall
+use reexport
+fun main() void {
+    let p = reexport.Point(1, 2)
+    _ = reexport.get_lib()
+}
+```
+
+**import a re-exported symbol**
+
+```metall
+use reexport.Point
+fun main() void {
+    let p = Point(1, 2)
+}
+```
+
+## Symbol Import Errors
+
+**cannot re-export a module**
+
+```metall
+pub use lib
+fun main() void {}
+```
+
+```error
+test.met:1:5: cannot re-export a module; only symbols can be re-exported
+    pub use lib
+        ^^^^^^^
+    fun main() void {}
+```
+
+**symbol not found**
+
+```metall
+use lib.Nope
+fun main() void {}
+```
+
+```error
+test.met:1:1: symbol not defined in lib: Nope
+    use lib.Nope
+    ^^^^^^^^^^^^
+    fun main() void {}
+```
+
+**private symbol cannot be imported**
+
+```metall
+use lib.internal_helper
+fun main() void {}
+```
+
+```error
+test.met:1:1: lib::internal_helper is not public
+    use lib.internal_helper
+    ^^^^^^^^^^^^^^^^^^^^^^^
+    fun main() void {}
+```
+
+**a bare-use re-export is not accessible**
+
+```metall
+use reexport
+fun main() void {
+    _ = reexport.Secret(1)
+}
+```
+
+```error
+test.met:3:9: reexport::Secret is not public
+    fun main() void {
+        _ = reexport.Secret(1)
+            ^^^^^^^^^^^^^^^
+    }
+```
+
+**cannot declare a method on an imported type**
+
+```metall
+use lib.Point
+fun Point.twice(p Point) Int { p.x * 2 }
+fun main() void {}
+```
+
+```error
+test.met:2:5: cannot declare a method on imported symbol `Point`
+    use lib.Point
+    fun Point.twice(p Point) Int { p.x * 2 }
+        ^^^^^^^^^^^
+    fun main() void {}
+```
+
+**static call through an import respects method visibility**
+
+```metall
+use lib.Point
+fun main() void {
+    let p = Point(1, 2)
+    _ = Point.secret(p)
+}
+```
+
+```error
+test.met:4:9: method lib.Point.secret is not public
+        let p = Point(1, 2)
+        _ = Point.secret(p)
+            ^^^^^^^^^^^^
+    }
+```
+
+**a type imported under a lowercase name**
+
+```metall
+use point = lib.Point
+fun main() void {}
+```
+
+```error
+test.met:1:1: a type imported as `point` must be capitalized
+    use point = lib.Point
+    ^^^^^^^^^^^^^^^^^^^^^
+    fun main() void {}
+```
+
+**a value imported under a capitalized name**
+
+```metall
+use Get = lib.get_lib
+fun main() void {}
+```
+
+```error
+test.met:1:1: a value imported as `Get` must not be capitalized
+    use Get = lib.get_lib
+    ^^^^^^^^^^^^^^^^^^^^^
+    fun main() void {}
+```
+
+**import name collides with a local declaration**
+
+```metall
+use lib.Point
+struct Point { x Int }
+fun main() void {}
+```
+
+```error
+test.met:2:8: symbol already defined: Point
+    use lib.Point
+    struct Point { x Int }
+           ^^^^^
+    fun main() void {}
+```
+
+**a re-exported generic resolves**
+
+```metall
+use reexport
+fun main() void {
+    let x = reexport.identity(5)
+}
+```
+
+**a capitalized whole-module rename is rejected**
+
+```metall
+use M = lib
+fun main() void {}
+```
+
+```error
+test.met:1:1: a module imported as `M` must not be capitalized
+    use M = lib
+    ^^^^^^^^^^^
+    fun main() void {}
+```
+
+**a _test companion cannot re-export a private symbol**
+
+```metall
+use priv_test
+fun main() void {}
+```
+
+```error
+lib/priv_test.met:1:5: priv::secret is not public
+    pub use priv.secret
+        ^^^^^^^^^^^^^^^
+```
+
+**import a generic type**
+
+Type arguments apply to the bare imported name.
+
+```metall
+use generic.Pair
+fun main() void {
+    let p = Pair<Int, Str>(1, "hi")
+    _ = p.first
+}
+```
+
+**import a shape as a generic bound**
+
+```metall
+use shapes.Showable
+pub struct Widget { pub v Int }
+pub fun Widget.show(w Widget) Int { w.v }
+fun render<T Showable>(x T) Int { x.show() }
+fun main() void {
+    _ = render(Widget(1))
+}
+```
+
+**imported type in field, param, and return positions**
+
+```metall
+use lib.Point
+struct Holder { pub p Point }
+fun mid(a Point) Point { a }
+fun main() void {
+    let h = Holder(mid(Point(1, 2)))
+    _ = h.p.x
+}
+```
+
+**match on an imported enum**
+
+```metall
+use lib.IOErr
+fun classify(e IOErr) Int {
+    match e {
+        case IOErr.not_found: 1
+        case IOErr.denied: 2
+    }
+}
+fun main() void {
+    _ = classify(IOErr.not_found)
+}
+```
+
+**match on an imported union**
+
+```metall
+use lib.Either
+fun first(u Either) Int {
+    match u {
+        case Int n: n
+        case Str s: 0
+    }
+}
+fun main() void {
+    _ = first(5)
+}
+```
+
+**static method via a re-export module path**
+
+```metall
+use reexport
+fun main() void {
+    let p = reexport.Point(1, 2)
+    _ = reexport.Point.sum(p)
+}
 ```

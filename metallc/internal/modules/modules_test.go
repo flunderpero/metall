@@ -157,13 +157,19 @@ func TestResolveModules(t *testing.T) {
 			a, mainID := parseModule(tt.src, "main", true)
 			res, diags := ResolveModules(a, tt.projectRoot, tt.includePaths, nil, memFS(tt.files))
 			assert.Equal(0, len(diags), "diagnostics: %s", diags)
-			mainImports := res.Imports[mainID]
-			assert.Equal(len(tt.wantImports), len(mainImports), "import count")
+			mainPrefix := fmt.Sprintf("%d.", mainID)
+			mainImportCount := 0
+			for key := range res.Imports {
+				if strings.HasPrefix(key, mainPrefix) {
+					mainImportCount++
+				}
+			}
+			assert.Equal(len(tt.wantImports), mainImportCount, "import count")
 			for wantName, wantPath := range tt.wantImports {
-				depID, ok := mainImports[wantName]
+				dep, ok := res.ImportFor(mainID, wantName)
 				assert.Equal(true, ok, "import %q not found", wantName)
 				if ok {
-					depMod := base.Cast[ast.Module](res.AST.Node(depID).Kind)
+					depMod := base.Cast[ast.Module](res.AST.Node(dep.Module).Kind)
 					assert.Equal(wantPath, depMod.Name)
 				}
 			}

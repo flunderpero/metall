@@ -65,6 +65,7 @@ func (Module) isKind() {}
 type Import struct {
 	Alias    *Name
 	Segments []string
+	Pub      bool
 }
 
 func (Import) isKind() {}
@@ -668,8 +669,8 @@ func (a *AST) NewModule(
 	return node
 }
 
-func (a *AST) NewImport(alias *Name, segments []string, span base.Span) NodeID {
-	return a.node(Import{Alias: alias, Segments: segments}, span)
+func (a *AST) NewImport(alias *Name, segments []string, pub bool, span base.Span) NodeID {
+	return a.node(Import{Alias: alias, Segments: segments, Pub: pub}, span)
 }
 
 func (a *AST) NewExport(name Name, target NodeID, span base.Span) NodeID {
@@ -1367,6 +1368,9 @@ func (a *AST) Debug(id NodeID, children bool, indent int, skipIDs ...bool) strin
 			addChild("block", kind.Block)
 		}
 	case Import:
+		if kind.Pub {
+			addAttr("pub", "true")
+		}
 		if kind.Alias != nil {
 			addAttr("alias", fmt.Sprintf("%q", kind.Alias.Name))
 		}

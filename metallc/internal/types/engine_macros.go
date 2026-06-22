@@ -162,11 +162,11 @@ func (e *Engine) isMacroCall(call ast.Call) (bool, ast.NodeID) {
 		return false, 0
 	}
 	moduleNode, _ := e.moduleOf(call.Callee)
-	importedModuleNodeID, ok := e.moduleResolution.Imports[moduleNode.ID][moduleName]
+	imp, ok := e.moduleResolution.ImportFor(moduleNode.ID, moduleName)
 	if !ok {
 		return false, 0
 	}
-	return true, importedModuleNodeID
+	return true, imp.Module
 }
 
 func (e *Engine) expandMacroCall(

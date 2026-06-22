@@ -4470,6 +4470,51 @@ Module(fileName="test.met",name="test",main=true)
   decls=Import(alias="b",path=local::foo::bar)
 ```
 
+**Use symbol import**
+
+```metall module
+use foo.bar.Baz
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Import(path=foo::bar::Baz)
+```
+
+**Use symbol import with rename**
+
+```metall module
+use Vec = foo.bar.List
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Import(alias="Vec",path=foo::bar::List)
+```
+
+**Pub re-export**
+
+```metall module
+pub use foo.bar.Baz
+```
+
+```ast
+Module(fileName="test.met",name="test",main=true)
+  decls=Import(pub=true,path=foo::bar::Baz)
+```
+
+**Symbol import rejects type arguments**
+
+```metall module
+use foo.bar.List<Int>
+```
+
+```error
+test.met:1:17: unexpected token: <<immediate>
+    use foo.bar.List<Int>
+                    ^
+```
+
 **Dot expression (module member)**
 
 ```metall

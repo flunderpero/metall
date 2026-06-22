@@ -91,7 +91,7 @@ func (p *Parser) ParseDecls() ([]NodeID, bool) { //nolint:funlen
 			if v, ok := p.ParseVar(); ok {
 				decls = append(decls, v)
 			}
-		case t.Kind == token.Use:
+		case t.Kind == token.Use || p.lookAhead(token.Pub, token.Use):
 			if imp, ok := p.ParseImport(); ok {
 				decls = append(decls, imp)
 			}
@@ -135,6 +135,7 @@ func (p *Parser) ParseExport() (NodeID, bool) {
 }
 
 func (p *Parser) ParseImport() (NodeID, bool) {
+	pub := p.lookAheadConsume(token.Pub)
 	t, ok := p.expect(token.Use)
 	if !ok {
 		return ParseFailed, false
@@ -144,8 +145,10 @@ func (p *Parser) ParseImport() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	// `use Name = path` renames; Name may be lowercase (module/value) or
+	// capitalized (a type symbol).
 	var alias *Name
-	if next.Kind == token.Ident {
+	if next.Kind == token.Ident || next.Kind == token.TypeIdent {
 		if peek1, ok := p.mayPeek1(); ok && peek1.Kind == token.Eq {
 			p.next()
 			p.next()
@@ -153,20 +156,28 @@ func (p *Parser) ParseImport() (NodeID, bool) {
 			alias = &a
 		}
 	}
+	// A segment is a module name (lowercase) or, as the trailing segment, an
+	// imported symbol (lowercase value or capitalized type). The resolver
+	// decides which by trying the path as a module first.
 	segments := []string{}
 	for {
-		segment, ok := p.expect(token.Ident)
+		seg, ok := p.mustPeek()
 		if !ok {
 			return ParseFailed, false
 		}
-		segments = append(segments, segment.Value)
+		if seg.Kind != token.Ident && seg.Kind != token.TypeIdent {
+			p.diagnostic(seg.Span, "unexpected token: expected <identifier>, got %s", seg.Kind)
+			return ParseFailed, false
+		}
+		p.next()
+		segments = append(segments, seg.Value)
 		t, ok := p.mayPeek()
 		if !ok || t.Kind != token.Dot {
 			break
 		}
 		p.next()
 	}
-	return p.NewImport(alias, segments, span.Combine(p.span())), true
+	return p.NewImport(alias, segments, pub, span.Combine(p.span())), true
 }
 
 func (p *Parser) ParseFunType() (NodeID, bool) {

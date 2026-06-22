@@ -672,3 +672,58 @@ fun main() void {
 ```panic
 prelude.met:<ignored in test>: integer overflow
 ```
+
+## Symbol Imports
+
+`use a.b.Name` binds an imported symbol directly; it dissolves to the real
+symbol, so construction, an instance method, a static call, a factory, an
+imported function, an enum variant, and a union all run as if the original name
+were used. `Point` is imported under the name `Pt` to exercise a renamed import.
+
+**setup symbol-import module**
+
+```metall
+```
+
+```module.geo
+pub struct Point { pub x Int pub y Int }
+pub fun Point.sum(p Point) Int { p.x + p.y }
+pub fun Point.origin() Point { Point(10, 20) }
+pub fun get_answer() Int { 42 }
+pub enum Color U8 = red | green | blue
+pub union Either = Int | Str
+```
+
+**imported symbols run as the real symbol**
+
+```metall
+use std.io
+use Pt = local.geo.Point
+use local.geo.get_answer
+use local.geo.Color
+use local.geo.Either
+
+fun main() void {
+    let p = Pt(3, 4)
+    io.println(p.sum())
+    io.println(Pt.sum(p))
+    let o = Pt.origin()
+    io.println(o.x)
+    io.println(get_answer())
+    io.println(Color.green.tag)
+    let e Either = "hi"
+    match e {
+        case Int n: io.println(n)
+        case Str s: io.println(s)
+    }
+}
+```
+
+```output
+7
+7
+10
+42
+1
+hi
+```

@@ -157,14 +157,23 @@ module.exports = grammar({
 
     // >>> Imports
 
+    // `[pub] use a.b.c` imports a whole module or, when the trailing segment is
+    // a symbol, that symbol (`pub use` re-exports it). The grammar accepts any
+    // dotted path with optionally-capitalized segments; the type checker decides
+    // module vs symbol and rejects re-exporting a module.
     import_declaration: ($) =>
       seq(
+        optional("pub"),
         "use",
-        optional(seq(field("alias", $.identifier), "=")),
+        optional(seq(field("alias", choice($.identifier, $.type_identifier)), "=")),
         field("path", $.import_path),
       ),
 
-    import_path: ($) => seq($.identifier, repeat(seq(".", $.identifier))),
+    import_path: ($) =>
+      seq(
+        choice($.identifier, $.type_identifier),
+        repeat(seq(".", choice($.identifier, $.type_identifier))),
+      ),
 
     // >>> Comments
     // Line comments: `-- ...`

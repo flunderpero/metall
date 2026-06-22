@@ -480,37 +480,85 @@ func (e *Engine) checkModule( //nolint:funlen
 }
 
 func (e *Engine) bindImports(nodeID ast.NodeID, module ast.Module) TypeStatus {
-	importMap, ok := e.moduleResolution.Imports[nodeID]
-	if !ok {
-		return TypeOK
-	}
-	for name, importedModuleNodeID := range importMap {
-		typeID, status := e.Query(importedModuleNodeID)
+	for _, declID := range module.Decls {
+		imp, ok := e.ast.Node(declID).Kind.(ast.Import)
+		if !ok {
+			continue
+		}
+		name := imp.Segments[len(imp.Segments)-1]
+		if imp.Alias != nil {
+			name = imp.Alias.Name
+		}
+		resolved, ok := e.moduleResolution.ImportFor(nodeID, name)
+		if !ok || resolved.ImportNode != declID {
+			continue
+		}
+		if !resolved.IsModule() {
+			if status := e.bindSymbolImport(name, resolved); status.Failed() {
+				return status
+			}
+			continue
+		}
+		typeID, status := e.Query(resolved.Module)
 		if status.Failed() {
 			return TypeDepFailed
 		}
-		var importNodeID ast.NodeID
-		for _, id := range module.Decls {
-			imp, ok := e.ast.Node(id).Kind.(ast.Import)
-			if !ok {
-				continue
-			}
-			isAlias := imp.Alias != nil && imp.Alias.Name == name
-			if isAlias || imp.Segments[len(imp.Segments)-1] == name {
-				importNodeID = id
-				break
-			}
+		if resolved.Pub {
+			e.diag(e.ast.Node(declID).Span,
+				"cannot re-export a module; only symbols can be re-exported")
 		}
-		if importNodeID == 0 {
-			panic(base.Errorf(
-				"module resolution exposed %q with no matching import decl in module %q",
-				name, module.Name,
-			))
+		// A module name is lowercase; a capitalized rename (`use M = a.b`) is
+		// unreachable, since `M.foo` would parse as a static method call.
+		if isCapitalized(name) {
+			e.diag(e.ast.Node(declID).Span,
+				"a module imported as `%s` must not be capitalized", name)
 		}
-		scope := e.scopeGraph.NodeScope(importNodeID)
-		e.env.bindInScope(scope, importNodeID, name, typeID)
+		e.env.bindInScope(e.scopeGraph.NodeScope(declID), declID, name, typeID)
 	}
 	return TypeOK
+}
+
+// bindSymbolImport binds a `use a.b.Symbol` name straight to the imported
+// symbol's own binding, so the local name simply IS that symbol and nothing
+// downstream has to know an import happened. `pub use` re-exports it.
+func (e *Engine) bindSymbolImport(name string, si modules.Import) TypeStatus {
+	if _, status := e.Query(si.Module); status.Failed() {
+		return TypeDepFailed
+	}
+	symbol := si.Symbol
+	span := e.ast.Node(si.ImportNode).Span
+	srcMod := base.Cast[ast.Module](e.ast.Node(si.Module).Kind)
+	src, ok := e.lookupModuleMember(srcMod, symbol)
+	if !ok {
+		e.diag(span, "symbol not defined in %s: %s", srcMod.Name, symbol)
+		return TypeOK
+	}
+	if !e.isMemberVisible(si.Module, symbol, src, si.ImportNode) {
+		e.diag(span, "%s::%s is not public", srcMod.Name, symbol)
+		return TypeOK
+	}
+	// A `pub use` re-export needs the source to be genuinely public, not merely
+	// visible from here: a `_test` companion sees its subject's privates and
+	// could otherwise launder one into a public re-export.
+	if si.Pub && !e.declIsPub(src.Decl) {
+		e.diag(span, "%s::%s is not public", srcMod.Name, symbol)
+		return TypeOK
+	}
+	if msg := e.symbolImportNameMismatch(name, src.Decl); msg != "" {
+		e.diag(span, "%s", msg)
+		return TypeOK
+	}
+	// Bind the real symbol directly: the local name IS that symbol, so
+	// construction, methods, and generics resolve with no knowledge of imports.
+	e.env.bindInScope(e.scopeGraph.NodeScope(si.ImportNode), src.Decl, name, src.TypeID)
+	return TypeOK
+}
+
+func (e *Engine) lookupModuleMember(mod ast.Module, name string) (*Binding, bool) {
+	if len(mod.Decls) == 0 {
+		return nil, false
+	}
+	return e.env.Lookup(mod.Decls[0], name, -1)
 }
 
 func (e *Engine) checkBlock(blockNodeID ast.NodeID, block ast.Block, typeHint *TypeID) (TypeID, TypeStatus) {
@@ -1163,14 +1211,34 @@ func (e *Engine) checkIdent(nodeID ast.NodeID, ident ast.Ident, span base.Span) 
 		return InvalidTypeID, TypeFailed
 	}
 	lookupName := ident.Name
-	if structName, methodName, ok := strings.Cut(ident.Name, "."); ok {
-		resolved, ok := e.resolveMethodBindName(nodeID, structName, methodName, span)
+	var methodReceiver *Binding
+	var methodName string
+	if structName, member, ok := strings.Cut(ident.Name, "."); ok {
+		resolved, receiver, ok := e.resolveMethodBindName(nodeID, structName, member, span)
 		if !ok {
 			return InvalidTypeID, TypeFailed
 		}
 		lookupName = resolved
+		methodReceiver = receiver
+		methodName = member
 	}
 	binding, ok := e.lookup(nodeID, lookupName, e.blockExprsIndex)
+	if !ok && methodReceiver != nil {
+		// A static method on an imported type (`List.new`) lives in that type's
+		// module, not the current scope. The receiver type drives the lookup, so
+		// it works whether the name is the type or a `use`-imported symbol of it.
+		// Crossing the module boundary, the method's own visibility applies; an
+		// enum variant has none of its own, so `Color.green` stays accessible.
+		binding, ok = e.lookupInTypeModule(e.env.Type(methodReceiver.TypeID), lookupName)
+		if ok {
+			if _, isVariant := e.ast.Node(binding.Decl).Kind.(ast.EnumVariant); !isVariant &&
+				!e.isVisible(binding.Decl, e.declIsPub(binding.Decl), nodeID) {
+				e.diag(span, "method %s.%s is not public",
+					e.env.TypeDisplay(methodReceiver.TypeID), methodName)
+				return InvalidTypeID, TypeFailed
+			}
+		}
+	}
 	if !ok {
 		e.diag(span, "symbol not defined: %s", ident.Name)
 		return InvalidTypeID, TypeFailed
@@ -1309,12 +1377,12 @@ func (e *Engine) checkModuleMemberAccess(nodeID ast.NodeID, fieldAccess ast.Fiel
 	moduleName := targetIdent.Name
 	memberName := fieldAccess.Field.Name
 	thisModuleNode, _ := e.moduleOf(nodeID)
-	importedModuleNodeID, ok := e.moduleResolution.Imports[thisModuleNode.ID][moduleName]
+	imp, ok := e.moduleResolution.ImportFor(thisModuleNode.ID, moduleName)
 	if !ok {
 		e.diag(span, "module not found: %s", moduleName)
 		return InvalidTypeID, TypeFailed
 	}
-	mod := base.Cast[ast.Module](e.ast.Node(importedModuleNodeID).Kind)
+	mod := base.Cast[ast.Module](e.ast.Node(imp.Module).Kind)
 	if len(mod.Decls) == 0 {
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
@@ -1324,7 +1392,7 @@ func (e *Engine) checkModuleMemberAccess(nodeID ast.NodeID, fieldAccess ast.Fiel
 		e.diag(span, "symbol not defined in %s: %s", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
 	}
-	if !e.isVisible(binding.Decl, e.declIsPub(binding.Decl), nodeID) {
+	if !e.isMemberVisible(imp.Module, memberName, binding, nodeID) {
 		e.diag(span, "%s::%s is not public", moduleName, memberName)
 		return InvalidTypeID, TypeFailed
 	}
@@ -2942,18 +3010,23 @@ func (c *TypeContext) isFunDeclSync(node *ast.Node, paramTypeIDs []TypeID, retTy
 	return c.isSync(retTypeID)
 }
 
+// resolveMethodBindName builds a method's lookup name from the RECEIVER TYPE,
+// not the spelling of the receiver: `structName` may be a `use`-imported symbol,
+// which `lookup` dissolves to the real type before naming the method. The
+// returned binding is that receiver, so a call site can find the method in the
+// type's own module when it is imported.
 func (c *TypeContext) resolveMethodBindName(
 	nodeID ast.NodeID, structName, methodName string, span base.Span,
-) (string, bool) {
+) (string, *Binding, bool) {
 	binding, ok := c.lookup(nodeID, structName, -1)
 	if !ok {
 		c.diag(span, "method receiver type not found: %s", structName)
-		return "", false
+		return "", nil, false
 	}
 	fqn, ok := c.env.methodFQN(c.env.Type(binding.TypeID), methodName)
 	if !ok {
 		c.diag(span, "type %s cannot have methods", structName)
-		return "", false
+		return "", nil, false
 	}
-	return fqn, true
+	return fqn, binding, true
 }

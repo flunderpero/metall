@@ -616,16 +616,19 @@ func (g *Generics) resolveCallBinding(call ast.Call) (*Binding, bool) {
 			if ok {
 				if _, isMod := g.env.Type(modBinding.TypeID).Kind.(ModuleType); isMod {
 					thisModuleNode, _ := g.moduleOf(call.Callee)
-					importedModuleNodeID, ok := g.moduleResolution.Imports[thisModuleNode.ID][ident.Name]
+					imp, ok := g.moduleResolution.ImportFor(thisModuleNode.ID, ident.Name)
 					if !ok {
 						return nil, false
 					}
-					mod := base.Cast[ast.Module](g.ast.Node(importedModuleNodeID).Kind)
+					mod := base.Cast[ast.Module](g.ast.Node(imp.Module).Kind)
 					if len(mod.Decls) == 0 {
 						return nil, false
 					}
 					binding, ok := g.env.Lookup(mod.Decls[0], kind.Field.Name, -1)
-					return binding, ok
+					if !ok || !g.isMemberVisible(imp.Module, kind.Field.Name, binding, call.Callee) {
+						return nil, false
+					}
+					return binding, true
 				}
 			}
 		}

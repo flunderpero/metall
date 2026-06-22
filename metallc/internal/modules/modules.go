@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -12,9 +13,32 @@ import (
 
 type ReadFileFn func(path string) ([]byte, error)
 
+const wholeModuleSymbol = "*"
+
 type ModuleResolution struct {
 	AST     *ast.AST
-	Imports map[ast.NodeID]map[string]ast.NodeID
+	Imports map[string]Import
+}
+
+type Import struct {
+	Module     ast.NodeID
+	Symbol     string
+	Pub        bool
+	ImportNode ast.NodeID
+}
+
+func (i Import) IsModule() bool {
+	return i.Symbol == wholeModuleSymbol
+}
+
+func importKey(modNode ast.NodeID, name string) string {
+	return fmt.Sprintf("%d.%s", modNode, name)
+}
+
+// ImportFor returns the import bound as `name` in module `modNode`.
+func (r *ModuleResolution) ImportFor(modNode ast.NodeID, name string) (Import, bool) {
+	imp, ok := r.Imports[importKey(modNode, name)]
+	return imp, ok
 }
 
 type moduleResolver struct {
@@ -28,6 +52,7 @@ type moduleResolver struct {
 	modulesByPath    map[string]ast.NodeID // canonical file path -> module node (identity)
 	resolving        map[string]bool       // canonical file path -> being resolved (cycle detection)
 	namesByCanonical map[string]string     // canonical module name -> file path that claimed it
+	resolvedModules  map[ast.NodeID]bool   // modules whose imports are already resolved
 }
 
 func ResolveModules(
@@ -43,11 +68,12 @@ func ResolveModules(
 		compTimeEnv:  compTimeEnv,
 		resolution: ModuleResolution{
 			AST:     a,
-			Imports: make(map[ast.NodeID]map[string]ast.NodeID),
+			Imports: make(map[string]Import),
 		},
 		modulesByPath:    make(map[string]ast.NodeID),
 		resolving:        make(map[string]bool),
 		namesByCanonical: make(map[string]string),
+		resolvedModules:  make(map[ast.NodeID]bool),
 	}
 	// Seed the identity maps with the already-parsed roots (the entry, parsed
 	// by the caller before resolution). Without this, an import that resolves
@@ -67,9 +93,10 @@ func ResolveModules(
 }
 
 func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
-	if _, ok := m.resolution.Imports[moduleID]; ok {
+	if m.resolvedModules[moduleID] {
 		return
 	}
+	m.resolvedModules[moduleID] = true
 	// Rewrite `#if` blocks before scanning Decls: a `use` inside an
 	// unresolved CompIf is invisible to this loop and would leave nested
 	// modules (and their own CompIfs) unloaded/unresolved, which later
@@ -82,8 +109,6 @@ func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
 	selfPath := canonicalPath(mod.FileName)
 	m.resolving[selfPath] = true
 	defer delete(m.resolving, selfPath)
-	importMap := make(map[string]ast.NodeID)
-	m.resolution.Imports[moduleID] = importMap
 	seen := make(map[string]bool)
 	for _, importNodeID := range mod.Decls {
 		importNode := m.ast.Node(importNodeID)
@@ -98,17 +123,43 @@ func (m *moduleResolver) resolveImports(moduleID ast.NodeID) {
 		}
 		seen[fqn] = true
 		name := m.importName(imp)
-		if _, exists := importMap[name]; exists {
+		if _, exists := m.resolution.ImportFor(moduleID, name); exists {
 			m.diag(importNode.Span, "import name `%s` already used", name)
 			continue
 		}
-		moduleNodeID, ok := m.resolveModule(fqn, importNode.Span)
+		// The path is a whole module if it resolves to a module file. Otherwise
+		// the trailing segment is a symbol of the prefix module. (`pub use module`
+		// is rejected later, in the type engine, as a normal diagnostic.)
+		var moduleNodeID ast.NodeID
+		symbol := wholeModuleSymbol
+		if _, isModule := m.locateModuleFile(fqn); isModule {
+			moduleNodeID, ok = m.resolveModule(fqn, importNode.Span)
+		} else if len(imp.Segments) >= 2 &&
+			m.isModulePath(strings.Join(imp.Segments[:len(imp.Segments)-1], "::")) {
+			prefix := strings.Join(imp.Segments[:len(imp.Segments)-1], "::")
+			moduleNodeID, ok = m.resolveModule(prefix, importNode.Span)
+			symbol = imp.Segments[len(imp.Segments)-1]
+		} else {
+			// Neither the full path nor its prefix is a module: report not found.
+			m.resolveModule(fqn, importNode.Span)
+			continue
+		}
 		if !ok {
 			continue
 		}
-		importMap[name] = moduleNodeID
+		m.resolution.Imports[importKey(moduleID, name)] = Import{
+			Module:     moduleNodeID,
+			Symbol:     symbol,
+			Pub:        imp.Pub,
+			ImportNode: importNodeID,
+		}
 		m.resolveImports(moduleNodeID)
 	}
+}
+
+func (m *moduleResolver) isModulePath(fqn string) bool {
+	_, ok := m.locateModuleFile(fqn)
+	return ok
 }
 
 func (m *moduleResolver) resolveModule(fqn string, span base.Span) (ast.NodeID, bool) {
@@ -203,6 +254,21 @@ func CanonicalModuleName(path, projectRoot string, includePaths []string) string
 }
 
 func (m *moduleResolver) findModuleFile(fqn string, span base.Span) (string, bool) {
+	if path, ok := m.locateModuleFile(fqn); ok {
+		return path, true
+	}
+	if strings.HasPrefix(fqn, "local::") {
+		m.diag(span, "module not found: %s (project root: %s)", fqn, m.projectRoot)
+	} else {
+		m.diag(span, "module not found: %s (include paths: %s)", fqn, strings.Join(m.includePaths, ", "))
+	}
+	return "", false
+}
+
+// locateModuleFile resolves an fqn to a file path without emitting a
+// diagnostic, so a `use a.b.Symbol` can probe `a::b` as a module before
+// concluding the trailing segment is a symbol.
+func (m *moduleResolver) locateModuleFile(fqn string) (string, bool) {
 	local := strings.HasPrefix(fqn, "local::")
 	rel := strings.ReplaceAll(strings.TrimPrefix(fqn, "local::"), "::", "/") + ".met"
 	if local {
@@ -210,7 +276,6 @@ func (m *moduleResolver) findModuleFile(fqn string, span base.Span) (string, boo
 		if _, err := m.readFile(path); err == nil {
 			return path, true
 		}
-		m.diag(span, "module not found: %s (project root: %s)", fqn, m.projectRoot)
 		return "", false
 	}
 	for _, inc := range m.includePaths {
@@ -219,7 +284,6 @@ func (m *moduleResolver) findModuleFile(fqn string, span base.Span) (string, boo
 			return path, true
 		}
 	}
-	m.diag(span, "module not found: %s (include paths: %s)", fqn, strings.Join(m.includePaths, ", "))
 	return "", false
 }
 
