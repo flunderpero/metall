@@ -1099,6 +1099,13 @@ func (e *Engine) checkFunParam(funParam ast.FunParam) (TypeID, TypeStatus) {
 				e.env.TypeDisplay(typeID), e.env.TypeDisplay(defaultTypeID))
 			return InvalidTypeID, TypeFailed
 		}
+		// A default is materialized once at startup and shared across call sites
+		// rather than re-evaluated per call, so it must be a constant expression
+		// (no function calls).
+		if !e.isConstExpr(*funParam.Default) {
+			e.diag(e.ast.Node(*funParam.Default).Span, "default value must be a constant expression")
+			return InvalidTypeID, TypeFailed
+		}
 	}
 	return typeID, TypeOK
 }
@@ -2812,8 +2819,10 @@ func (e *Engine) resolvesToModuleConst(nodeID ast.NodeID) bool {
 		return false
 	}
 	scope := e.scopeGraph.NodeScope(binding.Decl)
+	// The prelude has no `module` wrapper, so its top-level `let`s are bound in
+	// the merged root scope (node 0); those are module-level constants too.
 	if scope.Node == 0 {
-		return false
+		return true
 	}
 	_, atModule := e.ast.Node(scope.Node).Kind.(ast.Module)
 	return atModule

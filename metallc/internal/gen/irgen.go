@@ -93,6 +93,10 @@ type IRGen struct {
 	constGlobals   strings.Builder   // global constant declarations (strings, const arrays)
 	funValWrappers map[string]string // irName → wrapper name
 	externSyms     map[string]bool   // C symbols of extern funs; their narrow-int args need C-ABI extension
+	// defaultGlobals maps a default-argument expression node to the global that
+	// @__const_init initializes with the default's value. Call sites reference
+	// the global instead of re-evaluating the expression per call.
+	defaultGlobals map[ast.NodeID]string
 	opts           IROpts
 }
 
@@ -138,6 +142,7 @@ func NewIRGen(a *ast.AST, module ast.Module, opts IROpts) *IRGen {
 		constGlobals:   strings.Builder{},
 		funValWrappers: map[string]string{},
 		externSyms:     externSyms,
+		defaultGlobals: map[ast.NodeID]string{},
 		opts:           opts,
 	}
 }
@@ -2762,10 +2767,8 @@ func (g *IRFunGen) genCall(id ast.NodeID, call ast.Call, span base.Span) { //nol
 			receiverAddr = g.genPlaceAddr(nodeID)
 			continue
 		}
-		// Re-emit a default into the current basic block (rather than reuse a
-		// prior site's IR) so it is not dominated by just one call site's branch.
 		if defaults[nodeID] {
-			g.regenSubtree(nodeID)
+			g.genDefaultArg(nodeID)
 		} else {
 			g.Gen(nodeID)
 		}
@@ -3572,18 +3575,73 @@ func (g *IRGen) irScalarSize(irType string) int64 {
 	}
 }
 
-// regenSubtree wipes the astCode cache for the given node and all its
-// descendants, then re-runs Gen so its IR lands in the current basic block.
-// Used for default-argument expressions whose AST nodes are shared across
-// every call site.
-func (g *IRFunGen) regenSubtree(id ast.NodeID) {
-	var clear func(ast.NodeID) //nolint:predeclared
-	clear = func(n ast.NodeID) {
-		delete(g.astCode, n)
-		g.ast.Walk(n, clear)
+// defaultWork is a default-argument expression to materialize at startup.
+type defaultWork struct {
+	node   ast.NodeID
+	env    *types.TypeEnv
+	typeID types.TypeID // the default value's type (the union-wrapped type if it auto-wraps)
+}
+
+// collectDefaults gathers every default-argument expression reached from the
+// compiled functions, deduplicated by node (a default lives once on its
+// declaration and is shared by all call sites). It walks call sites rather than
+// declarations so it also finds defaults on callees whose bodies are the embedded
+// runtime (e.g. DebugIntern.print_*, declared in the prelude but defined in
+// builtins.ll, so absent from `funs`).
+func collectDefaults(a *ast.AST, funs []types.FunWork) []defaultWork {
+	seen := map[ast.NodeID]bool{}
+	var out []defaultWork
+	for _, fw := range funs {
+		fun := base.Cast[ast.Fun](a.Node(fw.NodeID).Kind)
+		var walk func(ast.NodeID)
+		walk = func(n ast.NodeID) {
+			if defaults, ok := fw.Env.CallDefaults(n); ok {
+				for _, node := range defaults {
+					if seen[node] {
+						continue
+					}
+					seen[node] = true
+					typeID := fw.Env.TypeOfNode(node).ID
+					if wrapTypeID, _, ok := fw.Env.UnionWrap(node); ok {
+						typeID = wrapTypeID
+					}
+					out = append(out, defaultWork{node, fw.Env, typeID})
+				}
+			}
+			a.Walk(n, walk)
+		}
+		walk(fun.Block)
 	}
-	clear(id)
-	g.Gen(id)
+	return out
+}
+
+// genDefaultArg binds a default argument to the global that @__const_init filled
+// with its value, so it is computed once at startup rather than re-evaluated per
+// call. Every default reachable from a call site is materialized by
+// collectDefaults, so a missing entry is a bug.
+func (g *IRFunGen) genDefaultArg(id ast.NodeID) {
+	name, ok := g.defaultGlobals[id]
+	if !ok {
+		panic(base.Errorf("default argument not materialized for startup init: %s", g.ast.Debug(id, false, 0)))
+	}
+	// Use the union-wrapped type when the default auto-wraps, matching the global's
+	// type (the call site sees the wrapped type once astCode is bound).
+	typeID := g.typeIDOfNode(id)
+	if wrapTypeID, _, ok := g.env.UnionWrap(id); ok {
+		typeID = wrapTypeID
+	}
+	if g.isAggregateType(typeID) {
+		if _, cached := g.astCode[id]; !cached {
+			g.setCode(id, name)
+		}
+		return
+	}
+	// A scalar is passed by value, so load the initialized global in the current
+	// block at each call site (a loaded register would not dominate sibling sites).
+	delete(g.astCode, id)
+	reg := g.reg()
+	g.write("%s = load %s, ptr %s", reg, g.irType(typeID), name)
+	g.setCode(id, reg)
 }
 
 func (g *IRFunGen) setCode(astID ast.NodeID, code string, args ...any) {
@@ -3767,7 +3825,9 @@ func (g *IRGen) genEnumAssocStruct(ew types.TypeWork) {
 	g.write("%%%s = type { %s } ; %s\n", enum.AssociatedDataStruct, strings.Join(fields, ", "), assoc.Name)
 }
 
-func (g *IRGen) genModuleConsts(consts []types.ConstWork, enums []types.TypeWork) {
+func (g *IRGen) genModuleConsts( //nolint:funlen
+	consts []types.ConstWork, enums []types.TypeWork, defaults []defaultWork,
+) {
 	for _, c := range consts {
 		g.write("@%s = internal global %s zeroinitializer", irName(c.Name), irType(c.Env, c.TypeID))
 	}
@@ -3780,14 +3840,26 @@ func (g *IRGen) genModuleConsts(consts []types.ConstWork, enums []types.TypeWork
 			enumTableIR(ew.Env, enum.AssociatedDataStruct, n),
 		)
 	}
-	if len(consts) == 0 && len(enums) == 0 {
+	// Each default-argument expression gets a global that @__const_init fills with
+	// its value, so call sites reference the global instead of re-evaluating it.
+	for i, d := range defaults {
+		name := fmt.Sprintf("@__default_%d", i)
+		g.defaultGlobals[d.node] = name
+		g.write("%s = internal global %s zeroinitializer", name, irType(d.env, d.typeID))
+	}
+	if len(consts) == 0 && len(enums) == 0 && len(defaults) == 0 {
 		g.write("define internal void @__const_init() { ret void }")
 		g.write("")
 		return
 	}
-	env := consts[0].Env
-	if len(consts) == 0 {
+	var env *types.TypeEnv
+	switch {
+	case len(consts) > 0:
+		env = consts[0].Env
+	case len(enums) > 0:
 		env = enums[0].Env
+	default:
+		env = defaults[0].env
 	}
 	f := g.newFunGen(env)
 	f.constInit = true
@@ -3809,6 +3881,12 @@ func (g *IRGen) genModuleConsts(consts []types.ConstWork, enums []types.TypeWork
 			panic(base.Errorf("constant binding not found: %s", varNode.Name.Name))
 		}
 		g.symbols[b.ID] = Symbol{Name: varNode.Name.Name, Reg: globalRef, Type: irType(c.Env, c.TypeID)}
+	}
+	// Defaults are filled after constants so a default may read a module constant.
+	for _, d := range defaults {
+		f.env = d.env
+		f.Gen(d.node)
+		f.storeValue(f.lookupCode(d.node), g.defaultGlobals[d.node], d.typeID)
 	}
 	if f.entryAllocas.Len() > 0 {
 		ir := f.sb.String()
@@ -3911,7 +3989,7 @@ func GenIR( //nolint:funlen
 	// Emit extern function declarations (FFI).
 	g.genExternDecls(funs)
 	// Emit module-level constants and enum associated-data tables + init function.
-	g.genModuleConsts(consts, enums)
+	g.genModuleConsts(consts, enums, collectDefaults(a, funs))
 	// Emit all functions — each gets a fresh IRFunGen.
 	for i := range funs {
 		f := g.newFunGen(funs[i].Env)

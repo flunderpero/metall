@@ -9669,6 +9669,21 @@ test.met:1:24: default parameters cannot be references
                            ^
 ```
 
+**Default value must be a constant expression**
+
+A default is materialized once at startup, so it cannot call a function (or be
+any other non-constant expression).
+
+```metall
+{ fun mk() Int { 3 } fun foo(a Int = mk()) Int { 0 } }
+```
+
+```error
+test.met:1:38: default value must be a constant expression
+    { fun mk() Int { 3 } fun foo(a Int = mk()) Int { 0 } }
+                                         ^^^^
+```
+
 **Too few args even with defaults**
 
 ```metall
