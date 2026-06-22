@@ -680,6 +680,40 @@ fun main() void {
 x = 1, y = 2
 ```
 
+## Integer Arithmetic And Optimization Levels
+
+Integer arithmetic is checked by default. `+`, `-`, and `*` panic on overflow, `<<`
+and `>>` panic when the shift amount is out of range for the type, and `INT_MIN / -1`
+panics. When you want wraparound, ask for it: the `+%`, `-%`, and `*%` operators wrap.
+
+```metall
+use std.io
+
+fun main() void {
+    -- A checked `+` would panic here. `+%` wraps on purpose.
+    io.println(U8(255) +% U8(1))
+}
+```
+
+```output
+0
+```
+
+The compiler's `--opt` flag selects how aggressively the compiler optimizes
+and whether those arithmetic checks survive:
+
+- `none`: checks on, no optimization. The development default.
+- `safe`: checks on, full optimization. Same behavior as `none`, faster code.
+- `fast`: full optimization, and the overflow, shift-range, and `INT_MIN / -1`
+  checks are stripped. A plain `+` that overflows now wraps like `+%`, and `1 << 70`
+  produces an undefined value instead of panicking. Bounds checks and the
+  divide-by-zero check stay on at every level.
+
+So the same source line can panic under `none`/`safe` and silently wrap under `fast`.
+Reach for `fast` only once you have measured the need, and write the explicit `+%`
+family wherever wraparound is intended, so the behavior does not depend on the
+optimization level.
+
 ## Terminology
 
 ### Generic Type Terms

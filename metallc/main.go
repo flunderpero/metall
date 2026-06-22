@@ -153,14 +153,16 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 	})
 	flags.StringVar(&opts.TargetCPU, "cpu", "",
 		"target CPU for codegen (e.g. 'native', 'apple-m1'); default targets a portable baseline")
-	flags.Func("opt", "optimization mode: none, safe, fast", func(s string) error {
-		level, err := compiler.ParseOptLevel(s)
-		if err != nil {
-			return base.WrapErrorf(err, "failed to parse -opt")
-		}
-		opts.OptLevel = level
-		return nil
-	})
+	flags.Func("opt",
+		"optimization mode: none, safe, fast (fast also strips the overflow/shift/INT_MIN checks, so `+` wraps)",
+		func(s string) error {
+			level, err := compiler.ParseOptLevel(s)
+			if err != nil {
+				return base.WrapErrorf(err, "failed to parse -opt")
+			}
+			opts.OptLevel = level
+			return nil
+		})
 	var sanitize sanitizeFlags
 	flags.Var(
 		&sanitize,
