@@ -121,7 +121,7 @@ pub fun Map.del(m &mut Map, key K) Bool {
     panic("unreachable")
 }
 
-pub fun Map.grow(m &mut Map, capacity Int) void {
+fun Map.grow(m &mut Map, capacity Int) void {
     let new_data = m.@a.slice<MapSlot<K, V>>(capacity, false)
     for slot in m.data {
         match slot {
