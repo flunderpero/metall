@@ -170,6 +170,20 @@ func (c Chain) Without(exclude TaintSet) Chain {
 	return out
 }
 
+// ShiftDown deepens a chain by n levels, padding the front with empty sets, so
+// what was at depth d sits at depth d+n. The inverse of dropping n heads: it
+// places an element's reach back at the depth the element lives at when it is
+// accumulated into a container (`copy[i] = src[i]` deposits src's reach one level
+// down, at copy's element depth).
+func (c Chain) ShiftDown(n int) Chain {
+	if n <= 0 {
+		return c
+	}
+	out := make(Chain, n+len(c))
+	copy(out[n:], c)
+	return out
+}
+
 // VarTaint is the abstract state of a single named variable during analysis.
 //
 //	mut a = 123          --> VarTaint{StorageTaint: scope(a), Chain: []}
@@ -206,16 +220,45 @@ func newScopeState(scope *ast.Scope, scopeTaint TaintID) *ScopeState {
 }
 
 // FunEffects describes how a function's parameters flow into its return value
-// and into each other (side effects through &mut params).
+// and into each other (side effects through &mut params). Each flow carries a
+// DEREF SHIFT: shift 0 moves the whole value, shift 1 moves a value read OUT of a
+// slice/ref (an element), whose storage is one deref past the param's own backing.
+// Applying a shift-d flow at a call site drops the argument's first d storage
+// levels, so copying an element out of a stack-backed slice does not drag the
+// stack backing along (a param taint in those levels survives, see dropHeadByShift).
 //
 //	fun foo(a &Int) &Int { a }
-//	  --> ReturnTaints: [0]               (param 0 reaches the return value)
+//	  --> ReturnTaints: {0: 0}            (param 0 reaches the return whole)
+//
+//	fun first(s []&Int) &Int { s[0] }
+//	  --> ReturnTaints: {0: 1}            (param 0 reaches the return one deref in)
 //
 //	fun bar(a &mut Int, b &Int) void { a.* = b.* }
-//	  --> SideEffects: {0: [1]}           (param 1 flows into param 0)
+//	  --> SideEffects: {0: {1: 0}}        (param 1 flows into param 0 whole)
 type FunEffects struct {
-	ReturnTaints []int         // param indices that reach the return value
-	SideEffects  map[int][]int // target param --> source params whose taints flow in
+	ReturnTaints map[int]int         // param idx --> min deref shift into the return value
+	SideEffects  map[int]map[int]int // target param --> (source param --> min shift in)
+}
+
+// recordReturnShift keeps the SHALLOWEST shift a param reaches the return at: a
+// param returned both whole and as one of its elements escapes its whole backing.
+func recordReturnShift(effects *FunEffects, paramIdx, shift int) {
+	if cur, ok := effects.ReturnTaints[paramIdx]; !ok || shift < cur {
+		effects.ReturnTaints[paramIdx] = shift
+	}
+}
+
+// recordSideEffectEdge keeps the shallowest shift a source param flows into a
+// target param at.
+func recordSideEffectEdge(effects *FunEffects, target, src, shift int) {
+	m := effects.SideEffects[target]
+	if m == nil {
+		m = map[int]int{}
+		effects.SideEffects[target] = m
+	}
+	if cur, ok := m[src]; !ok || shift < cur {
+		m[src] = shift
+	}
 }
 
 // analysisStatus is the per-node visitation state for the on-demand walk. Done
@@ -257,8 +300,9 @@ type LifetimeCheck struct {
 	analyzingInstance   bool                   // true while re-analyzing a generic instance, not the decl
 
 	// Source borrows a write deposited into each storage taint, per function.
-	// Keyed by storage taint so a write through any alias of a param reaches it.
-	sideEffectByParamTaint map[TaintID]TaintSet
+	// Keyed by storage taint so a write through any alias of a param reaches it;
+	// the inner map keeps each source taint's min deref shift (see FunEffects).
+	sideEffectByParamTaint map[TaintID]map[TaintID]int
 
 	// Union storages aliased by an enclosing by-reference match arm. A whole-union
 	// write to one of these would switch the active variant under a live
@@ -307,7 +351,7 @@ func NewLifetimeAnalyzer(a *ast.AST, g *ast.ScopeGraph, env *TypeEnv, funs []Fun
 		instanceInProgress:     map[TypeID]bool{},
 		analyzingFun:           nil,
 		analyzingInstance:      false,
-		sideEffectByParamTaint: map[TaintID]TaintSet{},
+		sideEffectByParamTaint: map[TaintID]map[TaintID]int{},
 		borrowedUnions:         nil,
 	}
 	lc.shapeContracts = &shapeContractsCheck{LifetimeCheck: lc, funWorks: funWorks}
@@ -513,6 +557,84 @@ func (a *LifetimeCheck) storageScopes(nodeID ast.NodeID) TaintSet {
 	}
 }
 
+// projectionSource follows a VALUE expression to the root it is a projection of,
+// counting how many derefs separate them: a slice index, a deref, or a field read
+// THROUGH a ref each peel one referent (+1); an array index or a value-struct
+// field stay inline (+0). The depth is the deref SHIFT of the read: `s[i]` reads
+// one level past `s`, so the element it yields reaches what the elements point at,
+// not `s`'s own backing. A `&place`, a call, or a construction is not a projection
+// (depth 0): a reference reaches the place's storage, and a call/build makes a
+// fresh value whose shift is decided elsewhere.
+func (a *LifetimeCheck) projectionSource(nodeID ast.NodeID) (ast.NodeID, int) {
+	switch kind := a.ast.Node(nodeID).Kind.(type) {
+	case ast.Index:
+		root, depth := a.projectionSource(kind.Target)
+		if _, isSlice := a.env.TypeOfNode(kind.Target).Kind.(SliceType); isSlice {
+			return root, depth + 1
+		}
+		return root, depth
+	case ast.Deref:
+		root, depth := a.projectionSource(kind.Expr)
+		return root, depth + 1
+	case ast.FieldAccess:
+		root, depth := a.projectionSource(kind.Target)
+		if _, throughRef := a.env.TypeOfNode(kind.Target).Kind.(RefType); throughRef {
+			return root, depth + 1
+		}
+		return root, depth
+	default:
+		return nodeID, 0
+	}
+}
+
+// dropHeadByShift consumes a chain at deref depth `shift`: it drops the first
+// `shift` levels but keeps any PARAM taints found there, merged into the new head.
+// A param taint stands for caller storage at every depth, so it survives the drop
+// (without this, dropping a slice param's backing to model an element copy would
+// lose the borrow entirely and miss real escapes). A scope taint in the dropped
+// prefix is the container's own backing, which an element copy does not carry, so
+// it is correctly dropped. This is how a function effect's shift is applied to a
+// concrete argument: an element copied out of a stack-backed slice (shift 1) does
+// not drag the stack backing along, but a param-backed slice keeps its caller taint.
+func (a *LifetimeCheck) dropHeadByShift(chain Chain, shift int) Chain {
+	if shift <= 0 {
+		return chain
+	}
+	cut := min(shift, len(chain))
+	var retained TaintSet
+	for _, level := range chain[:cut] {
+		for _, t := range level {
+			if a.scopeByTaint[t] == nil {
+				retained = retained.Merge(TaintSet{t})
+			}
+		}
+	}
+	tail := slices.Clone(chain[cut:])
+	if len(retained) == 0 {
+		return tail
+	}
+	if len(tail) == 0 {
+		return Chain{retained}
+	}
+	tail[0] = tail[0].Merge(retained)
+	return tail
+}
+
+// blockResultExpr returns the expression a block yields: its last expression, or
+// the returned expression when that is an explicit `return`. Used to read the
+// deref shift of a function whose result is a direct projection (`fun f(s) { s[0] }`).
+func (a *LifetimeCheck) blockResultExpr(blockNodeID ast.NodeID) ast.NodeID {
+	block, ok := a.ast.Node(blockNodeID).Kind.(ast.Block)
+	if !ok || len(block.Exprs) == 0 {
+		return blockNodeID
+	}
+	last := block.Exprs[len(block.Exprs)-1]
+	if ret, ok := a.ast.Node(last).Kind.(ast.Return); ok {
+		return ret.Expr
+	}
+	return last
+}
+
 // analyzeIdent: reading a variable yields its value chain.
 func (a *LifetimeCheck) analyzeIdent(nodeID ast.NodeID, ident ast.Ident) {
 	a.ast.Walk(nodeID, a.Check)
@@ -707,13 +829,18 @@ func (a *LifetimeCheck) isArenaAllocCall(nodeID ast.NodeID) bool {
 // (e.g. a size) do not contribute.
 func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) {
 	fa := base.Cast[ast.FieldAccess](a.ast.Node(call.Callee).Kind)
-	result := a.flow(fa.Target)
+	// The allocation lives IN the arena, so it borrows the arena's storage at depth
+	// 0, and its contents (copies of the ref/alloc-carrying args) sit one deref in.
+	// Keeping that depth lets an element read out of the result drop the arena
+	// backing. A scalar arg (e.g. a size) contributes nothing.
+	var contents Chain
 	for _, argNodeID := range call.Args {
 		argTypeID := a.env.TypeOfNode(argNodeID).ID
 		if a.typeContains(argTypeID, borrowRefOrAllocator|borrowShape|borrowClosure) {
-			result = result.Merge(a.flow(argNodeID))
+			contents = contents.Merge(a.flow(argNodeID))
 		}
 	}
+	result := a.flow(fa.Target).Merge(contents.ShiftDown(1))
 	a.chains[nodeID] = result
 	a.debug(1, nodeID, "analyzeArenaAllocCall: %s", result)
 }
@@ -913,20 +1040,22 @@ func (a *LifetimeCheck) analyzeCall(nodeID ast.NodeID, call ast.Call) { //nolint
 		}
 	}
 
-	// Map param chains into the return value (per-depth union).
+	// Map param chains into the return value, dropping each param's backing by the
+	// shift the callee consumed it at (plus the arg's own projection depth, so
+	// `f(s[0])` consumes one level deeper than `f(s)`).
 	var result Chain
-	for _, paramIdx := range effects.ReturnTaints {
-		result = result.Merge(a.flow(args[paramIdx]))
+	for paramIdx, shift := range effects.ReturnTaints {
+		_, argDepth := a.projectionSource(args[paramIdx])
+		result = result.Merge(a.dropHeadByShift(a.flow(args[paramIdx]), shift+argDepth))
 	}
 	// Apply side effects: write each source arg through its target arg.
 	//   fun foo(a &mut Foo, b &Int) { a.one = b }
 	//   --> foo(&mut y, &z) checks &z against y's storage and merges it in.
-	for targetIdx, srcIndices := range effects.SideEffects {
-		var srcChain Chain
-		for _, srcIdx := range srcIndices {
-			srcChain = srcChain.Merge(a.flow(args[srcIdx]))
+	for targetIdx, srcShifts := range effects.SideEffects {
+		for srcIdx, shift := range srcShifts {
+			_, argDepth := a.projectionSource(args[srcIdx])
+			a.writeThroughArg(nodeID, args[targetIdx], a.flow(args[srcIdx]), shift+argDepth)
 		}
-		a.writeThroughArg(nodeID, args[targetIdx], srcChain)
 	}
 	// If the callee returns noescape, the result must not escape the scope where
 	// the call was made: tag it with that scope's taint (a LocalTaint), so it is
@@ -986,8 +1115,9 @@ func (a *LifetimeCheck) closureCallContribution(callID, callee, declID ast.NodeI
 func (a *LifetimeCheck) applyBuiltinEffects(nodeID ast.NodeID, effects FunEffects) {
 	args := a.env.CallArgNodes(nodeID)
 	var result Chain
-	for _, paramIdx := range effects.ReturnTaints {
-		result = result.Merge(a.flow(args[paramIdx]))
+	for paramIdx, shift := range effects.ReturnTaints {
+		_, argDepth := a.projectionSource(args[paramIdx])
+		result = result.Merge(a.dropHeadByShift(a.flow(args[paramIdx]), shift+argDepth))
 	}
 	a.chains[nodeID] = result
 }
@@ -1011,7 +1141,7 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 	}
 	for _, arg := range args {
 		if ref, ok := a.env.TypeOfNode(arg).Kind.(RefType); ok && ref.Mut {
-			a.writeThroughArg(nodeID, arg, allArgs)
+			a.writeThroughArg(nodeID, arg, allArgs, 0)
 		}
 	}
 }
@@ -1023,10 +1153,14 @@ func (a *LifetimeCheck) applyPessimisticEffects(nodeID ast.NodeID, call ast.Call
 //
 //	fun foo(a &mut Foo, b &Int) { a.one = b }
 //	foo(&mut y, &z)   --> &z checked against scope(y), then merged into y
-func (a *LifetimeCheck) writeThroughArg(nodeID, arg ast.NodeID, src Chain) {
+//
+// `shift` is the deref depth the callee consumed the source at (see FunEffects):
+// an element copied out of a slice (shift 1) writes only what the elements point
+// at, not the source slice's own backing.
+func (a *LifetimeCheck) writeThroughArg(nodeID, arg ast.NodeID, src Chain, shift int) {
 	// Applying a callee's side effect is itself a write through the arg's storage,
 	// so a caller that forwards a &mut param inherits the effect.
-	a.checkWrite(nodeID, src, a.flow(arg).HeadTaintSet(), "via mutation of outer variable")
+	a.checkWrite(nodeID, src, a.flow(arg).HeadTaintSet(), shift, "via mutation of outer variable")
 	// Peel a leading `&`/`&mut` to find the referenced variable to accumulate
 	// into. A computed pointer (e.g. `identity(&mut y)`) has no root ident, so
 	// the escape check above is the only effect.
@@ -1034,7 +1168,7 @@ func (a *LifetimeCheck) writeThroughArg(nodeID, arg ast.NodeID, src Chain) {
 	if ref, ok := a.ast.Node(arg).Kind.(ast.Ref); ok {
 		target = ref.Target
 	}
-	a.accumulateIntoRoot(nodeID, a.placeRoot(target), src)
+	a.accumulateIntoRoot(nodeID, a.placeRoot(target), src, shift)
 }
 
 // analyzeMatch: the result is the union of the arm bodies (like analyzeIf). A
@@ -1420,6 +1554,9 @@ func (a *LifetimeCheck) funDeclTypeContainsRefOrAlloc(funDecl ast.FunDecl) bool 
 func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 	a.ast.Walk(nodeID, a.Check)
 	rhs := a.flow(assign.RHS)
+	// The deref depth the rhs sits at: `dst[i] = src[i]` stores an element, so it
+	// deposits what the elements point at, not the source slice's own backing.
+	_, shift := a.projectionSource(assign.RHS)
 	lhsNode := a.ast.Node(assign.LHS)
 	if a.Debug.Enabled() {
 		a.debug(1, nodeID, "analyzeAssign: lhs=%s rhs=%s", a.ast.Debug(assign.LHS, false, 0), rhs)
@@ -1440,17 +1577,17 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 		a.checkEscape(nodeID, rhs.CarriedTaints(), TaintSet{storageTaint}, "via mutation of outer variable")
 		ss.Vars[lhsKind.Name] = &VarTaint{nodeID, storageTaint, rhs}
 	case ast.FieldAccess:
-		a.writeInto(nodeID, assign.LHS, rhs, "via mutation of outer variable")
+		a.writeInto(nodeID, assign.LHS, rhs, shift, "via mutation of outer variable")
 	case ast.Index:
-		a.writeInto(nodeID, assign.LHS, rhs, "via mutation of outer variable")
+		a.writeInto(nodeID, assign.LHS, rhs, shift, "via mutation of outer variable")
 	case ast.Deref:
 		// `p.* = expr` is check-only for the pointee: escape if rhs borrows a
 		// scope strictly nested inside the slot p points at (chain(p)[0]). For
 		// `w.*.*` that slot is chain(w)[1], so the deep write is caught at its
 		// exact depth. We accumulate rhs into the root pointer's chain but do not
 		// write back into the specific pointee (unobservable without aliases).
-		a.checkWrite(nodeID, rhs, a.storageScopes(assign.LHS), "via deref assignment")
-		a.accumulateIntoRoot(nodeID, a.placeRoot(assign.LHS), rhs)
+		a.checkWrite(nodeID, rhs, a.storageScopes(assign.LHS), shift, "via deref assignment")
+		a.accumulateIntoRoot(nodeID, a.placeRoot(assign.LHS), rhs, shift)
 	default:
 		panic(base.Errorf("unknown LHS kind: %T", lhsKind))
 	}
@@ -1467,9 +1604,9 @@ func (a *LifetimeCheck) analyzeAssign(nodeID ast.NodeID, assign ast.Assign) {
 //
 //	struct Foo { one &Int }
 //	mut y = Foo(&x); { mut z = 99; y.one = &z }  --> &z escapes y's scope
-func (a *LifetimeCheck) writeInto(nodeID ast.NodeID, place ast.NodeID, rhs Chain, detail string) {
-	a.checkWrite(nodeID, rhs, a.storageScopes(place), detail)
-	a.accumulateIntoRoot(nodeID, a.placeRoot(place), rhs)
+func (a *LifetimeCheck) writeInto(nodeID ast.NodeID, place ast.NodeID, rhs Chain, shift int, detail string) {
+	a.checkWrite(nodeID, rhs, a.storageScopes(place), shift, detail)
+	a.accumulateIntoRoot(nodeID, a.placeRoot(place), rhs, shift)
 }
 
 // placeRoot peels field/index/deref projections to the root expression.
@@ -1496,8 +1633,10 @@ func (a *LifetimeCheck) placeRoot(place ast.NodeID) ast.NodeID {
 // accumulateIntoRoot merges rhs into the root variable's chain (per depth),
 // writing into the variable's DECLARING scope so the mutation is visible
 // everywhere. This powers function SideEffects and closure capture writes, and
-// replaces the block-end propagation.
-func (a *LifetimeCheck) accumulateIntoRoot(nodeID ast.NodeID, root ast.NodeID, rhs Chain) {
+// replaces the block-end propagation. `shift` places the value at the element
+// depth it is written at, so `copy[i] = src[i]` records that copy reaches src's
+// elements one level in, not src's backing.
+func (a *LifetimeCheck) accumulateIntoRoot(nodeID ast.NodeID, root ast.NodeID, rhs Chain, shift int) {
 	ident, ok := a.ast.Node(root).Kind.(ast.Ident)
 	if !ok {
 		return
@@ -1506,21 +1645,32 @@ func (a *LifetimeCheck) accumulateIntoRoot(nodeID ast.NodeID, root ast.NodeID, r
 	if vt == nil {
 		return
 	}
-	vt.Chain = vt.Chain.Merge(rhs)
+	vt.Chain = vt.Chain.Merge(a.dropHeadByShift(rhs, shift).ShiftDown(shift))
 	a.debug(1, nodeID, "accumulateIntoRoot: %s += %s --> %s", ident.Name, rhs, vt.Chain)
 }
 
 // checkWrite handles a write of rhs into `storage`: it reports an in-function
 // escape and records the cross-function side effect a forwarding caller inherits.
-// Both halves belong to every write through a referenced place.
-func (a *LifetimeCheck) checkWrite(nodeID ast.NodeID, rhs Chain, storage TaintSet, detail string) {
-	src := rhs.CarriedTaints()
+// Both halves belong to every write through a referenced place. `shift` drops the
+// rhs's backing for an element write (see dropHeadByShift), and is recorded so a
+// forwarding caller re-applies the same drop to its own concrete argument.
+func (a *LifetimeCheck) checkWrite(nodeID ast.NodeID, rhs Chain, storage TaintSet, shift int, detail string) {
+	src := a.dropHeadByShift(rhs, shift).CarriedTaints()
 	a.checkEscape(nodeID, src, storage, detail)
 	if len(src) == 0 {
 		return
 	}
 	for _, st := range storage {
-		a.sideEffectByParamTaint[st] = a.sideEffectByParamTaint[st].Merge(src)
+		dst := a.sideEffectByParamTaint[st]
+		if dst == nil {
+			dst = map[TaintID]int{}
+			a.sideEffectByParamTaint[st] = dst
+		}
+		for _, t := range src {
+			if cur, ok := dst[t]; !ok || shift < cur {
+				dst[t] = shift
+			}
+		}
 	}
 }
 
@@ -1623,7 +1773,7 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	a.analyzingFun = append(a.analyzingFun, nodeID)
 	defer func() { a.analyzingFun = a.analyzingFun[:len(a.analyzingFun)-1] }()
 	prevSideEffects := a.sideEffectByParamTaint
-	a.sideEffectByParamTaint = map[TaintID]TaintSet{}
+	a.sideEffectByParamTaint = map[TaintID]map[TaintID]int{}
 	defer func() { a.sideEffectByParamTaint = prevSideEffects }()
 	// Walk type params and return type (no special handling needed).
 	for _, tp := range fun.TypeParams {
@@ -1684,25 +1834,41 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 
 	// Now analyze the body.
 	a.Check(fun.Block)
-	blockTaints := a.flow(fun.Block).CarriedTaints()
+	blockChain := a.flow(fun.Block)
+	blockTaints := blockChain.CarriedTaints()
 
 	effects := &FunEffects{
-		SideEffects:  map[int][]int{},
-		ReturnTaints: nil,
+		SideEffects:  map[int]map[int]int{},
+		ReturnTaints: map[int]int{},
 	}
 	paramScope := a.scopeGraph.NodeScope(fun.Block)
 
-	// Which param taints appear in the return value?
-	// A taint that is NOT a param taint is function-local (e.g. the scope taint
-	// of a by-value param's stack slot) and must not escape.
+	// A non-param taint in the result is function-local (e.g. a by-value param's
+	// stack slot) and must not escape.
 	for _, t := range blockTaints {
-		if idx, ok := paramTaintToIdx[t]; ok {
-			if !slices.Contains(effects.ReturnTaints, idx) {
-				effects.ReturnTaints = append(effects.ReturnTaints, idx)
-			}
-		} else {
+		if _, ok := paramTaintToIdx[t]; !ok {
 			a.diagEscape(fun.Block, blockTaints, a.scopeFor(paramScope), "via block result")
 			break
+		}
+	}
+	// Which param taints reach the return value, and at what deref depth? A param's
+	// backing sits at depth 0; an element it yields sits one level in, so the call
+	// site drops that much of the argument's backing (see dropHeadByShift).
+	for depth, level := range blockChain {
+		for _, t := range level {
+			if idx, ok := paramTaintToIdx[t]; ok {
+				recordReturnShift(effects, idx, depth)
+			}
+		}
+	}
+	// A result that is wholly one through-ref projection of a param returns an
+	// element, not the container. The chain alone cannot tell (a slice index reads
+	// the whole container chain, see analyzeIndex), so derive the depth structurally.
+	if root, depth := a.projectionSource(a.blockResultExpr(fun.Block)); depth > 0 {
+		for _, t := range a.flow(root).CarriedTaints() {
+			if idx, ok := paramTaintToIdx[t]; ok {
+				effects.ReturnTaints[idx] = depth
+			}
 		}
 	}
 
@@ -1711,11 +1877,9 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 	//   fun foo(a &mut Int, b &Int) { a.* = b.* }  --> param 0 received param 1.
 	for i := range fun.Params {
 		for _, pt := range paramIdentityTaint[i] {
-			for _, t := range a.sideEffectByParamTaint[pt] {
+			for t, shift := range a.sideEffectByParamTaint[pt] {
 				if srcIdx, ok := paramTaintToIdx[t]; ok && srcIdx != i && sideEffectSrc[t] {
-					if !slices.Contains(effects.SideEffects[i], srcIdx) {
-						effects.SideEffects[i] = append(effects.SideEffects[i], srcIdx)
-					}
+					recordSideEffectEdge(effects, i, srcIdx, shift)
 				}
 			}
 		}
@@ -1937,10 +2101,10 @@ func (a *LifetimeCheck) checkMeaninglessNoescape(fun ast.Fun, funType FunType) {
 func (a *LifetimeCheck) checkNoescapeEffects(
 	span base.Span, paramName string, paramIdx int, funType FunType, effects *FunEffects,
 ) {
-	if a.typeContains(funType.Return, borrowAny) && slices.Contains(effects.ReturnTaints, paramIdx) {
+	if _, reaches := effects.ReturnTaints[paramIdx]; a.typeContains(funType.Return, borrowAny) && reaches {
 		a.diag(span, "noescape parameter %q must not escape through the return value", paramName)
 	}
-	for targetIdx, srcIndices := range effects.SideEffects {
+	for targetIdx, srcShifts := range effects.SideEffects {
 		if targetIdx == paramIdx {
 			continue
 		}
@@ -1951,7 +2115,7 @@ func (a *LifetimeCheck) checkNoescapeEffects(
 		if !a.typeContains(targetTypeID, borrowAny) {
 			continue
 		}
-		if slices.Contains(srcIndices, paramIdx) {
+		if _, flows := srcShifts[paramIdx]; flows {
 			a.diag(span, "noescape parameter %q must not escape through other parameters", paramName)
 		}
 	}
@@ -2045,14 +2209,15 @@ type shapeContractsCheck struct {
 // expectedEffects computes the FunEffects implied by a shape method declaration.
 func (s *shapeContractsCheck) expectedEffects(declID ast.NodeID, funDecl ast.FunDecl, calleeType FunType) *FunEffects {
 	effects := &FunEffects{
-		SideEffects:  map[int][]int{},
-		ReturnTaints: nil,
+		SideEffects:  map[int]map[int]int{},
+		ReturnTaints: map[int]int{},
 	}
 	// All parameters may flow to the return value, but only if the return type
-	// can carry references. No parameters flow into each other (no side effects).
+	// can carry references. The contract makes no depth promise, so a param may
+	// reach the return whole (shift 0). No parameters flow into each other.
 	if s.typeContains(calleeType.Return, borrowRefOrAllocator|borrowShape) {
 		for i := range funDecl.Params {
-			effects.ReturnTaints = append(effects.ReturnTaints, i)
+			effects.ReturnTaints[i] = 0
 		}
 	}
 	s.funEffects[declID] = effects

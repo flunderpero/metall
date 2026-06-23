@@ -4611,6 +4611,107 @@ fun foo() void {
 ```error
 ```
 
+## Slice element copies keep their backing depth
+
+A value read or copied OUT of a slice is an element, not the container: it reaches
+what the elements point at, not the slice's own backing. A function effect records
+the deref shift, so copying a stack-backed slice of arena-allocated shapes into an
+arena keeps the shapes (which live in the arena) and drops the stack backing, which
+the copy never references.
+
+**copying a stack-backed slice into an arena drops the stack backing**
+
+`new_sprite` copies each element of `shapes` into `copy` (in `@a`). The shapes'
+points already live in `@a`, so the copy is sound; the only thing the source slice
+adds is its stack backing, which the element copy does not carry.
+
+```metall
+{
+    struct Shape { points []Int }
+    struct Sprite { shapes []Shape }
+    fun new_sprite(shapes []Shape, @a Arena) Sprite {
+        let copy = unsafe @a.slice_uninit<Shape>(shapes.len)
+        for i in 0..shapes.len {
+            copy[i] = shapes[i]
+        }
+        Sprite(copy)
+    }
+    fun make_shape(@a Arena) Shape {
+        let pts = @a.slice<Int>(3, 0)
+        Shape(pts)
+    }
+    fun build(@a Arena) Sprite {
+        new_sprite([make_shape(@a)][..], @a)
+    }
+}
+```
+
+```error
+```
+
+**returning a slice element drops the slice's own backing**
+
+`first` returns `s[0]`, the element, not the slice. The slice `arr` is backed by a
+local arena, but the returned reference points at the caller's `target`, so it does
+not dangle.
+
+```metall
+{
+    fun first(s []&Int) &Int { s[0] }
+    fun get(target &Int) &Int {
+        let @a = Arena()
+        let arr = @a.slice<&Int>(1, target)
+        first(arr)
+    }
+}
+```
+
+```error
+```
+
+**an element whose content is shorter-lived than the arena still escapes**
+
+Only the source slice's backing is dropped. The element CONTENT (here the points
+live in `@inner`) is retained, so copying an `@inner`-backed shape into the
+longer-lived `@a` is still caught.
+
+```metall
+{
+    struct Shape { points []Int }
+    struct Sprite { shapes []Shape }
+    fun new_sprite(shapes []Shape, @a Arena) Sprite {
+        let copy = unsafe @a.slice_uninit<Shape>(shapes.len)
+        for i in 0..shapes.len {
+            copy[i] = shapes[i]
+        }
+        Sprite(copy)
+    }
+    fun make_shape(@a Arena) Shape {
+        let pts = @a.slice<Int>(3, 0)
+        Shape(pts)
+    }
+    fun bad(@a Arena) Sprite {
+        let @inner = Arena()
+        let s = make_shape(@inner)
+        new_sprite([s][..], @a)
+    }
+}
+```
+
+```error
+test.met:18:20: reference escaping its allocation scope (via mutation of outer variable)
+            let s = make_shape(@inner)
+            new_sprite([s][..], @a)
+                       ^^^^^^^
+        }
+
+test.met:18:20: reference escaping its allocation scope (via block result)
+            let s = make_shape(@inner)
+            new_sprite([s][..], @a)
+                       ^^^^^^^
+        }
+```
+
 ## Closure escape soundness
 
 A closure that captures an inner local and is INVOKED must not lose the captured
