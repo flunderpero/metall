@@ -1635,16 +1635,7 @@ pub fun Int.fmt_into(v Int, dst []mut U8, base Int = 10, upper Bool = false, wid
         }
         return len
     }
-    mut x U64 = {
-        when {
-        case v == -0x8000_0000_0000_0000:
-           0x8000_0000_0000_0000 
-        case v < 0:
-            (v * -1).to_u64_wrapping()
-        else:
-            v.to_u64_wrapping()
-        }
-    }
+    mut x = v.abs_unsigned()
     let base = base.to_u64_wrapping()
     -- Pre-calculate the length.
     let len = {
@@ -1851,16 +1842,33 @@ pub fun F32.acos(f F32) F32 { unsafe __llvm_acos_f32(f) }
 pub fun Float.atan(f Float) Float { unsafe __llvm_atan_f64(f) }
 pub fun F32.atan(f F32) F32 { unsafe __llvm_atan_f32(f) }
 
---- Absolute value.
+--- Return the absolute value.
 
-    For a signed integer, `abs` of the minimum value (e.g. -128 for I8) panics
-    when arithmetic overflow checks are on. ---
+    Panics on `abs(min_value)` because the absolute value of
+    `min_value` cannot be expressed in the type's range. ---
+pub fun Int.abs(i Int) Int { if i < 0 { -i } else { i } }
 pub fun I8.abs(i I8) I8 { if i < 0 { -i } else { i } }
 pub fun I16.abs(i I16) I16 { if i < 0 { -i } else { i } }
 pub fun I32.abs(i I32) I32 { if i < 0 { -i } else { i } }
-pub fun Int.abs(i Int) Int { if i < 0 { -i } else { i } }
 pub fun Float.abs(f Float) Float { unsafe __llvm_fabs_f64(f) }
 pub fun F32.abs(f F32) F32 { unsafe __llvm_fabs_f32(f) }
+
+--- Like `abs`, but `abs_clamped(min_value) == max_value.` ---
+pub fun Int.abs_clamped(i Int) Int {
+    if i == -0x8000_0000_0000_0000 { 0x7FFF_FFFF_FFFF_FFFF } else { i.abs() }
+}
+pub fun I8.abs_clamped(i I8) I8 { if i == -0x80 { 0x7F } else { i.abs() } }
+pub fun I16.abs_clamped(i I16) I16 { if i == -0x8000 { 0x7FFF } else { i.abs() } }
+pub fun I32.abs_clamped(i I32) I32 { if i == -0x8000_0000 { 0x7FFF_FFFF } else { i.abs() } }
+
+--- The exact magnitude as a U64, representable for every value including the minimum. ---
+pub fun Int.abs_unsigned(i Int) U64 {
+    let bits = i.to_u64_wrapping()
+    if i < 0 { U64(0) -% bits } else { bits }
+}
+pub fun I8.abs_unsigned(i I8) U64 { i.to_int().abs_unsigned() }
+pub fun I16.abs_unsigned(i I16) U64 { i.to_int().abs_unsigned() }
+pub fun I32.abs_unsigned(i I32) U64 { i.to_int().abs_unsigned() }
 
 pub fun Float.exp(f Float) Float { unsafe __llvm_exp_f64(f) }
 pub fun F32.exp(f F32) F32 { unsafe __llvm_exp_f32(f) }

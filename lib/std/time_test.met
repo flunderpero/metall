@@ -42,6 +42,8 @@ fun main() void {
         -- Negative durations
         try test.eq("-123ns", fmt(time.nanosecond.times(-123)))
         try test.eq("-1m5.023s", fmt(time.Duration.new(-5023 - 60 * 1000, time.millisecond)))
+        -- The most-negative duration's magnitude is one past Int.max_value, so it clamps.
+        try test.eq("-106751d23h47m16.854775807s", fmt(time.nanosecond.times(-0x8000_0000_0000_0000)))
     })
     _ = suite.run()
 }

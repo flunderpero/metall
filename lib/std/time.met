@@ -73,11 +73,11 @@ pub fun Duration.fmt(d Duration, sw &mut StrWriter) void {
         sw.write("0s")
         return void
     }
-    mut nsec = d.nsec
     if d.nsec < 0 {
         sw.write('-')
-        nsec *= -1
     }
+    -- The most-negative duration's magnitude is one past Int.max_value, so clamp it.
+    mut nsec = d.nsec.abs_clamped()
 
     let steps = [1, microsecond.nsec, millisecond.nsec, second.nsec, minute.nsec, hour.nsec, day.nsec]
     let units = ["ns", "µs", "ms", "s", "m", "h", "d"]

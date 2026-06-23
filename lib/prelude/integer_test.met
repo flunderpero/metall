@@ -715,6 +715,43 @@ fun main() void {
         try test.eq(0x7FFF_FFFF_FFFF_FFFF, Int(-0x7FFF_FFFF_FFFF_FFFF).abs())
     })
     _ = abs_suite.run()
+
+    let abs_clamped_suite = test.Suite.new("abs_clamped", @local)
+    abs_clamped_suite.test("I8.abs_clamped", fun() !void {
+        try test.eq(I8(5), I8(-5).abs_clamped())
+        try test.eq(I8(0x7F), I8(0x7F).abs_clamped())
+        try test.eq(I8(0x7F), I8(-0x80).abs_clamped())
+    })
+    abs_clamped_suite.test("I16.abs_clamped", fun() !void {
+        try test.eq(I16(9), I16(-9).abs_clamped())
+        try test.eq(I16(0x7FFF), I16(-0x8000).abs_clamped())
+    })
+    abs_clamped_suite.test("I32.abs_clamped", fun() !void {
+        try test.eq(I32(9), I32(-9).abs_clamped())
+        try test.eq(I32(0x7FFF_FFFF), I32(-0x8000_0000).abs_clamped())
+    })
+    abs_clamped_suite.test("Int.abs_clamped", fun() !void {
+        try test.eq(42, Int(-42).abs_clamped())
+        try test.eq(0x7FFF_FFFF_FFFF_FFFF, Int(-0x8000_0000_0000_0000).abs_clamped())
+    })
+    _ = abs_clamped_suite.run()
+
+    let abs_unsigned_suite = test.Suite.new("abs_unsigned", @local)
+    abs_unsigned_suite.test("I8.abs_unsigned", fun() !void {
+        try test.eq(U64(5), I8(-5).abs_unsigned())
+        try test.eq(U64(0x80), I8(-0x80).abs_unsigned())
+    })
+    abs_unsigned_suite.test("I32.abs_unsigned", fun() !void {
+        try test.eq(U64(9), I32(-9).abs_unsigned())
+        try test.eq(U64(0x8000_0000), I32(-0x8000_0000).abs_unsigned())
+    })
+    abs_unsigned_suite.test("Int.abs_unsigned", fun() !void {
+        try test.eq(U64(0), Int(0).abs_unsigned())
+        try test.eq(U64(42), Int(-42).abs_unsigned())
+        try test.eq(U64(0x7FFF_FFFF_FFFF_FFFF), Int(0x7FFF_FFFF_FFFF_FFFF).abs_unsigned())
+        try test.eq(U64(0x8000_0000_0000_0000), Int(-0x8000_0000_0000_0000).abs_unsigned())
+    })
+    _ = abs_unsigned_suite.run()
 }
 
 fun fmt_ext_int(v Int, base Int, upper Bool, width Int, @a Arena) Str {
