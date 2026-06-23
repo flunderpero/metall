@@ -263,9 +263,8 @@ Pair{a=hello, b=42}
 
 **fmtstr macro over float fields**
 
-A derive-style `fmt` over a struct with `Float`/`F32` fields, the Vec2 shape Metall
-targets for SDL/game loops, which the reflection layer could not see at all before
-the `FloatType` case.
+A derive-style `fmt` over a struct with `Float`/`F32` fields reflects, so a struct's
+float fields can be walked by a reflection macro.
 
 ```metall
 use std.comp
@@ -770,4 +769,41 @@ fun main() void {
 42
 1
 hi
+```
+
+## Method Visibility
+
+A non-public method on a generic type cannot be called from another module, the
+same rule a non-public field already enforces.
+
+**setup generic module with a private method**
+
+```metall
+```
+
+```module.holder
+pub struct Holder<T> {
+    pub v T
+}
+pub fun Holder.make(x T) Holder<T> { Holder<T>(x) }
+fun Holder.secret(h Holder) T { h.v }
+```
+
+**a private method on a generic type is not callable cross-module**
+
+```metall
+use local.holder.Holder
+
+fun main() void {
+    let h = Holder.make<Int>(5)
+    DebugIntern.print_int(h.secret())
+}
+```
+
+```error
+test.met:5:29: method holder.Holder<Int>.secret is not public
+        let h = Holder.make<Int>(5)
+        DebugIntern.print_int(h.secret())
+                                ^^^^^^
+    }
 ```

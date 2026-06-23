@@ -1497,6 +1497,14 @@ func (g *Generics) inferFunCall(call ast.Call, span base.Span) (TypeID, TypeStat
 		_, isModule := g.env.Type(targetTypeID).Kind.(ModuleType)
 		if !isModule && !g.isTypeReference(fieldAccess.Target) {
 			methodReceiver = fieldAccess.Target
+			// A method reached through a value's field access on a generic type is
+			// resolved here, not through tryResolveMethod, so its cross-module
+			// visibility is enforced here too.
+			if !g.isVisible(binding.Decl, g.declIsPub(binding.Decl), call.Callee) {
+				g.diag(fieldAccess.Field.Span, "method %s.%s is not public",
+					g.env.TypeDisplay(targetTypeID), fieldAccess.Field.Name)
+				return InvalidTypeID, TypeFailed, true
+			}
 		}
 	}
 	// Named arguments are reordered into parameter order with defaults filled in,
