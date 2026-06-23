@@ -256,7 +256,16 @@ module.exports = grammar({
         optional($.string_suffix),
       ),
 
-    interpolation: ($) => seq($.interp_start, $._expression, $.interp_end),
+    // `{expr}` or `{expr:precision=2, width=5}`. A `:` after the expression
+    // begins a format specifier whose entries are parsed like call arguments
+    // and dispatched to `.fmt_ext`.
+    interpolation: ($) =>
+      seq(
+        $.interp_start,
+        $._expression,
+        optional(seq(":", field("format", $.argument_list))),
+        $.interp_end,
+      ),
 
     rune_literal: (_) => seq("'", /([^'\\]|\\.|\{[^}]*\})+/, "'"),
 
@@ -636,7 +645,7 @@ module.exports = grammar({
         seq(
           optional("pub"),
           "let",
-          field("name", $.identifier),
+          field("name", choice($.identifier, $.qualified_name)),
           optional(field("type", $._type)),
           "=",
           field("value", $._expression),
@@ -790,7 +799,7 @@ module.exports = grammar({
         PREC.POSTFIX,
         seq(
           field("object", $._expression),
-          "[",
+          token.immediate("["),
           field("index", $._expression),
           "]",
         ),
@@ -802,7 +811,7 @@ module.exports = grammar({
         PREC.POSTFIX,
         seq(
           field("object", $._expression),
-          "[",
+          token.immediate("["),
           optional(field("lo", $._expression)),
           choice("..", "..="),
           optional(field("hi", $._expression)),

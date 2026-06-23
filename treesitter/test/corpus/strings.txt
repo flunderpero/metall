@@ -131,6 +131,38 @@ let s = f"hi {name}, n={n + 1}".build(@a)
         (allocator_identifier)))))
 
 ================================================================================
+Format string interpolation with a format specifier
+================================================================================
+
+let s = f"{ratio:precision=2, width=5}".build(@a)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (call_expression
+      callee: (field_access
+        object: (format_string
+          (fstring_prefix)
+          (fstring_start)
+          (interpolation
+            (interp_start)
+            (identifier)
+            format: (argument_list
+              (named_argument
+                name: (identifier)
+                value: (integer_literal))
+              (named_argument
+                name: (identifier)
+                value: (integer_literal)))
+            (interp_end))
+          (fstring_end))
+        field: (identifier))
+      arguments: (argument_list
+        (allocator_identifier)))))
+
+================================================================================
 Sigil format string: prefix, quote-before-interpolation literal, suffix
 ================================================================================
 

@@ -228,3 +228,37 @@ pub let dt_unknown U8 = 0
     type: (simple_type
       (type_identifier))
     value: (integer_literal)))
+
+================================================================================
+Namespaced let binding
+================================================================================
+
+let Foo.max = 123
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (qualified_name
+      (type_identifier)
+      (identifier))
+    value: (integer_literal)))
+
+================================================================================
+Array literal as a block result after a statement
+================================================================================
+
+let x = { f()
+[1, 2] }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_binding
+    name: (identifier)
+    value: (block
+      (call_expression
+        callee: (identifier))
+      (array_literal
+        (integer_literal)
+        (integer_literal)))))
