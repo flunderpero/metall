@@ -26,6 +26,9 @@ pub struct Bool {}
 --- A placeholder type for the builtin `I8` type. ---
 pub struct I8 {}
 
+pub let I8.min_value = I8(-128)
+pub let I8.max_value = I8(127)
+
 pub fun I8.to_i16(self I8) I16 {}
 pub fun I8.to_i32(self I8) I32 {}
 pub fun I8.to_int(self I8) Int {}
@@ -36,6 +39,9 @@ pub fun I8.to_u64_wrapping(self I8) U64 {}
 
 --- A placeholder type for the builtin `I16` type. ---
 pub struct I16 {}
+
+pub let I16.min_value = I16(-32768)
+pub let I16.max_value = I16(32767)
 
 pub fun I16.to_i32(self I16) I32 {}
 pub fun I16.to_int(self I16) Int {}
@@ -48,6 +54,9 @@ pub fun I16.to_u64_wrapping(self I16) U64 {}
 --- A placeholder type for the builtin `I32` type. ---
 pub struct I32 {}
 
+pub let I32.min_value = I32(-2147483648)
+pub let I32.max_value = I32(2147483647)
+
 pub fun I32.to_int(self I32) Int {}
 pub fun I32.to_i8_wrapping(self I32) I8 {}
 pub fun I32.to_i16_wrapping(self I32) I16 {}
@@ -58,6 +67,9 @@ pub fun I32.to_u64_wrapping(self I32) U64 {}
 
 --- A placeholder type for the builtin `Int` type. ---
 pub struct Int {}
+
+pub let Int.min_value = -9223372036854775808
+pub let Int.max_value = 9223372036854775807
 
 pub fun Int.to_i8_wrapping(self Int) I8 {}
 pub fun Int.to_i16_wrapping(self Int) I16 {}
@@ -72,6 +84,9 @@ pub fun Int.to_f32(self Int) F32 {}
 --- A placeholder type for the builtin `U8` type. ---
 pub struct U8 {}
 
+pub let U8.min_value = U8(0)
+pub let U8.max_value = U8(255)
+
 pub fun U8.to_u16(self U8) U16 {}
 pub fun U8.to_u32(self U8) U32 {}
 pub fun U8.to_u64(self U8) U64 {}
@@ -82,6 +97,9 @@ pub fun U8.to_i8_wrapping(self U8) I8 {}
 
 --- A placeholder type for the builtin `U16` type. ---
 pub struct U16 {}
+
+pub let U16.min_value = U16(0)
+pub let U16.max_value = U16(65535)
 
 pub fun U16.to_u32(self U16) U32 {}
 pub fun U16.to_u64(self U16) U64 {}
@@ -94,6 +112,9 @@ pub fun U16.to_i8_wrapping(self U16) I8 {}
 --- A placeholder type for the builtin `U32` type. ---
 pub struct U32 {}
 
+pub let U32.min_value = U32(0)
+pub let U32.max_value = U32(4294967295)
+
 pub fun U32.to_u64(self U32) U64 {}
 pub fun U32.to_int(self U32) Int {}
 pub fun U32.to_u8_wrapping(self U32) U8 {}
@@ -104,6 +125,9 @@ pub fun U32.to_i8_wrapping(self U32) I8 {}
 
 --- A placeholder type for the builtin `U64` type. ---
 pub struct U64 {}
+
+pub let U64.min_value = U64(0)
+pub let U64.max_value = U64(18446744073709551615)
 
 pub fun U64.to_u8_wrapping(self U64) U8 {}
 pub fun U64.to_u16_wrapping(self U64) U16 {}

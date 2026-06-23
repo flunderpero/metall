@@ -1431,41 +1431,41 @@ pub fun I32.to_i16_checked(i I32) !I16 { if i < -0x8000 or i > 0x7FFF { return N
 pub fun I32.to_i8_checked(i I32) !I8 { if i < -0x80 or i > 0x7F { return NumConvErr.out_of_range } i.to_i8_wrapping() }
 pub fun I16.to_i8_checked(i I16) !I8 { if i < -0x80 or i > 0x7F { return NumConvErr.out_of_range } i.to_i8_wrapping() }
 
-pub fun I16.to_i8_clamped(i I16) I8 { if i < -0x80 { return -0x80 } if i > 0x7F { return 0x7F } i.to_i8_wrapping() }
-pub fun I32.to_i8_clamped(i I32) I8 { if i < -0x80 { return -0x80 } if i > 0x7F { return 0x7F } i.to_i8_wrapping() }
-pub fun Int.to_i8_clamped(i Int) I8 { if i < -0x80 { return (-0x80) } if i > 0x7F { return 0x7F } i.to_i8_wrapping() }
-pub fun I32.to_i16_clamped(i I32) I16 { if i < -0x8000 { return -0x8000 } if i > 0x7FFF { return 0x7FFF } i.to_i16_wrapping() }
-pub fun Int.to_i16_clamped(i Int) I16 { if i < -0x8000 { return -0x8000 } if i > 0x7FFF { return 0x7FFF } i.to_i16_wrapping() }
-pub fun Int.to_i32_clamped(i Int) I32 { if i < -0x8000_0000 { return I32(-0x8000_0000) } if i > 0x7FFF_FFFF { return I32(0x7FFF_FFFF) } i.to_i32_wrapping() }
-pub fun U16.to_u8_clamped(u U16) U8 { if u > U16(0xFF) { return 0xFF } u.to_u8_wrapping() }
-pub fun U32.to_u8_clamped(u U32) U8 { if u > U32(0xFF) { return 0xFF } u.to_u8_wrapping() }
-pub fun U64.to_u8_clamped(u U64) U8 { if u > U64(0xFF) { return 0xFF } u.to_u8_wrapping() }
-pub fun U32.to_u16_clamped(u U32) U16 { if u > U32(0xFFFF) { return 0xFFFF } u.to_u16_wrapping() }
-pub fun U64.to_u16_clamped(u U64) U16 { if u > U64(0xFFFF) { return 0xFFFF } u.to_u16_wrapping() }
-pub fun U64.to_u32_clamped(u U64) U32 { if u > U64(0xFFFF_FFFF) { return 0xFFFF_FFFF } u.to_u32_wrapping() }
-pub fun U8.to_i8_clamped(u U8) I8 { if u > U8(0x7F) { return 0x7F } u.to_i8_wrapping() }
-pub fun U16.to_i16_clamped(u U16) I16 { if u > U16(0x7FFF) { return 0x7FFF } u.to_i16_wrapping() }
-pub fun U16.to_i8_clamped(u U16) I8 { if u > U16(0x7F) { return 0x7F } u.to_i8_wrapping() }
-pub fun U32.to_i32_clamped(u U32) I32 { if u > U32(0x7FFF_FFFF) { return 0x7FFF_FFFF } u.to_i32_wrapping() }
-pub fun U32.to_i16_clamped(u U32) I16 { if u > U32(0x7FFF) { return 0x7FFF } u.to_i16_wrapping() }
-pub fun U32.to_i8_clamped(u U32) I8 { if u > U32(0x7F) { return 0x7F } u.to_i8_wrapping() }
-pub fun U64.to_int_clamped(u U64) Int { if u > U64(0x7FFF_FFFF_FFFF_FFFF) { return 0x7FFF_FFFF_FFFF_FFFF } u.to_int_wrapping() }
-pub fun U64.to_i32_clamped(u U64) I32 { if u > U64(0x7FFF_FFFF) { return 0x7FFF_FFFF } u.to_i32_wrapping() }
+pub fun I16.to_i8_clamped(i I16) I8 { if i < -0x80 { return I8.min_value } if i > 0x7F { return I8.max_value } i.to_i8_wrapping() }
+pub fun I32.to_i8_clamped(i I32) I8 { if i < -0x80 { return I8.min_value } if i > 0x7F { return I8.max_value } i.to_i8_wrapping() }
+pub fun Int.to_i8_clamped(i Int) I8 { if i < -0x80 { return I8.min_value } if i > 0x7F { return I8.max_value } i.to_i8_wrapping() }
+pub fun I32.to_i16_clamped(i I32) I16 { if i < -0x8000 { return I16.min_value } if i > 0x7FFF { return I16.max_value } i.to_i16_wrapping() }
+pub fun Int.to_i16_clamped(i Int) I16 { if i < -0x8000 { return I16.min_value } if i > 0x7FFF { return I16.max_value } i.to_i16_wrapping() }
+pub fun Int.to_i32_clamped(i Int) I32 { if i < -0x8000_0000 { return I32.min_value } if i > 0x7FFF_FFFF { return I32.max_value } i.to_i32_wrapping() }
+pub fun U16.to_u8_clamped(u U16) U8 { if u > U16(0xFF) { return U8.max_value } u.to_u8_wrapping() }
+pub fun U32.to_u8_clamped(u U32) U8 { if u > U32(0xFF) { return U8.max_value } u.to_u8_wrapping() }
+pub fun U64.to_u8_clamped(u U64) U8 { if u > U64(0xFF) { return U8.max_value } u.to_u8_wrapping() }
+pub fun U32.to_u16_clamped(u U32) U16 { if u > U32(0xFFFF) { return U16.max_value } u.to_u16_wrapping() }
+pub fun U64.to_u16_clamped(u U64) U16 { if u > U64(0xFFFF) { return U16.max_value } u.to_u16_wrapping() }
+pub fun U64.to_u32_clamped(u U64) U32 { if u > U64(0xFFFF_FFFF) { return U32.max_value } u.to_u32_wrapping() }
+pub fun U8.to_i8_clamped(u U8) I8 { if u > U8(0x7F) { return I8.max_value } u.to_i8_wrapping() }
+pub fun U16.to_i16_clamped(u U16) I16 { if u > U16(0x7FFF) { return I16.max_value } u.to_i16_wrapping() }
+pub fun U16.to_i8_clamped(u U16) I8 { if u > U16(0x7F) { return I8.max_value } u.to_i8_wrapping() }
+pub fun U32.to_i32_clamped(u U32) I32 { if u > U32(0x7FFF_FFFF) { return I32.max_value } u.to_i32_wrapping() }
+pub fun U32.to_i16_clamped(u U32) I16 { if u > U32(0x7FFF) { return I16.max_value } u.to_i16_wrapping() }
+pub fun U32.to_i8_clamped(u U32) I8 { if u > U32(0x7F) { return I8.max_value } u.to_i8_wrapping() }
+pub fun U64.to_int_clamped(u U64) Int { if u > U64(0x7FFF_FFFF_FFFF_FFFF) { return Int.max_value } u.to_int_wrapping() }
+pub fun U64.to_i32_clamped(u U64) I32 { if u > U64(0x7FFF_FFFF) { return I32.max_value } u.to_i32_wrapping() }
 pub fun I8.to_u8_clamped(i I8) U8 { if i < 0 { return 0 } i.to_u8_wrapping() }
 pub fun I8.to_u16_clamped(i I8) U16 { if i < 0 { return 0 } i.to_u16_wrapping() }
 pub fun I8.to_u32_clamped(i I8) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
 pub fun I8.to_u64_clamped(i I8) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
-pub fun I16.to_u8_clamped(i I16) U8 { if i < 0 { return 0 } if i > 0xFF { return 0xFF } i.to_u8_wrapping() }
+pub fun I16.to_u8_clamped(i I16) U8 { if i < 0 { return 0 } if i > 0xFF { return U8.max_value } i.to_u8_wrapping() }
 pub fun I16.to_u16_clamped(i I16) U16 { if i < 0 { return 0 } i.to_u16_wrapping() }
 pub fun I16.to_u32_clamped(i I16) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
 pub fun I16.to_u64_clamped(i I16) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
-pub fun I32.to_u8_clamped(i I32) U8 { if i < 0 { return 0 } if i > 0xFF { return 0xFF } i.to_u8_wrapping() }
-pub fun I32.to_u16_clamped(i I32) U16 { if i < 0 { return 0 } if i > 0xFFFF { return 0xFFFF } i.to_u16_wrapping() }
+pub fun I32.to_u8_clamped(i I32) U8 { if i < 0 { return 0 } if i > 0xFF { return U8.max_value } i.to_u8_wrapping() }
+pub fun I32.to_u16_clamped(i I32) U16 { if i < 0 { return 0 } if i > 0xFFFF { return U16.max_value } i.to_u16_wrapping() }
 pub fun I32.to_u32_clamped(i I32) U32 { if i < 0 { return 0 } i.to_u32_wrapping() }
 pub fun I32.to_u64_clamped(i I32) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
-pub fun Int.to_u8_clamped(i Int) U8 { if i < 0 { return 0 } if i > 0xFF { return 0xFF } i.to_u8_wrapping() }
-pub fun Int.to_u16_clamped(i Int) U16 { if i < 0 { return 0 } if i > 0xFFFF { return 0xFFFF } i.to_u16_wrapping() }
-pub fun Int.to_u32_clamped(i Int) U32 { if i < 0 { return 0 } if i > 0xFFFF_FFFF { return 0xFFFF_FFFF } i.to_u32_wrapping() }
+pub fun Int.to_u8_clamped(i Int) U8 { if i < 0 { return 0 } if i > 0xFF { return U8.max_value } i.to_u8_wrapping() }
+pub fun Int.to_u16_clamped(i Int) U16 { if i < 0 { return 0 } if i > 0xFFFF { return U16.max_value } i.to_u16_wrapping() }
+pub fun Int.to_u32_clamped(i Int) U32 { if i < 0 { return 0 } if i > 0xFFFF_FFFF { return U32.max_value } i.to_u32_wrapping() }
 pub fun Int.to_u64_clamped(i Int) U64 { if i < 0 { return 0 } i.to_u64_wrapping() }
 
 --- Number parsing errors. ---
@@ -1492,7 +1492,7 @@ pub fun Int.from_ascii_str(str []U8, base Int = 10) !Int {
             return NumParseErr.out_of_range
         }
         if result == 0x8000_0000_0000_0000 {
-            -0x8000_0000_0000_0000
+            Int.min_value
         } else {
             0 - result.to_int_wrapping()
         }
@@ -1855,11 +1855,11 @@ pub fun F32.abs(f F32) F32 { unsafe __llvm_fabs_f32(f) }
 
 --- Like `abs`, but `abs_clamped(min_value) == max_value.` ---
 pub fun Int.abs_clamped(i Int) Int {
-    if i == -0x8000_0000_0000_0000 { 0x7FFF_FFFF_FFFF_FFFF } else { i.abs() }
+    if i == -0x8000_0000_0000_0000 { Int.max_value } else { i.abs() }
 }
-pub fun I8.abs_clamped(i I8) I8 { if i == -0x80 { 0x7F } else { i.abs() } }
-pub fun I16.abs_clamped(i I16) I16 { if i == -0x8000 { 0x7FFF } else { i.abs() } }
-pub fun I32.abs_clamped(i I32) I32 { if i == -0x8000_0000 { 0x7FFF_FFFF } else { i.abs() } }
+pub fun I8.abs_clamped(i I8) I8 { if i == -0x80 { I8.max_value } else { i.abs() } }
+pub fun I16.abs_clamped(i I16) I16 { if i == -0x8000 { I16.max_value } else { i.abs() } }
+pub fun I32.abs_clamped(i I32) I32 { if i == -0x8000_0000 { I32.max_value } else { i.abs() } }
 
 --- The exact magnitude as a U64, representable for every value including the minimum. ---
 pub fun Int.abs_unsigned(i Int) U64 {
