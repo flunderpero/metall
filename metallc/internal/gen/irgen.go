@@ -3891,11 +3891,11 @@ func (g *IRGen) genModuleConsts( //nolint:funlen
 		globalRef := fmt.Sprintf("@%s", irName(c.Name))
 		f.Gen(varNode.Expr)
 		f.storeValue(f.lookupCode(varNode.Expr), globalRef, c.TypeID)
-		b, ok := c.Env.Lookup(c.NodeID, varNode.Name.Name, -1)
+		b, ok := c.Env.Lookup(c.NodeID, c.BindName, -1)
 		if !ok {
-			panic(base.Errorf("constant binding not found: %s", varNode.Name.Name))
+			panic(base.Errorf("constant binding not found: %s", c.BindName))
 		}
-		g.symbols[b.ID] = Symbol{Name: varNode.Name.Name, Reg: globalRef, Type: irType(c.Env, c.TypeID)}
+		g.symbols[b.ID] = Symbol{Name: c.BindName, Reg: globalRef, Type: irType(c.Env, c.TypeID)}
 	}
 	// Defaults are filled after constants so a default may read a module constant.
 	for _, d := range defaults {

@@ -87,6 +87,28 @@ Var(name="x")
   expr=String(value="hello")
 ```
 
+**Namespaced let binding**
+
+```metall
+let Foo.max = 123
+```
+
+```ast
+Var(name="Foo.max")
+  expr=Int(value=123)
+```
+
+**Namespaced let binding with keyword member name**
+
+```metall
+let Foo.match = 123
+```
+
+```ast
+Var(name="Foo.match")
+  expr=Int(value=123)
+```
+
 **Let binding with invalid type annotation**
 
 ```metall

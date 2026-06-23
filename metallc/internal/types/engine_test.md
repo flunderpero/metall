@@ -6247,6 +6247,139 @@ struct01 = Foo { one Int }
 fun02    = sync fun(struct01) Int
 ```
 
+## Namespaced Constants
+
+**namespaced constant resolves from const initializer and function body**
+
+```metall module
+struct Foo { x Int }
+let Foo.max = 123
+let near_max = Foo.max - 1
+fun read_max() Int { Foo.max }
+```
+
+```error
+```
+
+**namespaced constant conflicts with a field**
+
+```metall module
+struct Foo { max Int }
+let Foo.max = 5
+```
+
+```error
+test.met:2:5: constant name conflicts with field: Foo.max
+    struct Foo { max Int }
+    let Foo.max = 5
+        ^^^^^^^
+```
+
+**namespaced constant conflicts with a method**
+
+```metall module
+struct Foo { x Int }
+fun Foo.max() Int { 1 }
+let Foo.max = 5
+```
+
+```error
+test.met:2:5: symbol already defined: test.Foo.max
+    struct Foo { x Int }
+    fun Foo.max() Int { 1 }
+        ^^^^^^^
+    let Foo.max = 5
+```
+
+**namespaced constant conflicts with another namespaced constant**
+
+```metall module
+struct Foo { x Int }
+let Foo.max = 5
+let Foo.max = 6
+```
+
+```error
+test.met:3:5: symbol already defined: test.Foo.max
+    let Foo.max = 5
+    let Foo.max = 6
+        ^^^^^^^
+```
+
+**namespaced constant on a local struct**
+
+```metall module
+fun f() Int {
+    struct Foo { x Int }
+    let Foo.max = 5
+    Foo.max
+}
+```
+
+```error
+```
+
+**namespaced constant must share the type's scope**
+
+```metall module
+struct Foo { x Int }
+fun f() Int {
+    let Foo.max = 5
+    0
+}
+```
+
+```error
+test.met:3:9: a namespaced constant must be declared in the same scope as `Foo`
+    fun f() Int {
+        let Foo.max = 5
+            ^^^^^^^
+        0
+```
+
+**namespaced constant on a union**
+
+```metall module
+union Num = Int | Bool
+let Num.zero = 0
+let Num.one = Num.zero + 1
+fun read() Int { Num.zero }
+```
+
+```error
+```
+
+**namespaced constant on a local union**
+
+```metall module
+fun f() Int {
+    union Num = Int | Bool
+    let Num.zero = 5
+    Num.zero
+}
+```
+
+```error
+```
+
+**namespaced constant on a union must share the union's scope**
+
+```metall module
+union Num = Int | Bool
+fun f() Int {
+    let Num.zero = 0
+    0
+}
+```
+
+```error
+test.met:3:9: a namespaced constant must be declared in the same scope as `Num`
+    fun f() Int {
+        let Num.zero = 0
+            ^^^^^^^^
+        0
+```
+
 ## Generics - Structs
 
 **Generic struct**

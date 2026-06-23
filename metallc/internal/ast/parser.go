@@ -1179,7 +1179,7 @@ func (p *Parser) ParseAllocatorVar(span base.Span) (NodeID, bool) {
 	), true
 }
 
-func (p *Parser) ParseVar() (NodeID, bool) {
+func (p *Parser) ParseVar() (NodeID, bool) { //nolint:funlen
 	pub := p.lookAheadConsume(token.Pub)
 	t, ok := p.mustPeek()
 	if !ok {
@@ -1206,11 +1206,27 @@ func (p *Parser) ParseVar() (NodeID, bool) {
 		}
 		return p.ParseAllocatorVar(span)
 	}
-	nameToken, ok := p.expect(token.Ident)
-	if !ok {
-		return ParseFailed, false
+	var name Name
+	if next.Kind == token.TypeIdent {
+		ns, ok := p.expect(token.TypeIdent)
+		if !ok {
+			return ParseFailed, false
+		}
+		if _, ok := p.expect(token.Dot); !ok {
+			return ParseFailed, false
+		}
+		member, ok := p.expectIdentOrKeyword()
+		if !ok {
+			return ParseFailed, false
+		}
+		name = Name{ns.Value + "." + member.Value, ns.Span.Combine(member.Span)}
+	} else {
+		nameToken, ok := p.expect(token.Ident)
+		if !ok {
+			return ParseFailed, false
+		}
+		name = Name{nameToken.Value, nameToken.Span}
 	}
-	name := Name{nameToken.Value, nameToken.Span}
 	var type_ *NodeID
 	if next, ok := p.mustPeek(); ok && next.Kind != token.Eq {
 		t, ok := p.ParseType()

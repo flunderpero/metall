@@ -27,10 +27,11 @@ type TypeWork struct {
 }
 
 type ConstWork struct {
-	NodeID ast.NodeID
-	TypeID TypeID
-	Name   string
-	Env    *TypeEnv
+	NodeID   ast.NodeID
+	TypeID   TypeID
+	Name     string
+	BindName string
+	Env      *TypeEnv
 }
 
 type MacroExpander func(macroSource string, funName string, args []macros.MacroArg) (expandedSource string, err error)
@@ -442,7 +443,10 @@ func (e *Engine) checkModule( //nolint:funlen
 		}
 		typeID := e.env.TypeOfNode(varNode.Expr).ID
 		name := e.declMangledName(declNodeID, varNode.Name.Name)
-		e.consts = append(e.consts, ConstWork{NodeID: declNodeID, TypeID: typeID, Name: name, Env: e.env})
+		bindName, _ := e.letBindName(declNodeID, varNode.Name)
+		e.consts = append(e.consts, ConstWork{
+			NodeID: declNodeID, TypeID: typeID, Name: name, BindName: bindName, Env: e.env,
+		})
 	}
 	MarkBuiltins(e.ast, module)
 	e.forwardDeclareFuns(module.Decls)
@@ -1971,7 +1975,7 @@ func (e *Engine) isLiteral(nodeID ast.NodeID) bool {
 	return false
 }
 
-func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (TypeID, TypeStatus) {
+func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (TypeID, TypeStatus) { //nolint:funlen
 	var declTypeID TypeID
 	if varNode.Type != nil {
 		var status TypeStatus
@@ -2027,10 +2031,45 @@ func (e *Engine) checkVar(nodeID ast.NodeID, varNode ast.Var, span base.Span) (T
 		}
 		bindTypeID = declTypeID
 	}
-	if !e.bind(nodeID, varNode.Name.Name, varNode.Mut, bindTypeID, varNode.Name.Span, e.blockExprsIndex) {
+	if !e.checkMemberFieldCollision(nodeID, varNode.Name, "constant") {
+		return InvalidTypeID, TypeFailed
+	}
+	bindName, ok := e.letBindName(nodeID, varNode.Name)
+	if !ok {
+		return InvalidTypeID, TypeFailed
+	}
+	if !e.bind(nodeID, bindName, varNode.Mut, bindTypeID, varNode.Name.Span, e.blockExprsIndex) {
 		return InvalidTypeID, TypeFailed
 	}
 	return e.voidTyp, TypeOK
+}
+
+// letBindName resolves the scope key a `let` binds under. A namespaced
+// `let Foo.max` binds under its receiver type's FQN, the same key checkIdent
+// resolves a `Foo.max` reference to; a plain `let x` binds under its raw name.
+// A namespaced constant must be declared in the same scope as its type (so its
+// emitted name and visibility track the type) and cannot target an imported
+// symbol.
+func (e *Engine) letBindName(declNodeID ast.NodeID, name ast.Name) (string, bool) {
+	structName, member, ok := strings.Cut(name.Name, ".")
+	if !ok {
+		return name.Name, true
+	}
+	if e.isSymbolImport(declNodeID, structName) {
+		e.diag(name.Span, "cannot declare a namespaced constant on imported symbol `%s`", structName)
+		return "", false
+	}
+	resolved, recv, ok := e.resolveMethodBindName(declNodeID, structName, member, name.Span)
+	if !ok {
+		return "", false
+	}
+	// The constant's emitted name and visibility track the receiver type, so it
+	// must live in the same scope the type was declared in.
+	if recv.Decl == 0 || e.scopeGraph.NodeScope(declNodeID).ID != e.scopeGraph.NodeScope(recv.Decl).ID {
+		e.diag(name.Span, "a namespaced constant must be declared in the same scope as `%s`", structName)
+		return "", false
+	}
+	return resolved, true
 }
 
 func (e *Engine) checkAllocatorVar(nodeID ast.NodeID, alloc ast.AllocatorVar, span base.Span) (TypeID, TypeStatus) {

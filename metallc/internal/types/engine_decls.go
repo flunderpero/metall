@@ -403,7 +403,7 @@ func (e *Engine) resolveEnumVariants(
 
 //nolint:funlen
 func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID, TypeStatus) {
-	if !e.checkMethodFieldCollision(node.ID, fun) {
+	if !e.checkMemberFieldCollision(node.ID, fun.Name, "method") {
 		return InvalidTypeID, TypeFailed
 	}
 	if _, status, _ := e.resolveGenerics(node.ID, nil); status.Failed() {
@@ -488,8 +488,11 @@ func (e *Engine) checkFunCreateAndBind(node *ast.Node, fun ast.FunDecl) (TypeID,
 	return funTypeID, TypeOK
 }
 
-func (e *Engine) checkMethodFieldCollision(nodeID ast.NodeID, fun ast.FunDecl) bool {
-	typeName, methodName, hasDot := strings.Cut(fun.Name.Name, ".")
+// checkMemberFieldCollision rejects a namespaced declaration (method or
+// constant) whose member name clashes with a field of the receiver type.
+// memberKind names the declaration in the diagnostic.
+func (e *Engine) checkMemberFieldCollision(nodeID ast.NodeID, name ast.Name, memberKind string) bool {
+	typeName, member, hasDot := strings.Cut(name.Name, ".")
 	if !hasDot {
 		return true
 	}
@@ -501,22 +504,22 @@ func (e *Engine) checkMethodFieldCollision(nodeID ast.NodeID, fun ast.FunDecl) b
 	switch decl := e.ast.Node(binding.Decl).Kind.(type) {
 	case ast.Struct:
 		for _, fieldNodeID := range decl.Fields {
-			if base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind).Name.Name == methodName {
+			if base.Cast[ast.StructField](e.ast.Node(fieldNodeID).Kind).Name.Name == member {
 				conflict = true
 			}
 		}
 	case ast.Enum:
 		// Variants read their generated debug_name and associated-data fields
-		// through the same dotted path as methods, so a method may not shadow one.
-		conflict = methodName == "debug_name"
+		// through the same dotted path as methods, so a member may not shadow one.
+		conflict = member == "debug_name"
 		for _, paramNodeID := range decl.Params {
-			if base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind).Name.Name == methodName {
+			if base.Cast[ast.FunParam](e.ast.Node(paramNodeID).Kind).Name.Name == member {
 				conflict = true
 			}
 		}
 	}
 	if conflict {
-		e.diag(fun.Name.Span, "method name conflicts with field: %s.%s", typeName, methodName)
+		e.diag(name.Span, "%s name conflicts with field: %s.%s", memberKind, typeName, member)
 		return false
 	}
 	return true

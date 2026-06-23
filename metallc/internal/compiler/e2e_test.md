@@ -6095,6 +6095,44 @@ fun main() void {
 42
 ```
 
+**namespaced constant**
+
+```metall
+struct Foo { x Int }
+
+let Foo.max = 123
+let Foo.min = 7
+let near_max = Foo.max - 1
+
+fun Foo.make() Foo { Foo(Foo.max + Foo.min) }
+
+fun span() Int { Foo.max - Foo.min }
+
+fun local_k() Int {
+    struct Bar { y Int }
+    let Bar.k = 42
+    Bar.k
+}
+
+fun main() void {
+    DebugIntern.print_int(Foo.max)
+    DebugIntern.print_int(Foo.min)
+    DebugIntern.print_int(near_max)
+    DebugIntern.print_int(Foo.make().x)
+    DebugIntern.print_int(span())
+    DebugIntern.print_int(local_k())
+}
+```
+
+```output
+123
+7
+122
+130
+116
+42
+```
+
 ## Unsafe
 
 **unsafe uninit slice of ref type**
