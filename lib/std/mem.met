@@ -118,3 +118,6 @@ pub fun PoolIterHandle.get(ph PoolIterHandle) noescape &mut T {
     &mut ph.pool.slot_value[ph.index]
 }
 
+pub fun PoolIterHandle.to_handle(ph PoolIterHandle) PoolHandle<T> {
+    PoolHandle(ph.pool, ph.index, ph.pool.slot_gen[ph.index])
+}
