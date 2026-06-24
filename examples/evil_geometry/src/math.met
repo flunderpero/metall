@@ -1,3 +1,5 @@
+use tau = std.math.tau
+
 pub struct Point {
     pub x F32
     pub y F32
@@ -9,6 +11,10 @@ pub fun Point.fmt(p Point, sw &mut StrWriter) void {
 
 pub fun Point.scale(p Point, scale F32) Point {
     Point(p.x * scale, p.y * scale)
+}
+
+pub fun Point.round(p Point) IPoint {
+    IPoint(p.x.round().to_int_clamped(), p.y.round().to_int_clamped())
 }
 
 pub struct IPoint {
@@ -84,4 +90,31 @@ pub fun Vec2.normalize(f Vec2) Vec2 {
     }
     let len = lsq.sqrt()
     Vec2(f.x / len, f.y / len)
+}
+
+pub fun linear(v &mut F32, from F32, to F32, t F32) void {
+    v.* = from + (to - from) * t
+}
+pub fun ease_in(v &mut F32, from F32, to F32, t F32) void {
+    v.* = from + (to - from) * t * t
+}
+pub fun ease_out(v &mut F32, from F32, to F32, t F32) void {
+    let u = 1.0 - t
+    v.* = from + (to - from) * (1.0 - u * u)
+}
+
+--- Make sure the angle stays within pi and -pi. ---
+pub fun normalize_angle(a F32) F32 {
+    let t = tau.to_f32()
+    a - t * (a / t).round()
+}
+
+--- Move `v` toward `target` by at most `step`, snapping when within reach. ---
+pub fun move_toward(v &mut F32, target F32, step F32) void {
+    let d = target - v.*
+    when {
+        case d > step: v.* += step
+        case d < -step: v.* -= step
+        else: v.* = target
+    }
 }

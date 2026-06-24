@@ -82,11 +82,36 @@ pub fun Level1.new(@a Arena) &mut Level1 {
     let e1 = math.IPoint(0, 5)
     let e2 = math.IPoint(0, 6)
     let e3 = math.IPoint(0, 7)
+    let f = F32(0.50)
     let waves = [
-        Wave(sim.Sun(), speed=1.0, health=100, num=20, spawn_at=e1, spawn_rate=20),
-        Wave(sim.Star(), speed=0.8, health=100, num=20, spawn_at=e1, spawn_rate=30),
-        Wave(sim.Triangle(), speed=0.6, health=100, num=20, spawn_at=e1, spawn_rate=40),
-        Wave(sim.Rectangle(), speed=0.4, health=100, num=20, spawn_at=e1, spawn_rate=50),
+        Wave(
+            sim.EnemyKind.triangle,
+            speed=0.6 * f,
+            health=60,
+            num=20,
+            spawn_at=e1,
+            spawn_rate=(40.to_f32() * 1.0/f).to_int_clamped()),
+        Wave(
+            sim.EnemyKind.sun,
+            speed=1.0 * f,
+            health=50,
+            num=20,
+            spawn_at=e1,
+            spawn_rate=(20.to_f32() * 1.0/f).to_int_clamped()),
+        Wave(
+            sim.EnemyKind.star,
+            speed=0.8 * f,
+            health=40,
+            num=20,
+            spawn_at=e1,
+            spawn_rate=(30.to_f32() * 1.0/f).to_int_clamped()),
+        Wave(
+            sim.EnemyKind.rectangle,
+            speed=0.4 * f,
+            health=100,
+            num=20,
+            spawn_at=e1,
+            spawn_rate=(50.to_f32() * 1.0/f).to_int_clamped()),
     ]
     let waves_slice = unsafe @a.slice_uninit<Wave>(waves.len)
     _ = waves_slice.set(waves[..])
@@ -126,11 +151,11 @@ fun fill_grid(s &mut sim.Sim, grid [][]U8) !void {
             let pos = math.IPoint(x/2, y)
             when {
             case col == '.' or col == ' ': continue
-            case col == 'w': _ = try s.add_tower(sim.Wall(), pos)
-            case col == 'c': _ = try s.add_tower(sim.Cannon(), pos)
-            case col == 'f': _ = try s.add_tower(sim.FastGunner(), pos)
-            case col == 'l': _ = try s.add_tower(sim.Laser(), pos)
-            case col == 'm': _ = try s.add_tower(sim.Missile(), pos)
+            case col == 'w': _ = try s.add_tower(sim.TowerKind.wall, pos)
+            case col == 'c': _ = try s.add_tower(sim.TowerKind.cannon, pos)
+            case col == 'f': _ = try s.add_tower(sim.TowerKind.fast_gunner, pos)
+            case col == 'l': _ = try s.add_tower(sim.TowerKind.laser, pos)
+            case col == 'm': _ = try s.add_tower(sim.TowerKind.missile, pos)
             case col == 'E': try s.add_exit(pos)
             else: 
                 let @local = Arena()

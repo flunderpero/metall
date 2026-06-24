@@ -3,14 +3,13 @@ use local.grid
 use local.sim
 use local.math
 use local.assets
-use local.sprite
+use local.sprite.Sprites
+use local.sprite.Shape
+use local.sprite.Sprite
+use colors = local.sprite
 use std.fs
 use std.cmp
 use std.io
-
-let red = sdl.FColor(0.8, 0.0, 0.0, 1.0)
-let no_text = sdl.FPoint(0.0, 0.0)
-let stroke F32 = 6.0
 
 -- Individually toggle the CRT screen effects.
 let enable_bloom = true
@@ -20,20 +19,23 @@ let enable_warp = true
 let enable_border = true
 
 -- Gap around each tile.
-let tile_gap F32 = 2.0
+let tile_gap F32 = 1.0
 
 -- Border around the grid.
 let border_horiz F32 = 0.04
 let border_vert F32 = 0.06
 
+-- Fixed turret angle until turrets aim at targets. 30 degrees in radians.
+let turret_angle F32 = 0.0
+
 -- Scene background and window-clear colors.
-let scene_bg = sdl.FColor(0.01, 0.0, 0.05, 1.0)
+let scene_bg = sdl.FColor(0.08, 0.01, 0.15, 0.5)
 let black = sdl.FColor(0.0, 0.0, 0.0, 1.0)
 
 -- Bloom: base brightness, an added spark, and the offset (px) of each copy.
-let bloom_base = 20
-let bloom_spark = 50
-let bloom_offset F32 = 2.0
+let bloom_base = 10
+let bloom_spark = 20
+let bloom_offset F32 = 1.0
 
 -- Rolling sweep: timings in ms, then band height (fraction of screen) and brightness.
 let sweep_duration_ms = 2000
@@ -62,6 +64,8 @@ pub struct Painter {
     band sdl.Texture
     last_ticks Int
     avg_dt F32
+
+    sprites Sprites
 }
 
 pub fun Painter.new(
@@ -102,7 +106,8 @@ pub fun Painter.new(
             assets_.crt_overlay,
             assets_.crt_band,
             sdl.ticks(),
-            16.6)
+            16.6,
+            Sprites.new(@a))
     )
 }
 
@@ -115,11 +120,23 @@ pub fun Painter.paint(p &mut Painter) void {
     r.set_target(crt)
     r.set_draw_color_float(scene_bg)
     r.clear()
-    for x in p.sim.towers.iter() {
-        p.draw_tower(x.get())
-    }
     for x in p.sim.enemies.iter() {
         p.draw_enemy(x.get())
+    }
+    -- Draw walls.
+    for x in p.sim.towers.iter() {
+        if x.get().kind == sim.TowerKind.wall {
+            p.draw_tower(x.get())
+        }
+    }
+    for x in p.sim.shots.iter() {
+        p.draw_shot(x.get())
+    }
+    -- Draw towers.
+    for x in p.sim.towers.iter() {
+        if x.get().kind != sim.TowerKind.wall {
+            p.draw_tower(x.get())
+        }
     }
 
     -- Composite into `screen`, all in a texture so nothing accumulates frame to frame.
@@ -227,29 +244,50 @@ fun Painter.draw_warp(p &Painter, band_v F32) void {
 }
 
 pub fun Painter.draw_enemy(p &Painter, t &sim.Enemy) void {
-    match t.kind {
-    case sim.Triangle: p.draw_sprite(t.pos, sprite.triangle)
-    case sim.Rectangle: p.draw_sprite(t.pos, sprite.rectangle)
-    case sim.Star: p.draw_sprite(t.pos, sprite.star)
-    case sim.Sun: p.draw_sprite(t.pos, sprite.sun)
+    let sprite = match t.kind {
+        case sim.EnemyKind.triangle: p.sprites.triangle
+        case sim.EnemyKind.rectangle: p.sprites.rectangle
+        case sim.EnemyKind.star: p.sprites.star
+        case sim.EnemyKind.sun: p.sprites.sun
+    }
+    p.draw_sprite(t.pos, sprite, t.angle)
+    mut shape_buf = unsafe [16 uninit Shape]
+    if t.health < t.total_health {
+        let health_bar = p.sprites.health_bar.scale(
+            t.health.to_f32() / t.total_health.to_f32(), 1.0, shape_buf[..])
+        p.draw_sprite(t.pos, health_bar)
+    }
+}
+
+pub fun Painter.draw_shot(p &Painter, s &sim.Shot) void {
+    match s.kind {
+        case sim.TowerKind.wall:
+        case sim.TowerKind.cannon:
+            p.draw_sprite(s.pos, p.sprites.cannon_shot, s.angle)
+        case sim.TowerKind.fast_gunner:
+            p.draw_sprite(s.pos, p.sprites.fast_gunner_shot, s.angle)
+        case sim.TowerKind.laser:
+            p.draw_sprite(s.pos, p.sprites.laser_shot, s.angle)
+        case sim.TowerKind.missile:
+            p.draw_sprite(s.pos, p.sprites.missile_shot, s.angle)
     }
 }
 
 pub fun Painter.draw_tower(p &Painter, t &sim.Tower) void {
     match t.kind {
-    case sim.Wall: p.draw_sprite(t.pos, sprite.wall)
-    case sim.Cannon: 
-        p.draw_sprite(t.pos, sprite.cannon_base)
-        p.draw_sprite(t.pos, sprite.cannon_turret)
-    case sim.FastGunner: 
-        p.draw_sprite(t.pos, sprite.fast_gunner_base)
-        p.draw_sprite(t.pos, sprite.fast_gunner_turret)
-    case sim.Laser: 
-        p.draw_sprite(t.pos, sprite.laser_base)
-        p.draw_sprite(t.pos, sprite.laser_turret)
-    case sim.Missile: 
-        p.draw_sprite(t.pos, sprite.missile_base)
-        p.draw_sprite(t.pos, sprite.missile_turret)
+    case sim.TowerKind.wall: p.draw_sprite(t.pos, p.sprites.wall)
+    case sim.TowerKind.cannon:
+        p.draw_sprite(t.pos, p.sprites.cannon_base)
+        p.draw_sprite(t.pos, p.sprites.cannon_turret, t.angle)
+    case sim.TowerKind.fast_gunner:
+        p.draw_sprite(t.pos, p.sprites.fast_gunner_base)
+        p.draw_sprite(t.pos, p.sprites.fast_gunner_turret, t.angle)
+    case sim.TowerKind.laser:
+        p.draw_sprite(t.pos, p.sprites.laser_base)
+        p.draw_sprite(t.pos, p.sprites.laser_turret, t.angle)
+    case sim.TowerKind.missile:
+        p.draw_sprite(t.pos, p.sprites.missile_base)
+        p.draw_sprite(t.pos, p.sprites.missile_turret, t.angle)
     }
 }
 
@@ -269,12 +307,13 @@ fun warp_vertex(gi Int, gj Int, n Int, vp sdl.FRect, band_v F32) sdl.Vertex {
     sdl.Vertex(sdl.FPoint(px, py), sdl.FColor(1.0, 1.0, 1.0, 1.0), sdl.FPoint(uu, v))
 }
 
-pub fun Painter.draw_sprite(p &Painter, grid_pos math.Point, sprite_ sprite.Sprite) void {
-    let ps = p.grid_scale / (sprite_.height().to_f32() + tile_gap)
+pub fun Painter.draw_sprite(p &Painter, grid_pos math.Point, sprite Sprite, angle F32 = 0.0) void {
+    let inset = p.grid_scale * 0.06
+    let size = p.grid_scale - inset * tile_gap
     let pos = math.Point(
-        (grid_pos.x - grid.hidden_tiles_per_side.to_f32()) * p.grid_scale + ps,
-        (grid_pos.y - grid.hidden_tiles_per_side.to_f32()) * p.grid_scale + ps)
-    sprite_.draw(p.renderer, pos, ps)
+        (grid_pos.x - grid.hidden_tiles_per_side.to_f32()) * p.grid_scale + inset,
+        (grid_pos.y - grid.hidden_tiles_per_side.to_f32()) * p.grid_scale + inset)
+    sprite.draw(p.renderer, pos, size, angle)
 }
 
 pub fun Painter.draw_debug(p &Painter) void {

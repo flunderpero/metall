@@ -19,12 +19,15 @@ pub nocopy struct Grid {
     pub tiles []mut TileKind
     --- The next waypoint on the shortest path to an exit. ---
     pub flow_field []mut Int
+    --- The distance to the nearest exit for each tile. ---
+    pub dist []mut F32
 }
 
 pub fun Grid.new(size math.IPoint, @a Arena) &mut Grid {
     let tiles = @a.slice(size.x * size.y, TileKind.free)
     let flow_field = @a.slice(size.x * size.y, 0)
-    @a.new(Grid(size, tiles, flow_field))
+    let dist = @a.slice(size.x * size.y, F32(0.0))
+    @a.new(Grid(size, tiles, flow_field, dist))
 }
 
 pub fun Grid.pos(g &Grid, index Int) math.IPoint {
@@ -33,6 +36,10 @@ pub fun Grid.pos(g &Grid, index Int) math.IPoint {
 
 pub fun Grid.index(g &Grid, pos math.IPoint) Int {
     pos.y * g.size.x + pos.x
+}
+
+pub fun Grid.is_outside(g &Grid, pos math.IPoint) Bool {
+    pos.x < 0 or pos.y < 0 or pos.x >= g.size.x or pos.y >= g.size.y
 }
 
 pub fun Grid.has_towers_in_rect(g &Grid, tl math.IPoint, br math.IPoint) Bool {
@@ -112,8 +119,9 @@ pub fun Grid.update_pathing(g &mut Grid) void {
     let @local = Arena()
     let tile_count = g.size.x * g.size.y
     let inf F32 = 1000000.0
-    -- Shortest known straight-line distance from each tile to the nearest exit.
-    let dist_to_exit = @local.slice(tile_count, inf)
+    for i in 0..g.dist.len {
+        g.dist[i] = F32(100000000000.0)
+    }
     -- Tiles still to expand, cheapest distance first.
     let frontier = Heap.new<PqNode>(tile_count, @local)
 
@@ -122,7 +130,7 @@ pub fun Grid.update_pathing(g &mut Grid) void {
     for kind, index in g.tiles {
         g.flow_field[index] = index
         if kind == TileKind.exit {
-            dist_to_exit[index] = 0.0
+            g.dist[index] = 0.0
             frontier.push(PqNode(0.0, index))
         }
     }
@@ -133,7 +141,7 @@ pub fun Grid.update_pathing(g &mut Grid) void {
         -- A tile gets re-queued whenever we find a cheaper route to it, so the
         -- same tile can sit in the frontier several times. Only the cheapest copy
         -- counts; skip the stale leftovers.
-        if entry.cost > dist_to_exit[current] { continue }
+        if entry.cost > g.dist[current] { continue }
         let current_pos = g.pos(current)
         -- The waypoint `current` heads for next on its way to the exit.
         let current_waypoint = g.flow_field[current]
@@ -146,11 +154,11 @@ pub fun Grid.update_pathing(g &mut Grid) void {
             -- line, run the segment from that waypoint and drop `current` from the
             -- path; otherwise the segment is just the step from `current`.
             mut anchor = current
-            mut anchor_dist = dist_to_exit[current]
+            mut anchor_dist = g.dist[current]
             mut anchor_pos = current_pos
             if not g.has_towers_on_segment(current_waypoint_pos, neighbor_pos) {
                 anchor = current_waypoint
-                anchor_dist = dist_to_exit[current_waypoint]
+                anchor_dist = g.dist[current_waypoint]
                 anchor_pos = current_waypoint_pos
             }
             -- Measure the hop by the segment's true straight-line length, not a
@@ -162,11 +170,11 @@ pub fun Grid.update_pathing(g &mut Grid) void {
             -- routes through this anchor: a candidate weighed against the best
             -- distance found for neighbor so far.
             let cand_dist = anchor_dist + segment_len
-            if cand_dist < dist_to_exit[neighbor] {
+            if cand_dist < g.dist[neighbor] {
                 -- The candidate wins: record it as neighbor's distance, aim
                 -- neighbor straight at this anchor, and re-queue it so the
                 -- shorter route spreads on to neighbor's own neighbors.
-                dist_to_exit[neighbor] = cand_dist
+                g.dist[neighbor] = cand_dist
                 g.flow_field[neighbor] = anchor
                 frontier.push(PqNode(cand_dist, neighbor))
             }

@@ -1,305 +1,304 @@
 use local.sdl
 use local.math
+use stdmath = std.math
 
+-- Brightness levels for FColer.shade(), as a fraction of the base luminance.
+pub let light F32 = 1.0
+pub let dark F32 = 0.5
+pub let darker F32 = 0.22
+pub let darkest F32 = 0.1
+
+--- Outline thickness, in box units. ---
+let stroke_width F32 = 0.075
+
+let zero_pt [2]F32 = [0.0, 0.0]
+
+pub struct Sprites {
+    pub health_bar Sprite
+
+    pub triangle Sprite
+    pub rectangle Sprite
+    pub star Sprite
+    pub sun Sprite
+
+    pub cannon_shot Sprite
+    pub fast_gunner_shot Sprite
+    pub laser_shot Sprite
+    pub missile_shot Sprite
+
+    pub wall Sprite
+    pub cannon_base Sprite
+    pub cannon_turret Sprite
+    pub fast_gunner_base Sprite
+    pub fast_gunner_turret Sprite
+    pub laser_base Sprite
+    pub laser_turret Sprite
+    pub missile_base Sprite
+    pub missile_turret Sprite
+}
+
+pub fun Sprites.new(@a Arena) Sprites {
+    let base = Sprite.new([rect(0.85, 0.85, gray.shade(darkest), gray.shade(darker))][..], @a)
+    Sprites(
+        health_bar = Sprite.new([
+            rect(1.0, 0.10, red.shade(darker), red.shade(darkest)).offset(0.0, -1.0)
+        ][..], @a),
+
+        triangle = Sprite.new([circle(3, orange.shade(light), orange.shade(dark))][..], @a),
+        rectangle = Sprite.new([rect(0.85, 0.85, red.shade(light), red.shade(dark))][..], @a),
+        star = Sprite.new([star(5, 0.4, blue.shade(light), blue.shade(dark))][..], @a),
+        sun = Sprite.new([star(8, 0.5, orange.shade(light), orange.shade(dark))][..], @a),
+        wall = Sprite.new([rect(0.85, 0.85, slate.shade(darker), slate.shade(light))][..], @a),
+
+        cannon_shot = Sprite.new([star(8, 0.5, yellow.shade(light), yellow.shade(dark)).scale(0.3)][..], @a),
+        fast_gunner_shot = Sprite.new([
+            rect(0.05, 0.5, teal.shade(light), teal.shade(light)).scale(1.0).offset(0.20, 0.0),
+            rect(0.05, 0.5, teal.shade(light), teal.shade(light)).scale(1.0).offset(-0.20, 0.0),
+        ][..], @a),
+        laser_shot  = Sprite.new([star(8, 0.5, yellow.shade(light), yellow.shade(dark)).scale(0.3)][..], @a),
+        missile_shot  = Sprite.new([star(8, 0.5, yellow.shade(light), yellow.shade(dark)).scale(0.3)][..], @a),
+
+        -- Cannon: a hub and a single barrel.
+        cannon_base = base,
+        cannon_turret = Sprite.new([
+            circle(15, blue.shade(dark), blue.shade(darkest)).scale(0.6),
+            rect(0.5, 1.2, blue.shade(light), blue.shade(darkest)).scale(0.4).offset(0.0, -0.35),
+            rect(0.5, 0.4, slate.shade(darkest), blue.shade(light)).scale(0.4).offset(0.0, -0.75),
+            circle(15, blue.shade(darker), blue.shade(light)).scale(0.3),
+        ][..], @a).scale(1.35, 1.35, unsafe @a.slice_uninit<Shape>(16)),
+
+        -- Fast gunner: twin barrels.
+        fast_gunner_base = base,
+        fast_gunner_turret = Sprite.new([
+            circle(6, teal.shade(dark), teal.shade(darkest)).scale(0.65),
+            rect(0.3, 1.2, teal.shade(light), teal.shade(darkest)).scale(0.4).offset(-0.20, -0.35),
+            rect(0.3, 1.2, teal.shade(light), teal.shade(darkest)).scale(0.4).offset(0.20, -0.35),
+            rect(0.3, 0.4, slate.shade(darkest), teal.shade(light)).scale(0.4).offset(-0.20, -0.75),
+            rect(0.3, 0.4, slate.shade(darkest), teal.shade(light)).scale(0.4).offset(0.20, -0.75),
+            circle(6, teal.shade(darkest), teal.shade(light)).scale(0.35),
+        ][..], @a).scale(1.35, 1.35, unsafe @a.slice_uninit<Shape>(16)),
+
+        -- Laser: a stack of tapering rings, like a coil.
+        laser_base = base,
+        laser_turret = Sprite.new([
+            rect(1.0, 1.0, orange.shade(light), orange.shade(darker)).scale(0.45),
+            circle(10, gray.shade(light), orange.shade(dark)).scale(0.35),
+            circle(10, gray.shade(light), orange.shade(dark)).scale(0.35).offset(0.0, -0.20),
+            circle(10, gray.shade(light), orange.shade(dark)).scale(0.35).offset(0.0, -0.40),
+            circle(10, gray.shade(light), orange.shade(dark)).scale(0.35).offset(0.0, -0.60),
+        ][..], @a).scale(1.35, 1.35, unsafe @a.slice_uninit<Shape>(16)),
+
+        -- Missile: a heavier twin barrel with thick round caps.
+        missile_base = base,
+        missile_turret = Sprite.new([
+            circle(8, gray.shade(light), gray.shade(darkest)).scale(0.65),
+            rect(0.35, 1.6, gray.shade(light), gray.shade(darker)).scale(0.4).offset(-0.35, -0.20),
+            rect(0.35, 1.3, gray.shade(light), gray.shade(darker)).scale(0.4).offset(-0.10, -0.20),
+            rect(0.35, 1.3, gray.shade(light), gray.shade(darker)).scale(0.4).offset(0.10, -0.20),
+            rect(0.35, 1.6, gray.shade(light), gray.shade(darker)).scale(0.4).offset(0.35, -0.20),
+            circle(8, red.shade(darker), red.shade(light)).scale(0.30),
+        ][..], @a).scale(1.35, 1.35, unsafe @a.slice_uninit<Shape>(16)),
+    )
+}
+
+--- One basic shape inside a sprite: a loop of up to 32 points (centered on the
+    origin), scaled and shifted from the sprite center, with a fill and a darker
+    outline. 
+
+    Only the first `count` points are live. ---
+pub struct Shape {
+    points [32][2]F32
+    count Int
+    scale_ F32
+    offset_ [2]F32
+    fill sdl.FColor
+    stroke sdl.FColor
+    weight F32
+    boxy Bool   -- true: the outline insets straight along the axes (rectangles)
+}
+
+--- A sprite is one or more shapes, drawn on top of each other. ---
 pub struct Sprite {
-    pixels [][]U8
+    shapes []Shape
 }
 
-pub fun Sprite.width(s Sprite) Int {
-    s.pixels[0].len
+pub fun Sprite.new(shapes []Shape, @a Arena) Sprite {
+    let copy = unsafe @a.slice_uninit<Shape>(shapes.len)
+    _ = copy.set(shapes)
+    Sprite(copy)
 }
 
-pub fun Sprite.height(s Sprite) Int {
-    s.pixels.len
-}
-
-pub fun Sprite.draw(s Sprite, r sdl.Renderer, pos math.Point, pixel_size F32) void {
-    mut x = pos.x
-    mut y = pos.y
-    for row in s.pixels {
-        x = pos.x
-        for col in row {
-            if col != '.' and col != ' ' {
-                mut palette_index = 0
-                for p, i in palette_indexes {
-                    if p == col {
-                        palette_index = i
-                        break
-                    }
-                }
-                r.set_draw_color_float(palette[palette_index])
-                r.fill_rect(sdl.FRect(x, y, pixel_size, pixel_size))
-            }
-            if col != ' ' {
-                x += pixel_size
-            }
+--- A copy of the sprite stretched about its center by `fx`/`fy` per axis,
+    written into `buf`. ---
+pub fun Sprite.scale(sp Sprite, fx F32, fy F32, buf []mut Shape) Sprite {
+    for k in 0..sp.shapes.len {
+        let s = sp.shapes[k]
+        mut pts = s.points
+        for j in 0..s.count {
+            pts[j] = [s.points[j][0] * fx, s.points[j][1] * fy]
         }
-        y += pixel_size
+        buf[k] = Shape(pts, s.count, s.scale_, [s.offset_[0] * fx, s.offset_[1] * fy], s.fill, s.stroke, s.weight, s.boxy)
+    }
+    Sprite(buf[0..sp.shapes.len])
+}
+
+--- Draw the sprite centered in the `size` box at `pos`, rotated by `angle`. ---
+pub fun Sprite.draw(s Sprite, r sdl.Renderer, pos math.Point, size F32, angle F32 = 0.0) void {
+    let center = sdl.FPoint(pos.x + size * 0.5, pos.y + size * 0.5)
+    let radius = size * 0.55
+    let cos = angle.cos()
+    let sin = angle.sin()
+    for s in s.shapes {
+        -- The full shape in the stroke color, then the fill pulled in by the
+        -- shape's stroke weight, leaving a uniform outline.
+        fan(r, s, center, radius, cos, sin, s.stroke, 0.0)
+        fan(r, s, center, radius, cos, sin, s.fill, s.weight)
     }
 }
 
--- Poppy palette, one per basic hue. Preview: assets/colors.svg
-pub let palette = [
-    sdl.FColor(1.000, 0.322, 0.322, 1.000),  -- 0 red     #FF5252
-    sdl.FColor(1.000, 0.541, 0.239, 1.000),  -- 1 orange  #FF8A3D
-    sdl.FColor(1.000, 0.824, 0.239, 1.000),  -- 2 yellow  #FFD23D
-    sdl.FColor(0.659, 0.890, 0.239, 1.000),  -- 3 lime    #A8E33D
-    sdl.FColor(0.239, 0.851, 0.420, 1.000),  -- 4 green   #3DD96B
-    sdl.FColor(0.180, 0.851, 0.765, 1.000),  -- 5 teal    #2ED9C3
-    sdl.FColor(0.239, 0.765, 1.000, 1.000),  -- 6 sky     #3DC3FF
-    sdl.FColor(0.302, 0.471, 1.000, 1.000),  -- 7 blue    #4D78FF
-    sdl.FColor(0.639, 0.349, 1.000, 1.000),  -- 8 purple  #A359FF
-    sdl.FColor(1.000, 0.361, 0.753, 1.000),  -- 9 pink    #FF5CC0
+-- The factories below fill the virtual [-1, 1] box. Resize and place a shape
+-- afterwards with .scale() and .offset().
 
-    -- darker
-    sdl.FColor(0.575, 0.034, 0.095, 1.000),  -- 10 red     #930918
-    sdl.FColor(0.547, 0.257, 0.027, 1.000),  -- 11 orange  #8C4107
-    sdl.FColor(0.531, 0.427, 0.045, 1.000),  -- 12 yellow  #886D0B
-    sdl.FColor(0.331, 0.468, 0.041, 1.000),  -- 13 lime    #54770A
-    sdl.FColor(0.041, 0.448, 0.188, 1.000),  -- 14 green   #0B7230
-    sdl.FColor(0.044, 0.445, 0.396, 1.000),  -- 15 teal    #0B7165
-    sdl.FColor(0.038, 0.398, 0.540, 1.000),  -- 16 sky     #0A658A
-    sdl.FColor(0.082, 0.048, 0.771, 1.000),  -- 17 blue    #150CC5
-    sdl.FColor(0.354, 0.034, 0.620, 1.000),  -- 18 purple  #5A099E
-    sdl.FColor(0.578, 0.037, 0.409, 1.000),  -- 19 pink    #993773
-][..]
+fun circle(sides Int, fill sdl.FColor, stroke sdl.FColor) Shape {
+    mut pts = [32 of zero_pt]
+    let step = stdmath.tau.to_f32() / sides.to_f32()
+    for k in 0..sides {
+        let a = k.to_f32() * step
+        pts[k] = [a.sin(), 0.0 - a.cos()]
+    }
+    Shape(pts, sides, 1.0, [0.0, 0.0], fill, stroke, stroke_width, false)
+}
 
-pub let palette_indexes = [
-    U8('R'), 'O', 'Y', 'L', 'G', 'T', 'S', 'B', 'P', 'I', 'r', 'o', 'y', 'l', 'g', 't', 's', 'b', 'p', 'i'
-]
+--- A star shape with `spikes` points.
 
-pub let triangle = Sprite([
-    b". . . . . . . r . . . . . . .",
-    b". . . . . . . r . . . . . . .",
-    b". . . . . . r R r . . . . . .",
-    b". . . . . r R R R r . . . . .",
-    b". . . . . r R R R r . . . . .",
-    b". . . . . r R R R r . . . . .",
-    b". . . . r R R R R R r . . . .",
-    b". . . r R R R R R R R r . . .",
-    b". . . r R R R R R R R r . . .",
-    b". . . r R R R R R R R r . . .",
-    b". . r R R R R R R R R R r . .",
-    b". r R R R R R R R R R R R r .",
-    b". r R R R R R R R R R R R r .",
-    b". r R R R R R R R R R R R r .",
-    b"r r r r r r r r r r r r r r r",
-][..])
+    A smaller `inner` (0..1) makes sharper spikes. ---
+fun star(spikes Int, inner F32, fill sdl.FColor, stroke sdl.FColor) Shape {
+    let count = spikes * 2
+    mut pts = [32 of zero_pt]
+    let step = stdmath.tau.to_f32() / count.to_f32()
+    for k in 0..count {
+        let a = k.to_f32() * step
+        let radius = if k % 2 == 0 { F32(1.0) } else { inner }
+        pts[k] = [a.sin() * radius, 0.0 - a.cos() * radius]
+    }
+    Shape(pts, count, 1.0, [0.0, 0.0], fill, stroke, stroke_width, false)
+}
 
-pub let rectangle = Sprite([
-    b". . . . . . . . . . . . . . .",
-    b". s s s s s s s s s s s s s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s S S S S S S S S S S S s .",
-    b". s s s s s s s s s s s s s .",
-    b". . . . . . . . . . . . . . .",
-][..])
+--- A rectangle reaching `w`/`h` from the center, so 1.0 fills the box edge. ---
+fun rect(w F32, h F32, fill sdl.FColor, stroke sdl.FColor) Shape {
+    mut pts = [32 of zero_pt]
+    pts[0] = [0.0 - w, 0.0 - h]
+    pts[1] = [w, 0.0 - h]
+    pts[2] = [w, h]
+    pts[3] = [0.0 - w, h]
+    Shape(pts, 4, 1.0, [0.0, 0.0], fill, stroke, stroke_width, true)
+}
 
-pub let star = Sprite([
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . y . . . . . . .",
-    b". . . . . . . y . . . . . . .",
-    b". . . . . . y Y y . . . . . .",
-    b". . . . . . y Y y . . . . . .",
-    b". y y y y y Y Y Y y y y y y .",
-    b". . y y Y Y Y Y Y Y Y y y . .",
-    b". . . . y Y Y Y Y Y y . . . .",
-    b". . . . . y Y Y Y y . . . . .",
-    b". . . . y Y Y y Y Y y . . . .",
-    b". . . . y Y y . y Y y . . . .",
-    b". . . . y y . . . y y . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
+--- A copy of the shape with its size multiplied by `f`. ---
+fun Shape.scale(s Shape, f F32) Shape {
+    Shape(s.points, s.count, s.scale_ * f, s.offset_, s.fill, s.stroke, s.weight, s.boxy)
+}
 
-pub let sun = Sprite([
-    b". . . . . . . O . . . . . . .",
-    b". . . . O . . O . . O . . . .",
-    b". . . . O . . O . . O . . . .",
-    b". . . . . O . O . O . . . . .",
-    b". O O . . O y y y O . . O O .",
-    b". . . O O y Y Y Y y O O . . .",
-    b". . . . y Y Y Y Y Y y . . . .",
-    b"O O O O y Y Y Y Y Y y O O O O",
-    b". . . . y Y Y Y Y Y y . . . .",
-    b". . . O O y Y Y Y y O O . . .",
-    b". O O . . O y y y O . . O O .",
-    b". . . . . O . O . O . . . . .",
-    b". . . . O . . O . . O . . . .",
-    b". . . . O . . O . . O . . . .",
-    b". . . . . . . O . . . . . . .",
-][..])
+--- A copy of the shape shifted by `x`, `y` within the sprite. ---
+fun Shape.offset(s Shape, x F32, y F32) Shape {
+    Shape(s.points, s.count, s.scale_, [s.offset_[0] + x, s.offset_[1] + y], s.fill, s.stroke, s.weight, s.boxy)
+}
 
-pub let wall = Sprite([
-    b"T T T T T T T T T T T T T T T",
-    b"T t t t t t t t t t t t t t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t . . . . . . . . . . . t T",
-    b"T t t t t t t t t t t t t t T",
-    b"T T T T T T T T T T T T T T T",
-][..])
+--- A copy of the shape with its points turned by `angle` radians. ---
+fun Shape.rotate(s Shape, angle F32) Shape {
+    let cos = angle.cos()
+    let sin = angle.sin()
+    mut pts = s.points
+    for k in 0..s.count {
+        let x = s.points[k][0]
+        let y = s.points[k][1]
+        pts[k] = [x * cos - y * sin, x * sin + y * cos]
+    }
+    Shape(pts, s.count, s.scale_, s.offset_, s.fill, s.stroke, s.weight, s.boxy)
+}
 
-pub let cannon_base = Sprite([
-    b". . . . . . . . . . . . . . .",
-    b". . . . O O O O O O O . . . .",
-    b". . . O o o o o o o o O . . .",
-    b". . O o o o o o o o o o O . .",
-    b". O o o o o o o o o o o o O .",
-    b". O o o o o o o o o o o o O .",
-    b". O o o o o o o o o o o o O .",
-    b". O o o o o o o o o o o o O .",
-    b". O o o o o o o o o o o o O .",
-    b". O o o o o o o o o o o o O .",
-    b". O o o o o o o o o o o o O .",
-    b". . O o o o o o o o o o O . .",
-    b". . . O o o o o o o o O . . .",
-    b". . . . O O O O O O O . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
+--- A copy of the shape with its outline weight multiplied by `f`. ---
+fun Shape.scale_stroke(s Shape, f F32) Shape {
+    Shape(s.points, s.count, s.scale_, s.offset_, s.fill, s.stroke, s.weight * f, s.boxy)
+}
 
-pub let cannon_turret = Sprite([
-    b". . . . . . o o o . . . . . .",
-    b". . . . . . o O o . . . . . .",
-    b". . . . . . o O o . . . . . .",
-    b". . . . . . o O o . . . . . .",
-    b". . . . . . o O o . . . . . .",
-    b". . . . . . o O o . . . . . .",
-    b". . . . . o O O O o . . . . .",
-    b". . . . . o O O O o . . . . .",
-    b". . . . . o O O O o . . . . .",
-    b". . . . . . o o o . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
+--- Fill one shape with `color`, pulled in from the edge by `width`.
 
-pub let fast_gunner_base = Sprite([
-    b". . . . . . . . . . . . . . .",
-    b". . . . G G G G G G G . . . .",
-    b". . . G g g g g g g g G . . .",
-    b". . G g g g g g g g g g G . .",
-    b". G g g g g g g g g g g g G .",
-    b". G g g g g g g g g g g g G .",
-    b". G g g g g g g g g g g g G .",
-    b". G g g g g g g g g g g g G .",
-    b". G g g g g g g g g g g g G .",
-    b". G g g g g g g g g g g g G .",
-    b". G g g g g g g g g g g g G .",
-    b". . G g g g g g g g g g G . .",
-    b". . . G g g g g g g g G . . .",
-    b". . . . G G G G G G G . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
+    One triangle per edge, all sharing the center. The inset is a fixed `width`,
+    not a ratio, so the leftover stroke is the same thickness on every shape. ---
+fun fan(r sdl.Renderer, s Shape, center sdl.FPoint, radius F32, cos F32, sin F32, color sdl.FColor, width F32) void {
+    fun project(lx F32, ly F32, center sdl.FPoint, radius F32, cos F32, sin F32) sdl.FPoint {
+        sdl.FPoint(center.x + (lx * cos - ly * sin) * radius, center.y + (lx * sin + ly * cos) * radius)
+    }
+    -- Pull a point in from the edge by a fixed `width`: straight along each axis
+    -- for boxy shapes (so every rectangle side gets the same outline), or toward
+    -- the center for round ones.
+    fun inset(px F32, py F32, width F32, boxy Bool) [2]F32 {
+        if boxy {
+            let ix = when {
+                case px > width: px - width
+                case px < 0.0 - width: px + width
+                else: F32(0.0)
+            }
+            let iy = when {
+                case py > width: py - width
+                case py < 0.0 - width: py + width
+                else: F32(0.0)
+            }
+            [ix, iy]
+        } else {
+            let d = (px * px + py * py).sqrt()
+            let f = if d > width { (d - width) / d } else { F32(0.0) }
+            [px * f, py * f]
+        }
+    }
+    let n = s.count
+    let tc = sdl.FPoint(0.0, 0.0)
+    let mid = project(s.offset_[0], s.offset_[1], center, radius, cos, sin)
+    mut tris = [96 of sdl.Vertex(mid, color, tc)]
+    mut i = 0
+    for k in 0..n {
+        let next = if k + 1 < n { k + 1 } else { 0 }
+        let pa = inset(s.points[k][0] * s.scale_, s.points[k][1] * s.scale_, width, s.boxy)
+        let pb = inset(s.points[next][0] * s.scale_, s.points[next][1] * s.scale_, width, s.boxy)
+        let a = project(s.offset_[0] + pa[0], s.offset_[1] + pa[1], center, radius, cos, sin)
+        let b = project(s.offset_[0] + pb[0], s.offset_[1] + pb[1], center, radius, cos, sin)
+        tris[i] = sdl.Vertex(mid, color, tc)
+        tris[i + 1] = sdl.Vertex(a, color, tc)
+        tris[i + 2] = sdl.Vertex(b, color, tc)
+        i += 3
+    }
+    r.geometry(tris[0..i])
+}
 
-pub let fast_gunner_turret = Sprite([
-    b". . . . . . . . . . . . . . .",
-    b". . . . . g g . g g . . . . .",
-    b". . . . . g g . g g . . . . .",
-    b". . . . . g g . g g . . . . .",
-    b". . . . . g g . g g . . . . .",
-    b". . . . . g G g G g . . . . .",
-    b". . . . . g G G G g . . . . .",
-    b". . . . . g G G G g . . . . .",
-    b". . . . . g G G G g . . . . .",
-    b". . . . . . g g g . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
+-- Poppy palette, bright base hues. Darken with shade(hue, level).
+-- pub let red = sdl.FColor(1.000, 0.322, 0.322, 1.000)
+-- pub let orange = sdl.FColor(1.000, 0.541, 0.239, 1.000)
+-- pub let yellow = sdl.FColor(1.000, 0.824, 0.239, 1.000)
+-- pub let lime = sdl.FColor(0.659, 0.890, 0.239, 1.000)
+-- pub let green = sdl.FColor(0.239, 0.851, 0.420, 1.000)
+-- pub let teal = sdl.FColor(0.180, 0.851, 0.765, 1.000)
+-- pub let sky = sdl.FColor(0.239, 0.765, 1.000, 1.000)
+-- pub let blue = sdl.FColor(0.302, 0.471, 1.000, 1.000)
+-- pub let purple = sdl.FColor(0.639, 0.349, 1.000, 1.000)
+-- pub let pink = sdl.FColor(1.000, 0.361, 0.753, 1.000)
+--
+-- -- Medium slate for the tower bases (rendered dark via the dark/darker levels).
+-- pub let slate = sdl.FColor(0.340, 0.370, 0.460, 1.000)
 
-pub let laser_base = Sprite([
-    b". . . . . . . . . . . . . . .",
-    b". . . . I I I I I I I . . . .",
-    b". . . I i i i i i i i I . . .",
-    b". . I i i i i i i i i i I . .",
-    b". I i i i i i i i i i i i I .",
-    b". I i i i i i i i i i i i I .",
-    b". I i i i i i i i i i i i I .",
-    b". I i i i i i i i i i i i I .",
-    b". I i i i i i i i i i i i I .",
-    b". I i i i i i i i i i i i I .",
-    b". I i i i i i i i i i i i I .",
-    b". . I i i i i i i i i i I . .",
-    b". . . I i i i i i i i I . . .",
-    b". . . . I I I I I I I . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
-
-pub let laser_turret = Sprite([
-    b". . . . . . . i . . . . . . .",
-    b". . . . . . i I i . . . . . .",
-    b". . . . . . . i . . . . . . .",
-    b". . . . . . i I i . . . . . .",
-    b". . . . . . i I i . . . . . .",
-    b". . . . . . i I i . . . . . .",
-    b". . . . . i I I I i . . . . .",
-    b". . . . . i I I I i . . . . .",
-    b". . . . . i I I I i . . . . .",
-    b". . . . . . i i i . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
-
-pub let missile_base = Sprite([
-    b". . . . . . . . . . . . . . .",
-    b". . . . P P P P P P P . . . .",
-    b". . . P p p p p p p p P . . .",
-    b". . P p p p p p p p p p P . .",
-    b". P p p p p p p p p p p p P .",
-    b". P p p p p p p p p p p p P .",
-    b". P p p p p p p p p p p p P .",
-    b". P p p p p p p p p p p p P .",
-    b". P p p p p p p p p p p p P .",
-    b". P p p p p p p p p p p p P .",
-    b". P p p p p p p p p p p p P .",
-    b". . P p p p p p p p p p P . .",
-    b". . . P p p p p p p p P . . .",
-    b". . . . P P P P P P P . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
-
-pub let missile_turret = Sprite([
-    b". . . . . . . p . . . . . . .",
-    b". . . . . . p P p . . . . . .",
-    b". . . . . . p P p . . . . . .",
-    b". . . . . . p P p . . . . . .",
-    b". . . . . . p P p . . . . . .",
-    b". . . . . . p P p . . . . . .",
-    b". . . . . p P P P p . . . . .",
-    b". . . . . p P P P p . . . . .",
-    b". . . . . p P P P p . . . . .",
-    b". . . . . . p p p . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-    b". . . . . . . . . . . . . . .",
-][..])
-
-
+-- Poppy palette, bright base hues. Darken with shade(hue, level).
+pub let red = sdl.FColor(0.990, 0.324, 0.349, 1.000)
+pub let orange = sdl.FColor(0.987, 0.484, 0.228, 1.000)
+pub let yellow = sdl.FColor(0.987, 0.753, 0.228, 1.000)
+pub let lime = sdl.FColor(0.701, 0.860, 0.228, 1.000)
+pub let green = sdl.FColor(0.264, 0.822, 0.360, 1.000)
+pub let teal = sdl.FColor(0.208, 0.820, 0.680, 1.000)
+pub let sky = sdl.FColor(0.264, 0.794, 0.951, 1.000)
+pub let blue = sdl.FColor(0.323, 0.511, 0.953, 1.000)
+pub let purple = sdl.FColor(0.603, 0.349, 0.955, 1.000)
+pub let pink = sdl.FColor(0.991, 0.360, 0.759, 1.000)
+pub let slate = sdl.FColor(0.516, 0.404, 0.344, 1.000)
+pub let gray = sdl.FColor(0.494, 0.507, 0.626, 1.000)
+pub let brown = sdl.FColor(0.545, 0.353, 0.169, 1.000)
+pub let tan = sdl.FColor(0.820, 0.643, 0.420, 1.000)
+pub let rust = sdl.FColor(0.776, 0.318, 0.141, 1.000)

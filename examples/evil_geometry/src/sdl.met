@@ -275,6 +275,23 @@ pub struct FColor {
     pub a F32
 }
 
+--- Darken the coler to `brightness` of its luminance, scaled in linear light so the
+    hue and saturation hold (1.0 leaves it unchanged). ---
+pub fun FColor.shade(c FColor, brightness F32) FColor {
+    --- sRGB <-> linear-light transfer.
+
+        Brightness must scale linear light, not the gamma-encoded sRGB value, or the 
+        hue and the amount of darkening come out wrong. ---
+    fun to_linear(c F32) F32 {
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).pow(2.4) }
+    }
+    fun to_srgb(c F32) F32 {
+        if c <= 0.0031308 { c * 12.92 } else { 1.055 * c.pow(F32(1.0 / 2.4)) - 0.055 }
+    }
+    fun dim(x F32, b F32) F32 { to_srgb(to_linear(x) * b) }
+    FColor(dim(c.r, brightness), dim(c.g, brightness), dim(c.b, brightness), c.a)
+}
+
 pub struct FPoint {
     pub x F32
     pub y F32

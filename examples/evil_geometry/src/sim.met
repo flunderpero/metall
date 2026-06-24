@@ -10,54 +10,104 @@ pub enum SimErr Err = |
     grid_occupied
 
 pub let freq = 240
+pub let freq_f32 = F32(240.0)
 pub let max_speed F32 = 0.08
 
-pub struct Triangle {}
-pub struct Rectangle {}
-pub struct Star {}
-pub struct Sun {}
+--- How far from the next waypoint, in tiles, an enemy starts turning toward the
+    segment after it. ---
+pub let turn_lookahead F32 = 0.8
 
-pub union EnemyKind = Triangle | Rectangle | Star | Sun
+--- How fast an enemy rotates to face its heading, in radians per tile travelled.
+
+    Scaled by the enemy's speed, so faster enemies turn faster. ---
+pub let turn_speed F32 = 1.2
+
+pub enum EnemyKind U8 = | triangle | rectangle | star | sun
 
 pub struct Enemy {
     pub kind EnemyKind
     pub speed F32
     pub health Int
+    pub total_health Int
     pub pos math.Point
-    --- Unit direction toward `next_waypoint`. ---
+    --- Unit direction toward `target_waypoint`. ---
     pub dir math.Vec2
-    --- Tile-distance still to travel before reaching `next_waypoint`. ---
+    --- Tile-distance still to travel before reaching `target_waypoint`. ---
     pub remaining F32
     --- Grid index of the waypoint being approached. ---
-    pub next_waypoint Int
+    pub target_waypoint Int
+    --- Rotation angle in radians, tracking the heading. ---
+    pub angle F32
 }
 
-pub fun Enemy.fmt(e &Enemy, sw &mut StrWriter) void {
-    match e.kind {
-        case Triangle: sw.write("Triangle")
-        case Rectangle: sw.write("Rectangle")
-        case Star: sw.write("Star")
-        case Sun: sw.write("Sun")
-    }
-    f"(pos={e.pos}, dir={e.dir})".write_to(sw)
+pub fun Enemy.new(kind EnemyKind, speed F32, health Int, pos math.Point, target_waypoint Int) Enemy {
+    Enemy(kind, speed, health, health, pos, math.Vec2(0.0, 0.0), 0.0, target_waypoint, 0.0)
 }
 
-pub struct Wall {}
-pub struct Cannon {}
-pub struct FastGunner {}
-pub struct Laser {}
-pub struct Missile {}
-
-pub union TowerKind = Wall | Cannon | FastGunner | Laser | Missile
+pub enum TowerKind(
+    rotation_speed F32
+    range F32
+    damage Int
+    --- Time in sec between shots. ---
+    fire_rate F32
+    shot_speed F32
+) U8 = 
+    | wall(rotation_speed=0.0, range=0.0, damage=0, fire_rate=0.0, shot_speed=0.0) 
+    -- todo: We cannot use freq_f32 here.
+    | cannon(
+        rotation_speed=1.5 / 240.0,
+        range=5.0,
+        damage=30,
+        fire_rate=1.0, 
+        shot_speed=0.5)
+    | fast_gunner(
+        rotation_speed=4.0 / 240.0,
+        range=8.0,
+        damage=20,
+        fire_rate=0.2,
+        shot_speed=1.8)
+    | laser(
+        rotation_speed=5.0 / 240.0,
+        range=4.0,
+        damage=5,
+        fire_rate=3.0,
+        shot_speed=8.0)
+    | missile(
+        rotation_speed=0.75 / 240.0,
+        range=12.0,
+        damage=100,
+        fire_rate=5.0,
+        shot_speed=0.2)
 
 pub struct Tower {
     pub kind TowerKind
     pub pos math.Point
+    --- The enemy (if any) the tower is currently aiming at. ---
+    pub aiming_at ?mem.PoolHandle<Enemy>
+    --- The current angle of the tower's turret. ---
+    pub angle F32
+    --- Where to rotate to? ---
+    pub target_angle F32
+    --- Countdown to next shot. ---
+    pub fire_next_in Int
+}
+
+fun Tower.new(kind TowerKind, pos math.Point) Tower {
+    Tower(kind, pos, None(), 0.0, 0.0, 0)
+}
+
+pub struct Shot {
+    pub kind TowerKind
+    pub pos math.Point
+    pub dir math.Vec2
+    pub speed F32
+    pub angle F32
 }
 
 pub struct Sim {
     pub enemies &mut mem.Pool<Enemy>
     pub towers &mut mem.Pool<Tower>
+    pub shots &mut mem.Pool<Shot>
     pub grid &mut grid.Grid
 }
 
@@ -65,6 +115,7 @@ pub fun Sim.new(grid_ &mut grid.Grid, @a Arena) &mut Sim {
     @a.new(Sim(
         enemies=mem.Pool.new<Enemy>(1024, @a),
         towers=mem.Pool.new<Tower>(1024, @a),
+        shots=mem.Pool.new<Shot>(1024, @a),
         grid=grid_,
     ))
 } 
@@ -72,7 +123,7 @@ pub fun Sim.new(grid_ &mut grid.Grid, @a Arena) &mut Sim {
 pub fun Sim.add_tower(s &mut Sim, kind TowerKind, pos math.IPoint) !mem.PoolHandle<Tower> {
     let grid_index = s.grid.index(pos)
     if s.grid.tiles[grid_index] != grid.TileKind.free { return SimErr.grid_occupied }
-    let tower = Tower(kind, pos.to_point())
+    let tower = Tower.new(kind, pos.to_point())
     let h = try s.towers.alloc(tower) else { panic("Sim.towers is full") }
     s.grid.tiles[grid_index] = grid.TileKind.tower
     h
@@ -90,18 +141,28 @@ pub fun Sim.add_exit(s &mut Sim, pos math.IPoint) !void {
 pub fun Sim.add_enemy(s &mut Sim, kind EnemyKind, speed F32, health Int, pos math.IPoint) mem.PoolHandle<Enemy> {
     let speed = speed * max_speed
     let spawn = s.grid.index(pos)
-    mut enemy = Enemy(kind, speed, health, pos.to_point(), math.Vec2(0.0, 0.0), 0.0, spawn)
-    s.acquire_waypoint(&mut enemy, spawn)
+    mut enemy = Enemy.new(kind, speed, health, pos.to_point(), spawn)
+    -- mut enemy = Enemy(kind, speed, health, health, pos.to_point(), math.Vec2(0.0, 0.0), 0.0, spawn, 0.0)
+    s.target_next_waypoint(&mut enemy)
     try s.enemies.alloc(enemy) else { panic("Sim.enemies is full") }
 }
 
---- Aim the enemy at the waypoint that follows tile `from`, recording the unit
-    direction and the tile-distance to it. A tile whose waypoint is itself (an
-    exit or a walled-off tile) leaves the enemy stopped. ---
-fun Sim.acquire_waypoint(s &Sim, e &mut Enemy, from Int) void {
-    let wp = s.grid.flow_field[from]
-    e.next_waypoint = wp
-    if wp == from {
+
+--- Add a shot from the given tower targeting the given point. ---
+fun Sim.add_shot(s &mut Sim, t &Tower, target math.Point) mem.PoolHandle<Shot> {
+    let v = math.Vec2(target.x - t.pos.x, target.y - t.pos.y)
+    let len = v.length()
+    let dir = v.scale(1.0 / len)
+    let angle = (target.x - t.pos.x).atan2(-(target.y - t.pos.y))
+    mut shot = Shot(t.kind, t.pos, dir, t.kind.shot_speed * max_speed, angle)
+    try s.shots.alloc(shot) else { panic("Sim.shots is full") }
+}
+
+fun Sim.target_next_waypoint(s &Sim, e &mut Enemy) void {
+    let wp = s.grid.flow_field[e.target_waypoint]
+    let prev = e.target_waypoint
+    e.target_waypoint = wp
+    if wp == prev {
         e.dir = math.Vec2(0.0, 0.0)
         e.remaining = 0.0
         return void
@@ -113,23 +174,143 @@ fun Sim.acquire_waypoint(s &Sim, e &mut Enemy, from Int) void {
     e.remaining = len
 }
 
+--- Unit direction of the segment after `target_waypoint`, used to start turning
+    before the corner.
+
+    Falls back to the current `dir` when the next waypoint is terminal. ---
+fun Sim.upcoming_dir(s &Sim, e &Enemy) math.Vec2 {
+    let after = s.grid.flow_field[e.target_waypoint]
+    if after == e.target_waypoint { return e.dir }
+    let from = s.grid.pos(e.target_waypoint).to_point()
+    let to = s.grid.pos(after).to_point()
+    let v = math.Vec2(to.x - from.x, to.y - from.y)
+    v.scale(1.0 / v.length())
+}
+
 pub fun Sim.update(s &mut Sim) void {
     for handle in s.enemies.iter() {
-        let e = handle.get()
-        mut budget = e.speed
-        -- Spend this step's distance toward the next waypoint, snapping exactly on
-        -- arrival and carrying any overshoot into the following segment.
-        for {
-            if e.remaining <= 0.0 { break }
-            if e.remaining > budget {
-                e.pos.x += e.dir.x * budget
-                e.pos.y += e.dir.y * budget
-                e.remaining -= budget
-                break
-            }
-            e.pos = s.grid.pos(e.next_waypoint).to_point()
-            budget -= e.remaining
-            s.acquire_waypoint(e, e.next_waypoint)
+        if not handle.get().update(s) {
+            handle.to_handle().free()
+        }
+    }
+    for handle in s.towers.iter() {
+        handle.get().update(s)
+    }
+    for handle in s.shots.iter() {
+        if not handle.get().update(s) {
+            handle.to_handle().free()
         }
     }
 }
+
+fun Tower.update(t &mut Tower, s &mut Sim) void {
+    match t.kind {
+    case TowerKind.wall: return void
+    else:
+    }
+    -- Find an enemy to target.
+    mut best_pos = math.Point(-1.0, -1.0)
+    mut best_progress = F32(100000000000.0)
+    let radius_sq = t.kind.range * t.kind.range
+    for handle in s.enemies.iter() {
+        let e = handle.get()
+        let dx = e.pos.x - t.pos.x
+        let dy = e.pos.y - t.pos.y
+        if dx * dx + dy * dy > radius_sq {
+            continue
+        } 
+        let p = e.remaining + s.grid.dist[e.target_waypoint]
+        if p < best_progress {
+            best_progress = p
+            best_pos = e.pos
+        }
+    }
+    if best_pos.x >= 0.0 {
+        -- Found a target enemy, set rotation target and fire.
+        t.target_angle = (best_pos.x - t.pos.x).atan2(-(best_pos.y - t.pos.y))
+        t.fire_next_in -= 1
+        if t.fire_next_in <= 0 {
+            t.fire_next_in = (freq_f32 * t.kind.fire_rate).to_int_clamped()
+            let shot_dir = 
+            _ = s.add_shot(t, best_pos)
+        }
+    }
+    math.move_toward(&mut t.angle, t.target_angle, t.kind.rotation_speed)
+}
+
+--- Returning false should remove the enemy. ---
+fun Enemy.update(e &mut Enemy, s &Sim) Bool {
+    if e.health <= 0 {
+        return false
+    }
+    -- Advance the enemy and upon crossing a waypoint use the remaining
+    -- budget to move into the new direction.
+    mut budget = e.speed
+    for {
+        if e.remaining <= 0.0 { break }
+        if e.remaining > budget {
+            e.pos.x += e.dir.x * budget
+            e.pos.y += e.dir.y * budget
+            e.remaining -= budget
+            break
+        }
+        e.pos = s.grid.pos(e.target_waypoint).to_point()
+        budget -= e.remaining
+        s.target_next_waypoint(e)
+    }
+    if s.grid.is_outside(e.pos.round()) {
+        return false
+    }
+    -- Rotate the sprite toward its heading.
+    if e.dir.x != 0.0 or e.dir.y != 0.0 {
+        -- Where to ultimately rotate to? The current or the next waypoint.
+        let target_direction = if e.remaining < turn_lookahead { s.upcoming_dir(e) } else { e.dir }
+        let raw_target_angle = target_direction.x.atan2(-target_direction.y)
+        -- Make sure the angle we are pointing it at is at most half a circle.
+        let angle = math.normalize_angle(raw_target_angle - e.angle)
+        let target_angle = e.angle + angle
+        -- Update e.angle snapping it to target_angle if near it.
+        math.move_toward(&mut e.angle, target_angle, turn_speed * e.speed)
+    }
+    true
+}
+
+--- Return false should remove the shot. ---
+fun Shot.update(shot &mut Shot, s &Sim) Bool {
+    -- Find nearest enemie.
+    let radius_sq = F32(0.75).pow(2.0)
+    mut best_dist = F32(100000000000.0)
+    mut target ?mem.PoolHandle<Enemy> = None()
+    for handle in s.enemies.iter() {
+        let e = handle.get()
+        let dx = e.pos.x - shot.pos.x
+        let dy = e.pos.y - shot.pos.y
+        let dist = dx * dx + dy * dy  
+        if dist > radius_sq {
+            continue
+        } 
+        if target.is_none() or best_dist > dist {
+            best_dist = dist
+            target = handle.to_handle()
+        }
+    }
+    -- todo: Make sure we don't skip over enemies.
+    shot.pos.x += shot.dir.x * shot.speed
+    shot.pos.y += shot.dir.y * shot.speed
+    if s.grid.is_outside(shot.pos.round()) {
+        return false
+    }
+    let handle = match target {
+    case mem.PoolHandle<Enemy> h: h
+    else:
+        return true
+    }
+    -- handle.free()
+    let e = try handle.get() else { return true }
+    e.health -= shot.kind.damage
+    -- let @local = Arena()
+    -- io.print(f"hit: {e}".build(@local))
+    false
+}
+
+

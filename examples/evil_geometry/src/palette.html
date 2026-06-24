@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>evil_geometry palette designer</title>
+<style>
+  :root { color-scheme: dark }
+  * { box-sizing: border-box }
+  body {
+    margin: 0; padding: 20px 24px 60px;
+    background: #0a0a10; color: #d6d6e0;
+    font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px }
+  .sub { color: #8a8aa0; margin: 0 0 10px; font-size: 13px }
+  .statusrow { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; flex-wrap: wrap }
+  .status { font-size: 12px; padding: 5px 10px; border-radius: 7px }
+  .status.ok { color: #8fd19e; background: #14241a; border: 1px solid #1f3a28 }
+  .status.warn { color: #f0c674; background: #2a2113; border: 1px solid #4a3a1a }
+  .panels { display: grid; grid-template-columns: 260px 1fr; gap: 22px; align-items: start }
+  @media (max-width: 860px) { .panels { grid-template-columns: 1fr } }
+  .card {
+    background: #14141c; border: 1px solid #23232e; border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: #9a9ab2; margin: 0 0 12px }
+  label.row { display: grid; grid-template-columns: 84px 1fr 44px; gap: 8px;
+    align-items: center; margin: 7px 0; font-size: 12.5px }
+  label.row input[type=range] { width: 100% }
+  label.row .val { text-align: right; color: #aab; font-variant-numeric: tabular-nums }
+  .btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap }
+  button {
+    background: #232333; color: #d6d6e0; border: 1px solid #34344a;
+    border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: 12.5px;
+  }
+  button:hover { background: #2c2c40 }
+  .chk { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px }
+  canvas#preview { width: 100%; height: 260px; border-radius: 10px;
+    border: 1px solid #23232e; display: block; background: #000 }
+  .preview-cap { color: #8a8aa0; font-size: 12px; margin: 8px 2px 0 }
+  .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 10px; margin-top: 10px }
+  .addrow { display: flex; gap: 8px; margin-top: 14px; align-items: center }
+  .addrow input { background: #101018; border: 1px solid #34344a; border-radius: 7px;
+    color: #d6d6e0; padding: 6px 10px; font-size: 12.5px; width: 150px }
+  .swatch { background: #101018; border: 1px solid #23232e; border-radius: 8px;
+    padding: 8px; text-align: center }
+  .swatch .chip { height: 46px; border-radius: 6px; border: 1px solid #00000040 }
+  .swatch .meta { display: flex; align-items: center; gap: 6px; margin: 7px 0 5px;
+    justify-content: center }
+  .swatch .meta input { width: 22px; height: 22px; padding: 0; border: none;
+    background: none; cursor: pointer }
+  .swatch .nm { font-size: 12px; color: #c5c5d6 }
+  .swatch .shades { display: flex; height: 12px; border-radius: 4px; overflow: hidden }
+  .swatch .shades .sh { flex: 1 }
+  .swatch { cursor: pointer }
+  .swatch.sel { border-color: #6a6aff; box-shadow: 0 0 0 1px #6a6aff }
+  .rgbrow { display: flex; gap: 8px; margin-top: 10px }
+  .rgbrow label { flex: 1; display: flex; align-items: center; gap: 5px; font-size: 12px; color: #9a9ab2 }
+  .rgbrow input { width: 100%; min-width: 0; background: #101018; border: 1px solid #34344a;
+    border-radius: 6px; color: #d6d6e0; padding: 4px 6px; font-size: 12px }
+  pre#code {
+    background: #0d0d14; border: 1px solid #23232e; border-radius: 10px;
+    padding: 14px 16px; overflow: auto; font: 12.5px/1.5 ui-monospace, Menlo, monospace;
+    color: #b9c7b9; white-space: pre; margin: 0;
+  }
+  .out-head { display: flex; justify-content: space-between; align-items: center; margin: 22px 0 8px }
+  .out-head h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #9a9ab2; margin: 0 }
+</style>
+</head>
+<body>
+  <h1>evil_geometry palette designer</h1>
+  <p class="sub">Starts from the live palette in <code>sprite.met</code>. Adjust with color-theory knobs, preview through the game's CRT (bloom + raster), copy the Metall constants back. Shades use the gamma-correct linear-light <code>shade()</code>.</p>
+  <div class="statusrow">
+    <span id="status" class="status"></span>
+    <button id="reload">Reload from sprite.met</button>
+  </div>
+
+  <div class="panels">
+    <div>
+      <div class="card">
+        <h2>Color theory</h2>
+        <label class="row">Hue shift <input id="hue" type="range" min="-180" max="180" step="1" value="0"><span class="val" id="huev"></span></label>
+        <label class="row">Saturation <input id="sat" type="range" min="0" max="2" step="0.01" value="1.00"><span class="val" id="satv"></span></label>
+        <label class="row">Brightness <input id="value" type="range" min="0.5" max="1.5" step="0.01" value="1.00"><span class="val" id="valuev"></span></label>
+        <label class="row">Vibrance <input id="vibrance" type="range" min="0" max="1" step="0.01" value="0.00"><span class="val" id="vibrancev"></span></label>
+        <label class="row">Warmth <input id="warmth" type="range" min="-1" max="1" step="0.01" value="0.00"><span class="val" id="warmthv"></span></label>
+        <div class="btns">
+          <button id="p-neutral">Neutral</button>
+          <button id="p-poppy">Poppy</button>
+          <button id="p-earthy">Earthy</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>CRT preview</h2>
+        <div class="chk"><input id="crton" type="checkbox" checked><label for="crton">Enable bloom + raster</label></div>
+        <label class="row">Bloom <input id="bloom" type="range" min="0" max="0.3" step="0.005" value="0.118"><span class="val" id="bloomv"></span></label>
+        <label class="row">Bloom px <input id="offset" type="range" min="0" max="4" step="0.1" value="1.5"><span class="val" id="offsetv"></span></label>
+        <label class="row">Scanline <input id="scan" type="range" min="0" max="0.5" step="0.01" value="0.10"><span class="val" id="scanv"></span></label>
+        <label class="row">Scan px <input id="scanP" type="range" min="1" max="8" step="0.5" value="3"><span class="val" id="scanPv"></span></label>
+        <label class="row">Mask <input id="mask" type="range" min="0" max="0.3" step="0.01" value="0.05"><span class="val" id="maskv"></span></label>
+        <label class="row">Mask px <input id="maskP" type="range" min="3" max="12" step="1" value="6"><span class="val" id="maskPv"></span></label>
+        <label class="row">Vignette <input id="vig" type="range" min="0" max="0.7" step="0.01" value="0.34"><span class="val" id="vigv"></span></label>
+      </div>
+
+      <div class="card">
+        <h2>Edit color: <span id="selname">red</span></h2>
+        <label class="row">Hue <input id="eh" type="range" min="0" max="360" step="1" value="0"><span class="val" id="ehv"></span></label>
+        <label class="row">Sat <input id="es" type="range" min="0" max="100" step="1" value="0"><span class="val" id="esv"></span></label>
+        <label class="row">Light <input id="el" type="range" min="0" max="100" step="1" value="50"><span class="val" id="elv"></span></label>
+        <div class="rgbrow">
+          <label>R<input id="er" type="number" min="0" max="1" step="0.001"></label>
+          <label>G<input id="eg" type="number" min="0" max="1" step="0.001"></label>
+          <label>B<input id="eb" type="number" min="0" max="1" step="0.001"></label>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <canvas id="preview"></canvas>
+      <div class="preview-cap">In-game look: each dot is a sprite (light fill, dark stroke) on the scene background, through the same bloom + raster pipeline.</div>
+      <div class="addrow">
+        <input id="newname" type="text" value="anthrazit" placeholder="new color name" maxlength="24">
+        <button id="addcolor">+ Add color</button>
+      </div>
+      <div class="palette" id="palette"></div>
+
+      <div class="out-head">
+        <h2>Metall constants</h2>
+        <button id="copy">Copy</button>
+      </div>
+      <pre id="code"></pre>
+    </div>
+  </div>
+
+<script>
+const TAU = Math.PI * 2
+const LIGHT = 1.0, DARK = 0.5, DARKER = 0.28
+
+const SOURCE = [
+  {name:'red',    r:1.000, g:0.322, b:0.322},
+  {name:'orange', r:1.000, g:0.541, b:0.239},
+  {name:'yellow', r:1.000, g:0.824, b:0.239},
+  {name:'lime',   r:0.659, g:0.890, b:0.239},
+  {name:'green',  r:0.239, g:0.851, b:0.420},
+  {name:'teal',   r:0.180, g:0.851, b:0.765},
+  {name:'sky',    r:0.239, g:0.765, b:1.000},
+  {name:'blue',   r:0.302, g:0.471, b:1.000},
+  {name:'purple', r:0.639, g:0.349, b:1.000},
+  {name:'pink',   r:1.000, g:0.361, b:0.753},
+  {name:'brown',  r:0.545, g:0.353, b:0.169},
+  {name:'tan',    r:0.820, g:0.643, b:0.420},
+  {name:'rust',   r:0.776, g:0.318, b:0.141},
+  {name:'slate',  r:0.270, g:0.225, b:0.205},
+]
+
+const G = {hue:0, sat:1.0, value:1.0, vibrance:0.0, warmth:0.0}
+const CRT = {on:true, bloom:0.118, offset:1.5, scan:0.10, scanP:3, mask:0.05, maskP:6, vig:0.34}
+const BG = {r:0.01, g:0.0, b:0.05}
+
+const clamp01 = (x) => x < 0 ? 0 : (x > 1 ? 1 : x)
+
+function srgb2lin(c) {
+  if (c <= 0.04045) { return c / 12.92 }
+  return Math.pow((c + 0.055) / 1.055, 2.4)
+}
+function lin2srgb(c) {
+  if (c <= 0.0031308) { return c * 12.92 }
+  return 1.055 * Math.pow(c, 1 / 2.4) - 0.055
+}
+function shade(col, b) {
+  return {
+    r: clamp01(lin2srgb(srgb2lin(col.r) * b)),
+    g: clamp01(lin2srgb(srgb2lin(col.g) * b)),
+    b: clamp01(lin2srgb(srgb2lin(col.b) * b)),
+  }
+}
+
+function rgb2hsl(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
+  const l = (mx + mn) / 2
+  const d = mx - mn
+  let h = 0, s = 0
+  if (d > 1e-9) {
+    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn)
+    if (mx === r) { h = ((g - b) / d + (g < b ? 6 : 0)) / 6 }
+    else if (mx === g) { h = ((b - r) / d + 2) / 6 }
+    else { h = ((r - g) / d + 4) / 6 }
+  }
+  return {h, s, l}
+}
+function hue2rgb(p, q, t) {
+  if (t < 0) { t += 1 }
+  if (t > 1) { t -= 1 }
+  if (t < 1 / 6) { return p + (q - p) * 6 * t }
+  if (t < 1 / 2) { return q }
+  if (t < 2 / 3) { return p + (q - p) * (2 / 3 - t) * 6 }
+  return p
+}
+function hsl2rgb(h, s, l) {
+  if (s < 1e-9) { return {r:l, g:l, b:l} }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+  const p = 2 * l - q
+  return {r: hue2rgb(p, q, h + 1 / 3), g: hue2rgb(p, q, h), b: hue2rgb(p, q, h - 1 / 3)}
+}
+
+function transform(col) {
+  let hsl = rgb2hsl(col.r, col.g, col.b)
+  let h = (hsl.h + G.hue / 360 + 1) % 1
+  let s = clamp01(hsl.s * G.sat + G.vibrance * (1 - hsl.s))
+  let l = clamp01(hsl.l * G.value)
+  let c = hsl2rgb(h, s, l)
+  c.r = clamp01(c.r + G.warmth * 0.10)
+  c.b = clamp01(c.b - G.warmth * 0.10)
+  return c
+}
+
+const u8 = (x) => Math.round(255 * clamp01(x))
+const css = (c) => 'rgb(' + u8(c.r) + ',' + u8(c.g) + ',' + u8(c.b) + ')'
+const hex2 = (v) => ('0' + Math.round(255 * clamp01(v)).toString(16)).slice(-2)
+const rgb2hex = (c) => '#' + hex2(c.r) + hex2(c.g) + hex2(c.b)
+function hex2rgb(h) {
+  return {r: parseInt(h.slice(1, 3), 16) / 255, g: parseInt(h.slice(3, 5), 16) / 255, b: parseInt(h.slice(5, 7), 16) / 255}
+}
+
+const preview = document.getElementById('preview')
+const pctx = preview.getContext('2d')
+const scene = document.createElement('canvas')
+const sctx = scene.getContext('2d')
+const overlay = document.createElement('canvas')
+const octx = overlay.getContext('2d')
+let overlayKey = ''
+
+function isBase(name) { return name === 'slate' }
+
+function drawScene() {
+  const W = scene.width, H = scene.height
+  sctx.fillStyle = css(BG)
+  sctx.fillRect(0, 0, W, H)
+  const n = SOURCE.length
+  const cols = Math.ceil(n / 2)
+  const cw = W / cols, ch = H / 2
+  SOURCE.forEach((col, i) => {
+    const cx = (i % cols + 0.5) * cw
+    const cy = (Math.floor(i / cols) + 0.5) * ch
+    const t = transform(col)
+    const fill = isBase(col.name) ? shade(t, DARKER) : shade(t, LIGHT)
+    const stroke = shade(t, DARK)
+    const R = Math.min(cw, ch) * 0.30
+    sctx.beginPath()
+    sctx.arc(cx, cy - 6, R, 0, TAU)
+    sctx.fillStyle = css(stroke)
+    sctx.fill()
+    sctx.beginPath()
+    sctx.arc(cx, cy - 6, R * 0.82, 0, TAU)
+    sctx.fillStyle = css(fill)
+    sctx.fill()
+    sctx.fillStyle = 'rgba(190,190,205,0.55)'
+    sctx.font = '11px ui-monospace, monospace'
+    sctx.textAlign = 'center'
+    sctx.fillText(col.name, cx, cy + R + 8)
+  })
+}
+
+function buildOverlay() {
+  const W = overlay.width, H = overlay.height
+  const key = [W, H, CRT.scan, CRT.scanP, CRT.mask, CRT.maskP, CRT.vig].join(',')
+  if (key === overlayKey) { return }
+  overlayKey = key
+  const img = octx.createImageData(W, H)
+  const d = img.data
+  const subw = Math.max(1, CRT.maskP / 3)
+  for (let y = 0; y < H; y++) {
+    const scan = 1 - CRT.scan * (0.5 - 0.5 * Math.cos(TAU * y / CRT.scanP))
+    for (let x = 0; x < W; x++) {
+      const sub = Math.floor(x / subw) % 3
+      const mr = sub === 0 ? 1 : 1 - CRT.mask
+      const mg = sub === 1 ? 1 : 1 - CRT.mask
+      const mb = sub === 2 ? 1 : 1 - CRT.mask
+      const ndx = (x - W / 2) / (W / 2)
+      const ndy = (y - H / 2) / (H / 2)
+      const dd = (ndx * ndx + ndy * ndy) / 2
+      const vig = 1 - CRT.vig * dd
+      const p = (y * W + x) * 4
+      d[p] = 255 * clamp01(scan * mr * vig)
+      d[p + 1] = 255 * clamp01(scan * mg * vig)
+      d[p + 2] = 255 * clamp01(scan * mb * vig)
+      d[p + 3] = 255
+    }
+  }
+  octx.putImageData(img, 0, 0)
+}
+
+function composite() {
+  pctx.globalCompositeOperation = 'source-over'
+  pctx.globalAlpha = 1
+  pctx.fillStyle = '#000'
+  pctx.fillRect(0, 0, preview.width, preview.height)
+  pctx.drawImage(scene, 0, 0)
+  if (CRT.on) {
+    pctx.globalCompositeOperation = 'lighter'
+    pctx.globalAlpha = CRT.bloom
+    const o = CRT.offset
+    const offs = [[o, 0], [-o, 0], [0, o], [0, -o], [o, o], [-o, o], [o, -o], [-o, -o]]
+    offs.forEach((d) => { pctx.drawImage(scene, d[0], d[1]) })
+    pctx.globalAlpha = 1
+    pctx.globalCompositeOperation = 'multiply'
+    buildOverlay()
+    pctx.drawImage(overlay, 0, 0)
+    pctx.globalCompositeOperation = 'source-over'
+  }
+}
+
+function buildSwatches() {
+  const el = document.getElementById('palette')
+  el.innerHTML = ''
+  SOURCE.forEach((col, i) => {
+    const card = document.createElement('div')
+    card.className = 'swatch'
+    card.innerHTML =
+      '<div class="chip" id="chip' + i + '"></div>' +
+      '<div class="meta"><span class="nm">' + col.name + '</span></div>' +
+      '<div class="shades"><div class="sh" id="sl' + i + '"></div><div class="sh" id="sd' + i + '"></div><div class="sh" id="sk' + i + '"></div></div>'
+    card.addEventListener('click', () => selectColor(i))
+    el.appendChild(card)
+  })
+  highlightSelected()
+}
+
+function paintSwatches() {
+  SOURCE.forEach((col, i) => {
+    const t = transform(col)
+    const fill = shade(t, LIGHT)
+    document.getElementById('chip' + i).style.background = css(fill)
+    document.getElementById('sl' + i).style.background = css(shade(t, LIGHT))
+    document.getElementById('sd' + i).style.background = css(shade(t, DARK))
+    document.getElementById('sk' + i).style.background = css(shade(t, DARKER))
+  })
+}
+
+let selected = 0
+
+function highlightSelected() {
+  document.querySelectorAll('#palette .swatch').forEach((el, i) => {
+    el.classList.toggle('sel', i === selected)
+  })
+}
+
+function setEd(id, v) {
+  const el = document.getElementById(id)
+  el.value = v
+  document.getElementById(id + 'v').textContent = v
+}
+
+function loadEditor() {
+  const c = SOURCE[selected]
+  document.getElementById('selname').textContent = c.name
+  const hsl = rgb2hsl(c.r, c.g, c.b)
+  setEd('eh', Math.round(hsl.h * 360))
+  setEd('es', Math.round(hsl.s * 100))
+  setEd('el', Math.round(hsl.l * 100))
+  document.getElementById('er').value = c.r.toFixed(3)
+  document.getElementById('eg').value = c.g.toFixed(3)
+  document.getElementById('eb').value = c.b.toFixed(3)
+}
+
+function selectColor(i) {
+  selected = i
+  highlightSelected()
+  loadEditor()
+}
+
+function editFromHsl() {
+  const h = parseFloat(document.getElementById('eh').value) / 360
+  const s = parseFloat(document.getElementById('es').value) / 100
+  const l = parseFloat(document.getElementById('el').value) / 100
+  document.getElementById('ehv').textContent = Math.round(h * 360)
+  document.getElementById('esv').textContent = Math.round(s * 100)
+  document.getElementById('elv').textContent = Math.round(l * 100)
+  const c = hsl2rgb(h, s, l)
+  SOURCE[selected].r = c.r
+  SOURCE[selected].g = c.g
+  SOURCE[selected].b = c.b
+  document.getElementById('er').value = c.r.toFixed(3)
+  document.getElementById('eg').value = c.g.toFixed(3)
+  document.getElementById('eb').value = c.b.toFixed(3)
+  render()
+}
+
+function editFromRgb() {
+  const r = clamp01(parseFloat(document.getElementById('er').value) || 0)
+  const g = clamp01(parseFloat(document.getElementById('eg').value) || 0)
+  const b = clamp01(parseFloat(document.getElementById('eb').value) || 0)
+  SOURCE[selected].r = r
+  SOURCE[selected].g = g
+  SOURCE[selected].b = b
+  const hsl = rgb2hsl(r, g, b)
+  setEd('eh', Math.round(hsl.h * 360))
+  setEd('es', Math.round(hsl.s * 100))
+  setEd('el', Math.round(hsl.l * 100))
+  render()
+}
+
+function updateCode() {
+  let s = '-- Poppy palette, bright base hues. Darken with shade(hue, level).\n'
+  SOURCE.forEach((col) => {
+    if (col.name === 'brown') { s += '\n-- Earthy tones.\n' }
+    if (col.name === 'slate') { s += '\n-- Tower base (rendered dark via the dark/darker levels).\n' }
+    const t = transform(col)
+    s += 'pub let ' + col.name + ' = sdl.FColor(' + t.r.toFixed(3) + ', ' + t.g.toFixed(3) + ', ' + t.b.toFixed(3) + ', 1.000)\n'
+  })
+  document.getElementById('code').textContent = s
+}
+
+function render() {
+  const w = Math.max(560, Math.floor(preview.clientWidth))
+  preview.width = w
+  preview.height = 260
+  scene.width = w
+  scene.height = 260
+  overlay.width = w
+  overlay.height = 260
+  drawScene()
+  composite()
+  paintSwatches()
+  updateCode()
+}
+
+function bind(id, obj, key) {
+  const el = document.getElementById(id)
+  const out = document.getElementById(id + 'v')
+  const upd = () => {
+    obj[key] = parseFloat(el.value)
+    out.textContent = String(el.step).indexOf('.') >= 0 ? obj[key].toFixed(2) : obj[key]
+    render()
+  }
+  el.addEventListener('input', upd)
+  upd()
+}
+
+function setGlobals(g) {
+  G.hue = g.hue
+  G.sat = g.sat
+  G.value = g.value
+  G.vibrance = g.vibrance
+  G.warmth = g.warmth
+  syncGlobalSliders()
+  render()
+}
+function syncGlobalSliders() {
+  const map = {hue:'hue', sat:'sat', value:'value', vibrance:'vibrance', warmth:'warmth'}
+  Object.keys(map).forEach((k) => {
+    const el = document.getElementById(map[k])
+    el.value = G[k]
+    document.getElementById(map[k] + 'v').textContent = String(el.step).indexOf('.') >= 0 ? G[k].toFixed(2) : G[k]
+  })
+}
+
+// Read the live palette out of sprite.met. The built-in SOURCE above is only a
+// fallback for when the page is opened without the server (fetch is blocked).
+function setStatus(msg, kind) {
+  const el = document.getElementById('status')
+  el.textContent = msg
+  el.className = 'status ' + kind
+}
+async function loadPalette() {
+  try {
+    const res = await fetch('sprite.met', {cache: 'no-store'})
+    if (!res.ok) { throw new Error('HTTP ' + res.status) }
+    const txt = await res.text()
+    const re = /^pub let (\w+)\s*=\s*sdl\.FColor\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/gm
+    const found = []
+    let m = re.exec(txt)
+    while (m !== null) {
+      found.push({name: m[1], r: parseFloat(m[2]), g: parseFloat(m[3]), b: parseFloat(m[4])})
+      m = re.exec(txt)
+    }
+    if (found.length === 0) { throw new Error('no palette constants found') }
+    SOURCE.length = 0
+    found.forEach((c) => SOURCE.push(c))
+    setStatus('Loaded ' + found.length + ' colors from sprite.met.', 'ok')
+  } catch (e) {
+    setStatus('Could not read sprite.met (' + e.message + '). Open via `just palette-editor`, not by double-clicking the file. Showing built-in defaults.', 'warn')
+  }
+}
+
+async function reloadFromFile() {
+  await loadPalette()
+  buildSwatches()
+  selected = Math.min(selected, SOURCE.length - 1)
+  selectColor(selected)
+  render()
+}
+
+function wire() {
+  buildSwatches()
+  bind('hue', G, 'hue')
+  bind('sat', G, 'sat')
+  bind('value', G, 'value')
+  bind('vibrance', G, 'vibrance')
+  bind('warmth', G, 'warmth')
+  bind('bloom', CRT, 'bloom')
+  bind('offset', CRT, 'offset')
+  bind('scan', CRT, 'scan')
+  bind('scanP', CRT, 'scanP')
+  bind('mask', CRT, 'mask')
+  bind('maskP', CRT, 'maskP')
+  bind('vig', CRT, 'vig')
+  document.getElementById('crton').addEventListener('change', (e) => {
+    CRT.on = e.target.checked
+    render()
+  })
+  document.getElementById('copy').addEventListener('click', () => {
+    navigator.clipboard.writeText(document.getElementById('code').textContent)
+  })
+  document.getElementById('reload').addEventListener('click', reloadFromFile)
+  document.getElementById('addcolor').addEventListener('click', () => {
+    const inp = document.getElementById('newname')
+    const name = inp.value.trim().replace(/[^A-Za-z0-9_]/g, '_')
+    if (name === '') { return }
+    if (SOURCE.some((c) => c.name === name)) { return }
+    SOURCE.push({name: name, r: 0.5, g: 0.5, b: 0.5})
+    inp.value = ''
+    buildSwatches()
+    selectColor(SOURCE.length - 1)
+    render()
+  })
+  document.getElementById('p-neutral').addEventListener('click', () => setGlobals({hue:0, sat:1.0, value:1.0, vibrance:0.0, warmth:0.0}))
+  document.getElementById('p-poppy').addEventListener('click', () => setGlobals({hue:0, sat:1.32, value:1.04, vibrance:0.12, warmth:0.0}))
+  document.getElementById('p-earthy').addEventListener('click', () => setGlobals({hue:-4, sat:0.92, value:0.98, vibrance:0.0, warmth:0.18}))
+  const hslIds = ['eh', 'es', 'el']
+  hslIds.forEach((id) => document.getElementById(id).addEventListener('input', editFromHsl))
+  const rgbIds = ['er', 'eg', 'eb']
+  rgbIds.forEach((id) => document.getElementById(id).addEventListener('input', editFromRgb))
+  selectColor(0)
+  window.addEventListener('resize', render)
+  render()
+}
+
+loadPalette().then(wire)
+</script>
+</body>
+</html>

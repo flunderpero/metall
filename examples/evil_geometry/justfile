@@ -8,7 +8,14 @@ flags := "-I src -I ../../lib --opt fast --link '" + link + "'"
 default: run
 
 run:
-    {{metallc}} run {{flags}} src/main.met
+    {{metallc}} run {{flags}} --timing src/main.met
 
 build:
     {{metallc}} build {{flags}} -o main src/main.met
+
+# Serve the color palette designer (reads src/sprite.met) and open it.
+palette-editor:
+    #!/usr/bin/env bash
+    (sleep 1 && open http://localhost:8000/palette.html) &
+    echo "Palette editor -> http://localhost:8000/palette.html  (ctrl-c to stop)"
+    python3 -m http.server 8000 --directory src
