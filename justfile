@@ -47,6 +47,8 @@ test-lib opt="none" target="native":
     set -uo pipefail
 
     failed=0
+    out=$(mktemp)
+    trap 'rm -f "$out"' EXIT
     for file in lib/*/*_test.met; do
         case "{{target}}:$(basename "$file")" in
             wasm*:fs_test.met|wasm*:os_test.met|wasm*:thread_test.met)
@@ -56,10 +58,12 @@ test-lib opt="none" target="native":
                 ;;
         esac
         echo ">>> $file"
-        if go run ./metallc/... run --opt {{opt}} --target {{target}} "$file" 2>&1 | tee /dev/stderr | grep -q "FAILED"; then
-            failed=1
-        fi
-        if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+        # Capture to a file, don't pipe into `grep -q FAILED`: `grep -q` exits on
+        # the first match and SIGPIPEs the producer, so under `pipefail` the
+        # pipeline status hid the match and a printed FAILED could still report
+        # "All tests passed".
+        go run ./metallc/... run --opt {{opt}} --target {{target}} "$file" 2>&1 | tee "$out"
+        if [ "${PIPESTATUS[0]}" -ne 0 ] || grep -q "FAILED" "$out"; then
             failed=1
         fi
         echo ""
