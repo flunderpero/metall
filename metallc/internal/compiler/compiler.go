@@ -800,6 +800,12 @@ func clangLinkFlags(
 		}
 		flags = append(flags, "-isysroot", strings.TrimSpace(string(sdk)))
 	}
+	if runtime.GOOS == "linux" {
+		// libm is a separate library on Linux, and the prelude's math (sin,
+		// tan, exp, ...) needs it. macOS folds libm into libSystem, so there
+		// it links implicitly.
+		flags = append(flags, "-lm")
+	}
 	flags = append(flags, opts.LinkFlags...)
 	return flags, env, nil
 }

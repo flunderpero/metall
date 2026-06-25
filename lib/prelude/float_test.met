@@ -296,11 +296,11 @@ fun main() void {
     })
     math_suite.test("Float.tan", fun() !void {
         try test.eq(0.0, 0.0.tan())
-        -- tan(1.0): platform libm and wasm runtime round the last bit differently.
-        #if not os.wasm
+        -- tan(1.0): Apple's libm rounds the last bit differently from glibc and the wasm runtime.
+        #if os.darwin
         try test.eq(1.557407724654902, 1.0.tan())
         #end
-        #if os.wasm
+        #if not os.darwin
         try test.eq(1.5574077246549023, 1.0.tan())
         #end
     })
@@ -314,21 +314,21 @@ fun main() void {
         try test.eq(-1.5707963267948966, (-1.0).asin())
         -- Outside the domain is NaN.
         try test.eq(true, 2.0.asin().is_nan())
-        -- asin(0.5): native and wasm differ in the last bit.
-        #if not os.wasm
+        -- asin(0.5): Apple's libm differs from glibc and wasm in the last bit.
+        #if os.darwin
         try test.eq(0.5235987755982988, 0.5.asin())
         #end
-        #if os.wasm
+        #if not os.darwin
         try test.eq(0.5235987755982989, 0.5.asin())
         #end
     })
     math_suite.test("F32.asin", fun() !void {
-        -- asinf at the domain edges: the wasm runtime is a full ulp from native.
-        #if not os.wasm
+        -- asinf at the domain edges: Apple's libm is a full ulp from glibc and wasm.
+        #if os.darwin
         try test.eq(F32(1.570796251296997), F32(1.0).asin())
         try test.eq(F32(-1.570796251296997), F32(-1.0).asin())
         #end
-        #if os.wasm
+        #if not os.darwin
         try test.eq(F32(1.5707963705062866), F32(1.0).asin())
         try test.eq(F32(-1.5707963705062866), F32(-1.0).asin())
         #end
@@ -340,21 +340,21 @@ fun main() void {
         try test.eq(1.5707963267948966, 0.0.acos())
         -- Outside the domain is NaN.
         try test.eq(true, 2.0.acos().is_nan())
-        -- acos(0.5): native and wasm differ in the last bit.
-        #if not os.wasm
+        -- acos(0.5): Apple's libm differs from glibc and wasm in the last bit.
+        #if os.darwin
         try test.eq(1.0471975511965976, 0.5.acos())
         #end
-        #if os.wasm
+        #if not os.darwin
         try test.eq(1.0471975511965979, 0.5.acos())
         #end
     })
     math_suite.test("F32.acos", fun() !void {
         try test.eq(F32(0.0), F32(1.0).acos())
-        -- acosf(-1.0): native and the wasm runtime round differently.
-        #if not os.wasm
+        -- acosf(-1.0): Apple's libm rounds differently from glibc and the wasm runtime.
+        #if os.darwin
         try test.eq(F32(3.141592502593994), F32(-1.0).acos())
         #end
-        #if os.wasm
+        #if not os.darwin
         try test.eq(F32(3.1415927410125732), F32(-1.0).acos())
         #end
     })
@@ -382,9 +382,9 @@ fun main() void {
         try test.eq(F32(3.5), F32(3.5).abs())
         try test.eq(U32(0), (-0.0).to_f32().abs().to_bits())
     })
-    -- exp/log/pow/cbrt/atan2 happen to agree bit-for-bit between native libm and
-    -- the wasm runtime at these inputs, so no `#if os.wasm` split is needed (unlike
-    -- the sin/cos/asin family above). floor/ceil/round/trunc are exact operations.
+    -- exp/log/pow/atan2 happen to agree bit-for-bit across Apple's libm, glibc, and
+    -- the wasm runtime at these inputs, so no platform split is needed (unlike the
+    -- sin/cos/asin family above, and cbrt below). floor/ceil/round/trunc are exact.
     math_suite.test("Float.exp", fun() !void {
         try test.eq(1.0, 0.0.exp())
         try test.eq(2.718281828459045, 1.0.exp())
@@ -438,11 +438,22 @@ fun main() void {
         try test.eq(F32(1.4142135381698608), F32(2.0).pow(F32(0.5)))
     })
     math_suite.test("Float.cbrt", fun() !void {
+        -- cbrt(27) and cbrt(2): glibc rounds the last bit up where Apple's libm and wasm are exact.
+        #if not os.linux
         try test.eq(3.0, 27.0.cbrt())
+        #end
+        #if os.linux
+        try test.eq(3.0000000000000004, 27.0.cbrt())
+        #end
         try test.eq(0.0, 0.0.cbrt())
         -- Defined for negatives, unlike pow(x, 1.0/3.0).
         try test.eq(-2.0, (-8.0).cbrt())
+        #if not os.linux
         try test.eq(1.2599210498948732, 2.0.cbrt())
+        #end
+        #if os.linux
+        try test.eq(1.2599210498948734, 2.0.cbrt())
+        #end
     })
     math_suite.test("F32.cbrt", fun() !void {
         try test.eq(F32(3.0), F32(27.0).cbrt())
