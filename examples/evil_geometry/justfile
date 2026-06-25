@@ -1,7 +1,11 @@
 metallc := "go run ../../metallc"
 
-# Static libSDL3.a needs these macOS frameworks handed to the final link.
-link := "-Lvendor/sdl3/lib -lSDL3 -framework Cocoa -framework Carbon -framework IOKit -framework CoreVideo -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework CoreMedia -framework CoreHaptics -framework GameController -framework ForceFeedback -framework CoreFoundation -framework CoreGraphics -framework Metal -framework QuartzCore -framework UniformTypeIdentifiers -liconv"
+sdl_lib := "-Lvendor/sdl3/lib -lSDL3"
+
+mac_link := "-framework Cocoa -framework Carbon -framework IOKit -framework CoreVideo -framework CoreAudio -framework AudioToolbox -framework AVFoundation -framework CoreMedia -framework CoreHaptics -framework GameController -framework ForceFeedback -framework CoreFoundation -framework CoreGraphics -framework Metal -framework QuartzCore -framework UniformTypeIdentifiers -liconv"
+linux_link := "-lm -ldl -lpthread -lrt"
+
+link := sdl_lib + if os() == "macos" { " " + mac_link } else { " " + linux_link }
 
 flags := "-I src -I ../../lib --opt fast --link '" + link + "'"
 
@@ -12,6 +16,10 @@ run:
 
 build:
     {{metallc}} build {{flags}} -o main src/main.met
+
+# Launch headless (dummy video/audio) and quit after `seconds`. Used by CI.
+demo seconds="5":
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./main --demo {{seconds}}
 
 # Serve the color palette designer (reads src/sprite.met) and open it.
 palette-editor:

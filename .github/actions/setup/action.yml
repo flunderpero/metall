@@ -8,6 +8,9 @@ runs:
       uses: actions/setup-go@v6
       with:
         go-version-file: metallc/go.mod
+        # A self-hosted runner keeps the Go caches on local disk between runs,
+        # so only cache to GitHub on ephemeral hosted runners.
+        cache: ${{ runner.environment == 'github-hosted' }}
         cache-dependency-path: |
           metallc/go.sum
           tools/go.sum
@@ -19,6 +22,7 @@ runs:
 
     - name: Cache just
       id: cache-just
+      if: runner.environment == 'github-hosted'
       uses: actions/cache@v5
       with:
         path: ~/.local/bin/just
@@ -31,6 +35,12 @@ runs:
         JUST_VERSION: "1.49.0"
       run: |
         set -euo pipefail
+        # The cache is skipped on self-hosted runners, where `just` persists in
+        # $HOME, so reuse the local copy instead of re-downloading.
+        if [ -x "$HOME/.local/bin/just" ]; then
+          echo "just already installed"
+          exit 0
+        fi
         case "$(uname)-$(uname -m)" in
           Linux-x86_64)
             just_target="x86_64-unknown-linux-musl"
@@ -59,6 +69,7 @@ runs:
         "$HOME/.local/bin/just" --version
 
     - name: Cache LLVM toolchain
+      if: runner.environment == 'github-hosted'
       uses: actions/cache@v5
       with:
         path: .llvm/22.1.3

@@ -9,8 +9,9 @@ use local.math
 use local.sdl
 use std.io
 use std.cmp
+use std.time
 
-pub enum GameResult U8 = user_quit
+pub enum GameResult U8 = user_quit | demo_ended
 
 pub nocopy struct Game<L level.Level> {
     level &mut L
@@ -26,7 +27,8 @@ pub fun Game.run(
     level_ &mut L,
     audio_ &mut audio.Audio,
     assets_ &assets.Assets,
-    renderer sdl.Renderer) !GameResult
+    renderer sdl.Renderer,
+    demo ?time.Duration) !GameResult
 {
     let @local = Arena()
     let sim_ = level_.sim()
@@ -39,6 +41,7 @@ pub fun Game.run(
     let max_frame = step * 5
     mut prev = sdl.performance_counter()
     mut acc = 0
+    let demo_start = time.Instant.new()
 
     for {
         let now = sdl.performance_counter()
@@ -50,9 +53,17 @@ pub fun Game.run(
 
         -- Handle events.
         let @loop = Arena()
-        let result = try g.handle_events(@loop) 
+        let result = try g.handle_events(@loop)
         if not result {
             return GameResult.user_quit
+        }
+
+        match demo {
+        case time.Duration d:
+            if demo_start.elapsed().to(time.nanosecond) >= d.to(time.nanosecond) {
+                return GameResult.demo_ended
+            }
+        else:
         }
 
         -- Update the simulation.

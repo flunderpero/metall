@@ -4,6 +4,8 @@ sdl_version := "3.4.10"
 sdl_sha256 := "0dc11d980ba17250200718fa4e28011da293f27ed92f92203afffe396811f307"
 sdl_url := "https://github.com/libsdl-org/SDL/archive/refs/tags/release-" + sdl_version + ".tar.gz"
 
+osx_arch := if os() == "macos" { "-DCMAKE_OSX_ARCHITECTURES=arm64" } else { "" }
+
 work := ".build/sdl"
 tarball := work / ("sdl3-" + sdl_version + ".tar.gz")
 src := work / ("SDL-release-" + sdl_version)
@@ -32,7 +34,7 @@ extract: fetch
 
 build: extract
     cmake -S "{{src}}" -B "{{build}}" -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        {{osx_arch}} \
         -DSDL_STATIC=ON -DSDL_SHARED=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
     cmake --build "{{build}}" --parallel
 

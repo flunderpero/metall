@@ -79,8 +79,9 @@ benchmarks *args:
     just -f benchmarks/justfile {{args}}
 
 # Run all examples/*.met (except *_macro.met).
+#   opt:    none, safe, fast - see `CompilerOpts`
 #   target: native, wasm32, wasm64 - run the examples for this target
-examples target="native":
+examples opt="none" target="native":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -100,7 +101,7 @@ examples target="native":
             header="$base.h"
             bin="$(mktemp -t "$(basename "$base").XXXXXX")"
             trap 'rm -f "$bin"' EXIT
-            go run ./metallc/... build -c -emit-header-file -o "$obj" "$file"
+            go run ./metallc/... build --opt {{opt}} -c -emit-header-file -o "$obj" "$file"
             clang_args=(-I "$(dirname "$header")" -o "$bin" "$c_file" "$obj")
             if [ "$(uname -s)" = "Darwin" ]; then
                 clang_args+=(-isysroot "$(xcrun --show-sdk-path)")
@@ -114,7 +115,7 @@ examples target="native":
         elif [ "{{target}}" != "native" ] && [ -f "$mts_file" ]; then
             echo ">>> $file + $mts_file ({{target}})"
             wasm="$base.wasm"
-            go run ./metallc/... build --target {{target}} --emit-typescript -o "$wasm" "$file"
+            go run ./metallc/... build --opt {{opt}} --target {{target}} --emit-typescript -o "$wasm" "$file"
             (cd "$(dirname "$mts_file")" && node "$(basename "$mts_file")")
             has_runner=true
         fi
@@ -126,7 +127,7 @@ examples target="native":
             continue
         fi
         echo ">>> $file ({{target}})"
-        go run ./metallc/... run --target {{target}} "$file"
+        go run ./metallc/... run --opt {{opt}} --target {{target}} "$file"
     done
 
 metallc *args:

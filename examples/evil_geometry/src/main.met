@@ -4,9 +4,22 @@ use local.audio
 use local.level
 use local.game
 use local.math
+use std.os
+use std.time
 
 fun main() !void {
     let @static = Arena()
+
+    -- `--demo <seconds>` runs the game headless for a fixed time then quits, so CI
+    -- can exercise it. 
+    -- todo: Duration has no parser yet, so we take plain seconds.
+    mut demo ?time.Duration = None()
+    let args = os.args()
+    for arg, i in args {
+        if arg.eq("--demo") and i + 1 < args.len {
+            demo = time.second.times(try Int.from_ascii_str(args[i + 1].as_bytes()))
+        }
+    }
 
     try sdl.init(sdl.InitFlags.video.tag | sdl.InitFlags.audio.tag)
     defer { sdl.quit() }
@@ -37,6 +50,6 @@ fun main() !void {
         let @level = Arena()
         let level_ = level.Level1.new(@level)
 
-        _ = game.Game.run(screen_size, level_, audio_, assets_, renderer)
+        _ = game.Game.run(screen_size, level_, audio_, assets_, renderer, demo)
     }
 }

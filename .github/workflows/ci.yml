@@ -5,11 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel an in-progress run when a PR is pushed again, so superseded runs don't
+# hog the single self-hosted runner. Main pushes still run to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Keep the workspace (toolchain, vendored SDL) on self-hosted runners
+          # so we don't re-fetch it every run; hosted runners are ephemeral.
+          clean: ${{ runner.environment == 'github-hosted' }}
       - uses: ./.github/actions/setup
 
       - name: just go-mod
@@ -27,11 +37,108 @@ jobs:
       - name: just lint
         run: just lint
 
-      - name: just examples
-        run: just examples
+      - name: just benchmarks compile-check
+        run: just benchmarks compile-check
 
-      - name: just examples wasm32
-        run: just examples wasm32
+  test:
+    name: test ${{ matrix.opt }} (${{ matrix.platform.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux
+            runner: ubuntu-24.04
+          - name: darwin
+            runner: [self-hosted, macOS]
+        opt: [none, safe, fast]
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Keep the workspace (toolchain, vendored SDL) on self-hosted runners
+          # so we don't re-fetch it every run; hosted runners are ephemeral.
+          clean: ${{ runner.environment == 'github-hosted' }}
+      - uses: ./.github/actions/setup
 
-      - name: just examples wasm64
-        run: just examples wasm64
+      - name: just test ${{ matrix.opt }}
+        run: just test ${{ matrix.opt }}
+
+      # wasm runs through node, so it's platform-independent; test it on linux only.
+      - name: just test ${{ matrix.opt }} wasm32
+        if: matrix.platform.name == 'linux'
+        run: just test ${{ matrix.opt }} wasm32
+
+      - name: just test ${{ matrix.opt }} wasm64
+        if: matrix.platform.name == 'linux'
+        run: just test ${{ matrix.opt }} wasm64
+
+      - name: just examples ${{ matrix.opt }}
+        run: just examples ${{ matrix.opt }}
+
+      - name: just examples ${{ matrix.opt }} wasm32
+        if: matrix.platform.name == 'linux'
+        run: just examples ${{ matrix.opt }} wasm32
+
+      - name: just examples ${{ matrix.opt }} wasm64
+        if: matrix.platform.name == 'linux'
+        run: just examples ${{ matrix.opt }} wasm64
+
+  evil_geometry:
+    name: evil geometry (${{ matrix.platform.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux
+            runner: ubuntu-24.04
+          - name: darwin
+            runner: [self-hosted, macOS]
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Keep the workspace (toolchain, vendored SDL) on self-hosted runners
+          # so we don't re-fetch it every run; hosted runners are ephemeral.
+          clean: ${{ runner.environment == 'github-hosted' }}
+      - uses: ./.github/actions/setup
+
+      # Real X11/GL/audio dev libs so SDL builds a normal desktop binary that
+      # would run on a real Linux box (the CI demo itself still runs headless
+      # with the dummy driver). Linux only; the mac runner already has Cocoa.
+      - name: Install SDL build deps
+        if: matrix.platform.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            libgl-dev libegl-dev libgles-dev \
+            libasound2-dev libpulse-dev
+
+      # On self-hosted runners the vendored SDL persists in the workspace, so
+      # GitHub caching is only used on hosted runners.
+      - name: Restore vendored SDL3
+        id: sdl-cache
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache/restore@v5
+        with:
+          path: examples/evil_geometry/vendor/sdl3
+          key: sdl3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('examples/evil_geometry/sdl3.justfile') }}
+
+      - name: Build SDL3 if not cached
+        run: just -f examples/evil_geometry/sdl3.justfile
+
+      # Saved right after the build so the cache survives even when a later
+      # step fails, keeping iteration fast.
+      - name: Save vendored SDL3
+        if: runner.environment == 'github-hosted' && steps.sdl-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: examples/evil_geometry/vendor/sdl3
+          key: sdl3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('examples/evil_geometry/sdl3.justfile') }}
+
+      - name: Build
+        run: just -f examples/evil_geometry/justfile build
+
+      - name: Run headless demo
+        run: just -f examples/evil_geometry/justfile demo 2
