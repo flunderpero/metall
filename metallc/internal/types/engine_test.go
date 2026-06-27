@@ -29,7 +29,7 @@ func runEngineTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[str
 	if isModule {
 		nodeID, _ = parser.ParseModule()
 	} else {
-		nodeID, _ = parser.ParseExpr(0)
+		nodeID, _ = parser.ParseStmt()
 		parser.Roots = append(parser.Roots, nodeID)
 	}
 	assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
@@ -117,7 +117,7 @@ func TestIntTypes(t *testing.T) {
 		source := base.NewSource("test.met", "test", true, []rune(src))
 		tokens := token.Lex(source)
 		parser := ast.NewParser(tokens, ast.NewAST(1))
-		exprID, parseOK := parser.ParseExpr(0)
+		exprID, parseOK := parser.ParseStmt()
 		if !parseOK || len(parser.Diagnostics) > 0 {
 			t.Fatalf("parse failed: %s", parser.Diagnostics)
 		}

@@ -21,20 +21,19 @@ type Parser struct {
 	Diagnostics  base.Diagnostics
 	tokens       []token.Token
 	pos          int
+	guard        int // depth of open ()/[]/f-string interpolation, where newlines are insignificant
 	nextFunLitID int
 }
 
 func NewParser(tokens []token.Token, a *AST) *Parser {
-	// Strip comments and whitespace tokens.
-	stripped := []token.Token{}
-	for _, t := range tokens {
-		switch t.Kind { //nolint:exhaustive
-		case token.Comment, token.Whitespace:
-		default:
-			stripped = append(stripped, t)
-		}
+	return &Parser{
+		AST:          a,
+		Diagnostics:  base.Diagnostics{},
+		tokens:       token.StripTrivia(tokens),
+		pos:          0,
+		guard:        0,
+		nextFunLitID: 0,
 	}
-	return &Parser{a, base.Diagnostics{}, stripped, 0, 0}
 }
 
 func (p *Parser) ParseModule() (NodeID, bool) {
@@ -482,7 +481,7 @@ func (p *Parser) ParseEnum() (NodeID, bool) {
 		return ParseFailed, false
 	}
 	name := Name{nameToken.Value, nameToken.Span}
-	if next, ok := p.mayPeek(); ok && (next.Kind == token.Lt || next.Kind == token.LtImmediate) {
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Lt {
 		p.diagnostic(next.Span, "enums cannot be generic")
 		return ParseFailed, false
 	}
@@ -531,7 +530,7 @@ func (p *Parser) ParseTypeConstruction() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	typeArgs, ok := p.parseTypeArgs()
+	typeArgs, ok := p.parseTypeArgs(false)
 	if !ok {
 		return ParseFailed, false
 	}
@@ -548,6 +547,8 @@ func (p *Parser) ParseArrayLiteralOrConstruction() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	p.guard++
+	defer func() { p.guard-- }()
 	span := t.Span
 	first, ok := p.ParseExpr(0)
 	if !ok {
@@ -595,6 +596,11 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
+	// A block resets the guard: a line break inside `{ ... }` separates statements
+	// even when the block sits inside `(`/`[` (e.g. a closure passed as an argument).
+	savedGuard := p.guard
+	p.guard = 0
+	defer func() { p.guard = savedGuard }()
 	span := t.Span
 	// parseBody reads expressions until `}` or `#end` (without consuming
 	// either). It's recursive to handle nested `#if`s within blocks.
@@ -613,7 +619,7 @@ func (p *Parser) ParseBlock() (NodeID, bool) {
 			case token.Defer:
 				expr, ok = p.parseDefer()
 			default:
-				expr, ok = p.parseStmtExpr()
+				expr, ok = p.ParseStmt()
 			}
 			if !ok {
 				return nil, false
@@ -644,7 +650,7 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 	// loop below, so `~a | b` is `(~a) | b` and `not a == b` is `(not a) == b`
 	// (matching Rust/Zig). `-<number/float literal>` is folded as a primary instead,
 	// so postfix binds to it (`-5.abs()` is `(-5).abs()`), hence the literal guard.
-	isMinus := t.Kind == token.Minus || t.Kind == token.MinusAfterNewline
+	isMinus := t.Kind == token.Minus
 	literalNext := hasNext && (next.Kind == token.Number || next.Kind == token.Float)
 	unaryMinus := isMinus && !literalNext
 	if t.Kind == token.Not || t.Kind == token.Tilde || unaryMinus {
@@ -654,10 +660,9 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			return ParseFailed, false
 		}
 		op := map[token.TokenKind]UnaryOp{
-			token.Not:               UnaryOpNot,
-			token.Tilde:             UnaryOpBitNot,
-			token.Minus:             UnaryOpNeg,
-			token.MinusAfterNewline: UnaryOpNeg,
+			token.Not:   UnaryOpNot,
+			token.Tilde: UnaryOpBitNot,
+			token.Minus: UnaryOpNeg,
 		}[t.Kind]
 		lhs = p.NewUnary(op, operand, span.Combine(p.span()))
 	} else {
@@ -666,41 +671,14 @@ func (p *Parser) ParseExpr(minPrecedence int) (NodeID, bool) { //nolint:funlen
 			return ParseFailed, false
 		}
 	}
-	t, ok = p.mayPeek()
-	if !ok {
-		return lhs, true
-	}
-	if t.Kind == token.Eq {
-		p.next()
-		rhs, ok := p.ParseExpr(0)
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewAssign(lhs, rhs, span.Combine(p.span())), true
-	}
-	if op, ok := map[token.TokenKind]BinaryOp{
-		token.PlusEq:         BinaryOpAdd,
-		token.MinusEq:        BinaryOpSub,
-		token.StarEq:         BinaryOpMul,
-		token.SlashEq:        BinaryOpDiv,
-		token.PercentEq:      BinaryOpMod,
-		token.PlusPercentEq:  BinaryOpWrapAdd,
-		token.MinusPercentEq: BinaryOpWrapSub,
-		token.StarPercentEq:  BinaryOpWrapMul,
-		token.AmpEq:          BinaryOpBitAnd,
-		token.PipeEq:         BinaryOpBitOr,
-		token.CaretEq:        BinaryOpBitXor,
-		token.LtLtEq:         BinaryOpShl,
-		token.GtGtEq:         BinaryOpShr,
-	}[t.Kind]; ok {
-		p.next()
-		rhs, ok := p.ParseExpr(0)
-		if !ok {
-			return ParseFailed, false
-		}
-		return p.NewCompoundAssign(op, lhs, rhs, span.Combine(p.span())), true
-	}
+	// Assignment is a statement, not an expression (see parseAssignTail), so
+	// ParseExpr only ever produces a value. A newline ends the statement, so every
+	// binary operator below binds within the line (continue with a trailing
+	// operator or guarded syntax, never a line-leading one).
 	for {
+		if p.newlineAhead() {
+			return lhs, true
+		}
 		t, ok = p.mayPeek()
 		if !ok {
 			return lhs, true
@@ -792,6 +770,12 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		if !ok {
 			break
 		}
+		// A newline ends the postfix chain: a line-leading `[`/`(` starts a new
+		// statement (array literal / parenthesized expr), not an index or call. A
+		// line-leading `.` is the one exception, it continues the member chain.
+		if p.newlineAhead() && t.Kind != token.Dot {
+			break
+		}
 		switch t.Kind { //nolint:exhaustive
 		case token.LParen:
 			callee := expr
@@ -805,23 +789,7 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 				expr = p.NewCall(callee, args, argNames, false, span.Combine(p.span()))
 			}
 			continue
-		case token.LBracketImmediate:
-			result, ok := p.ParseIndexOrSubSlice(expr, span)
-			if !ok {
-				return ParseFailed, false
-			}
-			expr = result
-			continue
 		case token.LBracket:
-			// A glued '[' after a byte-string literal is an index. The lexer marks it a
-			// plain LBracket (not LBracketImmediate) because it classifies by the preceding
-			// char, '"', which is identical for b"..." and "...". Only a byte string (a
-			// []U8) is indexable, so the parser admits that one case here.
-			node := p.Node(expr)
-			bs, isStr := node.Kind.(String)
-			if !isStr || !bs.Bytes || node.Span.End+1 != t.Span.Start {
-				break
-			}
 			result, ok := p.ParseIndexOrSubSlice(expr, span)
 			if !ok {
 				return ParseFailed, false
@@ -849,7 +817,7 @@ func (p *Parser) ParsePostfixExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 				return ParseFailed, false
 			}
 			p.next()
-			typeArgs, ok := p.parseTypeArgs()
+			typeArgs, ok := p.parseTypeArgs(true)
 			if !ok {
 				return ParseFailed, false
 			}
@@ -870,14 +838,16 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	switch t.Kind { //nolint:exhaustive
 	case token.LParen:
 		p.next()
+		p.guard++
 		expr, ok = p.ParseExpr(0)
+		p.guard--
 		if !ok {
 			return ParseFailed, false
 		}
 		if _, ok := p.expect(token.RParen); !ok {
 			return ParseFailed, false
 		}
-	case token.Amp, token.AmpAfterNewline:
+	case token.Amp:
 		ref, ok := p.ParseRefExpr()
 		if !ok {
 			return ParseFailed, false
@@ -887,7 +857,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 		var fun NodeID
 		var ok bool
 		if next, peekOK := p.mayPeek1(); peekOK &&
-			(next.Kind == token.LParen || next.Kind == token.LBracket || next.Kind == token.LBracketImmediate) {
+			(next.Kind == token.LParen || next.Kind == token.LBracket) {
 			fun, ok = p.parseFunLiteral(SyncNone)
 		} else {
 			fun, ok = p.ParseFun()
@@ -994,7 +964,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 				return ParseFailed, false
 			}
 			qualifiedName := t.Value + "." + methodToken.Value
-			typeArgs, ok := p.parseTypeArgs()
+			typeArgs, ok := p.parseTypeArgs(true)
 			if !ok {
 				return ParseFailed, false
 			}
@@ -1021,12 +991,12 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 			}
 			expr = array
 		}
-	case token.Minus, token.MinusAfterNewline, token.Number, token.Float:
+	case token.Minus, token.Number, token.Float:
 		// A number or float literal, with an optional `-` folded in. Folding here
 		// (rather than at the unary-minus level) keeps `-5`/`-1.5` a primary, so
 		// postfix binds to the negative literal: `-1.5.abs()` is `(-1.5).abs()`.
 		isFloat := t.Kind == token.Float
-		if t.Kind == token.Minus || t.Kind == token.MinusAfterNewline {
+		if t.Kind == token.Minus {
 			next, peekOk := p.mayPeek1()
 			isFloat = peekOk && next.Kind == token.Float
 		}
@@ -1083,8 +1053,7 @@ func (p *Parser) ParsePrimaryExpr(minPrecedence int) (NodeID, bool) { //nolint:f
 	case token.Unsync:
 		// `unsync fun[...]()` or `unsync fun()` -> literal; `unsync fun name(...)` -> declaration.
 		if p.lookAhead(token.Unsync, token.Fun, token.LParen) ||
-			p.lookAhead(token.Unsync, token.Fun, token.LBracket) ||
-			p.lookAhead(token.Unsync, token.Fun, token.LBracketImmediate) {
+			p.lookAhead(token.Unsync, token.Fun, token.LBracket) {
 			p.next() // consume unsync
 			fun, ok := p.parseFunLiteral(SyncUnsync)
 			if !ok {
@@ -1128,7 +1097,7 @@ func (p *Parser) ParseRefExpr() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	if t.Kind != token.Amp && t.Kind != token.AmpAfterNewline {
+	if t.Kind != token.Amp {
 		p.diagnostic(t.Span, "unexpected token: expected %s, got %s", token.Amp, t.Kind)
 		return ParseFailed, false
 	}
@@ -1301,7 +1270,7 @@ func (p *Parser) ParseArrayOrSliceType() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	if t.Kind != token.LBracket && t.Kind != token.LBracketImmediate {
+	if t.Kind != token.LBracket {
 		p.diagnostic(t.Span, "unexpected token: expected [, got %s", t.Kind)
 		return ParseFailed, false
 	}
@@ -1357,7 +1326,7 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 			if !ok {
 				return ParseFailed, false
 			}
-			typeArgs, ok := p.parseTypeArgs()
+			typeArgs, ok := p.parseTypeArgs(false)
 			if !ok {
 				return ParseFailed, false
 			}
@@ -1388,14 +1357,14 @@ func (p *Parser) ParseType() (NodeID, bool) { //nolint:funlen
 			name.WriteString(next.Value)
 			nameSpan = nameSpan.Combine(next.Span)
 		}
-		typeArgs, ok := p.parseTypeArgs()
+		typeArgs, ok := p.parseTypeArgs(false)
 		if !ok {
 			return ParseFailed, false
 		}
 		return p.NewSimpleType(Name{name.String(), nameSpan}, typeArgs, span.Combine(p.span())), true
-	case token.LBracket, token.LBracketImmediate:
+	case token.LBracket:
 		return p.ParseArrayOrSliceType()
-	case token.Amp, token.AmpAfterNewline:
+	case token.Amp:
 		p.next()
 		mut := false
 		if next, ok := p.mayPeek(); ok && next.Kind == token.Mut {
@@ -1445,14 +1414,14 @@ func (p *Parser) ParseFor() (NodeID, bool) { //nolint:funlen
 	//   for [&[mut]] x [, i] in <iterable> { ... }
 	// A leading `&` could be the start of a boolean-condition loop or an
 	// iterating loop.
-	forIn := t.Kind == token.Amp || t.Kind == token.AmpAfterNewline
+	forIn := t.Kind == token.Amp
 	if t.Kind == token.Ident {
 		next, hasNext := p.mayPeek1()
 		forIn = hasNext && (next.Kind == token.In || next.Kind == token.Comma)
 	}
 	if forIn {
 		var ref, mut bool
-		if t.Kind == token.Amp || t.Kind == token.AmpAfterNewline {
+		if t.Kind == token.Amp {
 			p.next()
 			ref = true
 			if m, ok := p.mayPeek(); ok && m.Kind == token.Mut {
@@ -1631,7 +1600,7 @@ func (p *Parser) ParseIdent() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	typeArgs, ok := p.parseTypeArgs()
+	typeArgs, ok := p.parseTypeArgs(true)
 	if !ok {
 		return ParseFailed, false
 	}
@@ -1647,7 +1616,7 @@ func (p *Parser) ParseNumber() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	neg := start.Kind == token.Minus || start.Kind == token.MinusAfterNewline
+	neg := start.Kind == token.Minus
 	if neg {
 		p.next()
 	}
@@ -1669,7 +1638,7 @@ func (p *Parser) ParseFloat() (NodeID, bool) {
 	if !ok {
 		return ParseFailed, false
 	}
-	neg := start.Kind == token.Minus || start.Kind == token.MinusAfterNewline
+	neg := start.Kind == token.Minus
 	if neg {
 		p.next()
 	}
@@ -1698,17 +1667,16 @@ func (p *Parser) ParseFloat() (NodeID, bool) {
 }
 
 func (p *Parser) ParseIndexOrSubSlice(target NodeID, span base.Span) (NodeID, bool) {
-	// The bracket is LBracketImmediate when the lexer saw it glued to an expression, or a
-	// plain LBracket glued to a byte-string literal (which the postfix loop admits because
-	// the lexer cannot tell b"..." from "..." by the preceding char).
 	t, ok := p.next()
 	if !ok {
 		return ParseFailed, false
 	}
-	if t.Kind != token.LBracketImmediate && t.Kind != token.LBracket {
+	if t.Kind != token.LBracket {
 		p.diagnostic(t.Span, "unexpected token: expected [, got %s", t.Kind)
 		return ParseFailed, false
 	}
+	p.guard++
+	defer func() { p.guard-- }()
 	range_, isRange, ok := p.ParseRange()
 	if !ok {
 		return ParseFailed, false
@@ -1746,12 +1714,40 @@ func (p *Parser) ParseRange() (nodeID NodeID, isRange bool, ok bool) {
 	return lo, false, true
 }
 
+// ParseStmt parses a single statement: an assignment, a `break`/`continue`/
+// `return`, or a bare expression. break, continue, return, and assignment are all
+// statement-only, never nested inside a larger expression.
+func (p *Parser) ParseStmt() (NodeID, bool) {
+	t, ok := p.mayPeek()
+	if !ok {
+		return p.ParseExpr(0)
+	}
+	switch t.Kind { //nolint:exhaustive
+	case token.Break:
+		p.next()
+		return p.NewBreak(t.Span), true
+	case token.Continue:
+		p.next()
+		return p.NewContinue(t.Span), true
+	case token.Return:
+		return p.ParseReturn()
+	default:
+		expr, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.parseAssignTail(expr)
+	}
+}
+
 // parseArgEntries parses a comma-separated list of positional/named (`name = expr`)
 // arguments, stopping at and consuming `end`. The opening delimiter is the caller's
 // to consume. Returns the value expressions and a parallel names slice (nil when no
 // argument is named; otherwise names[i] is non-nil for a named arg). f-string format
 // specifiers reuse this with `end` set to the interpolation closer.
 func (p *Parser) parseArgEntries(end token.TokenKind) ([]NodeID, []*Name, bool) {
+	p.guard++
+	defer func() { p.guard-- }()
 	args := []NodeID{}
 	var names []*Name // lazily allocated on the first named argument
 	for {
@@ -2262,7 +2258,7 @@ func (p *Parser) parseMatchElse() (*MatchElse, bool) {
 
 func (p *Parser) parseMatchArmBindingAndBody() (*Name, bool, bool, *NodeID, NodeID, bool) {
 	var ref, mut bool
-	if next, ok := p.mayPeek(); ok && (next.Kind == token.Amp || next.Kind == token.AmpAfterNewline) {
+	if next, ok := p.mayPeek(); ok && next.Kind == token.Amp {
 		p.next()
 		ref = true
 		if m, ok := p.mayPeek(); ok && m.Kind == token.Mut {
@@ -2310,7 +2306,7 @@ func (p *Parser) parseCaseBody() ([]NodeID, bool) {
 		if !ok || t.Kind == token.RCurly || t.Kind == token.Case || t.Kind == token.Else {
 			return exprs, true
 		}
-		expr, ok := p.parseStmtExpr()
+		expr, ok := p.ParseStmt()
 		if !ok {
 			return nil, false
 		}
@@ -2334,28 +2330,51 @@ func (p *Parser) parseDefer() (NodeID, bool) {
 	return p.NewDefer(block, t.Span.Combine(p.span())), true
 }
 
-// parseStmtExpr parses an expression in statement position: a block element or a
-// match/when arm body. break, continue, and return are control flow that may
-// only appear here, never nested inside a larger expression. ParsePrimaryExpr
-// rejects them, so `return break`, `x + break`, `f(continue)`, etc. are parse
-// errors rather than producing ill-formed code.
-func (p *Parser) parseStmtExpr() (NodeID, bool) {
+// parseAssignTail turns a just-parsed expression into an assignment statement
+// when an `=` or compound-assignment operator follows on the same line.
+// Assignment is a statement, not an expression: it is recognized only at the
+// statement level, never inside ParseExpr, so `let x = a = b` is rejected and a
+// stray `=` cannot hide inside a value position.
+func (p *Parser) parseAssignTail(lhs NodeID) (NodeID, bool) {
+	if p.newlineAhead() {
+		return lhs, true
+	}
 	t, ok := p.mayPeek()
 	if !ok {
-		return p.ParseExpr(0)
+		return lhs, true
 	}
-	switch t.Kind { //nolint:exhaustive
-	case token.Break:
+	span := p.Node(lhs).Span
+	if t.Kind == token.Eq {
 		p.next()
-		return p.NewBreak(t.Span), true
-	case token.Continue:
-		p.next()
-		return p.NewContinue(t.Span), true
-	case token.Return:
-		return p.ParseReturn()
-	default:
-		return p.ParseExpr(0)
+		rhs, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewAssign(lhs, rhs, span.Combine(p.span())), true
 	}
+	if op, ok := map[token.TokenKind]BinaryOp{
+		token.PlusEq:         BinaryOpAdd,
+		token.MinusEq:        BinaryOpSub,
+		token.StarEq:         BinaryOpMul,
+		token.SlashEq:        BinaryOpDiv,
+		token.PercentEq:      BinaryOpMod,
+		token.PlusPercentEq:  BinaryOpWrapAdd,
+		token.MinusPercentEq: BinaryOpWrapSub,
+		token.StarPercentEq:  BinaryOpWrapMul,
+		token.AmpEq:          BinaryOpBitAnd,
+		token.PipeEq:         BinaryOpBitOr,
+		token.CaretEq:        BinaryOpBitXor,
+		token.LtLtEq:         BinaryOpShl,
+		token.GtGtEq:         BinaryOpShr,
+	}[t.Kind]; ok {
+		p.next()
+		rhs, ok := p.ParseExpr(0)
+		if !ok {
+			return ParseFailed, false
+		}
+		return p.NewCompoundAssign(op, lhs, rhs, span.Combine(p.span())), true
+	}
+	return lhs, true
 }
 
 func (p *Parser) isStructTarget(nodeID NodeID) bool {
@@ -2405,8 +2424,19 @@ func (p *Parser) parseArrayConstruction(count NodeID, span base.Span) (NodeID, b
 	return p.NewArrayUninit(length, elem, span.Combine(p.span())), true
 }
 
+// closeTypeAngle consumes the `>` that closes a type-argument or type-parameter
+// list. A `>>` (a nested close like `Foo<Bar<T>>`) is rewritten in place to a
+// single `>` so the enclosing list consumes the second one.
+func (p *Parser) closeTypeAngle(t *token.Token) {
+	if t.Kind == token.GtGt {
+		p.tokens[p.pos].Kind = token.Gt
+	} else {
+		p.next()
+	}
+}
+
 func (p *Parser) parseTypeParams() ([]NodeID, bool) {
-	if t, ok := p.mayPeek(); !ok || t.Kind != token.LtImmediate {
+	if t, ok := p.mayPeek(); !ok || t.Kind != token.Lt {
 		return nil, true
 	}
 	open, _ := p.next()
@@ -2417,12 +2447,12 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 		if !ok {
 			return nil, false
 		}
-		if t.Kind == token.Gt {
+		if t.Kind == token.Gt || t.Kind == token.GtGt {
 			if len(params) == 0 {
 				p.diagnostic(open.Span.Combine(t.Span), "empty type parameter list")
 				return nil, false
 			}
-			p.next()
+			p.closeTypeAngle(t)
 			return params, true
 		}
 		if len(params) > 0 {
@@ -2460,8 +2490,25 @@ func (p *Parser) parseTypeParams() ([]NodeID, bool) {
 	}
 }
 
-func (p *Parser) parseTypeArgs() ([]NodeID, bool) {
-	if t, ok := p.mayPeek(); !ok || t.Kind != token.LtImmediate {
+// parseTypeArgs parses a `<...>` type-argument list. `<`/`>` are also comparison
+// operators, so in expression position (speculative=true) the list is parsed
+// speculatively: on any failure it rewinds and leaves the `<` to be a
+// comparison. The capitalization invariant makes this clean, a value argument
+// makes ParseType fail at once and `foo < Foo.bar` rewinds because `.bar` is
+// lowercase. In type/declaration position (speculative=false) a `<` is always a
+// type-argument list, so a failure is a real error.
+func (p *Parser) parseTypeArgs(speculative bool) ([]NodeID, bool) {
+	if t, ok := p.mayPeek(); !ok || t.Kind != token.Lt {
+		return nil, true
+	}
+	start := p.pos
+	diagStart := len(p.Diagnostics)
+	bail := func() ([]NodeID, bool) {
+		if !speculative {
+			return nil, false
+		}
+		p.pos = start
+		p.Diagnostics = p.Diagnostics[:diagStart]
 		return nil, true
 	}
 	open, _ := p.next()
@@ -2469,28 +2516,27 @@ func (p *Parser) parseTypeArgs() ([]NodeID, bool) {
 	for {
 		t, ok := p.mustPeek()
 		if !ok {
-			return nil, false
+			return bail()
 		}
 		if t.Kind == token.Gt || t.Kind == token.GtGt {
 			if len(args) == 0 {
+				if speculative {
+					return bail()
+				}
 				p.diagnostic(open.Span.Combine(t.Span), "empty type argument list")
 				return nil, false
 			}
-			if t.Kind == token.GtGt {
-				p.tokens[p.pos].Kind = token.Gt
-			} else {
-				p.next()
-			}
+			p.closeTypeAngle(t)
 			return args, true
 		}
 		if len(args) > 0 {
 			if _, ok := p.expect(token.Comma); !ok {
-				return nil, false
+				return bail()
 			}
 		}
 		typ, ok := p.ParseType()
 		if !ok {
-			return nil, false
+			return bail()
 		}
 		args = append(args, typ)
 	}
@@ -2553,7 +2599,7 @@ func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 	}
 	// Parse optional capture list: fun[a, &b, &mut c](params) ...
 	var captures []NodeID
-	if peek, peekOK := p.mayPeek(); peekOK && (peek.Kind == token.LBracket || peek.Kind == token.LBracketImmediate) {
+	if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.LBracket {
 		p.next()
 		for {
 			if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.RBracket {
@@ -2567,7 +2613,7 @@ func (p *Parser) parseFunLiteral(sync SyncMode) (NodeID, bool) { //nolint:funlen
 			}
 			capSpan := p.span()
 			mode := CaptureByValue
-			if peek, peekOK := p.mayPeek(); peekOK && (peek.Kind == token.Amp || peek.Kind == token.AmpAfterNewline) {
+			if peek, peekOK := p.mayPeek(); peekOK && peek.Kind == token.Amp {
 				p.next()
 				capSpan = peek.Span
 				if peek2, peekOK2 := p.mayPeek(); peekOK2 && peek2.Kind == token.Mut {
@@ -2649,21 +2695,46 @@ func (p *Parser) diagnostic(span base.Span, msg string, msgArgs ...any) {
 	p.Diagnostics = append(p.Diagnostics, *base.NewDiagnostic(span, msg, msgArgs...))
 }
 
+// nth returns the index of the n-th (0-based) non-Newline token at or after the
+// given index, or len(tokens) if there are fewer than n+1 of them. Every token
+// accessor goes through it, so newlines are invisible to all but newlineAhead.
+func (p *Parser) nth(from, n int) int {
+	for from < len(p.tokens) {
+		if p.tokens[from].Kind != token.Newline {
+			if n == 0 {
+				return from
+			}
+			n--
+		}
+		from++
+	}
+	return from
+}
+
+// newlineAhead reports whether a line break sits before the next token. Only the
+// two expression-continuation loops consult it, to end a statement. The guard
+// depth makes it false inside `(`/`[`/an f-string interpolation, where line
+// breaks are insignificant.
+func (p *Parser) newlineAhead() bool {
+	return p.guard == 0 && p.pos < len(p.tokens) && p.tokens[p.pos].Kind == token.Newline
+}
+
 func (p *Parser) next() (*token.Token, bool) {
-	if p.pos >= len(p.tokens) || p.tokens[p.pos].Kind == token.EOF {
+	i := p.nth(p.pos, 0)
+	if i >= len(p.tokens) || p.tokens[i].Kind == token.EOF {
 		p.diagnostic(p.span(), "unexpected end of file")
 		return nil, false
 	}
-	token := &p.tokens[p.pos]
-	p.pos++
-	return token, true
+	p.pos = i + 1
+	return &p.tokens[i], true
 }
 
 func (p *Parser) mayPeek() (*token.Token, bool) {
-	if p.pos >= len(p.tokens) || p.tokens[p.pos].Kind == token.EOF {
+	i := p.nth(p.pos, 0)
+	if i >= len(p.tokens) || p.tokens[i].Kind == token.EOF {
 		return nil, false
 	}
-	return &p.tokens[p.pos], true
+	return &p.tokens[i], true
 }
 
 func (p *Parser) isMatchElse() bool {
@@ -2674,8 +2745,9 @@ func (p *Parser) isMatchElse() bool {
 	if after.Kind == token.Colon {
 		return true
 	}
-	if after.Kind == token.Ident && p.pos+2 < len(p.tokens) {
-		return p.tokens[p.pos+2].Kind == token.Colon
+	if after.Kind == token.Ident {
+		i := p.nth(p.pos, 2)
+		return i < len(p.tokens) && p.tokens[i].Kind == token.Colon
 	}
 	return false
 }
@@ -2684,22 +2756,22 @@ func (p *Parser) isMatchElse() bool {
 // The grammar is LL(1)-equivalent (can be left-factored), but a bounded
 // 2-token lookahead is sometimes more practical.
 func (p *Parser) mayPeek1() (*token.Token, bool) {
-	if p.pos+1 >= len(p.tokens) || p.tokens[p.pos+1].Kind == token.EOF {
+	i := p.nth(p.pos, 1)
+	if i >= len(p.tokens) || p.tokens[i].Kind == token.EOF {
 		return nil, false
 	}
-	return &p.tokens[p.pos+1], true
+	return &p.tokens[i], true
 }
 
 // lookAhead checks whether the next tokens match the given kinds.
 func (p *Parser) lookAhead(kinds ...token.TokenKind) bool {
-	for i, kind := range kinds {
-		pos := p.pos + i
-		if pos >= len(p.tokens) || p.tokens[pos].Kind == token.EOF {
+	pos := p.pos
+	for _, kind := range kinds {
+		pos = p.nth(pos, 0)
+		if pos >= len(p.tokens) || p.tokens[pos].Kind == token.EOF || p.tokens[pos].Kind != kind {
 			return false
 		}
-		if p.tokens[pos].Kind != kind {
-			return false
-		}
+		pos++
 	}
 	return true
 }
@@ -2707,10 +2779,15 @@ func (p *Parser) lookAhead(kinds ...token.TokenKind) bool {
 // lookAheadConsume checks whether the next tokens match the given kinds
 // and consumes them if they do.
 func (p *Parser) lookAheadConsume(kinds ...token.TokenKind) bool {
-	if !p.lookAhead(kinds...) {
-		return false
+	pos := p.pos
+	for _, kind := range kinds {
+		pos = p.nth(pos, 0)
+		if pos >= len(p.tokens) || p.tokens[pos].Kind != kind {
+			return false
+		}
+		pos++
 	}
-	p.pos += len(kinds)
+	p.pos = pos
 	return true
 }
 
@@ -2783,6 +2860,9 @@ func (p *Parser) expectNumber() (*big.Int, bool) {
 }
 
 func (p *Parser) span() base.Span {
-	token := p.tokens[min(max(p.pos-1, 0), len(p.tokens)-1)]
-	return token.Span
+	i := min(max(p.pos-1, 0), len(p.tokens)-1)
+	for i > 0 && p.tokens[i].Kind == token.Newline {
+		i--
+	}
+	return p.tokens[i].Span
 }

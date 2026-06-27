@@ -13,7 +13,6 @@ type TokenKind int
 const (
 	AllocatorIdent TokenKind = iota + 1
 	Amp
-	AmpAfterNewline
 	AmpEq
 	And
 	Break
@@ -57,21 +56,19 @@ const (
 	InvalidAllocatorIdent
 	Is
 	LBracket
-	LBracketImmediate
 	LCurly
 	Let
 	LParen
 	Lt
-	LtImmediate
 	Lte
 	Match
 	Minus
-	MinusAfterNewline
 	MinusEq
 	MinusPercent
 	MinusPercentEq
 	Mut
 	Neq
+	Newline
 	Noescape
 	Nocopy
 	Not
@@ -120,7 +117,6 @@ const (
 var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	AllocatorIdent:        "<allocator identifier>",
 	Amp:                   "&",
-	AmpAfterNewline:       "<&after-newline>",
 	AmpEq:                 "&=",
 	And:                   "<and>",
 	Break:                 "<break>",
@@ -164,21 +160,19 @@ var tokenKindNames = map[TokenKind]string{ //nolint:gochecknoglobals
 	InvalidAllocatorIdent: "<invalid allocation identifier>",
 	Is:                    "<is>",
 	LBracket:              "[",
-	LBracketImmediate:     "<[immediate>",
 	LCurly:                "{",
 	Let:                   "<let>",
 	LParen:                "(",
 	Lt:                    "<",
-	LtImmediate:           "<<immediate>",
 	Lte:                   "<=",
 	Match:                 "<match>",
 	Minus:                 "-",
-	MinusAfterNewline:     "<-after-newline>",
 	MinusEq:               "-=",
 	MinusPercent:          "-%",
 	MinusPercentEq:        "-%=",
 	Mut:                   "<mut>",
 	Neq:                   "!=",
+	Newline:               "<newline>",
 	Nocopy:                "<nocopy>",
 	Not:                   "<not>",
 	Number:                "<number>",
@@ -698,20 +692,6 @@ func lexFString(source *base.Source, start, modLen, sigils int) []Token { //noli
 	return toks
 }
 
-func precededByNewline(source *base.Source, at int) bool {
-	for i := at - 1; i >= 0; i-- {
-		c := source.Content[i]
-		if c == '\n' {
-			return true
-		}
-		if unicode.IsSpace(c) {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
 func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	start := idx
 	c := source.Content[idx]
@@ -763,14 +743,7 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			}
 			return Token{Kind: LtLt, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		kind := Lt
-		if idx > 1 {
-			prev := source.Content[idx-2]
-			if unicode.IsLetter(prev) || unicode.IsDigit(prev) || prev == '_' {
-				kind = LtImmediate
-			}
-		}
-		return Token{Kind: kind, Value: "", Span: span}
+		return Token{Kind: Lt, Value: "", Span: span}
 	case c == '>':
 		if peek(source, idx, '=') {
 			return Token{Kind: Gte, Value: "", Span: base.NewSpan(source, start, idx)}
@@ -835,9 +808,6 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 			return Token{Kind: MinusEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
 		if !peek(source, idx, '-') {
-			if precededByNewline(source, start) {
-				return Token{Kind: MinusAfterNewline, Value: "", Span: span}
-			}
 			return Token{Kind: Minus, Value: "", Span: span}
 		}
 		value := "--"
@@ -877,20 +847,9 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 		if peek(source, idx, '=') {
 			return Token{Kind: AmpEq, Value: "", Span: base.NewSpan(source, start, idx)}
 		}
-		kind := Amp
-		if precededByNewline(source, start) {
-			kind = AmpAfterNewline
-		}
-		return Token{Kind: kind, Value: "", Span: span}
+		return Token{Kind: Amp, Value: "", Span: span}
 	case c == '[':
-		kind := LBracket
-		if idx > 1 {
-			prev := source.Content[idx-2]
-			if unicode.IsLetter(prev) || unicode.IsDigit(prev) || prev == '_' || prev == ')' || prev == ']' {
-				kind = LBracketImmediate
-			}
-		}
-		return Token{Kind: kind, Value: "", Span: span}
+		return Token{Kind: LBracket, Value: "", Span: span}
 	case unicode.IsSpace(c):
 		value := []rune{c}
 		for idx < len(source.Content) {
@@ -952,6 +911,31 @@ func lexToken(source *base.Source, idx int) Token { //nolint:funlen
 	default:
 		return Token{Unknown, string(c), span}
 	}
+}
+
+// StripTrivia drops whitespace and comments and collapses each gap that holds a
+// line break into a single Newline token.
+func StripTrivia(tokens []Token) []Token {
+	out := make([]Token, 0, len(tokens))
+	gapNewline := false
+	var span base.Span
+	for _, t := range tokens {
+		if t.Kind == Whitespace || t.Kind == Comment {
+			if strings.ContainsRune(t.Value, '\n') {
+				gapNewline = true
+				span = t.Span
+			}
+			continue
+		}
+		// A line break only matters between two tokens; a leading one (before the
+		// first real token) is meaningless, so it is dropped.
+		if gapNewline && len(out) > 0 {
+			out = append(out, Token{Newline, "", span})
+		}
+		gapNewline = false
+		out = append(out, t)
+	}
+	return out
 }
 
 func Lex(source *base.Source) []Token {

@@ -50,7 +50,7 @@ func runLifetimeExprTest(assert base.Assert, tc mdtest.TestCase, results map[str
 	source := base.NewSource("test.met", "test", true, []rune(tc.Input))
 	tokens := token.Lex(source)
 	parser := ast.NewParser(tokens, ast.NewAST(1))
-	exprID, _ := parser.ParseExpr(0)
+	exprID, _ := parser.ParseStmt()
 	parser.Roots = append(parser.Roots, exprID)
 	assert.Equal(0, len(parser.Diagnostics), "parsing failed:\n%s", parser.Diagnostics)
 

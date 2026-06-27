@@ -2,6 +2,7 @@ package token
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/flunderpero/metall/metallc/internal/base"
@@ -24,72 +25,34 @@ func TestLexer(t *testing.T) {
 		{"parens", "()", []want{{LParen, "", "1:1"}, {RParen, "", "1:2"}}},
 		{"curly", "{}", []want{{LCurly, "", "1:1"}, {RCurly, "", "1:2"}}},
 		{"brackets", "[]", []want{{LBracket, "", "1:1"}, {RBracket, "", "1:2"}}},
-		{
-			"lbracket vs lbracketimmediate",
-			"a[ s1[ [ ([ )[ ][ [[ {[",
-			[]want{
-				{Ident, "a", "1:1"},
-				{LBracketImmediate, "", "1:2"},
-				{Whitespace, " ", "1:3"},
-
-				{Ident, "s1", "1:4-1:5"},
-				{LBracketImmediate, "", "1:6"},
-				{Whitespace, " ", "1:7"},
-
-				{LBracket, "", "1:8"},
-				{Whitespace, " ", "1:9"},
-
-				{LParen, "", "1:10"},
-				{LBracket, "", "1:11"},
-				{Whitespace, " ", "1:12"},
-
-				{RParen, "", "1:13"},
-				{LBracketImmediate, "", "1:14"},
-				{Whitespace, " ", "1:15"},
-
-				{RBracket, "", "1:16"},
-				{LBracketImmediate, "", "1:17"},
-				{Whitespace, " ", "1:18"},
-
-				{LBracket, "", "1:19"},
-				{LBracket, "", "1:20"},
-				{Whitespace, " ", "1:21"},
-
-				{LCurly, "", "1:22"},
-				{LBracket, "", "1:23"},
-			},
-		},
 		{"plus", "+", []want{{Plus, "", "1:1"}}},
-		{"minus", "-", []want{{MinusAfterNewline, "", "1:1"}}},
+		{"minus", "-", []want{{Minus, "", "1:1"}}},
 		{"slash", "/", []want{{Slash, "", "1:1"}}},
 		{"percent", "%", []want{{Percent, "", "1:1"}}},
 		{"lt", "<", []want{{Lt, "", "1:1"}}},
-		{
-			"lt vs ltimmediate",
-			"a< s1< < )< a<= <=",
-			[]want{
-				{Ident, "a", "1:1"},
-				{LtImmediate, "", "1:2"},
-				{Whitespace, " ", "1:3"},
-
-				{Ident, "s1", "1:4-1:5"},
-				{LtImmediate, "", "1:6"},
-				{Whitespace, " ", "1:7"},
-
-				{Lt, "", "1:8"},
-				{Whitespace, " ", "1:9"},
-
-				{RParen, "", "1:10"},
-				{Lt, "", "1:11"},
-				{Whitespace, " ", "1:12"},
-
-				{Ident, "a", "1:13"},
-				{Lte, "", "1:14-1:15"},
-				{Whitespace, " ", "1:16"},
-
-				{Lte, "", "1:17-1:18"},
-			},
-		},
+		// `<`/`>` lex as plain operators. The parser, not the lexer, decides generics
+		// vs comparison from the capitalization of what follows. A nested `>>` stays
+		// one token here; the parser splits it when it closes a type-argument list.
+		{"angle brackets lex as plain operators", "Foo<Bar<T>>", []want{
+			{TypeIdent, "Foo", "1:1-1:3"},
+			{Lt, "", "1:4"},
+			{TypeIdent, "Bar", "1:5-1:7"},
+			{Lt, "", "1:8"},
+			{TypeIdent, "T", "1:9"},
+			{GtGt, "", "1:10-1:11"},
+		}},
+		{"a comparison lexes the same as a generic open", "a<b", []want{
+			{Ident, "a", "1:1"},
+			{Lt, "", "1:2"},
+			{Ident, "b", "1:3"},
+		}},
+		{"shift", "a >> b", []want{
+			{Ident, "a", "1:1"},
+			{Whitespace, " ", "1:2"},
+			{GtGt, "", "1:3-1:4"},
+			{Whitespace, " ", "1:5"},
+			{Ident, "b", "1:6"},
+		}},
 		{"lte", "<=", []want{{Lte, "", "1:1-1:2"}}},
 		{"gt", ">", []want{{Gt, "", "1:1"}}},
 		{"gte", ">=", []want{{Gte, "", "1:1-1:2"}}},
@@ -101,19 +64,19 @@ func TestLexer(t *testing.T) {
 		{"and", "and", []want{{And, "", "1:1-1:3"}}},
 		{"or", "or", []want{{Or, "", "1:1-1:2"}}},
 		{"not", "not", []want{{Not, "", "1:1-1:3"}}},
-		{"amp at line start", "&", []want{{AmpAfterNewline, "", "1:1"}}},
-		{"amp ref at line start", "&x", []want{
-			{AmpAfterNewline, "", "1:1"},
+		{"amp", "&", []want{{Amp, "", "1:1"}}},
+		{"amp ref", "&x", []want{
+			{Amp, "", "1:1"},
 			{Ident, "x", "1:2"},
 		}},
-		{"amp mut ref at line start", "&mut x", []want{
-			{AmpAfterNewline, "", "1:1"},
+		{"amp mut ref", "&mut x", []want{
+			{Amp, "", "1:1"},
 			{Mut, "", "1:2-1:4"},
 			{Whitespace, " ", "1:5"},
 			{Ident, "x", "1:6"},
 		}},
-		{"amp before mut at line start", "& mut", []want{
-			{AmpAfterNewline, "", "1:1"},
+		{"amp before mut", "& mut", []want{
+			{Amp, "", "1:1"},
 			{Whitespace, " ", "1:2"},
 			{Mut, "", "1:3-1:5"},
 		}},
@@ -194,17 +157,17 @@ func TestLexer(t *testing.T) {
 			{Ident, "c", "1:12"},
 		}},
 		{"number (int)", `123`, []want{{Number, "123", "1:1-1:3"}}},
-		{"minus before int", `-123`, []want{{MinusAfterNewline, "", "1:1"}, {Number, "123", "1:2-1:4"}}},
+		{"minus before int", `-123`, []want{{Minus, "", "1:1"}, {Number, "123", "1:2-1:4"}}},
 		{"number (dec underscore)", `1_000_000`, []want{{Number, "1_000_000", "1:1-1:9"}}},
 		{"number (hex)", `0xFF`, []want{{Number, "0xFF", "1:1-1:4"}}},
 		{"number (hex lowercase)", `0xff`, []want{{Number, "0xff", "1:1-1:4"}}},
 		{"number (hex mixed)", `0xDeAdBeEf`, []want{{Number, "0xDeAdBeEf", "1:1-1:10"}}},
 		{"number (hex underscore)", `0xDEAD_BEEF`, []want{{Number, "0xDEAD_BEEF", "1:1-1:11"}}},
-		{"minus before hex", `-0xff`, []want{{MinusAfterNewline, "", "1:1"}, {Number, "0xff", "1:2-1:5"}}},
+		{"minus before hex", `-0xff`, []want{{Minus, "", "1:1"}, {Number, "0xff", "1:2-1:5"}}},
 		{"number (octal)", `0o755`, []want{{Number, "0o755", "1:1-1:5"}}},
-		{"minus before octal", `-0o17`, []want{{MinusAfterNewline, "", "1:1"}, {Number, "0o17", "1:2-1:5"}}},
+		{"minus before octal", `-0o17`, []want{{Minus, "", "1:1"}, {Number, "0o17", "1:2-1:5"}}},
 		{"number (binary)", `0b1010_1010`, []want{{Number, "0b1010_1010", "1:1-1:11"}}},
-		{"minus before binary", `-0b101`, []want{{MinusAfterNewline, "", "1:1"}, {Number, "0b101", "1:2-1:6"}}},
+		{"minus before binary", `-0b101`, []want{{Minus, "", "1:1"}, {Number, "0b101", "1:2-1:6"}}},
 		{"number (hex zero)", `0x0`, []want{{Number, "0x0", "1:1-1:3"}}},
 		{"number (hex empty)", `0x`, []want{{Error, "expected hex digit after '0x'", "1:1-1:2"}}},
 		{"number (octal empty)", `0o`, []want{{Error, "expected octal digit after '0o'", "1:1-1:2"}}},
@@ -228,7 +191,7 @@ func TestLexer(t *testing.T) {
 		}},
 		{"float (basic)", `3.14`, []want{{Float, "3.14", "1:1-1:4"}}},
 		{"float (zero)", `0.0`, []want{{Float, "0.0", "1:1-1:3"}}},
-		{"minus before float", `-2.5`, []want{{MinusAfterNewline, "", "1:1"}, {Float, "2.5", "1:2-1:4"}}},
+		{"minus before float", `-2.5`, []want{{Minus, "", "1:1"}, {Float, "2.5", "1:2-1:4"}}},
 		{"float (exponent)", `1e10`, []want{{Float, "1e10", "1:1-1:4"}}},
 		{"float (exponent upper sign)", `1E+5`, []want{{Float, "1E+5", "1:1-1:4"}}},
 		{"float (frac and exponent)", `1.5e-3`, []want{{Float, "1.5e-3", "1:1-1:6"}}},
@@ -460,6 +423,55 @@ func TestLexer(t *testing.T) {
 			}
 			assert.Equal(len(tokens)-1, len(tt.want)) // -1 for trailing EOF
 			assert.Equal(EOF, tokens[len(tokens)-1].Kind, "last token should be EOF")
+		})
+	}
+}
+
+// TestStripTrivia pins the dumb newline emission: StripTrivia drops whitespace
+// and comments and emits one Newline token ("⏎") per gap that holds a line break,
+// with no judgement about significance, even inside `(`/`[`. The parser skips
+// these by default and decides what they mean (covered by parser_test.md).
+func TestStripTrivia(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"a top-level line break", "a\n&b", "a ⏎ & b"},
+		{"no line break", "a & b", "a & b"},
+		{"a line break before the operand", "a +\nb", "a + ⏎ b"},
+		{"a line break before the operator", "a\n+ b", "a ⏎ + b"},
+		{"a line break before a dot", "foo\n.bar", "foo ⏎ . bar"},
+		{"a line break after a dot", "foo.\nbar", "foo . ⏎ bar"},
+		{"a line break inside parens is still emitted", "f(a\nb)", "f ( a ⏎ b )"},
+		{"a line break inside brackets is still emitted", "[1\n2]", "[ 1 ⏎ 2 ]"},
+		{"a line break inside a block", "{a\nb}", "{ a ⏎ b }"},
+		{"a line break after `=`", "let x =\nfoo", "<let> x = ⏎ foo"},
+		{"a line break after a generic close", "x.m<U8>\n&y", "x . m < U8 > ⏎ & y"},
+		{"blank lines collapse to one Newline", "a\n\n\nb", "a ⏎ b"},
+	}
+	assert := base.NewAssert(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			source := base.NewSource("test.met", "test", true, []rune(tt.src))
+			var parts []string
+			for _, tok := range StripTrivia(Lex(source)) {
+				if tok.Kind == EOF {
+					continue
+				}
+				if tok.Kind == Newline {
+					parts = append(parts, "⏎")
+					continue
+				}
+				desc := tok.Value
+				if desc == "" {
+					desc = tok.Kind.String()
+				}
+				parts = append(parts, desc)
+			}
+			assert.Equal(tt.want, strings.Join(parts, " "))
 		})
 	}
 }

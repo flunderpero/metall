@@ -361,9 +361,9 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
             index += 1
             if index < data.len and (data[index] & 0xC0) == 0x80 {
                 index += 1
-                 let cp = (b0.to_u32() & 0x0F) << 12
-                    | (data[index - 2].to_u32() & 0x3F) << 6
-                    | (data[index - 1].to_u32() & 0x3F)
+                 let cp = (b0.to_u32() & 0x0F) << 12 |
+                    (data[index - 2].to_u32() & 0x3F) << 6 |
+                    (data[index - 1].to_u32() & 0x3F)
                 if cp < 0xD800 or cp > 0xDFFF {
                     valid = true
                 }
@@ -376,10 +376,10 @@ fun Str.check_rune_at(data []U8, index_out &mut Int) Bool {
                 index += 1
                 if index < data.len and (data[index] & 0xC0) == 0x80 {
                     index += 1
-                    let cp = (b0.to_u32() & 0x07) << 18
-                        | (data[index - 3].to_u32() & 0x3F) << 12
-                        | (data[index - 2].to_u32() & 0x3F) << 6
-                        | (data[index - 1].to_u32() & 0x3F)
+                    let cp = (b0.to_u32() & 0x07) << 18 |
+                        (data[index - 3].to_u32() & 0x3F) << 12 |
+                        (data[index - 2].to_u32() & 0x3F) << 6 |
+                        (data[index - 1].to_u32() & 0x3F)
                     if cp <= 0x10FFFF {
                         valid = true
                     }

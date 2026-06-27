@@ -133,6 +133,54 @@ test.met:1:7: unexpected token: expected (, got =
           ^
 ```
 
+**Assignment is a statement, not an expression**
+
+```metall
+let c = (a = b)
+```
+
+```error
+test.met:1:12: unexpected token: expected ), got =
+    let c = (a = b)
+               ^
+```
+
+**Chained assignment is rejected**
+
+```metall
+{ a = b = c }
+```
+
+```error
+test.met:1:9: unexpected token: expected start of an expression, got =
+    { a = b = c }
+            ^
+```
+
+**Assignment in an if condition is rejected**
+
+```metall
+if a = 2 { }
+```
+
+```error
+test.met:1:6: unexpected token: expected {, got =
+    if a = 2 { }
+         ^
+```
+
+**Assignment in an array literal is rejected**
+
+```metall
+[a = b]
+```
+
+```error
+test.met:1:4: unexpected token: expected on of ']', ',', got =
+    [a = b]
+       ^
+```
+
 ## Blocks
 
 ```metall
@@ -3424,6 +3472,177 @@ Binary(op=+)
   rhs=Int(value=4)
 ```
 
+## Newlines
+
+A line break ends a statement, except after an operator, after `=`/`,`, before or
+after `.`, or inside `(`/`[`. The lexer only marks where line breaks are; the
+parser decides what they mean. These use blocks so statement separation shows.
+
+**A line-leading operand starts a new statement**
+
+```metall
+{ a
+&b }
+```
+
+```ast
+Block()
+  exprs[0]=Ident(name="a")
+  exprs[1]=Ref()
+    target=Ident(name="b")
+```
+
+**An infix operator on one line is one expression**
+
+```metall
+{ a & b }
+```
+
+```ast
+Block()
+  exprs=Binary(op=&)
+    lhs=Ident(name="a")
+    rhs=Ident(name="b")
+```
+
+**A line-leading minus starts a new statement**
+
+```metall
+{ a
+-b }
+```
+
+```ast
+Block()
+  exprs[0]=Ident(name="a")
+  exprs[1]=Unary(op=-)
+    expr=Ident(name="b")
+```
+
+**A trailing operator continues onto the next line**
+
+```metall
+{ a +
+b }
+```
+
+```ast
+Block()
+  exprs=Binary(op=+)
+    lhs=Ident(name="a")
+    rhs=Ident(name="b")
+```
+
+**A line-leading operator is rejected**
+
+```metall
+{ a
++ b }
+```
+
+```error
+test.met:2:1: unexpected token: expected start of an expression, got +
+    { a
+    + b }
+    ^
+```
+
+**A line-leading dot continues a member chain**
+
+```metall
+{ foo
+.bar }
+```
+
+```ast
+Block()
+  exprs=FieldAccess(field=bar)
+    target=Ident(name="foo")
+```
+
+**A trailing dot continues onto the next line**
+
+```metall
+{ foo.
+bar }
+```
+
+```ast
+Block()
+  exprs=FieldAccess(field=bar)
+    target=Ident(name="foo")
+```
+
+**A line-leading bracket starts a new array literal**
+
+```metall
+{ a
+[1] }
+```
+
+```ast
+Block()
+  exprs[0]=Ident(name="a")
+  exprs[1]=ArrayLiteral(len=1)
+    first=Int(value=1)
+```
+
+**A bracket on one line indexes**
+
+```metall
+{ a[1] }
+```
+
+```ast
+Block()
+  exprs=Index()
+    target=Ident(name="a")
+    index=Int(value=1)
+```
+
+**A line break inside parens is insignificant**
+
+```metall
+(a
++ b)
+```
+
+```ast
+Binary(op=+)
+  lhs=Ident(name="a")
+  rhs=Ident(name="b")
+```
+
+**A line break inside brackets is insignificant**
+
+```metall
+[a,
+b]
+```
+
+```ast
+ArrayLiteral(len=2)
+  first=Ident(name="a")
+```
+
+**A block inside parens keeps its newlines significant**
+
+```metall
+(fun() void { a
+&b })
+```
+
+```ast
+Block()
+  exprs[0]=Fun(name="__fun_lit_0")
+    returnType=SimpleType(name="void")
+    block=Block()
+      exprs[0]=Ident(name="a")
+      exprs[1]=Ref()
+        target=Ident(name="b")
+  exprs[1]=Ident(name="__fun_lit_0")
+```
+
 ## Loops
 
 **Conditional for loop**
@@ -3780,6 +3999,63 @@ Call()
   args=Int(value=42)
 ```
 
+A bare `<` is a comparison or a generic open; the parser tells them apart by the
+casing of what follows (a type is capitalized, a value is not), parsing the
+type-argument list speculatively and rewinding to a comparison on failure.
+
+**A lowercase operand makes `<` a comparison**
+
+```metall
+foo < bar
+```
+
+```ast
+Binary(op=<)
+  lhs=Ident(name="foo")
+  rhs=Ident(name="bar")
+```
+
+**Comparisons as call arguments are not generics**
+
+```metall
+f(a < b, c > d)
+```
+
+```ast
+Call()
+  callee=Ident(name="f")
+  args[0]=Binary(op=<)
+    lhs=Ident(name="a")
+    rhs=Ident(name="b")
+  args[1]=Binary(op=>)
+    lhs=Ident(name="c")
+    rhs=Ident(name="d")
+```
+
+**A static-access operand rewinds to a comparison**
+
+```metall
+foo < Foo.bar
+```
+
+```ast
+Binary(op=<)
+  lhs=Ident(name="foo")
+  rhs=Ident(name="Foo.bar")
+```
+
+**A right shift is not a generic close**
+
+```metall
+a >> b
+```
+
+```ast
+Binary(op=>>)
+  lhs=Ident(name="a")
+  rhs=Ident(name="b")
+```
+
 **Constrained type param**
 
 ```metall
@@ -3803,7 +4079,7 @@ struct Foo<T<A>> {}
 ```
 
 ```error
-test.met:1:13: unexpected token: expected ,, got <<immediate>
+test.met:1:13: unexpected token: expected ,, got <
     struct Foo<T<A>> {}
                 ^
 ```
@@ -3815,7 +4091,7 @@ fun foo<T<A>>() void {}
 ```
 
 ```error
-test.met:1:10: unexpected token: expected ,, got <<immediate>
+test.met:1:10: unexpected token: expected ,, got <
     fun foo<T<A>>() void {}
              ^
 ```
@@ -4304,7 +4580,7 @@ enum Bad<T> U8 = a | b
 test.met:1:9: enums cannot be generic
     enum Bad<T> U8 = a | b
             ^
-test.met:1:9: unexpected token: <<immediate>
+test.met:1:9: unexpected token: <
     enum Bad<T> U8 = a | b
             ^
 ```
@@ -4532,7 +4808,7 @@ use foo.bar.List<Int>
 ```
 
 ```error
-test.met:1:17: unexpected token: <<immediate>
+test.met:1:17: unexpected token: <
     use foo.bar.List<Int>
                     ^
 ```

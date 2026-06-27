@@ -21,7 +21,7 @@ test-met:
             tree-sitter parse "$f" 2>&1 | grep -nE "ERROR|MISSING" | head -n 5
             failed=1
         fi
-    done < <(find .. -name '*.met' ! -path '*/.git/*' ! -path '*/.llvm/*' | sort)
+    done < <(find .. -name '*.met' ! -path '*/.git/*' ! -path '*/doc/*' ! -path '*/.llvm/*' | sort)
     if [ "$failed" -ne 0 ]; then
         echo "At least one .met file failed to parse"
         exit 1

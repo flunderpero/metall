@@ -277,9 +277,13 @@ module.exports = grammar({
     // Type parameters on declarations: fun foo<T Showable>(...) ...
     // Type arguments on expressions/types: foo<Int>(...), Box<Int>
     //
-    // The opening `<` uses token.immediate to require no whitespace before
-    // it, mirroring the real parser's LtImmediate token. This disambiguates
-    // `foo<Int>(x)` (type args) from `foo < Int` (comparison).
+    // The compiler tells generics from a `<` comparison by the casing of what
+    // follows (a type is capitalized, a value is not). That needs speculative
+    // parsing, which GLR turns into a thicket of conflicts here, especially around
+    // dotted `foo < bar.Baz`. For the editor grammar we use the simpler, robust
+    // rule that all real code already follows: a generic `<` is glued to its name
+    // (`foo<Int>`) while a comparison is spaced (`a < b`). A nested close
+    // `Foo<Bar<T>>` is two adjacent `>`, one per level.
 
     type_parameters: ($) =>
       seq(

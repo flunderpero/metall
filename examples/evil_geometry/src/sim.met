@@ -231,7 +231,6 @@ fun Tower.update(t &mut Tower, s &mut Sim) void {
         t.fire_next_in -= 1
         if t.fire_next_in <= 0 {
             t.fire_next_in = (freq_f32 * t.kind.fire_rate).to_int_clamped()
-            let shot_dir = 
             _ = s.add_shot(t, best_pos)
         }
     }

@@ -29,7 +29,9 @@ func runParserMDTest(_ *testing.T, assert base.Assert, tc mdtest.TestCase) map[s
 	if isModule {
 		root, ok = parser.ParseModule()
 	} else {
-		root, ok = parser.ParseExpr(0)
+		// A non-module case parses one statement, so assignment (now a statement,
+		// not an expression) and bare expressions are both exercised.
+		root, ok = parser.ParseStmt()
 	}
 
 	if hasError {
