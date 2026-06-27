@@ -15,6 +15,16 @@ import (
 	"github.com/flunderpero/metall/metallc/internal/modules"
 )
 
+// Version info stamped in at build time via -ldflags -X (see release.justfile),
+// never committed. A plain `go build`/`go run` reports these defaults.
+//
+//nolint:gochecknoglobals // set at link time, cannot be const
+var (
+	version     = "dev"
+	commit      = "unknown"
+	llvmVersion = "unknown"
+)
+
 type includeFlags []string
 
 func (f *includeFlags) String() string { return fmt.Sprintf("%v", *f) }
@@ -30,6 +40,7 @@ func main() {
 Usage:
   metallc build [flags] <file.met>    Compile only
   metallc run   [flags] <file.met>    Compile and run
+  metallc version                     Print version info
 
 `)
 	}
@@ -53,6 +64,8 @@ Usage:
 		}
 		fmt.Print(output)
 		os.Exit(exitCode)
+	case "version":
+		fmt.Printf("metallc %s (%s, llvm %s)\n", version, commit, llvmVersion)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", flag.Arg(0))
 		flag.Usage()
@@ -153,6 +166,8 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 	})
 	flags.StringVar(&opts.TargetCPU, "cpu", "",
 		"target CPU for codegen (e.g. 'native', 'apple-m1'); default targets a portable baseline")
+	flags.StringVar(&opts.TargetArch, "arch", "",
+		"cross-compile the native target to this architecture: x86_64, aarch64 (default host)")
 	flags.Func("opt",
 		"optimization mode: none, safe, fast (fast also strips the overflow/shift/INT_MIN checks, so `+` wraps)",
 		func(s string) error {
@@ -213,6 +228,11 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 	}
 	if len(includes) == 0 {
 		includes = []string{"lib"}
+	}
+	// A release ships the stdlib next to the binary, so add <exe-dir>/lib as a
+	// fallback include path that resolves regardless of the working directory.
+	if exe, err := os.Executable(); err == nil {
+		includes = append(includes, filepath.Join(filepath.Dir(exe), "lib"))
 	}
 	fileName := flags.Arg(0)
 	if opts.Output == "" && command == "build" {

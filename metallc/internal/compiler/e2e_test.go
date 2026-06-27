@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -155,6 +156,14 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 		}
 	}
 
+	// The address sanitizer is native-only; the compiler rejects it for wasm.
+	sanitizers := gen.AllSanitizers()
+	if target.IsWasm() {
+		sanitizers = slices.DeleteFunc(sanitizers, func(s gen.Sanitizer) bool {
+			return s == gen.SanitizerAddress
+		})
+	}
+
 	opts := CompileOpts{ //nolint:exhaustruct
 		ProjectRoot:    projectDir,
 		IncludePaths:   []string{"../../../lib"},
@@ -163,7 +172,7 @@ func (r *e2eRunner) Run(t *testing.T, assert base.Assert, tc mdtest.TestCase) ma
 		OptLevel:       optLevel,
 		KeepIR:         true,
 		LLVMPasses:     llvmPasses,
-		Sanitizers:     gen.AllSanitizers(),
+		Sanitizers:     sanitizers,
 		MinimalPrelude: r.cfg.minimalPrelude,
 		ErrorTracing:   true,
 		// We deliberately use small stack buf sizes and small page sizes

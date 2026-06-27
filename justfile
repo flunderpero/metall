@@ -1,12 +1,5 @@
-_host_arch := `uname -m`
-host_arch := if _host_arch == "x86_64" { "amd64" } else if _host_arch == "aarch64" { "arm64" } else { _host_arch }
-
-llvm_version := "22.1.3"
-host_os := os()
-host_arch_llvm := arch()
-llvm_root := justfile_directory() + "/.llvm/" + llvm_version
-
 precommit:
+    just llvm build
     just go-mod
     just fmt
     just lint
@@ -102,12 +95,13 @@ examples opt="none" target="native":
             bin="$(mktemp -t "$(basename "$base").XXXXXX")"
             trap 'rm -f "$bin"' EXIT
             go run ./metallc/... build --opt {{opt}} -c -emit-header-file -o "$obj" "$file"
-            clang_args=(-I "$(dirname "$header")" -o "$bin" "$c_file" "$obj")
+            # `export` is the user-side workflow: link the emitted .o with the
+            # system C compiler, exactly as a user of the library would.
+            cc_args=(-I "$(dirname "$header")" -o "$bin" "$c_file" "$obj")
             if [ "$(uname -s)" = "Darwin" ]; then
-                clang_args+=(-isysroot "$(xcrun --show-sdk-path)")
+                cc_args+=(-isysroot "$(xcrun --show-sdk-path)")
             fi
-            clang_home="${METALL_LLVM_HOME:-{{llvm_root}}/$(uname -s | tr '[:upper:]' '[:lower:]')-{{host_arch}}}"
-            "$clang_home/bin/clang" "${clang_args[@]}"
+            cc "${cc_args[@]}"
             "$bin"
             rm -f "$bin"
             trap - EXIT
@@ -139,47 +133,10 @@ linux-arm64 *args:
 linux-amd64 *args:
     METALL_ARCH=amd64 just -f justfile.linux {{args}}
 
-install-llvm os=host_os arch=host_arch_llvm:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Keep compiler.go's LLVMVersion and this llvm_version in sync.
-    if ! grep -q 'LLVMVersion = "{{llvm_version}}"' metallc/internal/compiler/compiler.go; then
-        echo "error: LLVMVersion in metallc/internal/compiler/compiler.go" >&2
-        echo "       does not match llvm_version={{llvm_version}} in justfile" >&2
-        exit 1
-    fi
-    # Map `os`/`arch` args to Go's GOOS/GOARCH (local dir) and to the
-    # upstream LLVM release naming (tarball).
-    case "{{os}}" in
-        macos|darwin)  goos="darwin";  release_os="macOS" ;;
-        linux)         goos="linux";   release_os="Linux" ;;
-        *)             echo "unsupported os: {{os}}" >&2; exit 1 ;;
-    esac
-    case "{{arch}}" in
-        aarch64|arm64) goarch="arm64"; release_arch="ARM64" ;;
-        x86_64|amd64)  goarch="amd64"; release_arch="X64" ;;
-        *)             echo "unsupported arch: {{arch}}" >&2; exit 1 ;;
-    esac
-    release_name="LLVM-{{llvm_version}}-${release_os}-${release_arch}"
-    dest="{{llvm_root}}/${goos}-${goarch}"
-    if [ -x "$dest/bin/clang" ] && [ -x "$dest/bin/wasm-ld" ]; then
-        echo "LLVM already installed at $dest"
-    else
-        tarball="${release_name}.tar.xz"
-        url="https://github.com/llvm/llvm-project/releases/download/llvmorg-{{llvm_version}}/$tarball"
-        mkdir -p "$(dirname "$dest")"
-        archive="$(dirname "$dest")/$tarball"
-        if [ ! -f "$archive" ]; then
-            echo "Downloading $url"
-            curl -fL --progress-bar "$url" -o "$archive.part"
-            mv "$archive.part" "$archive"
-        fi
-        echo "Extracting $archive"
-        tar -xJf "$archive" -C "$(dirname "$dest")"
-        rm -f "$archive"
-        rm -rf "$dest"
-        mv "$(dirname "$dest")/${release_name}" "$dest"
-    fi
+
+# Run an LLVM toolchain recipe (build, genflags) from llvm.justfile.
+llvm *args:
+    just -f llvm.justfile {{args}}
 
 go-mod:
     cd metallc && go mod tidy

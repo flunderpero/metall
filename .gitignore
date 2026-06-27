@@ -2,6 +2,8 @@
 .spell
 .build
 .llvm
+/dist
+/metallc/internal/backend/cgoflags_*.go
 /lib/builtin
 /examples/*.o
 /examples/*.h

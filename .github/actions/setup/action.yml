@@ -68,13 +68,18 @@ runs:
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
         "$HOME/.local/bin/just" --version
 
-    - name: Cache LLVM toolchain
+    - name: Install cmake + ninja (for a cold LLVM build)
+      if: runner.environment == 'github-hosted' && runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+    - name: Cache static LLVM
       if: runner.environment == 'github-hosted'
       uses: actions/cache@v5
       with:
-        path: .llvm/22.1.3
-        key: llvm-22.1.3-${{ runner.os }}-${{ runner.arch }}
+        path: .build/llvm-static
+        key: llvm-static-${{ hashFiles('llvm.justfile') }}-${{ runner.os }}-${{ runner.arch }}
 
-    - name: Install LLVM
+    - name: Build static LLVM + cgo flags
       shell: bash
-      run: just install-llvm
+      run: just llvm build

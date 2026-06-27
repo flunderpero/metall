@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/flunderpero/metall/metallc/internal/ast"
+	"github.com/flunderpero/metall/metallc/internal/backend"
 	"github.com/flunderpero/metall/metallc/internal/base"
 	"github.com/flunderpero/metall/metallc/internal/comptime"
 	"github.com/flunderpero/metall/metallc/internal/gen"
@@ -70,10 +71,6 @@ func ParseOptLevel(s string) (OptLevel, error) {
 	}
 }
 
-const LLVMVersion = "22.1.3"
-
-const LocalLLVMDir = ".llvm/" + LLVMVersion
-
 // LLVM optimization passes (https://llvm.org/docs/Passes.html):
 //   - mem2reg: Promote alloca'd scalars to SSA registers.
 //   - sroa: Scalar Replacement of Aggregates, decomposes struct/array allocas into individual scalars.
@@ -101,7 +98,10 @@ type CompileOpts struct {
 	OptLevel     OptLevel
 	// TargetCPU, when set (e.g. "native", "apple-m1"), targets that CPU for codegen.
 	// Empty targets a portable baseline so the binary runs on any CPU of the arch.
-	TargetCPU           string
+	TargetCPU string
+	// TargetArch, when set ("x86_64"/"aarch64"), cross-compiles the native target
+	// to that architecture instead of the host's. Empty means the host arch.
+	TargetArch          string
 	Sanitizers          []gen.Sanitizer
 	DebugArenaAllocator bool
 	ArenaStackBufSize   int
@@ -151,13 +151,19 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if opts.TargetCPU != "" && opts.Target.IsWasm() {
 		return base.Errorf("--cpu is only valid for the native target")
 	}
-	llvmHome, err := findLLVMHome()
+	if opts.TargetArch != "" && opts.Target.IsWasm() {
+		return base.Errorf("--arch is only valid for the native target")
+	}
+	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) && opts.Target.IsWasm() {
+		return base.Errorf("the address sanitizer is not supported for wasm targets")
+	}
+	targetTriple, err := targetTriple(opts.Target, opts.TargetArch)
 	if err != nil {
 		return err
 	}
-	targetDataLayout, targetTriple, err := queryTargetInfo(ctx, llvmHome, opts.Target)
+	targetDataLayout, err := backend.DataLayout(targetTriple)
 	if err != nil {
-		return err
+		return base.WrapErrorf(err, "failed to query target data layout")
 	}
 
 	listener := opts.Listener
@@ -267,51 +273,57 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 
 	filebase := filepath.Base(output)
-	unopt_ll := filepath.Join(artifact_dir, filebase+".ll")
-	opt_ll := filepath.Join(artifact_dir, filebase+".opt.ll")
-	bc := filepath.Join(artifact_dir, filebase+".bc")
 
-	// Write unoptimized IR (.ll)
-	err = os.WriteFile(unopt_ll, []byte(ir), 0o600)
-	if err != nil {
-		return base.WrapErrorf(err, "failed to write IR file")
-	}
-
-	// Produce optimized textual IR (.opt.ll)
-	cmdline := []string{llvmHome + "/bin/opt", "-S"}
-	if opts.OptLevel != OptLevelNone {
-		cmdline = append(cmdline, "-O3")
-		if opts.TargetCPU != "" {
-			// Targeting a specific CPU lets the vectorizer's cost model match a
-			// native build; without it the generic model under-vectorizes (e.g.
-			// interleave factor 2 instead of 4). Off by default for portability.
-			// Compile() has already rejected a CPU with a wasm target.
-			cmdline = append(cmdline, "-mcpu="+opts.TargetCPU)
+	if opts.KeepIR {
+		unoptLL := filepath.Join(artifact_dir, filebase+".ll")
+		if err := os.WriteFile(unoptLL, []byte(ir), 0o600); err != nil {
+			return base.WrapErrorf(err, "failed to write IR file")
 		}
-	} else if opts.LLVMPasses != "" {
-		cmdline = append(cmdline, "-passes="+opts.LLVMPasses)
 	}
-	cmdline = append(cmdline, unopt_ll, "-o", opt_ll)
-	if err := run_cmd(ctx, cmdline, os.Environ()); err != nil {
-		return base.WrapErrorf(err, "failed to generate optimized IR")
+
+	// At -O none the passes are a bare function pipeline; at -O3 the full
+	// `default<O3>` module pipeline. asan is a module pass that runs last, so a
+	// function pipeline must be wrapped before appending it.
+	passes := opts.LLVMPasses
+	moduleLevel := false
+	codegen := backend.CodeGenNone
+	if opts.OptLevel != OptLevelNone {
+		passes = "default<O3>"
+		moduleLevel = true
+		codegen = backend.CodeGenAggressive
+	}
+	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) {
+		switch {
+		case passes == "":
+			passes = "asan"
+		case moduleLevel:
+			passes += ",asan"
+		default:
+			passes = "function(" + passes + "),asan"
+		}
+	}
+	objectPath := output
+	if !opts.EmitObject {
+		objectPath = filepath.Join(artifact_dir, filebase+".o")
+	}
+	if err := backend.EmitObject(
+		[]byte(ir), targetTriple, opts.TargetCPU, passes, codegen, objectPath,
+	); err != nil {
+		return base.WrapErrorf(err, "failed to compile to object")
 	}
 	timingListener.OnOptimizeIR()
 	if listener != nil && !listener.OnOptimizeIR() {
 		return ErrAbort
 	}
 
-	// Produce optimized bitcode (.bc)
-	cmdline = []string{llvmHome + "/bin/opt", opt_ll, "-o", bc}
-	if err := run_cmd(ctx, cmdline, os.Environ()); err != nil {
-		return base.WrapErrorf(err, "failed to generate bitcode")
-	}
-
 	exportNames := make([]string, 0, len(engine.Exports()))
 	for _, exp := range engine.Exports() {
 		exportNames = append(exportNames, exp.CName)
 	}
-	if err := runClang(ctx, llvmHome, opts, bc, output, !opts.EmitObject, exportNames); err != nil {
-		return err
+	if !opts.EmitObject {
+		if err := linkExecutable(ctx, opts, targetTriple, objectPath, output, exportNames); err != nil {
+			return err
+		}
 	}
 	outBase := strings.TrimSuffix(output, filepath.Ext(output))
 	if opts.EmitHeaderFile {
@@ -487,34 +499,262 @@ func (l *TimingListener) record(name string) {
 	l.last = now
 }
 
-func queryTargetInfo(
-	ctx context.Context, llvmHome string, target gen.Target,
-) (dataLayout, triple string, err error) {
-	clang := filepath.Join(llvmHome, "bin", "clang")
-	args := []string{"-xc", "-S", "-emit-llvm", "-o", "-"}
-	if target.IsWasm() {
-		args = append(args, "--target="+target.String())
+// targetTriple is the single source of truth for what to build: the wasm
+// triples, or the host OS with the chosen architecture for native. arch is the
+// --arch value ("" = host, "x86_64", "aarch64").
+func targetTriple(target gen.Target, arch string) (string, error) {
+	switch target { //nolint:exhaustive
+	case gen.TargetWasm32:
+		return "wasm32-unknown-unknown", nil
+	case gen.TargetWasm64:
+		return "wasm64-unknown-unknown", nil
 	}
-	args = append(args, "-")
-	cmd := exec.CommandContext(ctx, clang, args...)
-	cmd.Stdin = strings.NewReader("")
-	out, err := cmd.Output()
+	switch arch {
+	case "":
+		arch = hostArch()
+	case "x86_64", "aarch64":
+	default:
+		return "", base.Errorf("unsupported --arch %q (supported: x86_64, aarch64)", arch)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		if arch == "aarch64" {
+			arch = "arm64"
+		}
+		return arch + "-apple-macosx11.0.0", nil
+	case "linux":
+		return arch + "-unknown-linux-gnu", nil
+	default:
+		return backend.DefaultTriple(), nil
+	}
+}
+
+// hostArch is the host architecture in LLVM triple naming.
+func hostArch() string {
+	if runtime.GOARCH == "amd64" {
+		return "x86_64"
+	}
+	return "aarch64"
+}
+
+func linkExecutable(
+	ctx context.Context, opts CompileOpts, triple, objectPath, output string, exportNames []string,
+) error {
+	if opts.Target.IsWasm() {
+		return linkWasm(opts, objectPath, output, exportNames)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return linkMachO(ctx, opts, triple, objectPath, output)
+	case "linux":
+		return linkELF(ctx, opts, triple, objectPath, output)
+	default:
+		return base.Errorf("in-process linking for %s is not implemented (darwin, linux, wasm)", runtime.GOOS)
+	}
+}
+
+// linkELF builds the ld.lld command line clang's driver produces for a Linux
+// PIE executable and runs it in-process. The crt objects, gcc support libs, and
+// search paths come from the system toolchain (queried via `cc`), the
+// irreducible dependency for native Linux linking, just like the macOS SDK.
+func linkELF(ctx context.Context, opts CompileOpts, triple, objectPath, output string) error {
+	// The crt objects and libc come from the host toolchain (via `cc`), so a
+	// non-host arch would need a target sysroot we do not have.
+	arch, _, _ := strings.Cut(triple, "-")
+	if arch != hostArch() {
+		return base.Errorf(
+			"cross-architecture linking (%s on a %s host) needs a target sysroot",
+			arch,
+			hostArch(),
+		)
+	}
+	crt := func(name string) string {
+		out, err := exec.CommandContext(ctx, "cc", "-print-file-name="+name).Output() //nolint:gosec
+		if err != nil {
+			return name
+		}
+		return strings.TrimSpace(string(out))
+	}
+	scrt1, crti, crtn := crt("Scrt1.o"), crt("crti.o"), crt("crtn.o")
+	crtbegin, crtend := crt("crtbeginS.o"), crt("crtendS.o")
+
+	var dynLinker, emulation string
+	switch arch {
+	case "aarch64":
+		dynLinker, emulation = "/lib/ld-linux-aarch64.so.1", "aarch64linux"
+	case "x86_64":
+		dynLinker, emulation = "/lib64/ld-linux-x86-64.so.2", "elf_x86_64"
+	default:
+		return base.Errorf("unsupported linux arch: %s", arch)
+	}
+
+	// -L both the gcc dir (crtbegin, libgcc) and the libc multiarch dir (crti,
+	// libc/libm); lld's default search does not include Debian's triple dirs.
+	args := []string{
+		"ld.lld", "-m", emulation, "--eh-frame-hdr", "-pie",
+		"-dynamic-linker", dynLinker,
+		"-o", output,
+		scrt1, crti, crtbegin,
+		"-L", filepath.Dir(crtbegin),
+		"-L", filepath.Dir(crti),
+		objectPath,
+	}
+	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) {
+		rd, err := resourceDir()
+		if err != nil {
+			return err
+		}
+		// compiler-rt's per-triple runtime dir. The asan runtime is whole-archived
+		// so its interceptors survive --gc-sections; asan_static carries the parts
+		// the instrumented code calls directly. The runtime is C++, hence -lstdc++.
+		rtDir := filepath.Join(rd, "lib", arch+"-unknown-linux-gnu")
+		args = append(args,
+			"--whole-archive", filepath.Join(rtDir, "libclang_rt.asan.a"), "--no-whole-archive",
+			filepath.Join(rtDir, "libclang_rt.asan_static.a"),
+			"--export-dynamic",
+			"-lstdc++", "-lpthread", "-lrt", "-ldl", "-lresolv",
+		)
+	}
+	args = append(args, opts.LinkFlags...)
+	args = append(args, "-lgcc", "--as-needed", "-lgcc_s", "--no-as-needed", "-lc", "-lm", crtend, crtn)
+	if err := backend.LinkELF(args); err != nil {
+		return base.WrapErrorf(err, "failed to link executable")
+	}
+	return nil
+}
+
+// linkMachO builds the ld64.lld command line clang's driver would have produced
+// for a macOS executable and runs it in-process. macOS forbids static linking
+// of libSystem, so it is always dynamic, reached via the SDK's -syslibroot.
+func linkMachO(ctx context.Context, opts CompileOpts, triple, objectPath, output string) error {
+	sdk, sdkVersion, err := macOSSDK(ctx)
 	if err != nil {
-		return "", "", base.WrapErrorf(err, "failed to query target info from clang")
+		return err
 	}
-	for line := range strings.SplitSeq(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if rest, ok := strings.CutPrefix(line, "target datalayout = "); ok {
-			dataLayout = strings.Trim(rest, `"`)
+	arch, _, _ := strings.Cut(triple, "-")
+	args := []string{
+		"ld64.lld",
+		"-arch", arch,
+		"-platform_version", "macos", macOSDeploymentTarget(triple), sdkVersion,
+		"-syslibroot", sdk,
+		"-lSystem",
+		"-o", output, objectPath,
+	}
+	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) {
+		rd, err := resourceDir()
+		if err != nil {
+			return err
 		}
-		if rest, ok := strings.CutPrefix(line, "target triple = "); ok {
-			triple = strings.Trim(rest, `"`)
+		// The instrumented object references __asan_* from the compiler-rt
+		// runtime dylib; -rpath lets the linked binary find it at run time.
+		rtDir := filepath.Join(rd, "lib", "darwin")
+		args = append(args,
+			filepath.Join(rtDir, "libclang_rt.asan_osx_dynamic.dylib"),
+			"-rpath", rtDir,
+		)
+	}
+	args = append(args, opts.LinkFlags...)
+	if err := backend.LinkMachO(args); err != nil {
+		return base.WrapErrorf(err, "failed to link executable")
+	}
+	return nil
+}
+
+// linkWasm builds the wasm-ld command line and runs it in-process. The flags
+// match the old `clang --target=wasm32 -nostdlib -Wl,...` link: no entry point,
+// the runtime exports, and a 1 MiB shadow stack (wasm-ld's 64 KiB default
+// overflows on modest recursion). User -link flags come last so an explicit
+// stack-size overrides the default.
+func linkWasm(opts CompileOpts, objectPath, output string, exportNames []string) error {
+	args := []string{ //nolint:prealloc
+		"wasm-ld",
+		"--no-entry",
+		"--export=main",
+		"--export=memory",
+		"--allow-undefined",
+		"-z", fmt.Sprintf("stack-size=%d", wasmShadowStackSize),
+	}
+	for _, name := range exportNames {
+		args = append(args, "--export="+name)
+	}
+	args = append(args, opts.LinkFlags...)
+	args = append(args, "-o", output, objectPath)
+	if err := backend.LinkWasm(args); err != nil {
+		return base.WrapErrorf(err, "failed to link wasm module")
+	}
+	return nil
+}
+
+// resourceDir locates the clang resource dir holding the compiler-rt sanitizer
+// runtimes. Those are not linked into metallc, so they are found on disk: an
+// explicit override, next to the binary in a release, or the static LLVM build
+// tree during development. Only called when a sanitizer needs them.
+func resourceDir() (string, error) {
+	if d := os.Getenv("METALL_RESOURCE_DIR"); d != "" {
+		return d, nil
+	}
+	// The resource dir is the single lib/clang/<major> under a search root.
+	find := func(root string) string {
+		matches, _ := filepath.Glob(filepath.Join(root, "lib", "clang", "*"))
+		if len(matches) == 1 {
+			return matches[0]
+		}
+		return ""
+	}
+	if exe, err := os.Executable(); err == nil {
+		if d := find(filepath.Dir(exe)); d != "" {
+			return d, nil
 		}
 	}
-	if dataLayout == "" || triple == "" {
-		return "", "", base.Errorf("could not extract target info from clang output")
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", base.WrapErrorf(err, "get cwd")
 	}
-	return dataLayout, triple, nil
+	for dir := cwd; ; {
+		if d := find(filepath.Join(dir, ".build", "llvm-static", platform)); d != "" {
+			return d, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", base.Errorf("compiler-rt resource dir not found; set METALL_RESOURCE_DIR")
+		}
+		dir = parent
+	}
+}
+
+// macOSDeploymentTarget extracts the deployment version from a macOS triple
+// (e.g. "arm64-apple-macosx26.0.0" -> "26.0"), so the linked binary's minimum
+// matches the object the compiler emitted and lld does not warn. Falls back to
+// a broad baseline when the triple carries no version.
+func macOSDeploymentTarget(triple string) string {
+	_, version, ok := strings.Cut(triple, "macosx")
+	if !ok || version == "" {
+		return "11.0"
+	}
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) >= 2 {
+		return parts[0] + "." + parts[1]
+	}
+	return parts[0]
+}
+
+// macOSSDK returns the active SDK path and its version, used for -syslibroot
+// and -platform_version. These come from the host toolchain, the irreducible
+// dependency for native macOS linking.
+func macOSSDK(ctx context.Context) (path, version string, err error) {
+	out, err := exec.CommandContext(ctx, "xcrun", "--show-sdk-path").Output()
+	if err != nil {
+		return "", "", base.WrapErrorf(err, "failed to locate macOS SDK via xcrun")
+	}
+	path = strings.TrimSpace(string(out))
+	verOut, err := exec.CommandContext( //nolint:gosec // fixed argv, path from xcrun
+		ctx, "plutil", "-extract", "Version", "raw", filepath.Join(path, "SDKSettings.plist"),
+	).Output()
+	if err != nil {
+		return "", "", base.WrapErrorf(err, "failed to read SDK version")
+	}
+	return path, strings.TrimSpace(string(verOut)), nil
 }
 
 func addRuntimeModules(a *ast.AST, opts CompileOpts) ([]ast.NodeID, base.Diagnostics) {
@@ -641,37 +881,6 @@ func buildCompTimeEnv(targetTriple string, tags []string, errorTracing bool) com
 	return env
 }
 
-func findLLVMHome() (string, error) {
-	// Explicit override, used by the podman wrapper to point at an LLVM
-	// install that's mounted outside the workspace and not reachable via a
-	// walk-up from the working directory.
-	if override := os.Getenv("METALL_LLVM_HOME"); override != "" {
-		if _, err := os.Stat(filepath.Join(override, "bin", "clang")); err == nil {
-			return override, nil
-		}
-		return "", base.Errorf("METALL_LLVM_HOME=%q has no bin/clang", override)
-	}
-	platformDir := filepath.Join(LocalLLVMDir, runtime.GOOS+"-"+runtime.GOARCH)
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", base.WrapErrorf(err, "get cwd")
-	}
-	for dir := cwd; ; {
-		candidate := filepath.Join(dir, platformDir)
-		if _, err := os.Stat(filepath.Join(candidate, "bin", "clang")); err == nil {
-			return candidate, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", base.Errorf(
-				"no LLVM found at ./%s walking up from %s (run `just install-llvm`)",
-				platformDir, cwd,
-			)
-		}
-		dir = parent
-	}
-}
-
 // wasmRunCommand writes the embedded JS harness to a temp file and
 // returns the node invocation that dynamically imports it and runs the
 // wasm module at wasmPath. The cleanup func deletes the temp dir.
@@ -714,108 +923,7 @@ func wasmRunCommand(wasmPath string) ([]string, func(), error) {
 	return []string{"node", "--input-type=module", "-e", script}, cleanup, nil
 }
 
-// runClang invokes the bundled clang on the optimized bitcode. When `link` is
-// true clang links an executable; otherwise it emits a relocatable object
-// file (`-c`). `wasmExports` is the set of user-declared export symbols that
-// wasm-ld needs explicit `--export=<name>` directives for.
-func runClang(
-	ctx context.Context, llvmHome string, opts CompileOpts, bc, output string, link bool, wasmExports []string,
-) error {
-	cmdline := []string{filepath.Join(llvmHome, "bin", "clang")}
-	if link {
-		cmdline = append(cmdline, "-v")
-	} else {
-		cmdline = append(cmdline, "-c")
-	}
-	cmdline = append(cmdline, bc, "-o", output)
-	if opts.OptLevel != OptLevelNone {
-		cmdline = append(cmdline, "-O3")
-	}
-	if opts.TargetCPU != "" {
-		// Match the requested CPU for instruction selection and scheduling.
-		cmdline = append(cmdline, "-mcpu="+opts.TargetCPU)
-	}
-	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) && !opts.Target.IsWasm() {
-		cmdline = append(cmdline, "-fsanitize=address")
-	}
-	env := os.Environ()
-	if link {
-		extra, linkEnv, err := clangLinkFlags(ctx, llvmHome, opts, wasmExports)
-		if err != nil {
-			return err
-		}
-		cmdline = append(cmdline, extra...)
-		env = linkEnv
-	}
-	action := "link"
-	if !link {
-		action = "compile object file"
-	}
-	if err := run_cmd(ctx, cmdline, env); err != nil {
-		return base.WrapErrorf(err, "failed to %s with clang", action)
-	}
-	return nil
-}
-
 // wasmShadowStackSize is the wasm linear-memory stack reservation. wasm-ld
 // defaults to 64 KiB, which a modestly deep recursion silently overflows; 1 MiB
 // is the common wasm stack size (matching Rust's wasm32 default).
 const wasmShadowStackSize = 1 << 20
-
-// clangLinkFlags returns link-time flags (and the environment clang should be
-// run in) for the active target: wasm linker directives + a PATH override so
-// clang finds the matching wasm-ld, or a macOS sysroot so the bundled LLVM
-// can locate Command Line Tools headers. User-supplied -link flags (e.g. to
-// link a vendored C library) are appended for native targets.
-func clangLinkFlags(
-	ctx context.Context, llvmHome string, opts CompileOpts, wasmExports []string,
-) ([]string, []string, error) {
-	env := os.Environ()
-	if opts.Target.IsWasm() {
-		flags := []string{ //nolint:prealloc
-			"--target=" + opts.Target.String(),
-			"-nostdlib",
-			"-Wl,--no-entry",
-			"-Wl,--export=main",
-			"-Wl,--export=memory",
-			"-Wl,--allow-undefined",
-			// Raise the shadow stack off wasm-ld's 64 KiB default, which a
-			// modestly deep recursion silently overflows.
-			fmt.Sprintf("-Wl,-z,stack-size=%d", wasmShadowStackSize),
-		}
-		for _, name := range wasmExports {
-			flags = append(flags, "-Wl,--export="+name)
-		}
-		// User -link flags last so an explicit -z stack-size overrides the default.
-		flags = append(flags, opts.LinkFlags...)
-		llvmBin := filepath.Join(llvmHome, "bin")
-		env = append(env, "PATH="+llvmBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-		return flags, env, nil
-	}
-	var flags []string
-	if runtime.GOOS == "darwin" {
-		sdk, err := exec.CommandContext(ctx, "xcrun", "--show-sdk-path").Output()
-		if err != nil {
-			return nil, nil, base.WrapErrorf(err, "failed to locate macOS SDK via xcrun")
-		}
-		flags = append(flags, "-isysroot", strings.TrimSpace(string(sdk)))
-	}
-	if runtime.GOOS == "linux" {
-		// libm is a separate library on Linux, and the prelude's math (sin,
-		// tan, exp, ...) needs it. macOS folds libm into libSystem, so there
-		// it links implicitly.
-		flags = append(flags, "-lm")
-	}
-	flags = append(flags, opts.LinkFlags...)
-	return flags, env, nil
-}
-
-func run_cmd(ctx context.Context, cmdline []string, env []string) error {
-	cmd := exec.CommandContext(ctx, cmdline[0], cmdline[1:]...) //nolint:gosec
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return base.WrapErrorf(err, "command failed\n%s\n%s", strings.Join(cmdline, " "), string(out))
-	}
-	return nil
-}

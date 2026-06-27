@@ -156,10 +156,9 @@ func runExportLink(
 	t *testing.T, assert base.Assert, headerPath, cPath, objPath, binPath, outDir string,
 ) {
 	t.Helper()
-	llvmHome, err := findLLVMHome()
-	assert.NoError(err, "find LLVM home")
-	clang := filepath.Join(llvmHome, "bin", "clang")
-	cmdline := []string{clang, "-I", outDir, "-include", headerPath, "-o", binPath, cPath, objPath}
+	// `export` is the user-side workflow: metallc emits a .o + .h and the user
+	// links it with their own C compiler. Use the system `cc`, not a bundled one.
+	cmdline := []string{"cc", "-I", outDir, "-include", headerPath, "-o", binPath, cPath, objPath}
 	if runtime.GOOS == "darwin" {
 		sdk, err := exec.CommandContext(t.Context(), "xcrun", "--show-sdk-path").Output()
 		assert.NoError(err, "xcrun --show-sdk-path")
