@@ -5,7 +5,7 @@
 # stdlib it finds next to itself. The only runtime dependency is the host's
 # system C library / SDK, which native linking fundamentally requires.
 #
-# `build` produces all four bundles (darwin/linux x arm64/x86_64): the macOS
+# `build` produces all four bundles (darwin/linux x aarch64/x86_64): the macOS
 # slices on this Apple Silicon host (x86_64 cross-compiled, run via Rosetta to
 # verify), the linux slices via podman.
 #
@@ -23,7 +23,7 @@ root := justfile_directory()
 default:
     @just --justfile {{justfile()}} --list
 
-# Build and verify all four release bundles (darwin/linux x arm64/x86_64) into ./dist.
+# Build and verify all four release bundles (darwin/linux x aarch64/x86_64) into ./dist.
 build:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -33,17 +33,17 @@ build:
     version="$(just -f release.justfile _version)"
     sha="$(git rev-parse --short HEAD)"
 
-    echo ">>> macOS: arm64 (native) + x86_64 (cross) on this host"
+    echo ">>> macOS: aarch64 (native) + x86_64 (cross) on this host"
     just llvm build
     just -f release.justfile _bundle darwin arm64 "$version" "$sha"
     just llvm build amd64
     just -f release.justfile _bundle darwin amd64 "$version" "$sha"
 
-    echo ">>> linux: arm64 + x86_64 via podman"
-    just linux-arm64 run llvm build
-    just linux-arm64 run release _bundle linux arm64 "$version" "$sha"
-    just linux-amd64 run llvm build
-    just linux-amd64 run release _bundle linux amd64 "$version" "$sha"
+    echo ">>> linux: aarch64 + x86_64 via podman"
+    just linux-aarch64 run llvm build
+    just linux-aarch64 run release _bundle linux arm64 "$version" "$sha"
+    just linux-x86_64 run llvm build
+    just linux-x86_64 run release _bundle linux amd64 "$version" "$sha"
 
     echo ">>> Built all release bundles:"
     ls -1 dist/*.tar.gz
@@ -55,7 +55,14 @@ _bundle goos goarch version sha:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    name="metall-{{version}}-{{goos}}-{{goarch}}"
+    # Artifacts use Metall's arch names (aarch64/x86_64), not Go's GOARCH
+    # (arm64/amd64), which stays internal to `go build` and the llvm-static paths.
+    case "{{goarch}}" in
+        arm64) arch=aarch64 ;;
+        amd64) arch=x86_64 ;;
+        *)     arch="{{goarch}}" ;;
+    esac
+    name="metall-{{version}}-{{goos}}-${arch}"
     dist="dist/$name"
     echo ">>> Building $name"
     rm -rf "$dist" "dist/$name.tar.gz"
@@ -68,13 +75,14 @@ _bundle goos goarch version sha:
     # the bundle ships real files, not links that dangle once extracted elsewhere.
     cp -RL lib "$dist/lib"
     cp LICENSE "$dist/LICENSE"
+    cp doc/book.md "$dist/book.md"
     # Bundle compiler-rt (asan runtime + builtins) so the binary can link
     # --sanitize=address; resourceDir() finds it at <exe-dir>/lib/clang/<major>.
     cp -R ".build/llvm-static/{{goos}}-{{goarch}}/lib/clang" "$dist/lib/clang"
 
     # Verify self-containment from a scratch dir: the binary resolves the stdlib
     # from its own <exe-dir>/lib and links in-process. Every target runs where it
-    # is built, natively, in its container, or via Rosetta (x86_64 on arm).
+    # is built, natively, in its container, or via Rosetta (x86_64 on aarch64).
     echo ">>> Verifying $name"
     unset METALL_RESOURCE_DIR
     work="$(mktemp -d)"

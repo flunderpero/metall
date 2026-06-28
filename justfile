@@ -127,10 +127,10 @@ examples opt="none" target="native":
 metallc *args:
     go run ./metallc/... {{args}}
 
-linux-arm64 *args:
+linux-aarch64 *args:
     METALL_ARCH=arm64 just -f justfile.linux {{args}}
 
-linux-amd64 *args:
+linux-x86_64 *args:
     METALL_ARCH=amd64 just -f justfile.linux {{args}}
 
 
