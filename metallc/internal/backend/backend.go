@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"syscall"
 	"unsafe"
 )
 
@@ -96,7 +97,12 @@ func LinkMachO(args []string) error {
 	argv, free := cArgv(args)
 	defer free()
 	var canRun C.int
+	// Hold ForkLock so no concurrent fork inherits lld's still-open output fd;
+	// otherwise exec of the just-linked executable races to ETXTBSY. The
+	// out-of-process linker never leaked an fd into our forks.
+	syscall.ForkLock.RLock()
 	rc := C.metall_lld_macho(C.int(len(argv)), &argv[0], &canRun)
+	syscall.ForkLock.RUnlock()
 	return lldResult("mach-o", rc, canRun)
 }
 
@@ -122,7 +128,12 @@ func LinkELF(args []string) error {
 	argv, free := cArgv(args)
 	defer free()
 	var canRun C.int
+	// Hold ForkLock so no concurrent fork inherits lld's still-open output fd;
+	// otherwise exec of the just-linked executable races to ETXTBSY. The
+	// out-of-process linker never leaked an fd into our forks.
+	syscall.ForkLock.RLock()
 	rc := C.metall_lld_elf(C.int(len(argv)), &argv[0], &canRun)
+	syscall.ForkLock.RUnlock()
 	return lldResult("elf", rc, canRun)
 }
 
