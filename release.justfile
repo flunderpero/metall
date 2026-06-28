@@ -5,13 +5,15 @@
 # stdlib it finds next to itself. The only runtime dependency is the host's
 # system C library / SDK, which native linking fundamentally requires.
 #
-# For now this builds for the current OS/arch only.
+# `build` produces all four bundles (darwin/linux x arm64/x86_64): the macOS
+# slices on this Apple Silicon host (x86_64 cross-compiled, run via Rosetta to
+# verify), the linux slices via podman.
 #
-#   just -f release.justfile build    build + verify the bundle into ./dist
-#   just -f release.justfile check    verify HEAD has a green CI build
-#   just -f release.justfile tag      tag HEAD with the next patch version
-#   just -f release.justfile upload   push the tag and publish ./dist
-#   just -f release.justfile all      check, tag, build, upload
+#   just release build    build + verify the bundle into ./dist
+#   just release check    verify HEAD has a green CI build
+#   just release tag      tag HEAD with the next patch version
+#   just release upload   push the tag and publish ./dist
+#   just release all      check, tag, build, upload
 
 set positional-arguments
 
@@ -21,73 +23,77 @@ root := justfile_directory()
 default:
     @just --justfile {{justfile()}} --list
 
-# Build the self-contained release bundle for the current OS/arch into ./dist,
-# then verify it compiles and runs a program using only the bundled binary+lib.
+# Build and verify all four release bundles (darwin/linux x arm64/x86_64) into ./dist.
 build:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-
-    just llvm build
-
+    [ -z "$(git status --porcelain)" ] || { echo "working tree is not clean; release from a clean checkout" >&2; exit 1; }
     version="$(just -f release.justfile _version)"
-    os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-    case "$(uname -m)" in
-        arm64|aarch64) arch="arm64" ;;
-        x86_64|amd64)  arch="amd64" ;;
-        *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
-    esac
-    name="metall-$version-$os-$arch"
+    sha="$(git rev-parse --short HEAD)"
+
+    echo ">>> macOS: arm64 (native) + x86_64 (cross) on this host"
+    just llvm build
+    just -f release.justfile _bundle darwin arm64 "$version" "$sha"
+    just llvm build amd64
+    just -f release.justfile _bundle darwin amd64 "$version" "$sha"
+
+    echo ">>> linux: arm64 + x86_64 via podman"
+    just linux-arm64 run llvm build
+    just linux-arm64 run release _bundle linux arm64 "$version" "$sha"
+    just linux-amd64 run llvm build
+    just linux-amd64 run release _bundle linux amd64 "$version" "$sha"
+
+    echo ">>> Built all release bundles:"
+    ls -1 dist/*.tar.gz
+
+# Build, verify, and tar one platform's bundle into ./dist. The build recipe
+# drives this per target (darwin on the host, linux via podman); version and sha
+# are passed in so this runs git-free, e.g. inside a container.
+_bundle goos goarch version sha:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    name="metall-{{version}}-{{goos}}-{{goarch}}"
     dist="dist/$name"
     echo ">>> Building $name"
     rm -rf "$dist" "dist/$name.tar.gz"
     mkdir -p "$dist"
-
-    # Stamp the version at build time (never committed): the release tag, the git
-    # short sha (+ -dirty if the tree is not clean), and the actual linked LLVM
-    # version straight from llvm-config.
-    sha="$(git rev-parse --short HEAD)$([ -n "$(git status --porcelain)" ] && echo -dirty)"
-    llvmver="$(.build/llvm-static/$os-$arch/bin/llvm-config --version)"
-    CGO_ENABLED=1 go build \
-        -ldflags "-s -w -X main.version=$version -X main.commit=$sha -X main.llvmVersion=$llvmver" \
+    llvmver="$(.build/llvm-static/{{goos}}-{{goarch}}/bin/llvm-config --version)"
+    CGO_ENABLED=1 GOOS={{goos}} GOARCH={{goarch}} go build -buildvcs=false \
+        -ldflags "-s -w -X main.version={{version}} -X main.commit={{sha}} -X main.llvmVersion=$llvmver" \
         -o "$dist/metallc" ./metallc
     cp -R lib "$dist/lib"
     cp LICENSE "$dist/LICENSE"
-
-    # Bundle compiler-rt (the asan runtime) so a released metallc can link
+    # Bundle compiler-rt (asan runtime + builtins) so the binary can link
     # --sanitize=address; resourceDir() finds it at <exe-dir>/lib/clang/<major>.
-    cp -R ".build/llvm-static/$os-$arch/lib/clang" "$dist/lib/clang"
+    cp -R ".build/llvm-static/{{goos}}-{{goarch}}/lib/clang" "$dist/lib/clang"
 
-    # Verify: compile + run an example from a scratch dir (no repo `lib` on the
-    # cwd), so the binary must resolve the stdlib from its own <exe-dir>/lib and
-    # link in-process. This is the real self-containment check.
-    echo ">>> Verifying the bundle is self-contained"
-    # Drop any resource-dir override so the verify can only resolve the bundled
-    # compiler-rt, not a dev shell's external .build tree.
+    # Verify self-containment from a scratch dir: the binary resolves the stdlib
+    # from its own <exe-dir>/lib and links in-process. Every target runs where it
+    # is built, natively, in its container, or via Rosetta (x86_64 on arm).
+    echo ">>> Verifying $name"
     unset METALL_RESOURCE_DIR
     work="$(mktemp -d)"
     trap 'rm -rf "$work"' EXIT
     cp examples/hello.met "$work/hello.met"
     out="$(cd "$work" && "{{root}}/$dist/metallc" run hello.met)"
-    echo "    metallc run hello.met -> $out"
-    [ -n "$out" ] || { echo "FAIL: empty output from bundled metallc" >&2; exit 1; }
-
-    # asan links the bundled compiler-rt, so verify it works from the bundle too.
+    [ -n "$out" ] || { echo "FAIL: empty output from $name" >&2; exit 1; }
     asout="$(cd "$work" && "{{root}}/$dist/metallc" run --sanitize address hello.met)"
-    echo "    metallc run --sanitize address hello.met -> $asout"
-    [ -n "$asout" ] || { echo "FAIL: --sanitize=address produced no output" >&2; exit 1; }
+    [ -n "$asout" ] || { echo "FAIL: --sanitize=address produced no output from $name" >&2; exit 1; }
+    echo "    hello -> $out ; asan ok"
 
     tar -C dist -czf "dist/$name.tar.gz" "$name"
-    size="$(du -sh "$dist/metallc" | cut -f1)"
-    echo ">>> Built dist/$name.tar.gz (metallc: $size)"
+    echo ">>> Built dist/$name.tar.gz ($(du -sh "$dist/metallc" | cut -f1))"
 
-# Print the release version: the latest vMAJOR.MINOR.PATCH tag, or v0.0.0-dev.
+# Print the latest release version (the highest vMAJOR.MINOR.PATCH tag).
 _version:
     #!/usr/bin/env bash
     set -euo pipefail
     latest="$(git for-each-ref --sort=-v:refname --format='%(refname:short)' 'refs/tags/*' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
-    echo "${latest:-v0.0.0-dev}"
+    [ -n "$latest" ] || { echo "no release tag found; make the first release by hand" >&2; exit 1; }
+    echo "$latest"
 
 # Verify the current HEAD has a green CI build on GitHub.
 check:
@@ -110,21 +116,18 @@ check:
         *)       echo "CI is not green for HEAD ($state)." >&2; exit 1 ;;
     esac
 
-# Tag HEAD with the next patch version (latest + 1), or v0.0.1 if there are none.
+# Tag HEAD with the next patch version (the first release is tagged by hand).
 tag:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    [ -z "$(git status --porcelain)" ] || { echo "Working tree is not clean." >&2; exit 1; }
+    [ -z "$(git status --porcelain)" ] || { echo "working tree is not clean" >&2; exit 1; }
     latest="$(git for-each-ref --sort=-v:refname --format='%(refname:short)' 'refs/tags/*' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
-    if [ -z "$latest" ]; then
-        new="v0.0.1"
-    else
-        ver="${latest#v}"
-        new="v${ver%%.*}.$(echo "$ver" | cut -d. -f2).$(( ${ver##*.} + 1 ))"
-    fi
-    echo ">>> Tagging $new (previous: ${latest:-none})"
+    [ -n "$latest" ] || { echo "no release tag found; make the first release by hand" >&2; exit 1; }
+    ver="${latest#v}"
+    new="v${ver%%.*}.$(echo "$ver" | cut -d. -f2).$(( ${ver##*.} + 1 ))"
+    echo ">>> Tagging $new (previous: $latest)"
     git tag "$new"
 
 # Push the current release tag and publish ./dist as a GitHub release.
@@ -134,12 +137,12 @@ upload:
     cd "{{root}}"
     command -v gh >/dev/null 2>&1 || { echo "gh (GitHub CLI) is not installed" >&2; exit 1; }
     version="$(just -f release.justfile _version)"
-    [ "$version" != "v0.0.0-dev" ] || { echo "No release tag found. Run \`tag\` first." >&2; exit 1; }
-    echo ">>> Pushing git tag $version"
-    git push origin "$version"
     prev="$(git for-each-ref --sort=-v:refname --format='%(refname:short)' 'refs/tags/*' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n '2p' || true)"
-    git log --format='- %s (%h)' "${prev:+$prev..}$version" \
+    [ -n "$prev" ] || { echo "no previous tag; publish the first release by hand" >&2; exit 1; }
+    echo ">>> Pushing git tag $version"
+    git push origin "$version"
+    git log --format='- %s (%h)' "$prev..$version" \
         | gh release create "$version" dist/*.tar.gz --title "$version" --notes-file -
     echo ">>> Released $version"
 

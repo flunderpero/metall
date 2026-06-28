@@ -138,6 +138,10 @@ linux-amd64 *args:
 llvm *args:
     just -f llvm.justfile {{args}}
 
+# Run a release recipe (build, check, tag, upload, all) from release.justfile.
+release *args:
+    just -f release.justfile {{args}}
+
 go-mod:
     cd metallc && go mod tidy
     cd tools && go mod tidy

@@ -11,14 +11,24 @@ default:
 # of them; Release, no LTO, deps off, plus compiler-rt for the asan runtime),
 # then regenerate the cgo flags. Slow on a cold run (~40 min); reruns just
 # refresh the flags.
-build:
+build arch="":
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    goos="$(go env GOOS)"; goarch="$(go env GOARCH)"
+    goos="$(go env GOOS)"; hostarch="$(go env GOARCH)"
+    goarch="{{arch}}"; [ -n "$goarch" ] || goarch="$hostarch"
     prefix="$PWD/.build/llvm-static/${goos}-${goarch}"
     # The build (cmake cache) dir is per-platform; the source is shared.
     src="$PWD/.build/llvm-src"; obj="$PWD/.build/llvm-obj-${goos}-${goarch}"
+    # Cross to a non-host macOS arch builds that slice via the universal SDK; its
+    # x86_64 build tools (tblgen) run under Rosetta. (Linux cross goes via podman.)
+    osxarch=""
+    if [ "$goos" = darwin ] && [ "$goarch" != "$hostarch" ]; then
+        case "$goarch" in
+            amd64) osxarch="-DCMAKE_OSX_ARCHITECTURES=x86_64" ;;
+            arm64) osxarch="-DCMAKE_OSX_ARCHITECTURES=arm64" ;;
+        esac
+    fi
     # Rebuild unless the install already has the full target set (RISCV stands
     # in for `all`), so `just llvm build` also converges an older partial build.
     if ! { [ -x "$prefix/bin/llvm-config" ] && "$prefix/bin/llvm-config" --targets-built 2>/dev/null | grep -qw RISCV; }; then
@@ -42,7 +52,7 @@ build:
         # compiler) supplies the asan runtime that --sanitize=address links.
         echo ">>> configuring (Release, no LTO, all targets, lld + compiler-rt)"
         cmake -G Ninja -S "$src/llvm" -B "$obj" \
-            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" $osxarch \
             -DLLVM_ENABLE_PROJECTS="lld;compiler-rt" -DLLVM_TARGETS_TO_BUILD=all \
             -DCOMPILER_RT_BUILD_BUILTINS=ON -DCOMPILER_RT_BUILD_SANITIZERS=ON \
             -DCOMPILER_RT_BUILD_LIBFUZZER=OFF -DCOMPILER_RT_BUILD_XRAY=OFF \
@@ -67,15 +77,15 @@ build:
         echo ">>> building + installing LLVM with -j${jobs} (slow on first run)"
         ninja -C "$obj" -j "$jobs" install
     fi
-    just -f "{{justfile()}}" genflags
+    just -f "{{justfile()}}" genflags "$goarch"
 
 # Generate metallc/internal/backend/cgoflags_<goos>_<goarch>.go (gitignored), the
 # cgo directives that statically link the in-process LLVM + LLD into metallc.
-genflags:
+genflags arch="":
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    goos="$(go env GOOS)"; goarch="$(go env GOARCH)"
+    goos="$(go env GOOS)"; goarch="{{arch}}"; [ -n "$goarch" ] || goarch="$(go env GOARCH)"
     lc="$PWD/.build/llvm-static/${goos}-${goarch}/bin/llvm-config"
     [ -x "$lc" ] || { echo "no llvm-config; run \`just llvm build\` first" >&2; exit 1; }
     inc="$("$lc" --includedir)"; lib="$("$lc" --libdir)"
