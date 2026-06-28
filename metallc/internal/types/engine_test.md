@@ -1420,6 +1420,106 @@ fun foo(xs []Handle) void {
 ```error
 ```
 
+**Can return a nocopy local**
+
+The dying frame moves the local out, so returning it is not a copy.
+
+```metall module
+nocopy struct Handle { id Int }
+fun make() Handle {
+    let h = Handle(1)
+    h
+}
+```
+
+```error
+```
+
+**Can return a nocopy local via explicit return**
+
+```metall module
+nocopy struct Handle { id Int }
+fun make() Handle {
+    let h = Handle(1)
+    return h
+}
+```
+
+```error
+```
+
+**Can return a nocopy from an if whose branches move or construct**
+
+```metall module
+nocopy struct Handle { id Int }
+fun pick(b Bool) Handle {
+    let h = Handle(1)
+    if b { h } else { Handle(2) }
+}
+```
+
+```error
+```
+
+**Cannot return a nocopy dereferenced from a reference**
+
+Reading the value out of a borrow copies it while the original stays live, so it
+is rejected the same as at any other use site.
+
+```metall module
+nocopy struct Handle { id Int }
+fun dup(r &Handle) Handle { r.* }
+```
+
+```error
+test.met:2:29: cannot copy value of nocopy type test.Handle
+    nocopy struct Handle { id Int }
+    fun dup(r &Handle) Handle { r.* }
+                                ^^^
+```
+
+**Cannot return a nocopy dereferenced from a reference via explicit return**
+
+```metall module
+nocopy struct Handle { id Int }
+fun dup(r &Handle) Handle { return r.* }
+```
+
+```error
+test.met:2:36: cannot copy value of nocopy type test.Handle
+    nocopy struct Handle { id Int }
+    fun dup(r &Handle) Handle { return r.* }
+                                       ^^^
+```
+
+**Cannot return a nocopy field read through a reference**
+
+```metall module
+nocopy struct Handle { id Int }
+struct Box { h Handle }
+fun take(b &Box) Handle { b.h }
+```
+
+```error
+test.met:3:27: cannot copy value of nocopy type test.Handle
+    struct Box { h Handle }
+    fun take(b &Box) Handle { b.h }
+                              ^^^
+```
+
+**Can move a function-returned nocopy straight into an arena allocation**
+
+A freshly returned nocopy value is moved into the arena, not copied.
+
+```metall module
+nocopy struct Handle { id Int }
+fun make() Handle { Handle(1) }
+fun store(@a Arena) &Handle { @a.new(make()) }
+```
+
+```error
+```
+
 ## Defer
 
 **Defer block is void**

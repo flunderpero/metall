@@ -962,6 +962,7 @@ func (e *Engine) checkReturn(return_ ast.Return, span base.Span) (TypeID, TypeSt
 		)
 		return InvalidTypeID, TypeFailed
 	}
+	e.checkNocopyReturn(return_.Expr, exprTypeID)
 	return e.neverTyp, TypeOK
 }
 
@@ -1128,6 +1129,9 @@ func (e *Engine) checkFunBody(funNodeID ast.NodeID, funNode ast.Fun, funTypeID T
 			e.env.TypeDisplay(blockTypeID),
 		)
 		return
+	}
+	if len(block.Exprs) > 0 {
+		e.checkNocopyReturn(block.Exprs[len(block.Exprs)-1], blockTypeID)
 	}
 }
 
@@ -2864,6 +2868,27 @@ func (e *Engine) isFreshValue(nodeID ast.NodeID) bool {
 	}
 }
 
+// isNocopyMove reports whether returning nodeID moves the value out of the dying
+// frame rather than copying it. A fresh value or a whole owned local (or a
+// by-value parameter) is a move; reading a value out through a reference (`r.*`,
+// a field of a borrow) or naming a module-level constant copies it, the same as
+// at every other use site. Consulted only for non-copyable (nocopy) values.
+func (e *Engine) isNocopyMove(nodeID ast.NodeID) bool {
+	switch kind := e.ast.Node(nodeID).Kind.(type) {
+	case ast.Ident:
+		return !e.resolvesToModuleConst(nodeID)
+	case ast.Block:
+		if len(kind.Exprs) == 0 {
+			return true
+		}
+		return e.isNocopyMove(kind.Exprs[len(kind.Exprs)-1])
+	case ast.If:
+		return e.isNocopyMove(kind.Then) && (kind.Else == nil || e.isNocopyMove(*kind.Else))
+	default:
+		return e.isFreshValue(nodeID)
+	}
+}
+
 func (e *Engine) isConstExpr(nodeID ast.NodeID) bool {
 	// A bare enum variant (e.g. `Color.red`) is a constant discriminant.
 	if _, _, ok := e.env.EnumVariantRef(nodeID); ok {
@@ -2946,6 +2971,17 @@ func (e *Engine) checkNocopy(exprNodeID ast.NodeID, exprTypeID TypeID, span base
 	}
 	e.diag(span, "cannot copy value of nocopy type %s", e.env.TypeDisplay(exprTypeID))
 	return false
+}
+
+// checkNocopyReturn reports a returned nocopy value that is copied rather than
+// moved out. Returning a value read through a reference (`return r.*`) would copy
+// a nocopy whose original stays live, defeating the type. Unlike checkNocopy it
+// also accepts a whole owned local, which the dying frame moves out.
+func (e *Engine) checkNocopyReturn(exprNodeID ast.NodeID, exprTypeID TypeID) {
+	if e.isCopyable(exprTypeID) || e.isNocopyMove(exprNodeID) {
+		return
+	}
+	e.diag(e.ast.Node(exprNodeID).Span, "cannot copy value of nocopy type %s", e.env.TypeDisplay(exprTypeID))
 }
 
 func (e *Engine) bindCapture(funNodeID, capNodeID ast.NodeID, capture ast.Capture) {
