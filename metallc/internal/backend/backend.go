@@ -11,7 +11,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"unsafe"
 )
@@ -96,11 +95,9 @@ func LinkMachO(args []string) error {
 	}
 	argv, free := cArgv(args)
 	defer free()
-	var cerr *C.char
 	var canRun C.int
-	//nolint:gocritic // dupSubExpr false positive on the cgo-expanded call
-	rc := C.metall_lld_macho(C.int(len(argv)), &argv[0], &cerr, &canRun)
-	return lldResult("mach-o", rc, canRun, cerr)
+	rc := C.metall_lld_macho(C.int(len(argv)), &argv[0], &canRun)
+	return lldResult("mach-o", rc, canRun)
 }
 
 func LinkWasm(args []string) error {
@@ -111,11 +108,9 @@ func LinkWasm(args []string) error {
 	}
 	argv, free := cArgv(args)
 	defer free()
-	var cerr *C.char
 	var canRun C.int
-	//nolint:gocritic // dupSubExpr false positive on the cgo-expanded call
-	rc := C.metall_lld_wasm(C.int(len(argv)), &argv[0], &cerr, &canRun)
-	return lldResult("wasm", rc, canRun, cerr)
+	rc := C.metall_lld_wasm(C.int(len(argv)), &argv[0], &canRun)
+	return lldResult("wasm", rc, canRun)
 }
 
 func LinkELF(args []string) error {
@@ -126,32 +121,22 @@ func LinkELF(args []string) error {
 	}
 	argv, free := cArgv(args)
 	defer free()
-	var cerr *C.char
 	var canRun C.int
-	//nolint:gocritic // dupSubExpr false positive on the cgo-expanded call
-	rc := C.metall_lld_elf(C.int(len(argv)), &argv[0], &cerr, &canRun)
-	return lldResult("elf", rc, canRun, cerr)
+	rc := C.metall_lld_elf(C.int(len(argv)), &argv[0], &canRun)
+	return lldResult("elf", rc, canRun)
 }
 
 // lldResult maps an lld return into a Go error and updates the poison flag. The
-// caller must hold mu. On a clean link it drops lld's captured stderr (linker
-// warnings on a successful link are noise, e.g. a vendored archive built for a
-// newer OS than our deployment target); on failure it surfaces that text as the
-// error, which lld would otherwise have written straight to fd 2.
-func lldResult(kind string, rc, canRun C.int, cerr *C.char) error {
+// caller must hold mu. lld has already written any diagnostics to stderr, so the
+// error is just a short summary pointing there.
+func lldResult(kind string, rc, canRun C.int) error {
 	if canRun == 0 {
 		poisoned = true
-	}
-	if cerr != nil {
-		defer C.free(unsafe.Pointer(cerr))
 	}
 	if rc == 0 {
 		return nil
 	}
-	if cerr == nil {
-		return fmt.Errorf("%s link failed (lld exit %d)", kind, int(rc))
-	}
-	return fmt.Errorf("%s link failed: %s", kind, strings.TrimSpace(C.GoString(cerr)))
+	return fmt.Errorf("%s link failed (lld exit %d); see the linker diagnostics above", kind, int(rc))
 }
 
 // cArgv builds a NULL-free C string array from args. args must be non-empty.

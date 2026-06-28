@@ -168,6 +168,12 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 		"target CPU for codegen (e.g. 'native', 'apple-m1'); default targets a portable baseline")
 	flags.StringVar(&opts.TargetArch, "arch", "",
 		"cross-compile the native target to this architecture: x86_64, aarch64 (default host)")
+	flags.StringVar(
+		&opts.MacOSDeploymentTarget,
+		"macos-version",
+		"",
+		"minimum macOS version for native binaries (default 11.0; honors $MACOSX_DEPLOYMENT_TARGET; arm64 floor is 11.0)",
+	)
 	flags.Func("opt",
 		"optimization mode: none, safe, fast (fast also strips the overflow/shift/INT_MIN checks, so `+` wraps)",
 		func(s string) error {

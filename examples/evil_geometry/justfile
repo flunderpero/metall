@@ -7,7 +7,11 @@ linux_link := "-lm -ldl -lpthread -lrt"
 
 link := sdl_lib + if os() == "macos" { " " + mac_link } else { " " + linux_link }
 
-flags := "-I src -I ../../lib --opt fast --link '" + link + "'"
+# Match SDL3's deployment target (see sdl3.justfile) so the binary honestly
+# requires macOS 14 and the linker does not warn about a newer SDL3.
+macos_target := if os() == "macos" { " --macos-version 14.0" } else { "" }
+
+flags := "-I src -I ../../lib --opt fast" + macos_target + " --link '" + link + "'"
 
 default: run
 

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -101,22 +102,26 @@ type CompileOpts struct {
 	TargetCPU string
 	// TargetArch, when set ("x86_64"/"aarch64"), cross-compiles the native target
 	// to that architecture instead of the host's. Empty means the host arch.
-	TargetArch          string
-	Sanitizers          []gen.Sanitizer
-	DebugArenaAllocator bool
-	ArenaStackBufSize   int
-	ArenaPageMinSize    int
-	ArenaPageMaxSize    int
-	ErrorTracing        bool
-	MinimalPrelude      bool
-	Target              gen.Target
-	PrintTypesDebug     bool
-	PrintBindingsDebug  bool
-	DebugTypeCheck      bool
-	DebugLifetime       bool
-	EmitObject          bool
-	EmitHeaderFile      bool
-	EmitTypeScript      bool
+	TargetArch string
+	// MacOSDeploymentTarget, when set (e.g. "14.0"), is the minimum macOS version
+	// the native binary requires. Empty falls back to $MACOSX_DEPLOYMENT_TARGET,
+	// then a portable default. macOS/native only.
+	MacOSDeploymentTarget string
+	Sanitizers            []gen.Sanitizer
+	DebugArenaAllocator   bool
+	ArenaStackBufSize     int
+	ArenaPageMinSize      int
+	ArenaPageMaxSize      int
+	ErrorTracing          bool
+	MinimalPrelude        bool
+	Target                gen.Target
+	PrintTypesDebug       bool
+	PrintBindingsDebug    bool
+	DebugTypeCheck        bool
+	DebugLifetime         bool
+	EmitObject            bool
+	EmitHeaderFile        bool
+	EmitTypeScript        bool
 }
 
 // NewCompileOptsWithDefaults returns CompileOpts with the runtime defaults set,
@@ -154,10 +159,13 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if opts.TargetArch != "" && opts.Target.IsWasm() {
 		return base.Errorf("--arch is only valid for the native target")
 	}
+	if opts.MacOSDeploymentTarget != "" && (opts.Target.IsWasm() || runtime.GOOS != "darwin") {
+		return base.Errorf("--macos-version is only valid when building for macOS")
+	}
 	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) && opts.Target.IsWasm() {
 		return base.Errorf("the address sanitizer is not supported for wasm targets")
 	}
-	targetTriple, err := targetTriple(opts.Target, opts.TargetArch)
+	targetTriple, err := targetTriple(opts.Target, opts.TargetArch, opts.MacOSDeploymentTarget)
 	if err != nil {
 		return err
 	}
@@ -502,7 +510,7 @@ func (l *TimingListener) record(name string) {
 // targetTriple is the single source of truth for what to build: the wasm
 // triples, or the host OS with the chosen architecture for native. arch is the
 // --arch value ("" = host, "x86_64", "aarch64").
-func targetTriple(target gen.Target, arch string) (string, error) {
+func targetTriple(target gen.Target, arch, macosVersion string) (string, error) {
 	switch target { //nolint:exhaustive
 	case gen.TargetWasm32:
 		return "wasm32-unknown-unknown", nil
@@ -521,12 +529,52 @@ func targetTriple(target gen.Target, arch string) (string, error) {
 		if arch == "aarch64" {
 			arch = "arm64"
 		}
-		return arch + "-apple-macosx11.0.0", nil
+		version, err := macOSMinVersion(macosVersion, arch)
+		if err != nil {
+			return "", err
+		}
+		return arch + "-apple-macosx" + version, nil
 	case "linux":
 		return arch + "-unknown-linux-gnu", nil
 	default:
 		return backend.DefaultTriple(), nil
 	}
+}
+
+// macOSMinVersion resolves the macOS deployment target: the explicit value, then
+// $MACOSX_DEPLOYMENT_TARGET, then a portable default of 11.0.0. arm64 macOS does
+// not exist before 11.0, so a lower request is clamped up (clang does the same).
+// arch is the mach-o arch ("arm64" or "x86_64").
+func macOSMinVersion(version, arch string) (string, error) {
+	if version == "" {
+		version = os.Getenv("MACOSX_DEPLOYMENT_TARGET")
+	}
+	if version == "" {
+		return "11.0.0", nil
+	}
+	major, err := versionMajor(version)
+	if err != nil {
+		return "", err
+	}
+	if arch == "arm64" && major < 11 {
+		return "11.0.0", nil
+	}
+	return version, nil
+}
+
+// versionMajor validates a dotted numeric version and returns its major part.
+func versionMajor(version string) (int, error) {
+	major := 0
+	for i, part := range strings.Split(version, ".") {
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			return 0, base.Errorf("invalid macOS version %q", version)
+		}
+		if i == 0 {
+			major = n
+		}
+	}
+	return major, nil
 }
 
 // hostArch is the host architecture in LLVM triple naming.
@@ -631,6 +679,11 @@ func linkMachO(ctx context.Context, opts CompileOpts, triple, objectPath, output
 	if err != nil {
 		return err
 	}
+	rd, err := resourceDir()
+	if err != nil {
+		return err
+	}
+	rtDir := filepath.Join(rd, "lib", "darwin")
 	arch, _, _ := strings.Cut(triple, "-")
 	args := []string{
 		"ld64.lld",
@@ -641,19 +694,19 @@ func linkMachO(ctx context.Context, opts CompileOpts, triple, objectPath, output
 		"-o", output, objectPath,
 	}
 	if slices.Contains(opts.Sanitizers, gen.SanitizerAddress) {
-		rd, err := resourceDir()
-		if err != nil {
-			return err
-		}
 		// The instrumented object references __asan_* from the compiler-rt
 		// runtime dylib; -rpath lets the linked binary find it at run time.
-		rtDir := filepath.Join(rd, "lib", "darwin")
 		args = append(args,
 			filepath.Join(rtDir, "libclang_rt.asan_osx_dynamic.dylib"),
 			"-rpath", rtDir,
 		)
 	}
 	args = append(args, opts.LinkFlags...)
+	// The compiler-rt builtins, as clang's driver links them. Resolves helpers
+	// such as ___isPlatformVersionAtLeast (emitted for @available checks when an
+	// input targets an older macOS than the SDK). Last, so it satisfies the user
+	// libraries above.
+	args = append(args, filepath.Join(rtDir, "libclang_rt.osx.a"))
 	if err := backend.LinkMachO(args); err != nil {
 		return base.WrapErrorf(err, "failed to link executable")
 	}
@@ -666,13 +719,18 @@ func linkMachO(ctx context.Context, opts CompileOpts, triple, objectPath, output
 // overflows on modest recursion). User -link flags come last so an explicit
 // stack-size overrides the default.
 func linkWasm(opts CompileOpts, objectPath, output string, exportNames []string) error {
-	args := []string{ //nolint:prealloc
+	args := []string{
 		"wasm-ld",
 		"--no-entry",
 		"--export=main",
 		"--export=memory",
 		"--allow-undefined",
 		"-z", fmt.Sprintf("stack-size=%d", wasmShadowStackSize),
+	}
+	if opts.Target == gen.TargetWasm64 {
+		// wasm-ld refuses memory64 objects without -mwasm64. The old clang driver
+		// added it for us; building the command line ourselves, we must too.
+		args = append(args, "-mwasm64")
 	}
 	for _, name := range exportNames {
 		args = append(args, "--export="+name)

@@ -2,9 +2,6 @@
 #include "bridge.h"
 
 #include <csignal>
-#include <cstdlib>
-#include <cstring>
-#include <string>
 
 #include "lld/Common/Driver.h"
 #include "llvm/Support/raw_ostream.h"
@@ -35,32 +32,29 @@ struct SignalGuard {
 };
 
 int run(lld::Flavor flavor, lld::Driver driver, int argc, const char **argv,
-        char **err, int *can_run_again) {
+        int *can_run_again) {
     SignalGuard guard;
     std::vector<const char *> args(argv, argv + argc);
-    // Capture lld's diagnostics instead of letting them hit metallc's own fd 2,
-    // so the Go caller can attach them to a link error (or drop them on success).
-    std::string diag;
-    llvm::raw_string_ostream diagOS(diag);
-    lld::Result r = lld::lldMain(args, llvm::outs(), diagOS, {{flavor, driver}});
-    diagOS.flush();
+    // Diagnostics go straight to fd 1/2; we deliberately do NOT capture them.
+    // lld's fatal() path _exit()s the process (its CrashRecoveryContext cannot
+    // unwind, since LLVM/lld are built without exceptions), so a captured buffer
+    // would be lost and the failure would look silent. Writing to the real fd 2
+    // lets lld flush the message before it exits, so the error is always visible.
+    lld::Result r = lld::lldMain(args, llvm::outs(), llvm::errs(), {{flavor, driver}});
     if (can_run_again) *can_run_again = r.canRunAgain ? 1 : 0;
-    if (err) {
-        *err = diag.empty() ? nullptr : strdup(diag.c_str());
-    }
     return r.retCode;
 }
 
 }  // namespace
 
-extern "C" int metall_lld_macho(int argc, const char **argv, char **err, int *can_run_again) {
-    return run(lld::Darwin, &lld::macho::link, argc, argv, err, can_run_again);
+extern "C" int metall_lld_macho(int argc, const char **argv, int *can_run_again) {
+    return run(lld::Darwin, &lld::macho::link, argc, argv, can_run_again);
 }
 
-extern "C" int metall_lld_wasm(int argc, const char **argv, char **err, int *can_run_again) {
-    return run(lld::Wasm, &lld::wasm::link, argc, argv, err, can_run_again);
+extern "C" int metall_lld_wasm(int argc, const char **argv, int *can_run_again) {
+    return run(lld::Wasm, &lld::wasm::link, argc, argv, can_run_again);
 }
 
-extern "C" int metall_lld_elf(int argc, const char **argv, char **err, int *can_run_again) {
-    return run(lld::Gnu, &lld::elf::link, argc, argv, err, can_run_again);
+extern "C" int metall_lld_elf(int argc, const char **argv, int *can_run_again) {
+    return run(lld::Gnu, &lld::elf::link, argc, argv, can_run_again);
 }

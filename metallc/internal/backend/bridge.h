@@ -25,15 +25,14 @@ int metall_emit_object(const char *ir, size_t ir_len, const char *triple,
                        const char *out_path, char **err);
 
 // In-process lld drivers (the only part that must be C++: lld has no C API).
-// argv is a full linker command line with argv[0] = the driver name. Returns
-// the linker exit code. *err receives lld's captured stderr (a malloc'd string
-// the caller frees, or NULL if lld printed nothing), whether or not the link
-// succeeded, so the caller decides whether to surface or discard it.
-// *can_run_again is lldMain's re-entry flag: 0 means lld's process-global state
-// was left unsafe to reuse and no further in-process link must run.
-int metall_lld_macho(int argc, const char **argv, char **err, int *can_run_again);
-int metall_lld_wasm(int argc, const char **argv, char **err, int *can_run_again);
-int metall_lld_elf(int argc, const char **argv, char **err, int *can_run_again);
+// argv is a full linker command line with argv[0] = the driver name. lld writes
+// its diagnostics straight to stderr (fd 2); we do not capture them, so an error
+// stays visible even when lld terminates the process itself. Returns the linker
+// exit code. *can_run_again is lldMain's re-entry flag: 0 means lld's
+// process-global state was left unsafe to reuse and no further link must run.
+int metall_lld_macho(int argc, const char **argv, int *can_run_again);
+int metall_lld_wasm(int argc, const char **argv, int *can_run_again);
+int metall_lld_elf(int argc, const char **argv, int *can_run_again);
 
 #ifdef __cplusplus
 }
