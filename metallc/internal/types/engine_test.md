@@ -674,6 +674,24 @@ test.met:3:26: cannot reference "x" from outer scope
         fun bar(a Int) Int { x + a }
 ```
 
+**@a.closure rejects a non-literal function value**
+
+```metall
+fun make(@a Arena) fun() Int {
+    let n = 42
+    let f = fun[n]() Int { n }
+    @a.closure(f)
+}
+```
+
+```error
+test.met:4:5: @a.closure requires a closure literal, e.g. @a.closure(fun[c]() Int { c.* })
+        let f = fun[n]() Int { n }
+        @a.closure(f)
+        ^^^^^^^^^^^^^
+    }
+```
+
 **Nested function cannot reference outer function parameter**
 
 ```metall

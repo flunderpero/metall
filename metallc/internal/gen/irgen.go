@@ -2502,6 +2502,7 @@ func (g *IRFunGen) arenaAllocMethod(call ast.Call) (string, ast.FieldAccess, boo
 	}
 	for _, method := range []string{
 		"Arena.new",
+		"Arena.closure",
 		"Arena.slice_uninit",
 		"Arena.slice",
 		"Arena.grow_uninit",
@@ -2708,6 +2709,8 @@ func (g *IRFunGen) genBuiltinFun(id ast.NodeID, call ast.Call, span base.Span) b
 		switch method {
 		case "Arena.new":
 			g.genArenaNew(id, call, fa)
+		case "Arena.closure":
+			g.genArenaClosure(id, call, fa)
 		case "Arena.grow", "Arena.grow_uninit":
 			g.genArenaGrow(id, call, fa)
 		default:
@@ -3066,24 +3069,29 @@ func (g *IRFunGen) closureCtxType(fun ast.Fun) string {
 	return sb.String()
 }
 
-// emitClosureValue allocates the capture context, stores captures, and emits
-// emitClosureValue builds a function value {fn_ptr, data_ptr} for a closure.
-// The capture context is prefixed by an i64 with its total byte size.
+// emitClosureValue builds a {fn_ptr, data_ptr} closure value with its capture
+// context on the current stack frame. `@a.closure` boxes the same context in an
+// arena instead (genArenaClosure).
 func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
-	ctxType := g.closureCtxType(fun)
-	wrapperType := fmt.Sprintf("{i64, %s}", ctxType)
+	wrapperType := fmt.Sprintf("{i64, %s}", g.closureCtxType(fun))
 	baseReg := g.reg()
 	g.writeAlloca(baseReg, wrapperType)
-	// Store total size at offset 0.
-	ctxSize := g.closureCtxSize(fun)
-	totalSize := 8 + ctxSize // i64 prefix + context
+	ctxReg := g.emitClosureContext(fun, baseReg)
+	g.emitClosureFatPtr(id, name, ctxReg)
+}
+
+// emitClosureContext writes the i64 size prefix and the captured values into the
+// `{i64, ctxType}` buffer at baseReg (stack- or arena-allocated) and returns the
+// pointer to the context payload past the prefix.
+func (g *IRFunGen) emitClosureContext(fun ast.Fun, baseReg string) string {
+	ctxType := g.closureCtxType(fun)
+	wrapperType := fmt.Sprintf("{i64, %s}", ctxType)
+	totalSize := 8 + g.closureCtxSize(fun) // i64 prefix + context
 	sizeField := g.reg()
 	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 0", sizeField, wrapperType, baseReg)
 	g.write("store i64 %d, ptr %s", totalSize, sizeField)
-	// Context pointer is at offset 1 (past the i64).
 	ctxReg := g.reg()
 	g.write("%s = getelementptr %s, ptr %s, i32 0, i32 1", ctxReg, wrapperType, baseReg)
-
 	for i, capNodeID := range fun.Captures {
 		capture := base.Cast[ast.Capture](g.ast.Node(capNodeID).Kind)
 		outerBinding, ok := g.env.CaptureOrigin(capNodeID)
@@ -3111,7 +3119,12 @@ func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
 			}
 		}
 	}
+	return ctxReg
+}
 
+// emitClosureFatPtr builds the {fn_ptr, data_ptr} value pointing data_ptr at
+// ctxReg and records it as nodeID's code.
+func (g *IRFunGen) emitClosureFatPtr(id ast.NodeID, name, ctxReg string) {
 	reg := g.reg()
 	g.writeAlloca(reg, "{ptr, ptr}")
 	fnField := g.reg()
@@ -3121,6 +3134,29 @@ func (g *IRFunGen) emitClosureValue(id ast.NodeID, name string, fun ast.Fun) {
 	g.write("%s = getelementptr {ptr, ptr}, ptr %s, i32 0, i32 1", ctxField, reg)
 	g.write("store ptr %s, ptr %s", ctxReg, ctxField)
 	g.setCode(id, reg)
+}
+
+// genArenaClosure lowers `@a.closure(fun[...]...)`: it builds the capture context
+// straight in the arena (no stack copy), so the closure value's data_ptr outlives
+// the frame for as long as the arena does.
+func (g *IRFunGen) genArenaClosure(id ast.NodeID, call ast.Call, fa ast.FieldAccess) {
+	g.Gen(fa.Target)
+	arenaReg := g.lookupCode(fa.Target)
+	// A closure literal parses as Block{ Fun, Ident }; the trailing Ident resolves
+	// to its emitted function, the Fun holds the captures.
+	block := base.Cast[ast.Block](g.ast.Node(call.Args[0]).Kind)
+	ident := block.Exprs[len(block.Exprs)-1]
+	name, ok := g.env.NamedFunRef(ident)
+	if !ok {
+		panic(base.Errorf("@a.closure argument is not a closure literal"))
+	}
+	declID, _ := g.env.FunDeclNode(ident)
+	fun := base.Cast[ast.Fun](g.ast.Node(declID).Kind)
+	totalSize := 8 + g.closureCtxSize(fun)
+	baseReg := g.reg()
+	g.write("%s = call ptr @runtime$arena.arena_alloc(ptr %s, i64 %d)", baseReg, arenaReg, totalSize)
+	ctxReg := g.emitClosureContext(fun, baseReg)
+	g.emitClosureFatPtr(id, name, ctxReg)
 }
 
 func (g *IRFunGen) genInt(id ast.NodeID, int_ ast.Int) {

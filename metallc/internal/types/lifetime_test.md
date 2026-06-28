@@ -2841,6 +2841,97 @@ test.met:3:13: reference escaping its allocation scope (via block result)
         fun[r]() { r }
 ```
 
+**@a.closure boxes a by-value capture so the closure can be returned**
+
+`@a.closure` relocates the capture context into the arena, so a closure capturing
+a plain value by value lives as long as the arena and may be returned.
+
+```metall
+fun make(@a Arena) fun() Int {
+    let n = 42
+    @a.closure(fun[n]() Int { n })
+}
+```
+
+```error
+```
+
+**@a.closure boxing a capture that points into the arena returns ok**
+
+The captured `r` is a `&mut Int` into `@a`, so the boxed closure reaches only the
+arena and returns freely.
+
+```metall
+fun make(@a Arena) fun() Int {
+    let r = @a.new(42)
+    @a.closure(fun[r]() Int { r.* })
+}
+```
+
+```error
+```
+
+**@a.closure cannot extend a by-ref capture of a local**
+
+Boxing relocates the context, not the borrowed local, so a `fun[&n]` boxed into
+the arena still cannot outlive `n`.
+
+```metall
+fun make(@a Arena) fun() Int {
+    let n = 42
+    @a.closure(fun[&n]() Int { n.* })
+}
+```
+
+```error
+test.met:3:5: reference escaping its allocation scope (via block result)
+        let n = 42
+        @a.closure(fun[&n]() Int { n.* })
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+**@a.closure of a by-value reference to a local stays bound to the local**
+
+Capturing `&n` by value still carries `n`'s storage, so boxing cannot extend it.
+
+```metall
+fun make(@a Arena) fun() Int {
+    let n = 42
+    let r = &n
+    @a.closure(fun[r]() Int { r.* })
+}
+```
+
+```error
+test.met:3:13: reference escaping its allocation scope (via block result)
+        let n = 42
+        let r = &n
+                ^^
+        @a.closure(fun[r]() Int { r.* })
+```
+
+**@a.closure into a local arena cannot escape the arena's scope**
+
+The arena itself lives in `make`, so the boxed closure is bound to it and cannot
+be returned.
+
+```metall
+fun make() fun() Int {
+    let @local = Arena()
+    let cell = @local.new(0)
+    @local.closure(fun[cell]() Int { cell.* })
+}
+```
+
+```error
+test.met:4:5: reference escaping its allocation scope (via block result)
+        let cell = @local.new(0)
+        @local.closure(fun[cell]() Int { cell.* })
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
 **defer block reading local ref does not escape**
 
 ```metall

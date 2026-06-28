@@ -237,6 +237,78 @@ fun main() void {
 
 Everything in Metall is immutable by default.
 
+## Closures
+
+A function literal captures variables from its surrounding scope, named in
+`[...]`: by value or by reference.
+
+```metall
+use std.io
+
+fun apply(f fun(Int) Int, x Int) Int { f(x) }
+
+fun main() void {
+    let base = 10
+    io.println(apply(fun[base](n Int) Int { base + n }, 5))
+
+    mut count = 0
+    let bump = fun[&mut count]() void { count.* += 1 }
+    bump()
+    bump()
+    io.println(count)
+}
+```
+
+```output
+15
+2
+```
+
+A closure's captures live on the frame that built it, so a plain closure cannot
+be returned:
+
+```metall
+fun adder(base Int) fun(Int) Int {
+    fun[base](n Int) Int { base + n }
+}
+
+fun main() void {
+    _ = adder(1)
+}
+```
+
+```error
+test.met:2:5: reference escaping its allocation scope (via block result)
+    fun adder(base Int) fun(Int) Int {
+        fun[base](n Int) Int { base + n }
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+```
+
+`@a.closure` boxes the captures into an arena, so the closure outlives the frame
+and can be returned and stored:
+
+```metall
+use std.io
+
+fun adder(@a Arena, base Int) fun(Int) Int {
+    @a.closure(fun[base](n Int) Int { base + n })
+}
+
+fun main() void {
+    let @main = Arena()
+    let add10 = adder(@main, 10)
+    let add100 = adder(@main, 100)
+    io.println(add10(5))
+    io.println(add100(5))
+}
+```
+
+```output
+15
+105
+```
+
 ## Basic Types
 
 ### Enums

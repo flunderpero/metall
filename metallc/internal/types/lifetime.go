@@ -829,6 +829,10 @@ func (a *LifetimeCheck) isArenaAllocCall(nodeID ast.NodeID) bool {
 // (e.g. a size) do not contribute.
 func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) {
 	fa := base.Cast[ast.FieldAccess](a.ast.Node(call.Callee).Kind)
+	if fa.Field.Name == "closure" {
+		a.analyzeArenaClosure(nodeID, call, fa)
+		return
+	}
 	// The allocation lives IN the arena, so it borrows the arena's storage at depth
 	// 0, and its contents (copies of the ref/alloc-carrying args) sit one deref in.
 	// Keeping that depth lets an element read out of the result drop the arena
@@ -843,6 +847,20 @@ func (a *LifetimeCheck) analyzeArenaAllocCall(nodeID ast.NodeID, call ast.Call) 
 	result := a.flow(fa.Target).Merge(contents.ShiftDown(1))
 	a.chains[nodeID] = result
 	a.debug(1, nodeID, "analyzeArenaAllocCall: %s", result)
+}
+
+// analyzeArenaClosure: `@a.closure(fun[...]...)` boxes the closure's capture
+// context into @a, so its storage is the arena, not the enclosing frame. The
+// value carries {arena} plus any borrowed referents its captures hold, so a
+// by-value capture (including a captured reference into @a) returns freely while
+// a `fun[&local]` stays bound to that local: boxing cannot extend a borrow.
+func (a *LifetimeCheck) analyzeArenaClosure(nodeID ast.NodeID, call ast.Call, fa ast.FieldAccess) {
+	// A closure literal parses as Block{ Fun, Ident }; the Fun holds the captures.
+	block := base.Cast[ast.Block](a.ast.Node(call.Args[0]).Kind)
+	funNodeID := block.Exprs[0]
+	fun := base.Cast[ast.Fun](a.ast.Node(funNodeID).Kind)
+	a.chains[nodeID] = a.closureCaptureChain(funNodeID, fun, a.flow(fa.Target).HeadTaintSet())
+	a.debug(1, nodeID, "analyzeArenaClosure: %s", a.chains[nodeID])
 }
 
 func (a *LifetimeCheck) analyzeArrayLiteral(nodeID ast.NodeID, lit ast.ArrayLiteral) {
@@ -1916,30 +1934,38 @@ func (a *LifetimeCheck) analyzeFun(nodeID ast.NodeID, fun ast.Fun) {
 		// g's body returns p (the param), not local, so g() must not be rejected.
 		a.closureResults[nodeID] = a.flow(fun.Block)
 
-		// Seed with the closure's own context taint: the capture context is
-		// alloca'd on the enclosing function's frame, so a closure with ANY capture
-		// borrows that frame even when every capture is a plain value (`fun[n]` with
-		// n Int copies n into the context). Without this, returning such a closure
-		// would dangle the context undetected. The taint is the enclosing FUNCTION
-		// body, not the closure's immediate (desugared wrapper) scope, so moving the
-		// closure to an outer block within the same function is not a false escape.
+		// A capturing closure borrows the frame its context is alloca'd on, so seed
+		// the capture chain with the enclosing FUNCTION body, not the closure's
+		// desugared wrapper scope, so moving it to an outer block in the same
+		// function is not a false escape. `@a.closure(...)` reseeds with an arena.
 		bindScope := a.scopeFor(a.scopeGraph.NodeScope(nodeID))
-		closureChain := Chain{TaintSet{a.enclosingFunScope(nodeID).ScopeTaint}}
-		for _, capNodeID := range fun.Captures {
-			capture := base.Cast[ast.Capture](a.ast.Node(capNodeID).Kind)
-			vt := a.lookupVar(nodeID, capture.Name.Name)
-			if vt == nil {
-				continue
-			}
-			switch capture.Mode {
-			case ast.CaptureByRef, ast.CaptureByMutRef:
-				closureChain = closureChain.Merge(vt.Chain.Prepend(TaintSet{vt.StorageTaint}))
-			case ast.CaptureByValue:
-				closureChain = closureChain.Merge(vt.Chain)
-			}
-		}
+		frame := TaintSet{a.enclosingFunScope(nodeID).ScopeTaint}
+		closureChain := a.closureCaptureChain(nodeID, fun, frame)
 		bindScope.Vars[fun.Name.Name] = &VarTaint{nodeID, bindScope.ScopeTaint, closureChain}
 	}
+}
+
+// closureCaptureChain builds a capturing closure value's chain: `seed` (where the
+// capture context lives, the enclosing frame for a bare closure or the arena for
+// `@a.closure`) plus each capture's reach. A by-ref capture adds its referent's
+// storage; a by-value capture adds the captured var's own chain (nothing for a
+// plain value, the referent for a captured reference).
+func (a *LifetimeCheck) closureCaptureChain(funNodeID ast.NodeID, fun ast.Fun, seed TaintSet) Chain {
+	chain := Chain{seed}
+	for _, capNodeID := range fun.Captures {
+		capture := base.Cast[ast.Capture](a.ast.Node(capNodeID).Kind)
+		vt := a.lookupVar(funNodeID, capture.Name.Name)
+		if vt == nil {
+			continue
+		}
+		switch capture.Mode {
+		case ast.CaptureByRef, ast.CaptureByMutRef:
+			chain = chain.Merge(vt.Chain.Prepend(TaintSet{vt.StorageTaint}))
+		case ast.CaptureByValue:
+			chain = chain.Merge(vt.Chain)
+		}
+	}
+	return chain
 }
 
 // flow returns the chain a node's value carries.

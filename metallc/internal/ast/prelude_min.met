@@ -19,6 +19,8 @@ pub fun Arena.slice<T>(@a Arena, len Int, default T) []mut T {}
 pub unsafe fun Arena.slice_uninit<T>(@a Arena, len Int) []mut T {}
 pub fun Arena.grow<T>(@a Arena, s []T, new_len Int, default T) []mut T {}
 pub unsafe fun Arena.grow_uninit<T>(@a Arena, s []T, new_len Int) []mut T {}
+--- Box a closure. ---
+pub fun Arena.closure<F>(@a Arena, f F) F {} 
 
 --- A placeholder type for the builtin `Bool` type. ---
 pub struct Bool {}

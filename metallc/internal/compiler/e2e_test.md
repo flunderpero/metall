@@ -4845,6 +4845,14 @@ fun main() void {
 ```metall
 fun apply(f fun(Int) Int, x Int) Int { f(x) }
 
+fun make_counter(@a Arena) fun() Int {
+    let cell = @a.new(0)
+    @a.closure(fun[cell]() Int {
+        cell.* += 1
+        cell.*
+    })
+}
+
 fun main() void {
     -- capture by value
     let x = 10
@@ -4878,6 +4886,12 @@ fun main() void {
     -- passed to higher-order function
     let offset = 100
     DebugIntern.print_int(apply(fun[offset](n Int) Int { offset + n }, 23))
+    -- @a.closure boxes the context into the arena so the closure outlives its builder
+    let @ar = Arena()
+    let c = make_counter(@ar)
+    DebugIntern.print_int(c())
+    DebugIntern.print_int(c())
+    DebugIntern.print_int(c())
 }
 ```
 
@@ -4890,6 +4904,9 @@ fun main() void {
 42
 11
 123
+1
+2
+3
 ```
 
 **closure captures allocator**

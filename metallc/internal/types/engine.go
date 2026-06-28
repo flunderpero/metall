@@ -1448,6 +1448,19 @@ func (e *Engine) checkCall(call ast.Call, callNodeID ast.NodeID, span base.Span)
 	if isMethod {
 		e.env.setMethodCallReceiver(callNodeID, fieldAccess.Target)
 	}
+	// `@a.closure` boxes a closure's context into the arena at construction, so it
+	// only accepts a closure LITERAL (which parses as Block{ Fun, ... }), not a
+	// function value whose context already lives on a frame boxing cannot relocate.
+	if ref, ok := e.env.NamedFunRef(call.Callee); ok && strings.HasPrefix(ref, "Arena.closure") && len(call.Args) == 1 {
+		isLiteral := false
+		if block, ok := e.ast.Node(call.Args[0]).Kind.(ast.Block); ok && len(block.Exprs) > 0 {
+			_, isLiteral = e.ast.Node(block.Exprs[0]).Kind.(ast.Fun)
+		}
+		if !isLiteral {
+			e.diag(span, "@a.closure requires a closure literal, e.g. @a.closure(fun[c]() Int { c.* })")
+			return InvalidTypeID, TypeFailed
+		}
+	}
 	if hasNamedArgs(call.ArgNames) {
 		if status := e.resolveNamedCallArgs(call, callNodeID, isMethod, span); status.Failed() {
 			return InvalidTypeID, status
