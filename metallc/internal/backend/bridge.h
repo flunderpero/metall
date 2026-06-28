@@ -14,6 +14,10 @@ extern "C" {
 // Host default target triple (e.g. "arm64-apple-macosx26.0.0").
 char *metall_default_triple(void);
 
+// Major version of the linked LLVM (e.g. 22), which names the clang resource
+// dir (lib/clang/<major>).
+unsigned metall_llvm_major(void);
+
 // Data-layout string for a triple, via a throwaway TargetMachine.
 int metall_data_layout(const char *triple, char **out, char **err);
 

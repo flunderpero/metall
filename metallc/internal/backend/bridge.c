@@ -48,6 +48,12 @@ char *metall_default_triple(void) {
     return r;
 }
 
+unsigned metall_llvm_major(void) {
+    unsigned major = 0, minor = 0, patch = 0;
+    LLVMGetVersion(&major, &minor, &patch);
+    return major;
+}
+
 int metall_data_layout(const char *triple, char **out, char **err) {
     init_once();
     char *msg = NULL;

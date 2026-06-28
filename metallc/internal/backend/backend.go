@@ -48,6 +48,13 @@ func DefaultTriple() string {
 	return C.GoString(c)
 }
 
+// LLVMMajor returns the major version of the linked LLVM (e.g. 22), which names
+// the clang resource dir (lib/clang/<major>). A stateless version read, so it
+// needs no serialization.
+func LLVMMajor() int {
+	return int(C.metall_llvm_major())
+}
+
 // DataLayout returns the LLVM data-layout string for a triple.
 func DataLayout(triple string) (string, error) {
 	mu.Lock()

@@ -743,24 +743,22 @@ func linkWasm(opts CompileOpts, objectPath, output string, exportNames []string)
 	return nil
 }
 
-// resourceDir locates the clang resource dir holding the compiler-rt sanitizer
-// runtimes. Those are not linked into metallc, so they are found on disk: an
-// explicit override, next to the binary in a release, or the static LLVM build
-// tree during development. Only called when a sanitizer needs them.
+// resourceDir locates the clang resource dir (lib/clang/<major>) holding the
+// compiler-rt builtins and sanitizer runtimes. These are not linked into
+// metallc, so they are found on disk: an explicit override, next to the binary
+// in a release, or the static LLVM build tree during development. <major> is the
+// linked LLVM's own version, so the path tracks an LLVM bump with no code change.
 func resourceDir() (string, error) {
 	if d := os.Getenv("METALL_RESOURCE_DIR"); d != "" {
 		return d, nil
 	}
-	// The resource dir is the single lib/clang/<major> under a search root.
-	find := func(root string) string {
-		matches, _ := filepath.Glob(filepath.Join(root, "lib", "clang", "*"))
-		if len(matches) == 1 {
-			return matches[0]
-		}
-		return ""
+	sub := filepath.Join("lib", "clang", strconv.Itoa(backend.LLVMMajor()))
+	isDir := func(d string) bool {
+		fi, err := os.Stat(d)
+		return err == nil && fi.IsDir()
 	}
 	if exe, err := os.Executable(); err == nil {
-		if d := find(filepath.Dir(exe)); d != "" {
+		if d := filepath.Join(filepath.Dir(exe), sub); isDir(d) {
 			return d, nil
 		}
 	}
@@ -770,7 +768,7 @@ func resourceDir() (string, error) {
 		return "", base.WrapErrorf(err, "get cwd")
 	}
 	for dir := cwd; ; {
-		if d := find(filepath.Join(dir, ".build", "llvm-static", platform)); d != "" {
+		if d := filepath.Join(dir, ".build", "llvm-static", platform, sub); isDir(d) {
 			return d, nil
 		}
 		parent := filepath.Dir(dir)
