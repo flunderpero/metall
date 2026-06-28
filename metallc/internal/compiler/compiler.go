@@ -605,7 +605,7 @@ func linkExecutable(
 // PIE executable and runs it in-process. The crt objects, gcc support libs, and
 // search paths come from the system toolchain (queried via `cc`), the
 // irreducible dependency for native Linux linking, just like the macOS SDK.
-func linkELF(ctx context.Context, opts CompileOpts, triple, objectPath, output string) error {
+func linkELF(ctx context.Context, opts CompileOpts, triple, objectPath, output string) error { //nolint:funlen
 	// The crt objects and libc come from the host toolchain (via `cc`), so a
 	// non-host arch would need a target sysroot we do not have.
 	arch, _, _ := strings.Cut(triple, "-")
@@ -625,6 +625,26 @@ func linkELF(ctx context.Context, opts CompileOpts, triple, objectPath, output s
 	}
 	scrt1, crti, crtn := crt("Scrt1.o"), crt("crti.o"), crt("crtn.o")
 	crtbegin, crtend := crt("crtbeginS.o"), crt("crtendS.o")
+
+	// cc prints the bare name (not an absolute path) when it cannot find a file,
+	// which lld would otherwise report as an opaque "cannot open Scrt1.o". Catch a
+	// missing or incomplete host C toolchain here with one actionable message.
+	const toolchainHint = "install a system C toolchain " +
+		"(Debian/Ubuntu: apt install build-essential; Fedora/RHEL: dnf install gcc; Alpine: apk add build-base)"
+	if _, err := exec.LookPath("cc"); err != nil {
+		return base.Errorf("no C compiler (cc) on PATH; native linking needs one: %s", toolchainHint)
+	}
+	for _, f := range []struct{ name, path string }{
+		{"Scrt1.o", scrt1},
+		{"crti.o", crti},
+		{"crtn.o", crtn},
+		{"crtbeginS.o", crtbegin},
+		{"crtendS.o", crtend},
+	} {
+		if !filepath.IsAbs(f.path) {
+			return base.Errorf("host C toolchain is incomplete: cc cannot find %s; %s", f.name, toolchainHint)
+		}
+	}
 
 	var dynLinker, emulation string
 	switch arch {
