@@ -29,6 +29,7 @@ build:
     set -euo pipefail
     cd "{{root}}"
     [ -z "$(git status --porcelain)" ] || { echo "working tree is not clean; release from a clean checkout" >&2; exit 1; }
+    rm -rf dist
     version="$(just -f release.justfile _version)"
     sha="$(git rev-parse --short HEAD)"
 
