@@ -61,10 +61,12 @@ _bundle goos goarch version sha:
     rm -rf "$dist" "dist/$name.tar.gz"
     mkdir -p "$dist"
     llvmver="$(.build/llvm-static/{{goos}}-{{goarch}}/bin/llvm-config --version)"
-    CGO_ENABLED=1 GOOS={{goos}} GOARCH={{goarch}} go build -buildvcs=false \
+    CGO_ENABLED=1 GOOS={{goos}} GOARCH={{goarch}} go build -trimpath -buildvcs=false \
         -ldflags "-s -w -X main.version={{version}} -X main.commit={{sha}} -X main.llvmVersion=$llvmver" \
         -o "$dist/metallc" ./metallc
-    cp -R lib "$dist/lib"
+    # -L dereferences symlinks (lib/prelude/*.met point into the source tree) so
+    # the bundle ships real files, not links that dangle once extracted elsewhere.
+    cp -RL lib "$dist/lib"
     cp LICENSE "$dist/LICENSE"
     # Bundle compiler-rt (asan runtime + builtins) so the binary can link
     # --sanitize=address; resourceDir() finds it at <exe-dir>/lib/clang/<major>.
