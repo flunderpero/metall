@@ -7,11 +7,16 @@ up the main goal __I__ had while designing and developing the language:
 
 "Fun" is very personal and to each their own. 
 
-## TL;DR
-
-If you don't read any further (hi, mr. tsoding), please read this.
-
 ### Goals And Non-Goals
+
+Metall shall be:
+
+- A systems programming language close to the ... Metal(l).
+- Faster than Rust (build and execute) and on par with C (see benchmarks/).
+- Memory safe.
+- Safe to write concurrent code.
+- As complex as needed but not more.
+- Pragmatic and not in your way.
 
 ### Allocators And Lifetimes
 
