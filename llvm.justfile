@@ -67,8 +67,18 @@ build arch="":
             -DLLVM_TARGETS_TO_BUILD="{{targets}}" \
             -DCOMPILER_RT_SANITIZERS_TO_BUILD="{{sanitizers}}" \
             {{flags}}
+        # Cap ninja by RAM where /proc/meminfo exists (memory-limited containers):
+        # each LLVM TU needs ~2 GB and one OOM-killed cc1plus fails the build.
         echo ">>> Building LLVM (${goos}/${goarch})"
-        ninja -C "$obj" install
+        if [ -r /proc/meminfo ]; then
+            jobs="$(nproc)"
+            mem_jobs=$(( $(awk '/MemTotal/{print $2}' /proc/meminfo) / 1024 / 1024 / 2 ))
+            [ "$mem_jobs" -lt "$jobs" ] && jobs="$mem_jobs"
+            [ "$jobs" -ge 1 ] || jobs=1
+            ninja -C "$obj" -j "$jobs" install
+        else
+            ninja -C "$obj" install
+        fi
         printf '%s' "$info" > "$prefix/.build-info"
     fi
     just -f "{{justfile()}}" genflags "$goarch"
