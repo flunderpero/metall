@@ -40,6 +40,8 @@ static void init_once(void) {
     pthread_once(&once, init_targets);
 }
 
+void metall_init_targets(void) { init_once(); }
+
 char *metall_default_triple(void) {
     init_once();
     char *t = LLVMGetDefaultTargetTriple();
@@ -101,11 +103,27 @@ int metall_emit_object(const char *ir, size_t ir_len, const char *triple,
         return 3;
     }
 
+    // `native` is metallc shorthand for the host CPU. The clang driver expands
+    // -mcpu=native to the concrete host model and feature set; the raw LLVM-C
+    // target machine does not, it just warns "not a recognized processor" and
+    // emits generic-baseline code. Expand it ourselves to match.
+    const char *cpu_name = cpu ? cpu : "";
+    const char *features = "";
+    char *host_cpu = NULL, *host_feat = NULL;
+    if (cpu && strcmp(cpu, "native") == 0) {
+        host_cpu = LLVMGetHostCPUName();
+        host_feat = LLVMGetHostCPUFeatures();
+        cpu_name = host_cpu ? host_cpu : "";
+        features = host_feat ? host_feat : "";
+    }
+
     // wasm ignores the relocation model; PIC is right for native PIE.
     LLVMTargetMachineRef tm = LLVMCreateTargetMachine(
-        target, triple, cpu ? cpu : "", "", (LLVMCodeGenOptLevel)codegen_level,
+        target, triple, cpu_name, features, (LLVMCodeGenOptLevel)codegen_level,
         LLVMRelocPIC, LLVMCodeModelDefault);
     LLVMSetTarget(mod, triple);
+    LLVMDisposeMessage(host_cpu);
+    LLVMDisposeMessage(host_feat);
 
     if (passes && passes[0]) {
         LLVMPassBuilderOptionsRef opts = LLVMCreatePassBuilderOptions();

@@ -165,7 +165,8 @@ func parseCommand(command string) (compiler.CompileOpts, *base.Source, int) { //
 		return nil
 	})
 	flags.StringVar(&opts.TargetCPU, "cpu", "",
-		"target CPU for codegen (e.g. 'native', 'apple-m1'); default targets a portable baseline")
+		"target CPU for codegen (e.g. 'apple-m1'); 'native' expands to the host's CPU model; "+
+			"default targets a portable baseline")
 	flags.StringVar(&opts.TargetArch, "arch", "",
 		"cross-compile the native target to this architecture: x86_64, aarch64 (default host)")
 	flags.StringVar(

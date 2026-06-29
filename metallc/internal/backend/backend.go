@@ -70,6 +70,17 @@ func DataLayout(triple string) (string, error) {
 	return C.GoString(out), nil
 }
 
+// CPUValid reports whether cpu is a recognized processor for triple. cpu must
+// be a concrete name, not "" or "native".
+func CPUValid(triple, cpu string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	ct, cc := C.CString(triple), C.CString(cpu)
+	defer C.free(unsafe.Pointer(ct))
+	defer C.free(unsafe.Pointer(cc))
+	return C.metall_cpu_valid(ct, cc) == 1
+}
+
 // EmitObject parses LLVM IR text, runs the middle-end pass pipeline, and writes
 // a native or wasm object to objPath. passes is a new-PM pipeline string.
 func EmitObject(ir []byte, triple, cpu, passes string, codegenLevel int, objPath string) error {

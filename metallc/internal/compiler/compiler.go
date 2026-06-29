@@ -173,6 +173,9 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	if err != nil {
 		return base.WrapErrorf(err, "failed to query target data layout")
 	}
+	if opts.TargetCPU != "" && opts.TargetCPU != "native" && !backend.CPUValid(targetTriple, opts.TargetCPU) {
+		return base.Errorf("unknown --cpu %q for %s", opts.TargetCPU, targetTriple)
+	}
 
 	listener := opts.Listener
 	timingListener := NewTimingListener(0)
@@ -290,13 +293,17 @@ func Compile(ctx context.Context, source *base.Source, opts CompileOpts) error {
 	}
 
 	// At -O none the passes are a bare function pipeline; at -O3 the full
-	// `default<O3>` module pipeline. asan is a module pass that runs last, so a
-	// function pipeline must be wrapped before appending it.
+	// `default<O3>` module pipeline, run twice. A single O3 pipeline is not a
+	// fixpoint here: a second run inlines and vectorizes further, ~25% faster on
+	// tight loops. The old out-of-process path got this for free by piping
+	// `opt -O3` into `clang -O3` (clang re-optimizes the already-optimized IR).
+	// asan is a module pass that runs last, so a function pipeline must be
+	// wrapped before appending it.
 	passes := opts.LLVMPasses
 	moduleLevel := false
 	codegen := backend.CodeGenNone
 	if opts.OptLevel != OptLevelNone {
-		passes = "default<O3>"
+		passes = "default<O3>,default<O3>"
 		moduleLevel = true
 		codegen = backend.CodeGenAggressive
 	}

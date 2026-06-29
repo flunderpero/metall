@@ -18,8 +18,15 @@ char *metall_default_triple(void);
 // dir (lib/clang/<major>).
 unsigned metall_llvm_major(void);
 
+// Register every target backend (idempotent, thread-safe).
+void metall_init_targets(void);
+
 // Data-layout string for a triple, via a throwaway TargetMachine.
 int metall_data_layout(const char *triple, char **out, char **err);
+
+// Returns 1 if cpu is a recognized processor for triple, 0 if not, -1 if the
+// triple has no registered target. cpu must be non-empty and not "native".
+int metall_cpu_valid(const char *triple, const char *cpu);
 
 // Parse LLVM IR text, run the middle-end pass pipeline, and emit a native or
 // wasm object to out_path. codegen_level is an LLVMCodeGenOptLevel (0..3).
