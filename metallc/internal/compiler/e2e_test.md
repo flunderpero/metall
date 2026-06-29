@@ -4245,6 +4245,48 @@ fun main() void {
 5
 ```
 
+**large aggregates copy by value**
+
+A struct holding a big nested array is copied whole on return and on assignment.
+The element count is deliberately large: a value copy must lower to one bulk copy
+that does not grow with the array size.
+
+```metall
+struct Cell {
+    tag     Int
+    payload [8]Int
+}
+
+struct Big {
+    data [1024]Cell
+    len  Int
+}
+
+fun Big.make(seed Int) Big {
+    mut b = Big([1024 of Cell(0, [8 of Int(0)])], seed)
+    b.data[500].tag = seed
+    b.data[500].payload[3] = seed * 2
+    b
+}
+
+fun main() void {
+    mut a = Big.make(7)
+    let b = a
+    a.data[500].tag = 999
+    DebugIntern.print_int(b.data[500].tag)
+    DebugIntern.print_int(b.data[500].payload[3])
+    DebugIntern.print_int(b.len)
+    DebugIntern.print_int(a.data[500].tag)
+}
+```
+
+```output
+7
+14
+7
+999
+```
+
 ## Match Or-Patterns
 
 **or-patterns group enum and union variants, with and without a binding**

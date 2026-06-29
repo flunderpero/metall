@@ -1144,9 +1144,7 @@ func (g *IRFunGen) genFun(work types.FunWork) { //nolint:funlen
 			g.write("ret i32 0")
 		}
 	case isRetAggregate:
-		resReg := g.reg()
-		g.write("%s = load %s, ptr %s", resReg, retIRTyp, g.funRetReg)
-		g.write("store %s %s, ptr %%out_ptr", retIRTyp, resReg)
+		g.storeValue(g.funRetReg, "%out_ptr", fun.Return)
 		g.write("ret void")
 	case retIRTyp == "{}":
 		g.write("ret void")
@@ -3739,18 +3737,31 @@ func (g *IRFunGen) loadValue(ptrReg string, typeID types.TypeID) string {
 	return reg
 }
 
+// aggregateMemcpyThreshold is the byte size past which an aggregate value copy
+// lowers to a memcpy instead of a whole-value load+store. A whole-value
+// load+store of an aggregate makes LLVM's SROA create one slot per element. A
+// large aggregate then becomes thousands of slots, which never stay in registers
+// and slow the optimizer to a crawl. Below the threshold, load+store lets the
+// mid-end promote the value to registers, so small copies stay cheap.
+const aggregateMemcpyThreshold = 128
+
 func (g *IRFunGen) storeValue(srcReg string, dstReg string, typeID types.TypeID) {
 	irTyp := g.irType(typeID)
 	if irTyp == "{}" {
 		return
 	}
-	if g.isAggregateType(typeID) {
-		tmp := g.reg()
-		g.write("%s = load %s, ptr %s", tmp, irTyp, srcReg)
-		g.write("store %s %s, ptr %s", irTyp, tmp, dstReg)
-	} else {
+	if !g.isAggregateType(typeID) {
 		g.write("store %s %s, ptr %s", irTyp, srcReg, dstReg)
+		return
 	}
+	if size := g.irTypeSize(g.env, typeID); size > aggregateMemcpyThreshold {
+		g.write("call void @llvm.memcpy.p0.p0.i64(ptr %s, ptr %s, i64 %d, i1 false)",
+			dstReg, srcReg, size)
+		return
+	}
+	tmp := g.reg()
+	g.write("%s = load %s, ptr %s", tmp, irTyp, srcReg)
+	g.write("store %s %s, ptr %s", irTyp, tmp, dstReg)
 }
 
 func indexOfStructField(s types.StructType, name string) int {
