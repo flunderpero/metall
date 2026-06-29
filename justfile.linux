@@ -15,28 +15,25 @@ _build_image:
     set -euo pipefail
     echo ">>> Building {{image}} image ({{platform}})"
     podman build --platform "{{platform}}" -t "{{image}}" -f - <<'DOCKERFILE'
-    FROM docker.io/library/debian:bullseye
-    # Build on Debian 11 (glibc 2.31) so released binaries run on every still
-    # supported mainstream distro (Ubuntu 20.04/22.04 LTS, Debian 11-13, RHEL 9),
-    # not just the newest: the binary's glibc floor is the build host's glibc.
-    # bullseye has no go and its cmake (3.18) predates LLVM's 3.20 minimum, so go,
-    # cmake, and just are fetched as upstream binaries.
+    FROM docker.io/library/debian:bookworm
+    # Debian 12. The binary's glibc floor is the build host's glibc (2.36 here), so
+    # the base is a deliberate pick: recent enough that bookworm's cmake (3.25) and
+    # binutils (2.40) build LLVM 22 with no workarounds, not so new that the floor
+    # needlessly climbs. Only go (too old in Debian) and just (not packaged) are
+    # fetched as upstream binaries.
     ARG GO_VERSION=1.25.11
-    ARG CMAKE_VERSION=3.31.12
     ARG JUST_VERSION=1.54.0
     # build-essential (gcc/g++/libc6-dev) builds the static LLVM and the cgo C++
-    # shim, ninja drives it, python3 is required by LLVM, xz-utils unpacks the
-    # LLVM source tarball, git lets `go build`/`go test` read VCS status.
+    # shim, cmake + ninja drive it, python3 is required by LLVM, xz-utils unpacks
+    # the LLVM source tarball, git lets `go build`/`go test` read VCS status.
     RUN apt-get update \
         && apt-get install -y --no-install-recommends \
-            curl ca-certificates git xz-utils build-essential ninja-build python3 \
+            curl ca-certificates git xz-utils build-essential cmake ninja-build python3 \
         && apt-get clean && rm -rf /var/lib/apt/lists/*
     RUN set -eux; \
         go_arch="$(dpkg --print-architecture)"; tool_arch="$(uname -m)"; \
         curl -fsSLo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
         tar -C /usr/local -xzf /tmp/go.tgz; \
-        curl -fsSLo /tmp/cmake.tgz "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${tool_arch}.tar.gz"; \
-        tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tgz; \
         curl -fsSLo /tmp/just.tgz "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${tool_arch}-unknown-linux-musl.tar.gz"; \
         tar -C /usr/local/bin -xzf /tmp/just.tgz just; \
         rm -f /tmp/*.tgz
