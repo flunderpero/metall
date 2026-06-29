@@ -73,13 +73,26 @@ runs:
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
+    # Key the LLVM cache on build-info (os/arch/config) plus the runner image,
+    # which is the toolchain build-info can't see. ImageOS/ImageVersion are set on
+    # hosted runners, empty on self-hosted (which doesn't cache anyway).
+    - name: LLVM cache key
+      id: llvm-key
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      env:
+        METALL_LLVM_BUILD_TAG: ${{ env.ImageOS }}-${{ env.ImageVersion }}
+      run: echo "key=llvm-static-$(just llvm build-info | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
     - name: Cache static LLVM
       if: runner.environment == 'github-hosted'
       uses: actions/cache@v5
       with:
         path: .build/llvm-static
-        key: llvm-static-${{ hashFiles('llvm.justfile') }}-${{ runner.os }}-${{ runner.arch }}
+        key: ${{ steps.llvm-key.outputs.key }}
 
     - name: Build static LLVM + cgo flags
       shell: bash
+      env:
+        METALL_LLVM_BUILD_TAG: ${{ env.ImageOS }}-${{ env.ImageVersion }}
       run: just llvm build

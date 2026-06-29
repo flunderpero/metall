@@ -39,7 +39,7 @@ build:
     just llvm build amd64
     just -f release.justfile _bundle darwin amd64 "$version" "$sha"
 
-    echo ">>> linux: aarch64 + x86_64 via podman"
+    echo ">>> Linux: aarch64 + x86_64 via podman"
     just linux-aarch64 run llvm build
     just linux-aarch64 run release _bundle linux arm64 "$version" "$sha"
     just linux-x86_64 run llvm build
@@ -92,7 +92,9 @@ _bundle goos goarch version sha:
     [ -n "$out" ] || { echo "FAIL: empty output from $name" >&2; exit 1; }
     asout="$(cd "$work" && "{{root}}/$dist/metallc" run --sanitize address hello.met)"
     [ -n "$asout" ] || { echo "FAIL: --sanitize=address produced no output from $name" >&2; exit 1; }
-    echo "    hello -> $out ; asan ok"
+    alout="$(cd "$work" && "{{root}}/$dist/metallc" run --sanitize alignment hello.met)"
+    [ -n "$alout" ] || { echo "FAIL: --sanitize=alignment produced no output from $name" >&2; exit 1; }
+    echo "    hello -> $out ; asan + alignment ok"
 
     tar -C dist -czf "dist/$name.tar.gz" "$name"
     echo ">>> Built dist/$name.tar.gz ($(du -sh "$dist/metallc" | cut -f1))"

@@ -48,7 +48,7 @@ run *args: _build_image
     # Persist Go module + build caches under `{{build_dir}}/` (gitignored) so
     # repeat runs don't re-download modules or cold-compile everything.
     mkdir -p {{build_dir}}/go-mod {{build_dir}}/go-build
-    echo ">>> just {{args}} ({{platform}})"
+    echo ">>> Running just {{args}} ({{platform}})"
     podman run --rm --platform "{{platform}}" \
         -v "$PWD:/workspace" \
         -w /workspace \
@@ -67,7 +67,7 @@ enter: _build_image
             bash_mounts+=(-v "$HOME/$f:/root/$f:ro")
         fi
     done
-    echo ">>> entering {{image}} ({{platform}})"
+    echo ">>> Entering {{image}} ({{platform}})"
     podman run --rm -it --platform "{{platform}}" \
         -v "$PWD:/workspace" \
         -w /workspace \
