@@ -13406,6 +13406,25 @@ test.met:1:10: associated-data field defaults are not supported; use ?T for an o
              ^
 ```
 
+**A field access on an enum that failed to complete reports only the decl error**
+
+A rejected default leaves the enum without its associated-data schema. Reading
+a field off a value of that type must surface the original error alone, not
+crash or pile on a spurious unknown-field error.
+
+```metall module
+enum Tower(damage F32 = 0.0) U8 = wall
+struct Unit { kind Tower }
+fun read(u Unit) F32 { u.kind.damage }
+```
+
+```error
+test.met:1:12: associated-data field defaults are not supported; use ?T for an optional field
+    enum Tower(damage F32 = 0.0) U8 = wall
+               ^^^^^^
+    struct Unit { kind Tower }
+```
+
 **Explicit tag out of backing range**
 
 ```metall

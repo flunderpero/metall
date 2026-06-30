@@ -1302,6 +1302,12 @@ func (e *Engine) checkFieldAccess(nodeID ast.NodeID, fieldAccess ast.FieldAccess
 		}
 	}
 	if enum, ok := targetTyp.Kind.(EnumType); ok {
+		// A failed enum completion leaves AssociatedDataStruct unset; the decl
+		// already reported the error, so suppress the cascade instead of
+		// dereferencing the missing struct.
+		if enum.AssociatedDataStruct == InvalidTypeID {
+			return InvalidTypeID, TypeDepFailed
+		}
 		if typeID, handled := e.checkEnumFieldAccess(nodeID, fieldAccess, enum, targetTyp.ID); handled {
 			return typeID, TypeOK
 		}
